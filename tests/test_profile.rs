@@ -2779,13 +2779,22 @@ fn dcat_us_v3_bundle_pin_manifest_matches_files() {
     let raw = std::fs::read_to_string(&manifest_path)
         .unwrap_or_else(|e| panic!("could not read {}: {e}", manifest_path.display()));
     let manifest: serde_json::Value = serde_json::from_str(&raw).expect("manifest is valid JSON");
-    let files = manifest
-        .get("files")
-        .and_then(|v| v.as_array())
-        .expect("MANIFEST.json must carry a `files` array");
-    assert!(!files.is_empty(), "MANIFEST.json `files` array is empty");
+    // Two vendored lists, both hashed here. `files` are the schemas the
+    // validator compiles; `examples` are upstream's own conformance fixtures
+    // driving the gsa_conformance tests. The fixtures need the same pin
+    // protection as the schemas — a fixture that drifted from the schema it
+    // was authored against would quietly stop testing what it claims to.
+    let mut entries: Vec<&serde_json::Value> = Vec::new();
+    for key in ["files", "examples"] {
+        let list = manifest
+            .get(key)
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("MANIFEST.json must carry an `{key}` array"));
+        assert!(!list.is_empty(), "MANIFEST.json `{key}` array is empty");
+        entries.extend(list);
+    }
 
-    for entry in files {
+    for entry in entries {
         let rel_path = entry
             .get("path")
             .and_then(|v| v.as_str())

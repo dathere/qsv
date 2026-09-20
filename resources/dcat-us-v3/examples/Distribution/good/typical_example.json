@@ -1,0 +1,23 @@
+{
+  "@type": "Distribution",
+  "title": "Climate Data CSV",
+  "description": "Daily climate observations in CSV format.",
+  "accessURL": "https://example.gov/data/climate",
+  "downloadURL": "https://example.gov/downloads/climate-2024.csv",
+  "mediaType": "text/csv",
+  "format": "CSV",
+  "byteSize": "52428800",
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "modified": "2024-06-01",
+  "rights": ["No rights reserved. This data is in the public domain."],
+  "describedBy": {
+    "@type": "Distribution",
+    "title": "Climate Data Dictionary",
+    "description": "Data dictionary describing the fields in the climate data CSV.",
+    "downloadURL": "https://example.gov/data/climate/data-dictionary.pdf",
+    "mediaType": "application/pdf"
+  },
+  "accessRestriction": null,
+  "cuiRestriction": null,
+  "useRestriction": null
+}

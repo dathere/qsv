@@ -1,0 +1,14 @@
+{
+  "@type": "Dataset",
+  "title": "National Water Quality Data",
+  "description": "Water quality measurements from rivers and lakes across the United States.",
+  "contactPoint": {
+    "fn": "Water Resources Support",
+    "hasEmail": "mailto:water@example.gov"
+  },
+  "theme": [
+    "https://example.gov/themes/water",
+    "https://example.gov/themes/environment"
+  ],
+  "identifier": "https://example.gov/datasets/national-water-quality-simple"
+}

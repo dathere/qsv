@@ -1,0 +1,18 @@
+{
+  "@type": "Catalog",
+  "title": "Catalog With Invalid Language Format",
+  "description": "This catalog has language codes that are too long.",
+  "dataset": [
+    {
+      "@type": "Dataset",
+      "title": "Example Dataset",
+      "description": "A valid dataset.",
+      "contactPoint": {
+        "fn": "Support",
+        "hasEmail": "mailto:support@example.gov"
+      },
+      "identifier": "https://example.gov/datasets/catalog-example-001"
+    }
+  ],
+  "language": ["english", "spanish"]
+}

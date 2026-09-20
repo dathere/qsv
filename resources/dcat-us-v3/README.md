@@ -47,32 +47,83 @@ match the file on disk. Silent edits are blocked.
    loop above. If a file was renamed or removed, mirror that here
    too — the manifest must list every file that exists on disk.
 
-3. Regenerate `MANIFEST.json`:
+3. Re-fetch the conformance fixtures at the SAME commit. These
+   drive the `gsa_conformance` tests, and a fixture left at an
+   older commit than the schema it is validated against quietly
+   stops testing what it claims to:
 
    ```bash
    cd resources/dcat-us-v3
-   python3 -c "
-   import hashlib, json, os
-   defs = sorted(os.listdir('definitions'))
-   files = [{'path': f'definitions/{f}',
-             'sha256': hashlib.sha256(open(f'definitions/{f}','rb').read()).hexdigest()}
-            for f in defs]
-   print(json.dumps({'files': files}, indent=2))
-   "
+   python3 - <<'FIXTURES'
+   import json, urllib.request, pathlib
+   pin = json.load(open('MANIFEST.json'))['commit']
+   for cls in ['Dataset', 'Catalog', 'Distribution']:
+       for kind in ['good', 'bad']:
+           api = (f"https://api.github.com/repos/GSA/dcat-us/contents/"
+                  f"jsonschema/examples/{cls}/{kind}?ref={pin}")
+           entries = json.load(urllib.request.urlopen(api))
+           d = pathlib.Path('examples') / cls / kind
+           d.mkdir(parents=True, exist_ok=True)
+           seen = set()
+           for e in entries:
+               if not e['name'].endswith('.json'):
+                   continue
+               raw = (f"https://raw.githubusercontent.com/GSA/dcat-us/{pin}/"
+                      f"jsonschema/examples/{cls}/{kind}/{e['name']}")
+               data = urllib.request.urlopen(raw).read()
+               json.loads(data)          # fail loudly on a truncated/HTML body
+               (d / e['name']).write_bytes(data)
+               seen.add(e['name'])
+           for stale in set(p.name for p in d.glob('*.json')) - seen:
+               (d / stale).unlink()      # upstream removed it
+               print('removed stale fixture:', cls, kind, stale)
+   FIXTURES
    ```
 
-   Update `commit`, `commit_url`, `fetched_at`, and `files` in
-   `MANIFEST.json`. Leave `upstream`, `schema_draft`, and
-   `entry_points` alone unless upstream restructures.
+   Only these three classes are vendored — see the note on scope in
+   `dcat_validate::gsa_conformance`.
 
-4. Run the test suite:
+4. Regenerate `MANIFEST.json`:
+
+   ```bash
+   cd resources/dcat-us-v3
+   python3 - <<'MANIFEST'
+   import hashlib, json, pathlib
+   m = json.load(open('MANIFEST.json'))
+   def h(p):
+       return {'path': p, 'sha256': hashlib.sha256(open(p, 'rb').read()).hexdigest()}
+   m['files'] = [h(f'definitions/{f.name}')
+                 for f in sorted(pathlib.Path('definitions').glob('*.json'))]
+   m['examples'] = [h(p.as_posix())
+                    for p in sorted(pathlib.Path('examples').glob('**/*.json'))]
+   json.dump(m, open('MANIFEST.json', 'w'), indent=2)
+   open('MANIFEST.json', 'a').write('\n')
+   print('files:', len(m['files']), 'examples:', len(m['examples']))
+   MANIFEST
+   ```
+
+   Then update `commit`, `commit_url` and `fetched_at` by hand. Leave
+   `upstream`, `schema_draft`, and `entry_points` alone unless upstream
+   restructures. Both `files` and `examples` are hashed by the pin test.
+
+5. Update `THIRD_PARTY_NOTICES.md`. The pin appears there in **two**
+   spellings — a 7-char form in the summary table and the full SHA in
+   the detail section — and `third_party_notices_pin_matches_the_manifest`
+   asserts both against `MANIFEST.json`.
+
+6. Run the test suite:
 
    ```bash
    cargo test --test tests -F profile,feature_capable -- test_profile::dcat_us_v3_bundle_pin
    cargo test --bin qsv -F profile cmd::profile::
    ```
 
-5. If new fields landed upstream that qsv should emit, file a
+   Expect `gsa_conformance` to be the first thing that breaks if upstream
+   tightened or relaxed a constraint: a `good` fixture failing means qsv is
+   now stricter than the schema authors intend, a `bad` fixture passing means
+   it is weaker.
+
+7. If new fields landed upstream that qsv should emit, file a
    follow-up — extending coverage is a separate change from
    refreshing the pin.
 

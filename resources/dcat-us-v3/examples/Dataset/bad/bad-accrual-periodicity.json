@@ -1,0 +1,11 @@
+{
+  "@type": "Dataset",
+  "title": "Example Dataset",
+  "description": "A minimal dataset example with invalid periodicity",
+  "contactPoint": {
+    "fn": "Data Support",
+    "hasEmail": "mailto:support@example.gov"
+  },
+  "identifier": "https://example.gov/datasets/catalog-example-001",
+  "accrualPeriodicity": "every-other-tuesday"
+}

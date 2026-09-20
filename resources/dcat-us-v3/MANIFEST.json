@@ -114,5 +114,99 @@
       "sha256": "dc32705962486f2170dd515c8f53b2e33e01cc3bc9943b93daa17a2282a8712e"
     }
   ],
-  "_note": "Vendored verbatim from upstream. NEVER hand-edit \u2014 refresh via the procedure in README.md."
+  "_note": "Vendored verbatim from upstream. NEVER hand-edit \u2014 refresh via the procedure in README.md. `files` are the schemas the validator compiles; `examples` are upstream's own conformance fixtures, used by the gsa_conformance tests.",
+  "examples": [
+    {
+      "path": "examples/Catalog/bad/invalid_dataset_type.json",
+      "sha256": "4ee9854949b43147755bb09b090950e5e63ff73becce33d3529c0f44d3f271f7"
+    },
+    {
+      "path": "examples/Catalog/bad/invalid_homepage_type.json",
+      "sha256": "c78086a059de1800491bcab0b6437e564766bd7da9d39c7c0dd55d653aa7c57d"
+    },
+    {
+      "path": "examples/Catalog/bad/invalid_issued_format.json",
+      "sha256": "ecfc98517bdd1e68bc1045a5a8d63e00d135f792e0ea116d3ce0f6b80c7eb18e"
+    },
+    {
+      "path": "examples/Catalog/bad/invalid_language_format.json",
+      "sha256": "46842fe36a93eb9768e8840a9f66535d5280b3aaa9bb9a364b463642f7a6a400"
+    },
+    {
+      "path": "examples/Catalog/bad/missing_required_dataset.json",
+      "sha256": "abb27fe2d18778c8463c8c57ecce861cc3c1592e9e67399583bb113683c5a234"
+    },
+    {
+      "path": "examples/Catalog/good/complete_example.json",
+      "sha256": "35d483db74b80c1d35fe09776f6e84d6b5421aa1529f62267dc65677f85958f4"
+    },
+    {
+      "path": "examples/Catalog/good/minimal_example.json",
+      "sha256": "0c1e007eff8e9ba82c10d999796ef26f30078f8339f4144fb240ec6afefb0823"
+    },
+    {
+      "path": "examples/Catalog/good/typical_example.json",
+      "sha256": "47e91fc951a3158bfbabdb54941d0016732a31a2eda5c0cfb498a53b33bc7925"
+    },
+    {
+      "path": "examples/Dataset/bad/bad-accrual-periodicity.json",
+      "sha256": "46b1f619a1c08f176dd133492c52c36580d13bccd4d392793caff9f1dae7a7c1"
+    },
+    {
+      "path": "examples/Dataset/good/complete_example.json",
+      "sha256": "5eebe307c09adc864c4bff6c7bec04409c57983773bef70d39547ac75e76364e"
+    },
+    {
+      "path": "examples/Dataset/good/comprehensive-dataset.json",
+      "sha256": "1b3229b1bc70d1cb89050c7332490d6bfb1a6f844e1a3f52d63fcf38e7082612"
+    },
+    {
+      "path": "examples/Dataset/good/good-accrual-periodicity.json",
+      "sha256": "c94581d07a82816543e40cda2cfad784e02e15d219f9df07048aea102fc27290"
+    },
+    {
+      "path": "examples/Dataset/good/minimal_example.json",
+      "sha256": "ad7e36efc9b256d3ccc4552624db8224d4b392f86fd2087819439fbfb50e2547"
+    },
+    {
+      "path": "examples/Dataset/good/null_example.json",
+      "sha256": "4639ceb8c9a09fc40b195e0b8bb1a930165995a2854839866b6551793cd8e9bf"
+    },
+    {
+      "path": "examples/Dataset/good/theme_full_example.json",
+      "sha256": "309c697fdc3b969788460616400ef27827a52abded614568baf6866c66935e37"
+    },
+    {
+      "path": "examples/Dataset/good/theme_simple_example.json",
+      "sha256": "2aa5ddabcc4ee8ecb67dfbb8ce59bb04e4b6c9e313d31d6a298dc95d497d278b"
+    },
+    {
+      "path": "examples/Dataset/good/typical_example.json",
+      "sha256": "72e8ff3e2e86828e6eb8dfe48d6a487ed37352db797a9b2dbc5a499c8f8cadbb"
+    },
+    {
+      "path": "examples/Distribution/bad/invalid_byteSize_type.json",
+      "sha256": "48ded7cb678ab7ecef4a6394eb9c37d2c3efa6826e42f63f8e909913e6980944"
+    },
+    {
+      "path": "examples/Distribution/bad/invalid_url_format.json",
+      "sha256": "db3ee508c01c389d0db49dcb1561c1b28720e5bece587c762a49ffabd2109f08"
+    },
+    {
+      "path": "examples/Distribution/good/complete_example.json",
+      "sha256": "396b43d56fb655bd5958af4da33a107cd19eeea0962d923d1a59aec9c965ca9a"
+    },
+    {
+      "path": "examples/Distribution/good/minimal_example.json",
+      "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"
+    },
+    {
+      "path": "examples/Distribution/good/null_example.json",
+      "sha256": "7a96e246a4239e54aef0df918112202e39afbd4c0e9e8183c990202b80060832"
+    },
+    {
+      "path": "examples/Distribution/good/typical_example.json",
+      "sha256": "584dba6c3b9e6d05d7d4b47226c389df1c320c1796bdfea7f7d0d0a5ba992b60"
+    }
+  ]
 }

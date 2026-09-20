@@ -1,0 +1,413 @@
+{
+  "@id": "https://example.gov/datasets/comprehensive-example-001",
+  "@type": "Dataset",
+  "title": "Comprehensive DCAT-US Dataset Example",
+  "description": "This is a comprehensive example dataset demonstrating all available fields in the DCAT-US 3.0 schema, except for Concept references which are excluded. Note: Date fields are set to null due to a schema validation issue where dates match multiple oneOf alternatives.",
+  "identifier": "dataset-comprehensive-001",
+  "publisher": {
+    "@id": "https://example.gov/organizations/sample-agency",
+    "@type": "Organization",
+    "name": "Sample Government Agency",
+    "altLabel": "SGA",
+    "prefLabel": "Sample Government Agency",
+    "notation": ["SGA", "SAMPLE-GOV"],
+    "subOrganizationOf": [
+      {
+        "@id": "https://example.gov/organizations/parent-department",
+        "@type": "Organization",
+        "name": "Parent Department"
+      }
+    ]
+  },
+  "otherIdentifier": [
+    {
+      "@id": "https://example.gov/identifiers/alt-001",
+      "@type": "Identifier",
+      "notation": "ALT-ID-001",
+      "schemaAgency": "Example Registry",
+      "version": "1.0",
+      "issued": null,
+      "creator": {
+        "@id": "https://example.gov/organizations/registrar",
+        "@type": "Organization",
+        "name": "Official Registrar Organization"
+      }
+    }
+  ],
+  "sample": [
+    {
+      "@id": "https://example.gov/distributions/sample-csv",
+      "@type": "Distribution",
+      "downloadURL": "https://example.gov/data/sample-preview.csv",
+      "byteSize": "1024",
+      "description": "A sample CSV file for preview"
+    }
+  ],
+  "supportedSchema": {
+    "@id": "https://example.gov/schemas/data-schema-v1",
+    "@type": "Dataset",
+    "title": "Data Schema v1",
+    "description": "Schema definition for the comprehensive dataset format.",
+    "contactPoint": {
+      "fn": "Schema Support",
+      "hasEmail": "mailto:schema@example.gov"
+    },
+    "publisher": {
+      "name": "Sample Government Agency"
+    },
+    "identifier": "https://example.gov/datasets/nested-schema-008"
+  },
+  "versionNotes": "Initial release of the comprehensive example dataset with all fields populated.",
+  "contactPoint": [
+    {
+      "@id": "https://example.gov/contacts/primary-contact",
+      "@type": "Kind",
+      "fn": "Data Steward Office",
+      "hasEmail": "mailto:data-steward@example.gov",
+      "organization-name": "Sample Government Agency",
+      "tel": "+1-555-123-4567",
+      "title": "Chief Data Steward",
+      "given-name": "Jane",
+      "family-name": "Smith",
+      "address": [
+        {
+          "@id": "https://example.gov/addresses/headquarters",
+          "@type": "Address",
+          "street-address": "123 Government Way",
+          "locality": "Washington",
+          "region": "DC",
+          "postal-code": "20001",
+          "country-name": "United States"
+        }
+      ]
+    }
+  ],
+  "distribution": [
+    {
+      "@id": "https://example.gov/distributions/main-csv",
+      "@type": "Distribution",
+      "accessURL": "https://example.gov/data/comprehensive-dataset.csv",
+      "downloadURL": "https://example.gov/downloads/comprehensive-dataset.csv",
+      "byteSize": "10485760",
+      "format": "CSV (Comma-Separated Values)",
+      "description": "Main CSV distribution of the dataset",
+      "title": "Comprehensive Dataset CSV",
+      "characterEncoding": ["UTF-8"],
+      "spatialResolutionInMeters": "100",
+      "temporalResolution": "P1D",
+      "issued": null,
+      "modified": null
+    },
+    {
+      "@id": "https://example.gov/distributions/main-json",
+      "@type": "Distribution",
+      "accessURL": "https://example.gov/data/comprehensive-dataset.json",
+      "downloadURL": "https://example.gov/downloads/comprehensive-dataset.json",
+      "byteSize": "15728640",
+      "format": "JSON (JavaScript Object Notation)",
+      "description": "JSON distribution of the dataset"
+    }
+  ],
+  "first": {
+    "description": "A minimal dataset",
+    "publisher": {
+      "name": "The Minimal Organization"
+    },
+    "title": "Dataset One",
+    "contactPoint": {
+      "hasEmail": "mailto:example@example.gov",
+      "fn": "Example contact"
+    },
+    "identifier": "https://example.gov/datasets/nested-first-001"
+  },
+  "hasCurrentVersion": {
+    "description": "A minimal dataset",
+    "publisher": {
+      "name": "The Minimal Organization"
+    },
+    "title": "Dataset One",
+    "contactPoint": {
+      "hasEmail": "mailto:example@example.gov",
+      "fn": "Example contact"
+    },
+    "identifier": "https://example.gov/datasets/nested-current-version-002"
+  },
+  "hasVersion": [
+    {
+      "description": "A minimal dataset",
+      "publisher": {
+        "name": "The Minimal Organization"
+      },
+      "title": "Dataset One",
+      "contactPoint": {
+        "hasEmail": "mailto:example@example.gov",
+        "fn": "Example contact"
+      },
+      "identifier": "https://example.gov/datasets/nested-version-003"
+    }
+  ],
+  "keyword": [
+    "government",
+    "open data",
+    "comprehensive example",
+    "DCAT-US",
+    "metadata"
+  ],
+  "landingPage": {
+    "@id": "https://example.gov/datasets/comprehensive-example-001/landing",
+    "@type": "Document",
+    "title": "Comprehensive Dataset Landing Page",
+    "abstract": "The official landing page for the Comprehensive DCAT-US Dataset Example"
+  },
+  "previousVersion": {
+    "@id": "https://example.gov/datasets/comprehensive-example-v0.9",
+    "@type": "Dataset",
+    "title": "Comprehensive Example v0.9",
+    "description": "Previous version.",
+    "contactPoint": {
+      "fn": "Data Support",
+      "hasEmail": "mailto:data@example.gov"
+    },
+    "publisher": {
+      "name": "Sample Government Agency"
+    },
+    "identifier": "https://example.gov/datasets/nested-prev-version-007"
+  },
+  "qualifiedRelation": [
+    {
+      "@id": "https://example.gov/relationships/related-dataset-rel",
+      "@type": "Relationship",
+      "hadRole": "relatedTo",
+      "relation": "https://example.gov/datasets/related-dataset-001"
+    }
+  ],
+  "spatialResolutionInMeters": "30",
+  "temporalResolution": "P1M",
+  "version": "1.0.0",
+  "describedBy": {
+    "@id": "https://example.gov/distributions/data-dictionary",
+    "@type": "Distribution",
+    "title": "Data Dictionary",
+    "description": "Comprehensive data dictionary describing all fields",
+    "downloadURL": "https://example.gov/downloads/data-dictionary.pdf",
+    "format": "PDF (Portable Document Format)"
+  },
+  "liabilityStatement": "This dataset is provided as-is without warranty. The publishing agency is not liable for any damages arising from its use.",
+  "metadataDistribution": [
+    {
+      "@id": "https://example.gov/distributions/metadata-xml",
+      "@type": "Distribution",
+      "title": "Original ISO 19115 Metadata",
+      "description": "The original metadata document in ISO 19115 format",
+      "downloadURL": "https://example.gov/metadata/comprehensive-dataset.xml",
+      "format": "XML (Extensible Markup Language)"
+    }
+  ],
+  "purpose": "This dataset was created to demonstrate all available fields in the DCAT-US 3.0 schema and serve as a reference implementation.",
+  "accessRights": "This dataset is public domain and freely available for any use.",
+  "accrualPeriodicity": "monthly",
+  "conformsTo": [
+    {
+      "@id": "https://resources.data.gov/dcat-us/3.0",
+      "@type": "Standard",
+      "title": "DCAT-US 3.0",
+      "description": "Data Catalog Vocabulary - US Profile Version 3.0",
+      "identifier": "DCAT-US-3.0",
+      "created": null,
+      "issued": null,
+      "modified": null
+    }
+  ],
+  "contributor": [
+    {
+      "@id": "https://example.gov/agents/data-analyst",
+      "@type": "Agent",
+      "name": "Data Analysis Team"
+    }
+  ],
+  "created": null,
+  "creator": {
+    "@id": "https://example.gov/agents/original-creator",
+    "@type": "Agent",
+    "name": "Original Dataset Creator"
+  },
+  "hasPart": [
+    {
+      "description": "A minimal dataset",
+      "publisher": {
+        "name": "The Minimal Organization"
+      },
+      "title": "Dataset One",
+      "contactPoint": {
+        "hasEmail": "mailto:example@example.gov",
+        "fn": "Example contact"
+      },
+      "identifier": "https://example.gov/datasets/nested-part-006"
+    }
+  ],
+  "isReferencedBy": [
+    "https://example.gov/publications/annual-report-2024",
+    "https://example.gov/publications/data-quality-study"
+  ],
+  "issued": null,
+  "inventoried": null,
+  "language": ["en", "es"],
+  "modified": null,
+  "provenance": [
+    "Data was collected through automated sensors deployed across the continental United States."
+  ],
+  "relation": [
+    "https://example.gov/datasets/supplementary-dataset",
+    "https://example.gov/services/api-endpoint"
+  ],
+  "replaces": [
+    {
+      "description": "A minimal dataset",
+      "publisher": {
+        "name": "The Minimal Organization"
+      },
+      "title": "Dataset One",
+      "contactPoint": {
+        "hasEmail": "mailto:example@example.gov",
+        "fn": "Example contact"
+      },
+      "identifier": "https://example.gov/datasets/nested-replaces-010"
+    }
+  ],
+  "rights": [
+    "Copyright 2024 Sample Government Agency. Released under CC0 1.0 Universal."
+  ],
+  "rightsHolder": [
+    {
+      "@id": "https://example.gov/organizations/rights-holder",
+      "@type": "Organization",
+      "name": "Sample Government Agency",
+      "prefLabel": "Sample Government Agency"
+    }
+  ],
+  "source": [
+    {
+      "description": "A minimal dataset",
+      "publisher": {
+        "name": "The Minimal Organization"
+      },
+      "title": "Dataset One",
+      "contactPoint": {
+        "hasEmail": "mailto:example@example.gov",
+        "fn": "Example contact"
+      },
+      "identifier": "https://example.gov/datasets/nested-source-009"
+    }
+  ],
+  "temporal": [
+    {
+      "@id": "https://example.gov/periods/data-coverage",
+      "@type": "PeriodOfTime",
+      "startDate": "2020",
+      "endDate": "2026"
+    }
+  ],
+  "hasQualityMeasurement": [
+    {
+      "@id": "https://example.gov/quality/completeness",
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "@id": "https://example.gov/metrics/completeness",
+        "@type": "Metric",
+        "expectedDataType": "xsd:double",
+        "inDimension": "https://www.w3.org/TR/vocab-dqv/#completeness",
+        "definition": "The percentage of non-null values in the dataset"
+      },
+      "value": "98.5",
+      "unitMeasure": "percent"
+    }
+  ],
+  "page": [
+    {
+      "@id": "https://example.gov/docs/user-guide",
+      "@type": "Document",
+      "title": "User Guide",
+      "abstract": "A comprehensive guide for using this dataset",
+      "bibliographicCitation": "Sample Government Agency. (2024). Comprehensive Dataset User Guide."
+    }
+  ],
+  "qualifiedAttribution": [
+    {
+      "@id": "https://example.gov/attributions/data-steward",
+      "@type": "Attribution",
+      "hadRole": "custodian",
+      "agent": {
+        "@id": "https://example.gov/agents/steward",
+        "@type": "Agent",
+        "name": "Data Stewardship Team"
+      }
+    }
+  ],
+  "wasAttributedTo": [
+    {
+      "@id": "https://example.gov/agents/processing-team",
+      "@type": "Agent",
+      "name": "Data Processing Team"
+    }
+  ],
+  "wasGeneratedBy": [
+    {
+      "@id": "https://example.gov/activities/data-collection",
+      "@type": "Activity",
+      "label": "2024 Data Collection Campaign"
+    }
+  ],
+  "wasUsedBy": [
+    {
+      "@id": "https://example.gov/activities/annual-analysis",
+      "@type": "Activity",
+      "label": "Annual Data Analysis Project"
+    }
+  ],
+  "image": "https://example.gov/images/dataset-thumbnail.png",
+  "scopeNote": "This dataset should be used for demonstration and testing purposes only. It showcases all available metadata fields.",
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "accessRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/none",
+      "@type": "AccessRestriction",
+      "restrictionNote": "No access restrictions apply to this dataset.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on access.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ],
+  "cuiRestriction": {
+    "@id": "https://example.gov/cui-restrictions/none",
+    "@type": "CUIRestriction",
+    "cuiBannerMarking": "",
+    "designationIndicator": "",
+    "requiredIndicatorPerAuthority": []
+  },
+  "useRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/attribution",
+      "@type": "UseRestriction",
+      "restrictionNote": "Attribution is requested but not required.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on use.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ]
+}

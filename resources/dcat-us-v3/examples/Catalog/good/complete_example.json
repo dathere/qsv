@@ -1,0 +1,256 @@
+{
+  "@id": "https://example.gov/catalogs/federal-data-catalog",
+  "@type": "Catalog",
+  "title": "Federal Data Catalog",
+  "description": "A comprehensive catalog of federal government data assets spanning multiple agencies and data domains.",
+  "publisher": {
+    "@type": "Agent",
+    "name": "Federal Data Management Office",
+    "category": [
+      {
+        "@type": "Concept",
+        "prefLabel": "Government Agency"
+      }
+    ]
+  },
+  "creator": [
+    {
+      "@type": "Agent",
+      "name": "Data Governance Team"
+    }
+  ],
+  "contactPoint": [
+    {
+      "@type": "Kind",
+      "fn": "Federal Data Support Center",
+      "hasEmail": "mailto:data-support@example.gov",
+      "address": [
+        {
+          "@type": "Address",
+          "street-address": "1800 F Street NW",
+          "locality": "Washington",
+          "region": "DC",
+          "postal-code": "20405",
+          "country-name": "United States"
+        }
+      ],
+      "tel": "tel:+1-202-555-0100"
+    }
+  ],
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "accessRights": "Public access with no restrictions",
+  "rights": [
+    "This catalog is maintained by the Federal Data Management Office.",
+    "Data within this catalog may be subject to individual dataset licensing terms."
+  ],
+  "rightsHolder": [
+    {
+      "@type": "Organization",
+      "name": "Federal Data Management Office"
+    }
+  ],
+  "language": ["en", "es"],
+  "issued": "2020-01-15",
+  "modified": "2024-06-01T14:30:00Z",
+  "identifier": {
+    "@type": "Identifier",
+    "notation": "FDC-2020-001",
+    "creator": {
+      "@type": "Agent",
+      "name": "Federal Data Management Office"
+    }
+  },
+  "otherIdentifier": [
+    {
+      "@type": "Identifier",
+      "notation": "LEGACY-CAT-001"
+    }
+  ],
+  "keyword": ["federal data", "government", "open data", "public records"],
+  "theme": [
+    {
+      "@type": "Concept",
+      "prefLabel": "Government Administration"
+    },
+    {
+      "@type": "Concept",
+      "prefLabel": "Public Services"
+    }
+  ],
+  "themeTaxonomy": [
+    {
+      "@type": "ConceptScheme",
+      "title": "Federal Data Categories",
+      "description": "Standard classification scheme for federal government data"
+    }
+  ],
+  "subject": [
+    {
+      "@type": "Concept",
+      "prefLabel": "Public Administration"
+    }
+  ],
+  "category": [
+    {
+      "@type": "Concept",
+      "prefLabel": "Aggregate Catalog"
+    }
+  ],
+  "spatial": [
+    {
+      "@type": "Location",
+      "prefLabel": "United States of America",
+      "identifier": "https://www.geonames.org/6252001/"
+    }
+  ],
+  "temporal": [
+    {
+      "@type": "PeriodOfTime",
+      "startDate": "2000-01-01",
+      "endDate": "2024-12-31"
+    }
+  ],
+  "conformsTo": {
+    "@type": "Standard",
+    "title": "DCAT-US 3.0"
+  },
+  "homepage": {
+    "@type": "Document",
+    "title": "Federal Data Catalog Portal",
+    "accessURL": "https://example.gov/data-catalog",
+    "description": "The main portal for accessing the Federal Data Catalog"
+  },
+  "dataset": [
+    {
+      "@type": "Dataset",
+      "title": "Annual Budget Data",
+      "description": "Federal budget allocations and expenditures by agency and fiscal year.",
+      "contactPoint": {
+        "fn": "Budget Data Team",
+        "hasEmail": "mailto:budget@example.gov"
+      },
+      "publisher": {
+        "name": "Office of Management and Budget"
+      },
+      "identifier": "https://example.gov/datasets/catalog-complete-001"
+    },
+    {
+      "@type": "Dataset",
+      "title": "Employment Statistics",
+      "description": "Monthly employment data across federal agencies.",
+      "contactPoint": {
+        "fn": "HR Data Team",
+        "hasEmail": "mailto:hr-data@example.gov"
+      },
+      "publisher": {
+        "name": "Office of Personnel Management"
+      },
+      "identifier": "https://example.gov/datasets/catalog-complete-002"
+    }
+  ],
+  "datasetSeries": [
+    {
+      "@id": "https://example.gov/series/federal-budget-data-series",
+      "@type": "DatasetSeries",
+      "title": "Federal Budget Data Series",
+      "description": "A series of federal budget datasets published by fiscal year.",
+      "publisher": {
+        "name": "Office of Management and Budget"
+      },
+      "seriesMember": [
+        {
+          "@type": "Dataset",
+          "title": "Annual Budget Data",
+          "description": "Federal budget allocations and expenditures by agency and fiscal year.",
+          "contactPoint": {
+            "fn": "Budget Data Team",
+            "hasEmail": "mailto:budget@example.gov"
+          },
+          "publisher": {
+            "name": "Office of Management and Budget"
+          },
+          "identifier": "https://example.gov/datasets/catalog-complete-001"
+        }
+      ]
+    }
+  ],
+  "service": [
+    {
+      "@type": "DataService",
+      "title": "Federal Data API",
+      "endpointURL": ["https://api.example.gov/data/v1"],
+      "contactPoint": [
+        {
+          "fn": "API Support",
+          "hasEmail": "mailto:api@example.gov"
+        }
+      ],
+      "publisher": {
+        "@type": "Agent",
+        "name": "Federal Data Management Office"
+      },
+      "identifier": "https://example.gov/services/catalog-service-001"
+    }
+  ],
+  "record": [
+    {
+      "@type": "CatalogRecord",
+      "modified": "2024-06-01",
+      "primaryTopic": "https://example.gov/datasets/annual-budget-data"
+    }
+  ],
+  "catalog": [
+    {
+      "@type": "Catalog",
+      "title": "Related Agency Catalog",
+      "description": "A related catalog from a partner agency.",
+      "dataset": [
+        {
+          "@type": "Dataset",
+          "title": "Partner Dataset",
+          "description": "Dataset from partner agency.",
+          "contactPoint": {
+            "fn": "Partner Support",
+            "hasEmail": "mailto:partner@example.gov"
+          },
+          "publisher": {
+            "name": "Partner Agency"
+          },
+          "identifier": "https://example.gov/datasets/subcatalog-1-dataset-001"
+        }
+      ]
+    }
+  ],
+  "hasPart": [
+    {
+      "@type": "Catalog",
+      "title": "Budget Sub-Catalog",
+      "description": "A sub-catalog focused on budget-related datasets.",
+      "dataset": [
+        {
+          "@type": "Dataset",
+          "title": "Quarterly Budget Reports",
+          "description": "Quarterly financial reports.",
+          "contactPoint": {
+            "fn": "Finance Team",
+            "hasEmail": "mailto:finance@example.gov"
+          },
+          "publisher": {
+            "name": "Treasury Department"
+          },
+          "identifier": "https://example.gov/datasets/subcatalog-1-dataset-002"
+        }
+      ]
+    }
+  ],
+  "qualifiedAttribution": [
+    {
+      "@type": "Attribution",
+      "agent": {
+        "@type": "Agent",
+        "name": "Data Quality Assurance Team"
+      },
+      "hadRole": "Data Quality"
+    }
+  ]
+}

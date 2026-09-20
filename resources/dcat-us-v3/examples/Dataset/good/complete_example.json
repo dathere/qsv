@@ -1,0 +1,346 @@
+{
+  "@id": "https://example.gov/datasets/national-climate-observations-2024",
+  "@type": "Dataset",
+  "title": "National Climate Observations 2024",
+  "description": "Comprehensive daily climate observations collected from monitoring stations across the United States, including temperature, precipitation, humidity, and wind measurements.",
+  "identifier": {
+    "@type": "Identifier",
+    "schemaAgency": "National Climate Data Center",
+    "notation": "NCDC-CLIMATE-OBS-2024",
+    "version": "1.0"
+  },
+  "publisher": {
+    "@id": "https://example.gov/organizations/ncdc",
+    "@type": "Organization",
+    "name": "National Climate Data Center",
+    "altLabel": "NCDC",
+    "prefLabel": "National Climate Data Center",
+    "notation": ["NCDC"]
+  },
+  "contactPoint": [
+    {
+      "@id": "https://example.gov/contacts/climate-support",
+      "@type": "Kind",
+      "fn": "Climate Data Support Team",
+      "hasEmail": "mailto:climate-support@example.gov",
+      "organization-name": "National Climate Data Center",
+      "tel": "+1-555-CLIMATE",
+      "title": "Data Support Specialist",
+      "address": [
+        {
+          "@id": "https://example.gov/addresses/ncdc-hq",
+          "@type": "Address",
+          "street-address": "151 Patton Avenue",
+          "locality": "Asheville",
+          "region": "NC",
+          "postal-code": "28801",
+          "country-name": "United States"
+        }
+      ]
+    }
+  ],
+  "otherIdentifier": [
+    {
+      "@type": "Identifier",
+      "schemaAgency": "DOI",
+      "notation": "10.12345/ncdc-climate-2024"
+    }
+  ],
+  "distribution": [
+    {
+      "@id": "https://example.gov/distributions/climate-csv",
+      "@type": "Distribution",
+      "title": "Climate Observations CSV",
+      "description": "Daily climate observations in CSV format",
+      "accessURL": "https://example.gov/data/climate/2024",
+      "downloadURL": "https://example.gov/downloads/climate-observations-2024.csv",
+      "mediaType": "text/csv",
+      "format": "CSV",
+      "byteSize": "524288000",
+      "characterEncoding": ["UTF-8"],
+      "issued": "2024-01-15",
+      "modified": "2024-06-01"
+    },
+    {
+      "@id": "https://example.gov/distributions/climate-json",
+      "@type": "Distribution",
+      "title": "Climate Observations JSON",
+      "description": "Daily climate observations in JSON format",
+      "accessURL": "https://example.gov/data/climate/2024/json",
+      "downloadURL": "https://example.gov/downloads/climate-observations-2024.json",
+      "mediaType": "application/json",
+      "format": "JSON",
+      "byteSize": "785432000"
+    }
+  ],
+  "sample": [
+    {
+      "@id": "https://example.gov/distributions/climate-sample",
+      "@type": "Distribution",
+      "title": "Climate Data Sample",
+      "description": "A sample subset of climate observations for preview",
+      "downloadURL": "https://example.gov/samples/climate-sample.csv",
+      "mediaType": "text/csv",
+      "byteSize": "10240"
+    }
+  ],
+  "keyword": [
+    "climate",
+    "weather",
+    "temperature",
+    "precipitation",
+    "humidity",
+    "wind",
+    "meteorology"
+  ],
+  "theme": [
+    {
+      "@id": "https://example.gov/concepts/climate-science",
+      "@type": "Concept",
+      "prefLabel": "Climate Science",
+      "altLabel": "Climatology",
+      "definition": "The scientific study of climate, including patterns, variability, and change over time.",
+      "notation": ["CLIM-SCI"],
+      "inScheme": {
+        "@id": "https://example.gov/concept-schemes/science-domains",
+        "@type": "ConceptScheme",
+        "title": "Science Domains"
+      }
+    },
+    {
+      "@id": "https://example.gov/concepts/environmental-monitoring",
+      "@type": "Concept",
+      "prefLabel": "Environmental Monitoring",
+      "definition": "Systematic collection of environmental data to assess conditions and detect changes.",
+      "inScheme": {
+        "@id": "https://example.gov/concept-schemes/science-domains",
+        "@type": "ConceptScheme",
+        "title": "Science Domains"
+      }
+    }
+  ],
+  "status": {
+    "@id": "https://example.gov/concepts/status-published",
+    "@type": "Concept",
+    "prefLabel": "Published",
+    "definition": "The dataset has been officially published and is available for public access.",
+    "inScheme": {
+      "@id": "https://example.gov/concept-schemes/lifecycle-status",
+      "@type": "ConceptScheme",
+      "title": "Lifecycle Status"
+    }
+  },
+  "landingPage": {
+    "@id": "https://example.gov/datasets/climate-2024/landing",
+    "@type": "Document",
+    "title": "National Climate Observations 2024 - Dataset Home",
+    "description": "The official landing page for the National Climate Observations 2024 dataset.",
+    "accessURL": "https://example.gov/datasets/climate-2024"
+  },
+  "describedBy": {
+    "@id": "https://example.gov/distributions/climate-data-dict",
+    "@type": "Distribution",
+    "title": "Climate Data Dictionary",
+    "description": "Comprehensive data dictionary describing all variables in the climate observations dataset.",
+    "downloadURL": "https://example.gov/docs/climate-data-dictionary.pdf",
+    "mediaType": "application/pdf"
+  },
+  "conformsTo": [
+    {
+      "@id": "https://example.gov/standards/wmo-climate-data",
+      "@type": "Standard",
+      "title": "WMO Climate Data Standards",
+      "description": "World Meteorological Organization standards for climate data collection and reporting."
+    }
+  ],
+  "spatial": [
+    {
+      "@id": "https://example.gov/locations/usa",
+      "@type": "Location",
+      "geometry": "POLYGON((-125 24, -66 24, -66 50, -125 50, -125 24))"
+    }
+  ],
+  "temporal": [
+    {
+      "@id": "https://example.gov/periods/2024",
+      "@type": "PeriodOfTime",
+      "startDate": "2024-01-01",
+      "endDate": "2024-12-31"
+    }
+  ],
+  "spatialResolutionInMeters": "1000",
+  "temporalResolution": "P1D",
+  "accrualPeriodicity": "daily",
+  "version": "2024.1",
+  "versionNotes": "Initial release of 2024 climate observations data.",
+  "issued": "2024-01-15",
+  "inventoried": "2024-03-01",
+  "modified": "2024-06-01",
+  "created": "2024-01-01",
+  "language": ["en"],
+  "accessRights": "Public access with no restrictions. Data is freely available for download and use.",
+  "rights": [
+    "This data is in the public domain and may be used without restriction."
+  ],
+  "creator": {
+    "@id": "https://example.gov/agents/climate-monitoring-team",
+    "@type": "Agent",
+    "name": "Climate Monitoring and Analysis Team",
+    "category": [
+      {
+        "@id": "https://example.gov/concepts/research-team",
+        "@type": "Concept",
+        "prefLabel": "Research Team",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/organization-types",
+          "@type": "ConceptScheme",
+          "title": "Organization Types"
+        }
+      }
+    ]
+  },
+  "contributor": [
+    {
+      "@id": "https://example.gov/agents/station-operators",
+      "@type": "Agent",
+      "name": "Weather Station Operators Network"
+    }
+  ],
+  "rightsHolder": [
+    {
+      "@id": "https://example.gov/organizations/noaa",
+      "@type": "Organization",
+      "name": "National Oceanic and Atmospheric Administration",
+      "altLabel": "NOAA"
+    }
+  ],
+  "provenance": [
+    "Data collected from automated weather stations deployed at 2,500 locations across the continental United States.",
+    "Quality control procedures applied according to WMO guidelines."
+  ],
+  "purpose": "To provide comprehensive, high-quality climate observations for research, planning, and decision-making related to weather and climate.",
+  "liabilityStatement": "This dataset is provided as-is without warranty of any kind. Users are responsible for determining fitness for their intended use.",
+  "previousVersion": {
+    "@id": "https://example.gov/datasets/national-climate-observations-2023",
+    "@type": "Dataset",
+    "title": "National Climate Observations 2023",
+    "description": "Previous year climate observations.",
+    "contactPoint": {
+      "fn": "Climate Support",
+      "hasEmail": "mailto:climate@example.gov"
+    },
+    "publisher": {
+      "name": "National Climate Data Center"
+    },
+    "identifier": "https://example.gov/datasets/complete-example-v1-prev"
+  },
+  "qualifiedRelation": [
+    {
+      "@id": "https://example.gov/relationships/climate-model-input",
+      "@type": "Relationship",
+      "hadRole": "isInputTo",
+      "relation": "https://example.gov/models/climate-prediction-model"
+    }
+  ],
+  "qualifiedAttribution": [
+    {
+      "@id": "https://example.gov/attributions/data-steward",
+      "@type": "Attribution",
+      "hadRole": "Data Steward",
+      "agent": {
+        "@id": "https://example.gov/agents/climate-steward",
+        "@type": "Agent",
+        "name": "Climate Data Stewardship Office"
+      }
+    }
+  ],
+  "wasGeneratedBy": [
+    {
+      "@id": "https://example.gov/activities/2024-monitoring",
+      "@type": "Activity",
+      "label": "2024 National Climate Monitoring Campaign",
+      "category": [
+        {
+          "@id": "https://example.gov/concepts/data-collection",
+          "@type": "Concept",
+          "prefLabel": "Data Collection",
+          "inScheme": {
+            "@id": "https://example.gov/concept-schemes/activity-types",
+            "@type": "ConceptScheme",
+            "title": "Activity Types"
+          }
+        }
+      ]
+    }
+  ],
+  "hasQualityMeasurement": [
+    {
+      "@id": "https://example.gov/quality/completeness-2024",
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "@id": "https://example.gov/metrics/data-completeness",
+        "@type": "Metric",
+        "expectedDataType": "xsd:decimal",
+        "inDimension": "https://example.gov/concepts/completeness-dimension"
+      },
+      "value": "99.2",
+      "unitMeasure": "percent"
+    }
+  ],
+  "page": [
+    {
+      "@id": "https://example.gov/docs/climate-user-guide",
+      "@type": "Document",
+      "title": "Climate Observations User Guide",
+      "description": "Comprehensive guide for accessing and using the climate observations dataset.",
+      "accessURL": "https://example.gov/docs/climate-user-guide"
+    }
+  ],
+  "isReferencedBy": ["https://example.gov/publications/climate-trends-2024"],
+  "relation": ["https://example.gov/datasets/historical-climate-averages"],
+  "scopeNote": "This dataset contains raw observational data. For derived products such as monthly averages or climate normals, see related datasets.",
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "accessRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/none",
+      "@type": "AccessRestriction",
+      "restrictionNote": "No access restrictions apply to this dataset.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on access.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ],
+  "cuiRestriction": {
+    "@id": "https://example.gov/cui-restrictions/none",
+    "@type": "CUIRestriction",
+    "cuiBannerMarking": "",
+    "designationIndicator": "",
+    "requiredIndicatorPerAuthority": []
+  },
+  "useRestriction": [
+    {
+      "@id": "https://example.gov/restrictions/attribution",
+      "@type": "UseRestriction",
+      "restrictionNote": "Attribution to the Climate Data Center is requested but not required.",
+      "restrictionStatus": {
+        "@id": "https://example.gov/concepts/unrestricted",
+        "@type": "Concept",
+        "prefLabel": "Unrestricted",
+        "definition": "No restrictions on use.",
+        "inScheme": {
+          "@id": "https://example.gov/concept-schemes/restriction-status",
+          "@type": "ConceptScheme",
+          "title": "Restriction Status"
+        }
+      }
+    }
+  ]
+}

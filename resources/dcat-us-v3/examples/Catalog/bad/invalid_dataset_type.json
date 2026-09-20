@@ -1,0 +1,6 @@
+{
+  "@type": "Catalog",
+  "title": "Catalog With Invalid Dataset Type",
+  "description": "This catalog has dataset as a string instead of an array.",
+  "dataset": "This should be an array, not a string"
+}

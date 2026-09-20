@@ -1,0 +1,18 @@
+{
+  "@type": "Catalog",
+  "title": "Catalog With Invalid Homepage",
+  "description": "This catalog has homepage as a string URL instead of a Document object.",
+  "dataset": [
+    {
+      "@type": "Dataset",
+      "title": "Example Dataset",
+      "description": "A valid dataset.",
+      "contactPoint": {
+        "fn": "Support",
+        "hasEmail": "mailto:support@example.gov"
+      },
+      "identifier": "https://example.gov/datasets/catalog-example-001"
+    }
+  ],
+  "homepage": "https://example.gov/invalid-homepage-format"
+}

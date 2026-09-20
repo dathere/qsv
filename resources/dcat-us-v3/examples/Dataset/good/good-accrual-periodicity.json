@@ -1,0 +1,31 @@
+{
+  "@type": "Dataset",
+  "title": "Example Dataset",
+  "description": "A minimal dataset example with a valid periodicity",
+  "accrualPeriodicity": "quarterly",
+  "contactPoint": [
+    {
+      "@id": "https://example.gov/contacts/primary-contact",
+      "@type": "Kind",
+      "fn": "Data Steward Office",
+      "hasEmail": "mailto:data-steward@example.gov",
+      "organization-name": "Sample Government Agency",
+      "tel": "+1-555-123-4567",
+      "title": "Chief Data Steward",
+      "given-name": "Jane",
+      "family-name": "Smith",
+      "address": [
+        {
+          "@id": "https://example.gov/addresses/headquarters",
+          "@type": "Address",
+          "street-address": "123 Government Way",
+          "locality": "Washington",
+          "region": "DC",
+          "postal-code": "20001",
+          "country-name": "United States"
+        }
+      ]
+    }
+  ],
+  "identifier": "https://example.gov/datasets/periodicity-example"
+}

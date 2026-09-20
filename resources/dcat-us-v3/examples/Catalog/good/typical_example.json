@@ -1,0 +1,76 @@
+{
+  "@type": "Catalog",
+  "title": "National Climate Data Catalog",
+  "description": "A comprehensive catalog of climate and weather datasets from federal monitoring stations across the United States.",
+  "publisher": {
+    "@type": "Agent",
+    "name": "National Climate Data Center"
+  },
+  "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "dataset": [
+    {
+      "@type": "Dataset",
+      "title": "Daily Climate Observations 2024",
+      "description": "Daily temperature, precipitation, and wind measurements.",
+      "contactPoint": {
+        "fn": "Climate Data Support",
+        "hasEmail": "mailto:climate@example.gov"
+      },
+      "publisher": {
+        "name": "National Climate Data Center"
+      },
+      "identifier": "https://example.gov/datasets/climate-observations-1"
+    }
+  ],
+  "datasetSeries": [
+    {
+      "@id": "https://example.gov/series/annual-climate-observations",
+      "@type": "DatasetSeries",
+      "title": "Annual Climate Observations",
+      "description": "A series of annual climate observation datasets from monitoring stations.",
+      "publisher": {
+        "name": "National Climate Data Center"
+      },
+      "seriesMember": [
+        {
+          "@type": "Dataset",
+          "title": "Daily Climate Observations 2024",
+          "description": "Daily temperature, precipitation, and wind measurements.",
+          "contactPoint": {
+            "fn": "Climate Data Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/climate-observations-1"
+        }
+      ]
+    }
+  ],
+  "homepage": {
+    "@type": "Document",
+    "title": "National Climate Data Catalog Homepage",
+    "accessURL": "https://example.gov/climate-data"
+  },
+  "language": ["en"],
+  "issued": "2020-01-15",
+  "modified": "2024-06-01",
+  "rights": ["This catalog is maintained by the National Climate Data Center."],
+  "spatial": [
+    {
+      "@type": "Location",
+      "prefLabel": "United States"
+    }
+  ],
+  "themeTaxonomy": [
+    {
+      "@type": "ConceptScheme",
+      "title": "Climate Science Topics"
+    }
+  ],
+  "conformsTo": {
+    "@type": "Standard",
+    "title": "DCAT-US 3.0"
+  }
+}

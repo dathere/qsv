@@ -25,6 +25,10 @@ match the file on disk. Silent edits are blocked.
 
 ## Refresh procedure
 
+Run every step in the SAME shell: step 1 sets `$COMMIT` and step 3
+needs it. Each step anchors its own `cd` to the repo root so the steps
+do not depend on where the previous one left you.
+
 1. Pick the new upstream commit and capture its full SHA:
 
    ```bash
@@ -36,7 +40,7 @@ match the file on disk. Silent edits are blocked.
    filenames already present under `definitions/`:
 
    ```bash
-   cd resources/dcat-us-v3/definitions
+   cd "$(git rev-parse --show-toplevel)/resources/dcat-us-v3/definitions"
    for f in *.json; do
      curl -sSfL -o "$f" \
        "https://raw.githubusercontent.com/GSA/dcat-us/${COMMIT}/jsonschema/definitions/$f"
@@ -59,7 +63,7 @@ match the file on disk. Silent edits are blocked.
    the drift these fixtures exist to catch.
 
    ```bash
-   cd resources/dcat-us-v3
+   cd "$(git rev-parse --show-toplevel)/resources/dcat-us-v3"
    PIN="$COMMIT" python3 - <<'FIXTURES'
    import json, os, urllib.request, pathlib
    pin = os.environ.get('PIN', '').strip()
@@ -94,7 +98,7 @@ match the file on disk. Silent edits are blocked.
 4. Regenerate `MANIFEST.json`:
 
    ```bash
-   cd resources/dcat-us-v3
+   cd "$(git rev-parse --show-toplevel)/resources/dcat-us-v3"
    python3 - <<'MANIFEST'
    import hashlib, json, pathlib
    m = json.load(open('MANIFEST.json'))

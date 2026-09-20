@@ -3597,8 +3597,15 @@ fn third_party_notices_pin_matches_the_manifest() {
         notices.contains(commit),
         "THIRD_PARTY_NOTICES.md must cite the full pinned commit `{commit}`",
     );
+    // The short form needs its OWN anchored assertion. A bare
+    // `contains(short)` is vacuous: the short SHA is a prefix of the
+    // full one, so the detail section alone satisfies it and a stale
+    // summary table sails through — which is the exact drift this
+    // test exists to catch. Match the table cell instead.
+    let table_cell = format!("commit `{short}`");
     assert!(
-        notices.contains(short),
-        "THIRD_PARTY_NOTICES.md must cite the short pinned commit `{short}`",
+        notices.contains(&table_cell),
+        "THIRD_PARTY_NOTICES.md's summary table must cite the short pinned commit as \
+         `{table_cell}`",
     );
 }

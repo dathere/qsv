@@ -59,4 +59,5 @@ extend-exclude = [
     "src/cmd/locales/*",
     "tests/test_viz.rs",
     "src/cmd/viz.rs",
+    "resources/dcat-us-v3/definitions/*",
 ]

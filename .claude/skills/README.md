@@ -280,7 +280,9 @@ Skills are auto-generated from qsv command USAGE text using the `--update-mcp-sk
 cd /path/to/qsv
 qsv --update-mcp-skills
 
-# Output: .claude/skills/qsv/*.json
+# Output: .claude/skills/qsv/*.json (the curated MCP skill set)
+#         docs/tool-definitions/*.json (a definition for every command; the MCP
+#         skills are byte-identical copies of a subset of it)
 ```
 
 Outside a repo checkout, the generator can't run because it parses the qsv source. Any installed `qsv`/`qsvmcp` can instead export the definitions embedded at build time, which match its own version: `qsv --export-tool-definitions <dir>` (all of them, plus help Markdown and a version manifest) or `qsv --tool-definition <command>` (one, to stdout).

@@ -20,7 +20,8 @@
 # The same reasoning covers .claude/skills/qsv/*.json, generated from those same USAGE
 # strings by `qsv --update-mcp-skills` -- a flag the released binaries lack, since
 # publish.yml omits the `mcp` feature, but which this job's `-F all_features` build has.
-# See issue #4491.
+# See issue #4491. The same flag also writes docs/tool-definitions/*.json (one per command,
+# embedded in the qsv binaries -- see #4638), which the same step checks.
 #
 # Triggers:
 #   - Nightly cron
@@ -43,6 +44,7 @@ on:
       # Hand-editing a skill JSON is the other half of the drift surface: without this
       # path, a PR that only touches one would never run the staleness check below.
       - '.claude/skills/qsv/**'
+      - 'docs/tool-definitions/**'
       # The generators THEMSELVES are inputs: a parser change rewrites every generated
       # file without touching a single USAGE string, so a PR that edits one of these and
       # forgets to regenerate is exactly the drift these checks exist to catch.
@@ -159,16 +161,18 @@ jobs:
           # Porcelain for the same reason as above, plus two specific to this generator:
           # a newly registered command emits an UNTRACKED qsv-<cmd>.json, and the
           # stale-file sweep DELETES retired ones. `git diff` reports neither.
-          drift="$(git status --porcelain -- .claude/skills/qsv)"
+          # docs/tool-definitions/ is the same generator's full-command-set output (#4638),
+          # embedded in the qsv binaries, so drift there ships in a release.
+          drift="$(git status --porcelain -- .claude/skills/qsv docs/tool-definitions)"
           if [ -n "$drift" ]; then
-            echo "::error::.claude/skills/qsv/ is stale. A USAGE string or README table row changed without regenerating the MCP skills."
-            echo "Run 'qsv --update-mcp-skills' and commit the result. Never hand-edit .claude/skills/qsv/*.json."
+            echo "::error::.claude/skills/qsv/ or docs/tool-definitions/ is stale. A USAGE string or README table row changed without regenerating."
+            echo "Run 'qsv --update-mcp-skills' and commit the result. Never hand-edit the generated JSON files."
             echo "--- drift ---"
             echo "$drift"
-            git --no-pager diff -- .claude/skills/qsv | head -200
+            git --no-pager diff -- .claude/skills/qsv docs/tool-definitions | head -200
             exit 1
           fi
-          echo ".claude/skills/qsv/ is in sync with the USAGE strings and the README command table."
+          echo ".claude/skills/qsv/ and docs/tool-definitions/ are in sync with the USAGE strings and the README command table."
 
       - name: Run wiki lint
         env:

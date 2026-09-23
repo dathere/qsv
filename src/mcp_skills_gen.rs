@@ -868,6 +868,15 @@ impl UsageParser {
                  to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER \
                  (\",\" by default). In LINE MODE the input lines are written through unchanged."
             },
+            // luau and py describe these in prose rather than as argument declarations,
+            // so the parser can't pick them up (#4638: every command now has a definition)
+            ("luau", "main-script") => {
+                "The MAIN Luau script, executed for EACH ROW of the input CSV - either Luau code, \
+                 or a filepath if it starts with \"file:\" or ends with \".luau\"/\".lua\". It \
+                 should end with a return statement: in map mode the return value/s become the new \
+                 column value/s; in filter mode, rows that return true are kept."
+            },
+            ("py", "new-column") => "Name of the new computed column to add (py map).",
             _ => return None,
         })
     }
@@ -1888,31 +1897,87 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         }
     }
 
-    // Create output directory
-    let output_dir = repo_root.join(".claude/skills/qsv");
-    fs::create_dir_all(&output_dir)?;
-
-    eprintln!("QSV MCP Skills Generator (via qsv --update-mcp-skills)");
-    eprintln!("=======================================================");
-    eprintln!("Repository: {}", repo_root.display());
-    eprintln!("Output: {}", output_dir.display());
-    eprintln!("Generating {} skills...\n", commands.len());
+    // The README command table maps each invocation name to its source file (e.g. `enum` ->
+    // `enumerate.rs`, `py` -> `python.rs`). Skill files are keyed by the INVOCATION name, the
+    // same key `qsv --list`, docs/help and the embedded tool definitions use.
+    let readme_commands = crate::help_markdown_gen::extract_commands_from_readme(&repo_root)
+        .map_err(|e| format!("Failed to extract commands from README: {e}"))?;
+    let invocation_of = |source_file: &str| -> String {
+        readme_commands
+            .iter()
+            .find(|c| c.source_file == source_file)
+            .map_or_else(|| source_file.to_string(), |c| c.invocation_name.clone())
+    };
 
     // some commands deserialize into an args struct declared in util.rs
     // (`schema` uses `util::SchemaArgs`) rather than in their own source
     let util_src = fs::read_to_string(repo_root.join("src/util.rs")).unwrap_or_default();
 
+    eprintln!("QSV MCP Skills Generator (via qsv --update-mcp-skills)");
+    eprintln!("=======================================================");
+    eprintln!("Repository: {}", repo_root.display());
+
+    // 1. the curated MCP skill set, loaded by the MCP server from .claude/skills/qsv
+    let mcp_commands: Vec<(String, String)> = commands
+        .iter()
+        .map(|source| ((*source).to_string(), invocation_of(source)))
+        .collect();
+    let mcp_errors = generate_skill_set(
+        &repo_root,
+        &util_src,
+        &mcp_commands,
+        &repo_root.join(".claude/skills/qsv"),
+    )?;
+
+    // 2. tool definitions for EVERY command in the README command table (#4638). Kept in a
+    // separate directory because the MCP server loads every JSON in .claude/skills/qsv as a
+    // tool; these are embedded in the qsv binaries (see build.rs) and exported by
+    // `qsv --export-tool-definitions`.
+    let all_commands: Vec<(String, String)> = readme_commands
+        .iter()
+        .map(|c| (c.source_file.clone(), c.invocation_name.clone()))
+        .collect();
+    let all_errors = generate_skill_set(
+        &repo_root,
+        &util_src,
+        &all_commands,
+        &repo_root.join("docs/tool-definitions"),
+    )?;
+
+    let error_count = mcp_errors + all_errors;
+    if error_count > 0 {
+        return fail_clierror!("{} skill(s) failed to generate", error_count);
+    }
+
+    eprintln!("\n💡 Restart Claude Desktop to load the updated skills.");
+
+    Ok(())
+}
+
+/// Generate `qsv-<invocation>.json` in `output_dir` for each `(source_file, invocation)` pair,
+/// then remove stale skill files there. Returns the number of commands that failed.
+fn generate_skill_set(
+    repo_root: &Path,
+    util_src: &str,
+    commands: &[(String, String)],
+    output_dir: &Path,
+) -> CliResult<usize> {
+    fs::create_dir_all(output_dir)?;
+
+    eprintln!("\nOutput: {}", output_dir.display());
+    eprintln!("Generating {} skills...\n", commands.len());
+
     let mut success_count = 0;
     let mut error_count = 0;
 
-    for cmd_name in commands {
-        eprintln!("Processing: {cmd_name}");
+    for (source_file, invocation_name) in commands {
+        eprintln!("Processing: {invocation_name}");
 
         // Find command file. Support both `src/cmd/<name>.rs` and module-dir
-        // `src/cmd/<name>/mod.rs`. Note: enumerate.rs is invoked as "enum".
-        let mut cmd_file = repo_root.join(format!("src/cmd/{cmd_name}.rs"));
+        // `src/cmd/<name>/mod.rs`.
+        let mut cmd_file = repo_root.join(format!("src/cmd/{source_file}.rs"));
         if !cmd_file.exists() {
-            cmd_file = repo_root.join(format!("src/cmd/{cmd_name}/mod.rs"));
+            cmd_file = repo_root.join(format!("src/cmd/{source_file}/mod.rs"));
         }
 
         if !cmd_file.exists() {
@@ -1931,19 +1996,10 @@ pub fn generate_mcp_skills() -> CliResult<()> {
             },
         };
 
-        // Parse into skill definition
-        // For commands with aliases, extract the actual invocation name from USAGE
-        // - enumerate is invoked as "enum"
-        let invocation_name = if usage_text.contains("qsv enum ") {
-            "enum"
-        } else {
-            cmd_name
-        };
-
         // the deserialized args struct decides every option's type (#4596)
         let cmd_src = fs::read_to_string(&cmd_file)
             .map_err(|e| format!("Failed to read {}: {e}", cmd_file.display()))?;
-        let field_types = match extract_arg_field_types(&cmd_src, &util_src) {
+        let field_types = match extract_arg_field_types(&cmd_src, util_src) {
             Ok(f) => f,
             Err(e) => {
                 eprintln!("  ❌ Failed to resolve args struct: {e}");
@@ -1953,7 +2009,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         };
 
         let parser =
-            UsageParser::new(usage_text, invocation_name.to_string()).with_field_types(field_types);
+            UsageParser::new(usage_text, invocation_name.clone()).with_field_types(field_types);
         let skill = match parser.parse() {
             Ok(s) => s,
             Err(e) => {
@@ -1980,16 +2036,11 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // Clean up stale skill files that were not generated in this run
     let generated_filenames: std::collections::HashSet<String> = commands
         .iter()
-        .map(|cmd| {
-            // Match the naming used during generation: "qsv-<invocation_name>.json"
-            // enumerate is invoked as "enum"
-            let name = if *cmd == "enumerate" { "enum" } else { cmd };
-            format!("qsv-{name}.json")
-        })
+        .map(|(_, invocation_name)| format!("qsv-{invocation_name}.json"))
         .collect();
 
     let mut stale_count = 0u32;
-    if let Ok(entries) = fs::read_dir(&output_dir) {
+    if let Ok(entries) = fs::read_dir(output_dir) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
             // Only consider files matching the exact skill naming pattern:
@@ -2016,7 +2067,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         }
     }
 
-    eprintln!("\n✨ MCP Skills generation complete!");
+    eprintln!("\n✨ Skills generation complete!");
     eprintln!("📁 Output directory: {}", output_dir.display());
     eprintln!(
         "📊 Summary: {} succeeded, {} failed out of {} total",
@@ -2028,13 +2079,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         eprintln!("🗑️  Removed {stale_count} stale skill file(s)");
     }
 
-    if error_count > 0 {
-        return fail_clierror!("{} skill(s) failed to generate", error_count);
-    }
-
-    eprintln!("\n💡 Restart Claude Desktop to load the updated skills.");
-
-    Ok(())
+    Ok(error_count)
 }
 
 #[cfg(test)]

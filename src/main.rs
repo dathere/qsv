@@ -67,7 +67,7 @@ Options:
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
-    "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+    "    --update-mcp-skills  Regenerate the MCP skills & tool definition JSON files.";
 
 const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message

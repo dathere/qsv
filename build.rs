@@ -53,12 +53,14 @@ fn main() {
     }
 }
 
-/// Generates `$OUT_DIR/embedded_tool_defs.rs`, which embeds the committed MCP skill JSONs
-/// (`.claude/skills/qsv/qsv-<cmd>.json`) and help Markdown (`docs/help/<name>.md`) with
-/// `include_str!` so installed binaries can export them (`--export-tool-definitions`,
-/// `--tool-definition`). The generators that produce these files parse the repo's source, so
-/// they can't run outside a checkout; the wiki-lint CI job keeps the committed copies current.
-/// The directories are enumerated here so no hand-maintained file list can drift.
+/// Generates `$OUT_DIR/embedded_tool_defs.rs`, which embeds the committed tool definitions
+/// (`docs/tool-definitions/qsv-<cmd>.json`, one per command) and help Markdown
+/// (`docs/help/<name>.md`) with `include_str!` so installed binaries can export them
+/// (`--export-tool-definitions`, `--tool-definition`). Of the curated MCP skill set
+/// (`.claude/skills/qsv/`), whose files are byte-identical copies, only the NAMES are embedded. The
+/// generators that produce these files parse the repo's source, so they can't run outside a
+/// checkout; the wiki-lint CI job keeps the committed copies current. The directories are
+/// enumerated here so no hand-maintained file list can drift.
 fn embed_tool_definitions() {
     use std::{fmt::Write as _, fs, path::Path};
 
@@ -95,8 +97,8 @@ fn embed_tool_definitions() {
     let mut out = String::new();
     for (static_name, files) in [
         (
-            "SKILL_JSONS",
-            collect(".claude/skills/qsv", "qsv-", ".json"),
+            "TOOL_DEFS",
+            collect("docs/tool-definitions", "qsv-", ".json"),
         ),
         ("HELP_MDS", collect("docs/help", "", ".md")),
     ] {
@@ -107,6 +109,12 @@ fn embed_tool_definitions() {
         }
         writeln!(out, "];").unwrap();
     }
+
+    let mcp_skills: Vec<String> = collect(".claude/skills/qsv", "qsv-", ".json")
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect();
+    writeln!(out, "pub static MCP_SKILLS: &[&str] = &{mcp_skills:?};").unwrap();
 
     let out_path = Path::new(&std::env::var("OUT_DIR").unwrap()).join("embedded_tool_defs.rs");
     fs::write(out_path, out).expect("Failed to write embedded_tool_defs.rs");

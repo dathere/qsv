@@ -45,6 +45,7 @@ mod mcp_skills_gen;
 mod minijinja_filters;
 mod odhtcache;
 mod select;
+mod tool_defs;
 mod util;
 
 const USAGE_COMMON: &str = r#"
@@ -57,6 +58,11 @@ Options:
     --envlist            List all qsv-relevant environment variables.
     -u, --update         Update qsv to the latest release from GitHub.
     -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
+    --tool-definition <command>
+                         Print the embedded JSON tool definition of <command>.
+    --export-tool-definitions <dir>
+                         Write the embedded JSON tool definitions & help Markdown
+                         of the installed commands to <dir>.
     --generate-help-md   Generate Markdown help files in docs/help/."#;
 
 #[cfg(feature = "mcp")]
@@ -76,14 +82,16 @@ const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:            Option<Command>,
-    flag_list:              bool,
-    flag_envlist:           bool,
-    flag_update:            bool,
-    flag_updatenow:         bool,
-    flag_generate_help_md:  bool,
+    arg_command:                  Option<Command>,
+    flag_list:                    bool,
+    flag_envlist:                 bool,
+    flag_update:                  bool,
+    flag_updatenow:               bool,
+    flag_generate_help_md:        bool,
+    flag_tool_definition:         Option<String>,
+    flag_export_tool_definitions: Option<String>,
     #[cfg(feature = "mcp")]
-    flag_update_mcp_skills: bool,
+    flag_update_mcp_skills:       bool,
 }
 
 fn main() -> QsvExitCode {
@@ -313,6 +321,34 @@ fn main() -> QsvExitCode {
         util::show_env_vars();
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
+    }
+    if let Some(command) = args.flag_tool_definition.as_deref() {
+        let result = tool_defs::print_tool_definition(
+            command,
+            &tool_defs::installed_commands(&enabled_commands),
+        );
+        util::log_end(qsv_args, now);
+        return match result {
+            Ok(()) => QsvExitCode::Good,
+            Err(e) => {
+                werr!("Tool definition error: {e}");
+                QsvExitCode::Bad
+            },
+        };
+    }
+    if let Some(dir) = args.flag_export_tool_definitions.as_deref() {
+        let result = tool_defs::export_tool_definitions(
+            dir,
+            &tool_defs::installed_commands(&enabled_commands),
+        );
+        util::log_end(qsv_args, now);
+        return match result {
+            Ok(()) => QsvExitCode::Good,
+            Err(e) => {
+                werr!("Tool definitions export error: {e}");
+                QsvExitCode::Bad
+            },
+        };
     }
     if args.flag_generate_help_md {
         match help_markdown_gen::generate_help_markdown() {

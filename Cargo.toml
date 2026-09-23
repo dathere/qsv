@@ -52,6 +52,11 @@ include = [
     "resources/dcat-us-v3/**/*",
     "resources/dcat-ap-v3/shacl/*",
     "resources/geoconnex/shacl/*",
+    # Tool definitions embedded via include_str! by build.rs (embed_tool_definitions)
+    # for `--tool-definition`/`--export-tool-definitions` (#4638). Same tarball-only
+    # rationale as the profile resources above.
+    ".claude/skills/qsv/qsv-*.json",
+    "docs/help/*.md",
 ]
 
 [[bin]]

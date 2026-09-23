@@ -2428,7 +2428,8 @@ pub fn generate_help_markdown() -> CliResult<()> {
             return fail_clierror!(
                 "Could not find qsv repository root after checking {} parent directories. This \
                  command must be run from within the qsv repository directory.\nOriginal \
-                 directory: {}",
+                 directory: {}\n\nTo get the help Markdown for this qsv binary without a repo \
+                 checkout, run: qsv --export-tool-definitions <dir>",
                 MAX_ITERATIONS,
                 original_dir.display()
             );
@@ -2436,7 +2437,9 @@ pub fn generate_help_markdown() -> CliResult<()> {
 
         if !repo_root.pop() {
             return fail_clierror!(
-                "Could not find qsv repository root.\nOriginal directory: {}",
+                "Could not find qsv repository root.\nOriginal directory: {}\n\nTo get the help \
+                 Markdown for this qsv binary without a repo checkout, run: qsv \
+                 --export-tool-definitions <dir>",
                 original_dir.display()
             );
         }

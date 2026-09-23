@@ -11,6 +11,15 @@ fn main() {
         std::env::var("QSV_KIND").unwrap_or_else(|_| "compiled".to_string())
     );
 
+    // Once a build script prints any rerun-if-* line, cargo stops rerunning it on every
+    // package change and reruns it only for the listed paths/vars, so list everything read here
+    // (Cargo.toml carries the QSV_POLARS_REV marker).
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-env-changed=QSV_KIND");
+
+    embed_tool_definitions();
+
     #[cfg(feature = "polars")]
     {
         use std::{fs, path::Path};
@@ -42,4 +51,63 @@ fn main() {
         );
         println!("cargo:rustc-env=QSV_POLARS_REV={polars_rev}");
     }
+}
+
+/// Generates `$OUT_DIR/embedded_tool_defs.rs`, which embeds the committed MCP skill JSONs
+/// (`.claude/skills/qsv/qsv-<cmd>.json`) and help Markdown (`docs/help/<name>.md`) with
+/// `include_str!` so installed binaries can export them (`--export-tool-definitions`,
+/// `--tool-definition`). The generators that produce these files parse the repo's source, so
+/// they can't run outside a checkout; the wiki-lint CI job keeps the committed copies current.
+/// The directories are enumerated here so no hand-maintained file list can drift.
+fn embed_tool_definitions() {
+    use std::{fmt::Write as _, fs, path::Path};
+
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let manifest_dir = Path::new(&manifest_dir);
+
+    // collect (key, absolute path) pairs for files in `dir` whose name matches
+    // `prefix`*`suffix`, keyed by the stem between them, sorted for deterministic output
+    let collect = |dir: &str, prefix: &str, suffix: &str| -> Vec<(String, String)> {
+        let dir_path = manifest_dir.join(dir);
+        println!("cargo:rerun-if-changed={}", dir_path.display());
+        let Ok(entries) = fs::read_dir(&dir_path) else {
+            println!(
+                "cargo:warning={} not found - no tool definitions will be embedded from it",
+                dir_path.display()
+            );
+            return Vec::new();
+        };
+        let mut files: Vec<(String, String)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let key = name.strip_prefix(prefix)?.strip_suffix(suffix)?.to_string();
+                if key.is_empty() {
+                    return None;
+                }
+                Some((key, entry.path().to_string_lossy().into_owned()))
+            })
+            .collect();
+        files.sort();
+        files
+    };
+
+    let mut out = String::new();
+    for (static_name, files) in [
+        (
+            "SKILL_JSONS",
+            collect(".claude/skills/qsv", "qsv-", ".json"),
+        ),
+        ("HELP_MDS", collect("docs/help", "", ".md")),
+    ] {
+        writeln!(out, "pub static {static_name}: &[(&str, &str)] = &[").unwrap();
+        for (key, path) in files {
+            // Debug formatting escapes the path (e.g. Windows backslashes) as a string literal
+            writeln!(out, "    ({key:?}, include_str!({path:?})),").unwrap();
+        }
+        writeln!(out, "];").unwrap();
+    }
+
+    let out_path = Path::new(&std::env::var("OUT_DIR").unwrap()).join("embedded_tool_defs.rs");
+    fs::write(out_path, out).expect("Failed to write embedded_tool_defs.rs");
 }

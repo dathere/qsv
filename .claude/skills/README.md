@@ -283,6 +283,8 @@ qsv --update-mcp-skills
 # Output: .claude/skills/qsv/*.json
 ```
 
+Outside a repo checkout, the generator can't run because it parses the qsv source. Any installed `qsv`/`qsvmcp` can instead export the definitions embedded at build time, which match its own version: `qsv --export-tool-definitions <dir>` (all of them, plus help Markdown and a version manifest) or `qsv --tool-definition <command>` (one, to stdout).
+
 The generator uses **qsv-docopt Parser** (the same parser qsv uses at runtime) for robust parsing:
 1. Extracts `USAGE` static string from command source files
 2. **Parses with qsv-docopt** for accurate argument/option detection

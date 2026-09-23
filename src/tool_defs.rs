@@ -74,6 +74,11 @@ pub fn export_tool_definitions(dir: &str, installed: &HashSet<&str>) -> CliResul
         help.push(*name);
     }
 
+    // a reused export dir may hold files from another qsv version or feature set; drop the
+    // ones this export didn't write so the directory matches manifest.json
+    remove_stale(&skills_dir, "qsv-", ".json", &skills)?;
+    remove_stale(&help_dir, "", ".md", &help)?;
+
     let mut commands: Vec<&str> = installed.iter().copied().collect();
     commands.sort_unstable();
     let manifest = serde_json::json!({
@@ -95,5 +100,23 @@ pub fn export_tool_definitions(dir: &str, installed: &HashSet<&str>) -> CliResul
         help.len(),
         help_dir.display()
     );
+    Ok(())
+}
+
+/// Remove files in `dir` named `prefix<key>suffix` whose key is not in `keep`. Only files
+/// matching the export's own naming pattern are touched.
+fn remove_stale(dir: &Path, prefix: &str, suffix: &str, keep: &[&str]) -> CliResult<()> {
+    for entry in fs::read_dir(dir)?.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(key) = name
+            .strip_prefix(prefix)
+            .and_then(|n| n.strip_suffix(suffix))
+        else {
+            continue;
+        };
+        if !keep.contains(&key) && entry.path().is_file() {
+            fs::remove_file(entry.path())?;
+        }
+    }
     Ok(())
 }

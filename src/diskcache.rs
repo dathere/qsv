@@ -2982,7 +2982,13 @@ mod rich {
             .as_ref()
             .cloned()
             .ok_or_else(|| CliError::Other(format!("dc:{name} has no resolved frequency input")))?;
-        sync_frequency_sidecar(&root, &resolved);
+        // Capture outright rather than via sync_frequency_sidecar: the caller just wrote the
+        // sidecar, and on an mtime tie with the CSV (coarse-timestamp filesystems) that sync
+        // would treat it as stale and restore the OLD blob over the explicit write.
+        capture_frequency_sidecar(
+            &frequency_sidecar_path(&resolved.csv_path),
+            &frequency_blob_path(&root, &resolved.blake3, &resolved.ext),
+        )?;
         Ok(())
     }
 
@@ -3152,6 +3158,8 @@ mod rich {
         if need_write {
             // Existing content-addressed materializations already contain the
             // exact blob bytes; avoid decoding the full CSV on every dc use.
+            // The blob is therefore only read when (re)materializing: while a
+            // right-sized copy exists, a missing or unreadable blob goes unnoticed.
             materialize_blob(root, &entry.meta.blake3, entry.meta.compression, &csv_path)?;
         }
 
@@ -3229,8 +3237,7 @@ mod rich {
     /// The frequency command still validates option and version compatibility.
     fn sync_frequency_sidecar(root: &Path, resolved: &ResolvedDc) {
         let csv_path = &resolved.csv_path;
-        let canonical_csv = fs::canonicalize(csv_path).unwrap_or_else(|_| csv_path.clone());
-        let sidecar = canonical_csv.with_extension("freq.csv.data.jsonl");
+        let sidecar = frequency_sidecar_path(csv_path);
         let blob = frequency_blob_path(root, &resolved.blake3, &resolved.ext);
         let fresh = match (fs::metadata(&sidecar), fs::metadata(csv_path)) {
             (Ok(cache), Ok(csv)) => {
@@ -3241,14 +3248,7 @@ mod rich {
         };
 
         if fresh {
-            // A later explicit --frequency-jsonl can replace the option profile.
-            // Compare uncompressed bytes so an unchanged restored copy is not re-encoded.
-            if let Ok(bytes) = fs::read(&sidecar) {
-                let changed = read_zst(&blob).map_or(true, |old| old != bytes);
-                if changed && let Ok(zst) = zstd::encode_all(&bytes[..], ZSTD_LEVEL) {
-                    let _ = atomic_write(&blob, &zst);
-                }
-            }
+            let _ = capture_frequency_sidecar(&sidecar, &blob);
         } else if blob.exists()
             && let Ok(bytes) = read_zst(&blob)
         {
@@ -3258,6 +3258,26 @@ mod rich {
                 filetime::FileTime::from_system_time(SystemTime::now()),
             );
         }
+    }
+
+    /// The frequency cache sidecar for a dc materialization, derived as
+    /// `frequency`'s `cache_path_for` derives it (canonical path + `with_extension`).
+    fn frequency_sidecar_path(csv_path: &Path) -> PathBuf {
+        fs::canonicalize(csv_path)
+            .unwrap_or_else(|_| csv_path.to_path_buf())
+            .with_extension("freq.csv.data.jsonl")
+    }
+
+    /// Store the frequency sidecar as the durable blob. Unlike the stats blob this is not
+    /// capture-once: a later explicit --frequency-jsonl can replace the option profile.
+    /// Uncompressed bytes are compared so an unchanged (e.g. just-restored) copy is not
+    /// re-encoded.
+    fn capture_frequency_sidecar(sidecar: &Path, blob: &Path) -> std::io::Result<()> {
+        let bytes = fs::read(sidecar)?;
+        if read_zst(blob).is_ok_and(|old| old == bytes) {
+            return Ok(());
+        }
+        atomic_write(blob, &zstd::encode_all(&bytes[..], ZSTD_LEVEL)?)
     }
 
     /// Write a cached entry's (decompressed) bytes to `output` (a file path, or

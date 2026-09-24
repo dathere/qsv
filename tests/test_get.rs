@@ -2676,3 +2676,188 @@ fn get_dc_frequency_cache_removed_by_prune_and_clear() {
         );
     }
 }
+
+// A qsv command confined to this test's private cache and temp dirs, so the dc:
+// materialization (keyed by content hash under TMPDIR) can't collide with another test's.
+fn dc_command(
+    wrk: &Workdir,
+    command: &str,
+    cache_dir: &Path,
+    tmp_dir: &Path,
+) -> std::process::Command {
+    let mut cmd = wrk.command(command);
+    cmd.env("QSV_CACHE_DIR", cache_dir)
+        .env("TMPDIR", tmp_dir)
+        .env("TMP", tmp_dir)
+        .env("TEMP", tmp_dir);
+    cmd
+}
+
+// Read one field of the metadata line of a durable (zstd) frequency blob.
+fn frequency_blob_meta(blob: &Path, key: &str) -> serde_json::Value {
+    let bytes = zstd::decode_all(std::fs::File::open(blob).unwrap()).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    let meta: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    meta[key].clone()
+}
+
+fn find_file_with_suffix(dir: &Path, suffix: &str) -> Option<std::path::PathBuf> {
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            if let Some(found) = find_file_with_suffix(&p, suffix) {
+                return Some(found);
+            }
+        } else if p.to_string_lossy().ends_with(suffix) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+// Seed a unique-content dc:cats.csv (the workdir path is in the bytes) and write its
+// frequency cache through the dc: path, so exactly one durable frequency blob exists.
+fn seed_dc_frequency_cache(wrk: &Workdir, cache_dir: &Path, tmp_dir: &Path) -> std::path::PathBuf {
+    let tag = wrk.path("unique");
+    wrk.create_from_string(
+        "src.csv",
+        &format!("cat,tag\na,{0}\na,{0}\nb,{0}\n", tag.display()),
+    );
+    let mut get = dc_command(wrk, "get", cache_dir, tmp_dir);
+    get.args(["--name", "cats.csv", "src.csv"]);
+    wrk.assert_success(&mut get);
+
+    let mut freq = dc_command(wrk, "frequency", cache_dir, tmp_dir);
+    freq.args(["--frequency-jsonl", "dc:cats.csv"]);
+    wrk.assert_success(&mut freq);
+
+    let blobs = frequency_blobs(cache_dir);
+    assert_eq!(
+        blobs.len(),
+        1,
+        "expected one durable frequency blob: {blobs:?}"
+    );
+    blobs[0].clone()
+}
+
+// Re-fetching a name whose source content changed must reclaim the OLD content's frequency
+// blob, as it already does for the stats blob - otherwise it is orphaned until a prune.
+#[test]
+#[serial]
+fn get_dc_frequency_cache_reclaimed_on_refetch_with_new_content() {
+    let wrk = Workdir::new("get_dc_frequency_cache_reclaimed_on_refetch_with_new_content");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    seed_dc_frequency_cache(&wrk, &cache_dir, &tmp_dir);
+
+    wrk.create_from_string("src.csv", "cat,tag\nz,changed\n");
+    let mut refetch = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    refetch.args(["--name", "cats.csv", "src.csv"]);
+    wrk.assert_success(&mut refetch);
+
+    assert!(
+        frequency_blobs(&cache_dir).is_empty(),
+        "the old content's frequency blob should be reclaimed on refetch: {:?}",
+        frequency_blobs(&cache_dir)
+    );
+}
+
+// A plain `frequency dc:` run that self-heals a version-stale cache must persist the refreshed
+// sidecar. The first dc resolution captures the stale sidecar into the blob, so without the
+// refresh-branch persist the blob would keep the stale version.
+#[test]
+#[serial]
+fn get_dc_frequency_cache_version_refresh_is_persisted() {
+    let wrk = Workdir::new("get_dc_frequency_cache_version_refresh_is_persisted");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let blob = seed_dc_frequency_cache(&wrk, &cache_dir, &tmp_dir);
+
+    let sidecar = find_file_with_suffix(
+        &frequency_materialization(&tmp_dir, &blob),
+        ".freq.csv.data.jsonl",
+    )
+    .expect("frequency sidecar next to the dc materialization");
+    let contents = std::fs::read_to_string(&sidecar).unwrap();
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut meta: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+    meta["qsv_version"] = serde_json::Value::from("0.0.1-ancient");
+    lines[0] = serde_json::to_string(&meta).unwrap();
+    std::fs::write(&sidecar, lines.join("\n")).unwrap();
+
+    let mut heal = dc_command(&wrk, "frequency", &cache_dir, &tmp_dir);
+    heal.arg("dc:cats.csv");
+    let stderr = wrk.output_stderr(&mut heal);
+    assert!(
+        stderr.contains("written by qsv 0.0.1-ancient"),
+        "expected the stale-version refresh to run, got:\n{stderr}"
+    );
+    assert_eq!(
+        frequency_blob_meta(&blob, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the durable blob should hold the refreshed sidecar"
+    );
+}
+
+// A later explicit --frequency-jsonl run with different options replaces the sidecar, and the
+// durable blob must follow it rather than keep the first capture.
+#[test]
+#[serial]
+fn get_dc_frequency_cache_blob_follows_rewritten_sidecar() {
+    let wrk = Workdir::new("get_dc_frequency_cache_blob_follows_rewritten_sidecar");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let blob = seed_dc_frequency_cache(&wrk, &cache_dir, &tmp_dir);
+    assert_eq!(frequency_blob_meta(&blob, "flag_no_nulls"), false);
+
+    let mut rewrite = dc_command(&wrk, "frequency", &cache_dir, &tmp_dir);
+    rewrite.args(["--frequency-jsonl", "--no-nulls", "dc:cats.csv"]);
+    wrk.assert_success(&mut rewrite);
+
+    assert_eq!(
+        frequency_blob_meta(&blob, "flag_no_nulls"),
+        true,
+        "the durable blob should be replaced by the rewritten sidecar"
+    );
+}
+
+// A frequency cache written against the materialized path directly (as `scoresql` does, via
+// a `qsv frequency --frequency-jsonl <path>` subprocess) is captured on the next dc resolution.
+#[test]
+#[serial]
+fn get_dc_frequency_cache_captures_out_of_band_sidecar() {
+    let wrk = Workdir::new("get_dc_frequency_cache_captures_out_of_band_sidecar");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let tag = wrk.path("unique");
+    wrk.create_from_string(
+        "src.csv",
+        &format!("cat,tag\na,{0}\na,{0}\nb,{0}\n", tag.display()),
+    );
+    let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    get.args(["--name", "cats.csv", "src.csv"]);
+    wrk.assert_success(&mut get);
+
+    let mut materialize = dc_command(&wrk, "count", &cache_dir, &tmp_dir);
+    materialize.arg("dc:cats.csv");
+    wrk.assert_success(&mut materialize);
+    let csv = find_file_with_suffix(&tmp_dir.join("qsv-dc"), "cats.csv")
+        .expect("dc materialization under the private TMPDIR");
+
+    let mut direct = dc_command(&wrk, "frequency", &cache_dir, &tmp_dir);
+    direct.arg("--frequency-jsonl").arg(&csv);
+    wrk.assert_success(&mut direct);
+    assert!(
+        frequency_blobs(&cache_dir).is_empty(),
+        "a non-dc write should not reach the durable cache by itself"
+    );
+
+    let mut resolve = dc_command(&wrk, "count", &cache_dir, &tmp_dir);
+    resolve.arg("dc:cats.csv");
+    wrk.assert_success(&mut resolve);
+    assert_eq!(
+        frequency_blobs(&cache_dir).len(),
+        1,
+        "the next dc resolution should capture the out-of-band sidecar"
+    );
+}

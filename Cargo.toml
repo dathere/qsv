@@ -197,6 +197,8 @@ dynfmt2 = { version = "0.4", default-features = false, features = ["curly"] }
 # reqwest's charset feature does the actual decoding, but Encoding::for_label()
 # silently falls back to UTF-8 on an unknown label, so we reject typos early.
 # No compile cost: encoding_rs is already built via calamine/csv-nose/reqwest.
+# Being a direct dep also lets the `nightly` feature turn on its nightly-only
+# simd-accel (+ std, which multiversions more x86 code paths) for the whole dep tree.
 encoding_rs = "0.8"
 eudex = { version = "0.1", optional = true }
 ext-sort = { version = "0.1", default-features = false }
@@ -755,6 +757,8 @@ nightly = [
     "rand/simd_support",
     "simd-json/hints",
     "foldhash/nightly",
+    "encoding_rs/simd-accel",
+    "encoding_rs/std",
 ]
 
 nightly-polars = ["polars/nightly", "polars/simd"]

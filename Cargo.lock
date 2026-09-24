@@ -33,9 +33,9 @@ dependencies = [
 
 [[package]]
 name = "actix-http"
-version = "3.13.6"
+version = "3.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c4f07a021937af76abef4c458a0d6b25f63f82eec5394354deeb7de0551f523"
+checksum = "34d43a35258fe7873e89c0006b0ecf09817fda8db851cc3d98000e86f601a3be"
 dependencies = [
  "actix-codec",
  "actix-service",
@@ -340,6 +340,15 @@ dependencies = [
  "anstyle",
  "once_cell_polyfill",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "any_all_workaround"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88fea40735f2cc320a5133ce772d39c571bd6c9b0d4c1a326926eecdd5af2e86"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]
@@ -2503,10 +2512,11 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "encoding_rs"
-version = "0.8.41"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5ef0006ac9ab233c38522f5ae99cae3625151de8f706cacee1cba4b8e2832a"
+checksum = "8e985e0451871ad22fb8d2b6b076e2028a502a0d3950998c2c5c0a4f9b5d9679"
 dependencies = [
+ "any_all_workaround",
  "cfg-if",
  "core_detect",
  "multiversion",
@@ -3669,16 +3679,17 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.20"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
+checksum = "ddc03d96684f9226b8a787cdb71488417b53ab5ea8fdb1dac946cb9431cc8bff"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "futures-channel",
  "futures-util",
  "http 1.5.0",
  "http-body",
+ "httparse",
  "hyper",
  "ipnet",
  "libc",
@@ -8113,9 +8124,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
 dependencies = [
  "core-foundation 0.10.1",
  "core-foundation-sys",
@@ -8134,9 +8145,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier-android"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"

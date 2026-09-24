@@ -18,7 +18,6 @@ static QSV_INTEGRATION_TEST_DIR: &str = "xit";
 static NEXT_ID: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
 
 pub struct Workdir {
-    root:     PathBuf,
     dir:      PathBuf,
     flexible: bool,
 }
@@ -50,7 +49,6 @@ impl Workdir {
             panic!("Could not create '{dir:?}': {err}");
         }
         Workdir {
-            root,
             dir,
             flexible: false,
         }
@@ -456,24 +454,26 @@ impl Workdir {
         self.dir.join(name)
     }
 
+    // CARGO_BIN_EXE_* rather than a path next to current_exe(): newer cargo
+    // (the build-dir layout) no longer puts test executables beside the bins.
     #[cfg(feature = "qsvmcp")]
     pub fn qsv_bin(&self) -> PathBuf {
-        self.root.join("qsvmcp")
+        PathBuf::from(env!("CARGO_BIN_EXE_qsvmcp"))
     }
 
     #[cfg(all(feature = "feature_capable", not(feature = "qsvmcp")))]
     pub fn qsv_bin(&self) -> PathBuf {
-        self.root.join("qsv")
+        PathBuf::from(env!("CARGO_BIN_EXE_qsv"))
     }
 
     #[cfg(feature = "lite")]
     pub fn qsv_bin(&self) -> PathBuf {
-        self.root.join("qsvlite")
+        PathBuf::from(env!("CARGO_BIN_EXE_qsvlite"))
     }
 
     #[cfg(feature = "datapusher_plus")]
     pub fn qsv_bin(&self) -> PathBuf {
-        self.root.join("qsvdp")
+        PathBuf::from(env!("CARGO_BIN_EXE_qsvdp"))
     }
 
     /// clear all files in directory

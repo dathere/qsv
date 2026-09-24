@@ -1348,6 +1348,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_frequency_jsonl {
         // explicitly requested: a failure to write the cache the user asked for is fatal
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
+        // The first dc resolution precedes the write. Capture its sidecar
+        // against that same resolved snapshot without repeating stats sync.
+        #[cfg(feature = "get")]
+        if let Some(name) = args
+            .arg_input
+            .as_deref()
+            .and_then(|input| input.strip_prefix("dc:"))
+            && let Err(err) = crate::diskcache::persist_dc_frequency_sidecar(name)
+        {
+            log::warn!("Could not persist dc frequency cache: {err}");
+        }
     } else if refreshing_stale_cache {
         // BEST-EFFORT, unlike the branch above. This user asked for frequencies, not for a
         // cache write, and the frequencies are already computed. A cache file we cannot
@@ -1361,6 +1372,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "Could not refresh the version-stale frequency cache: {e}. Continuing with the \
                  computed frequencies."
             );
+        } else {
+            // A successful refresh is a write too; keep it durable for dc inputs.
+            #[cfg(feature = "get")]
+            if let Some(name) = args
+                .arg_input
+                .as_deref()
+                .and_then(|input| input.strip_prefix("dc:"))
+                && let Err(err) = crate::diskcache::persist_dc_frequency_sidecar(name)
+            {
+                log::warn!("Could not persist refreshed dc frequency cache: {err}");
+            }
         }
     }
 
@@ -3157,7 +3179,7 @@ impl Args {
         } else {
             Ok((
                 headers,
-                self.ftables_unweighted(&sel, rdr.byte_records(), 1)?,
+                self.ftables_unweighted(&sel, |record| rdr.read_byte_record(record), 1)?,
                 None,
             ))
         }
@@ -3333,8 +3355,21 @@ impl Args {
                         .expect("Index is no longer available for parallel frequency.");
                     idx.seek((i * chunk_size) as u64)
                         .expect("Index seek failed.");
-                    let it = idx.byte_records().take(chunk_size);
-                    match args.ftables_unweighted(&sel, it, nchunks) {
+                    let mut remaining = chunk_size;
+                    match args.ftables_unweighted(
+                        &sel,
+                        |record| {
+                            if remaining == 0 {
+                                return Ok(false);
+                            }
+                            let has_record = idx.read_byte_record(record)?;
+                            if has_record {
+                                remaining -= 1;
+                            }
+                            Ok(has_record)
+                        },
+                        nchunks,
+                    ) {
                         Ok(ftables) => {
                             // send only fails if the receiver is already gone, in which case
                             // the reduce has ended and there is nobody left to hand this to.
@@ -3533,14 +3568,19 @@ impl Args {
     }
 
     #[inline]
-    fn ftables_unweighted<I>(&self, sel: &Selection, it: I, nchunks: usize) -> CliResult<FTables>
+    fn ftables_unweighted<F>(
+        &self,
+        sel: &Selection,
+        mut next_record: F,
+        nchunks: usize,
+    ) -> CliResult<FTables>
     where
-        I: Iterator<Item = csv::Result<csv::ByteRecord>>,
+        F: FnMut(&mut csv::ByteRecord) -> csv::Result<bool>,
     {
         let sel_len = sel.len();
 
+        let mut record = csv::ByteRecord::with_capacity(200, sel_len);
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
-        let mut row_buffer: csv::ByteRecord = csv::ByteRecord::with_capacity(200, sel_len);
         let mut string_buf = String::with_capacity(512);
 
         let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
@@ -3638,28 +3678,18 @@ impl Args {
                 }
             };
 
-        // see the note in ftables_weighted_internal: stash-and-break, no `?` in the hot loop
-        let mut read_err: Option<csv::Error> = None;
-        for row in it {
-            // a ragged record makes this an Err. It used to be `unwrap_unchecked()`, which
-            // fabricated a ByteRecord out of the error - undefined behavior (#4611).
-            match row {
-                Ok(ref r) => row_buffer.clone_from(r),
-                Err(e) => {
-                    read_err = Some(e);
-                    break;
-                },
-            }
-            for (i, field) in sel.select(&row_buffer).enumerate() {
-                // safety: all_unique_flag_vec is pre-computed to have exactly sel_len elements,
-                // which matches the number of selected columns that we iterate over.
-                // i will always be < sel_len as it comes from enumerate() over the selected cols
+        // For an in-order selection of the first N columns, iterate the record's
+        // fields directly. This avoids an indexed get for every field in the
+        // common all-column case, while take() excludes unselected extra fields.
+        let identity_selection = sel.iter().enumerate().all(|(i, &column)| i == column);
+        macro_rules! tally_field {
+            ($i:expr, $field:expr) => {{
+                let i = $i;
+                let field = $field;
+                // Both tables and the skip mask have exactly sel_len positions.
                 if unsafe { *all_unique_flag_vec.get_unchecked(i) } {
                     continue;
                 }
-
-                // safety: freq_tables is pre-allocated with sel_len elements.
-                // i will always be < sel_len as it comes from enumerate() over the selected cols
                 if !field.is_empty() {
                     process_field(
                         field,
@@ -3668,10 +3698,37 @@ impl Args {
                         &mut field_buffer,
                     );
                 } else if !flag_no_nulls {
-                    // set to null (EMPTY_BYTES) as flag_no_nulls is false
-                    unsafe {
-                        freq_tables.get_unchecked_mut(i).add_borrowed(&[]);
-                    }
+                    unsafe { freq_tables.get_unchecked_mut(i).add_borrowed(&[]) };
+                }
+            }};
+        }
+
+        // See ftables_weighted_internal: stash-and-break, no `?` in the hot loop.
+        let mut read_err: Option<csv::Error> = None;
+        loop {
+            // Sequential and indexed readers fill a reusable record. Preserve
+            // the first CSV error and stop, as before (#4611).
+            match next_record(&mut record) {
+                Ok(true) => {},
+                Ok(false) => break,
+                Err(e) => {
+                    read_err = Some(e);
+                    break;
+                },
+            }
+            if identity_selection {
+                // A short flexible record has fewer fields; this stops at the
+                // same first absent position as the selected-index loop below.
+                for (i, field) in record.iter().take(sel_len).enumerate() {
+                    tally_field!(i, field);
+                }
+            } else {
+                // Preserve arbitrary order, duplicates, and first-missing stop.
+                for (i, &column) in sel.iter().enumerate() {
+                    let Some(field) = record.get(column) else {
+                        break;
+                    };
+                    tally_field!(i, field);
                 }
             }
         }

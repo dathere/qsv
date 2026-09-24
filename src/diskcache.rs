@@ -699,6 +699,11 @@ mod rich {
         blob_dir(root, b3).join(format!("{b3}.{ext}.stats.jsonl.zst"))
     }
 
+    /// Keep frequency caches separate for different content and delimiters.
+    fn frequency_blob_path(root: &Path, b3: &str, ext: &str) -> PathBuf {
+        blob_dir(root, b3).join(format!("{b3}.{ext}.freq.jsonl.zst"))
+    }
+
     fn entry_path(root: &Path, keyhash: &str) -> PathBuf {
         root.join("entries").join(format!("{keyhash}.json"))
     }
@@ -771,6 +776,41 @@ mod rich {
 
     fn read_zst(path: &Path) -> std::io::Result<Vec<u8>> {
         zstd::decode_all(fs::File::open(path)?)
+    }
+
+    /// Decode a cached body directly into a unique temp sibling, then rename.
+    /// This keeps atomic materialization without a second full-size CSV buffer.
+    fn materialize_blob(
+        root: &Path,
+        b3: &str,
+        compression: Compression,
+        destination: &Path,
+    ) -> std::io::Result<()> {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let tmp = destination.with_extension(format!("tmp-{}", unique_token()));
+        let result = (|| {
+            let input = fs::File::open(blob_path(root, b3, compression))?;
+            let mut output = BufWriter::with_capacity(1024 * 1024, fs::File::create(&tmp)?);
+            match compression {
+                Compression::Zstd => {
+                    let mut decoder = zstd::stream::read::Decoder::new(input)?;
+                    std::io::copy(&mut decoder, &mut output)?;
+                },
+                Compression::None => {
+                    let mut input = input;
+                    std::io::copy(&mut input, &mut output)?;
+                },
+            }
+            output.flush()?;
+            drop(output);
+            fs::rename(&tmp, destination)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&tmp);
+        }
+        result
     }
 
     /// Store `body` as a content-addressed (possibly compressed) blob.
@@ -1129,6 +1169,7 @@ mod rich {
                 // too; otherwise a refresh-to-new-content orphans them.
                 for ext in TABULAR_EXTS {
                     let _ = fs::remove_file(stats_blob_path(root, &prev.meta.blake3, ext));
+                    let _ = fs::remove_file(frequency_blob_path(root, &prev.meta.blake3, ext));
                 }
             }
         }
@@ -1245,6 +1286,7 @@ mod rich {
                 // free every per-extension variant for this content.
                 for ext in TABULAR_EXTS {
                     let _ = fs::remove_file(stats_blob_path(root, &e.meta.blake3, ext));
+                    let _ = fs::remove_file(frequency_blob_path(root, &e.meta.blake3, ext));
                 }
             }
         }
@@ -2902,18 +2944,46 @@ mod rich {
             )
         };
         let mut slot_guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
-        let resolved = if let Some(resolved) = slot_guard.as_ref() {
-            resolved.clone()
+        let (resolved, first_resolution) = if let Some(resolved) = slot_guard.as_ref() {
+            (resolved.clone(), false)
         } else {
             // successes only: a failed resolution stays unmemoized so it is retried
             let resolved = resolve_dc_uncached(&cache_dir, &root, name)?;
             *slot_guard = Some(resolved.clone());
-            resolved
+            (resolved, true)
         };
         drop(slot_guard);
 
         sync_stats_sidecar(&root, &resolved);
+        // Frequency is only written by the frequency command. Its first read
+        // may restore the sidecar; a later write uses the explicit capture hook
+        // below, avoiding repeated sidecar reads on memoized resolutions.
+        if first_resolution {
+            sync_frequency_sidecar(&root, &resolved);
+        }
         Ok(resolved.csv_path)
+    }
+
+    /// Persist a frequency sidecar just written by this command, using the
+    /// same materialization that its first dc resolution selected.
+    pub fn persist_dc_frequency_sidecar(name: &str) -> CliResult<()> {
+        let cache_dir = set_qsv_cache_dir(DEFAULT_CACHE_DIR)?;
+        let root = get_root(&cache_dir);
+        let slot = {
+            let memo = DC_RESOLVED.lock().unwrap_or_else(PoisonError::into_inner);
+            memo.get(&(cache_dir, name.to_string())).cloned()
+        }
+        .ok_or_else(|| {
+            CliError::Other(format!("dc:{name} was not resolved before frequency write"))
+        })?;
+        let resolved = slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| CliError::Other(format!("dc:{name} has no resolved frequency input")))?;
+        sync_frequency_sidecar(&root, &resolved);
+        Ok(())
     }
 
     /// How long ago this entry was last fetched, in seconds. Never negative.
@@ -3052,7 +3122,6 @@ mod rich {
             }
         }
 
-        let body = read_blob(root, &entry.meta.blake3, entry.meta.compression)?;
         // The materialized temp name carries a known tabular extension that
         // selects the delimiter (.csv => comma, .tsv/.tab => tab, .ssv =>
         // semicolon). Isolate each extension in its own subdir AND key the
@@ -3081,7 +3150,9 @@ mod rich {
             || fs::metadata(&csv_path).map(|m| m.len()).unwrap_or(0)
                 != entry.meta.size_uncompressed;
         if need_write {
-            atomic_write(&csv_path, &body)?;
+            // Existing content-addressed materializations already contain the
+            // exact blob bytes; avoid decoding the full CSV on every dc use.
+            materialize_blob(root, &entry.meta.blake3, entry.meta.compression, &csv_path)?;
         }
 
         // Materialize the sibling .idx (written after the CSV so its mtime is
@@ -3148,6 +3219,42 @@ mod rich {
             let _ = atomic_write(&stats_sidecar, &bytes);
             let _ = filetime::set_file_mtime(
                 &stats_sidecar,
+                filetime::FileTime::from_system_time(SystemTime::now()),
+            );
+        }
+    }
+
+    /// Capture an opt-in frequency cache after it is written, or restore it
+    /// when the content-addressed dc materialization has been recreated.
+    /// The frequency command still validates option and version compatibility.
+    fn sync_frequency_sidecar(root: &Path, resolved: &ResolvedDc) {
+        let csv_path = &resolved.csv_path;
+        let canonical_csv = fs::canonicalize(csv_path).unwrap_or_else(|_| csv_path.clone());
+        let sidecar = canonical_csv.with_extension("freq.csv.data.jsonl");
+        let blob = frequency_blob_path(root, &resolved.blake3, &resolved.ext);
+        let fresh = match (fs::metadata(&sidecar), fs::metadata(csv_path)) {
+            (Ok(cache), Ok(csv)) => {
+                filetime::FileTime::from_last_modification_time(&cache)
+                    > filetime::FileTime::from_last_modification_time(&csv)
+            },
+            _ => false,
+        };
+
+        if fresh {
+            // A later explicit --frequency-jsonl can replace the option profile.
+            // Compare uncompressed bytes so an unchanged restored copy is not re-encoded.
+            if let Ok(bytes) = fs::read(&sidecar) {
+                let changed = read_zst(&blob).map_or(true, |old| old != bytes);
+                if changed && let Ok(zst) = zstd::encode_all(&bytes[..], ZSTD_LEVEL) {
+                    let _ = atomic_write(&blob, &zst);
+                }
+            }
+        } else if blob.exists()
+            && let Ok(bytes) = read_zst(&blob)
+        {
+            let _ = atomic_write(&sidecar, &bytes);
+            let _ = filetime::set_file_mtime(
+                &sidecar,
                 filetime::FileTime::from_system_time(SystemTime::now()),
             );
         }

@@ -2312,3 +2312,367 @@ fn get_cache_list_reports_age_and_staleness() {
         stdout
     );
 }
+// Locate durable frequency blobs in this test's private QSV_CACHE_DIR.
+fn frequency_blobs(cache_dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    if let Ok(shards) = std::fs::read_dir(cache_dir.join("get").join("blobs")) {
+        for shard in shards.flatten() {
+            if let Ok(subshards) = std::fs::read_dir(shard.path()) {
+                for subshard in subshards.flatten() {
+                    if let Ok(files) = std::fs::read_dir(subshard.path()) {
+                        for file in files.flatten() {
+                            if file
+                                .file_name()
+                                .to_string_lossy()
+                                .ends_with(".freq.jsonl.zst")
+                            {
+                                found.push(file.path());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+fn frequency_materialization(tmp_dir: &Path, blob: &Path) -> std::path::PathBuf {
+    let name = blob.file_name().unwrap().to_string_lossy();
+    let mut parts = name.split('.');
+    let hash = parts.next().expect("frequency blob hash");
+    let ext = parts.next().expect("frequency blob extension");
+    tmp_dir.join("qsv-dc").join(hash).join(ext)
+}
+
+fn private_qsv_tmp(wrk: &Workdir) -> std::path::PathBuf {
+    let tmp_dir = wrk.path("tmp");
+    std::fs::create_dir_all(&tmp_dir).unwrap();
+    tmp_dir
+}
+
+fn frequency_row(
+    field: &str,
+    value: &str,
+    count: &str,
+    percentage: &str,
+    rank: &str,
+) -> Vec<String> {
+    vec![
+        field.to_owned(),
+        value.to_owned(),
+        count.to_owned(),
+        percentage.to_owned(),
+        rank.to_owned(),
+    ]
+}
+
+#[test]
+#[serial]
+fn get_dc_frequency_cache_survives_materialization_removal() {
+    let wrk = Workdir::new("get_dc_frequency_cache_survives_materialization_removal");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    // Put this unique workdir path in the bytes to give the qsv-dc entry a private hash.
+    let tag = wrk.path("src.csv");
+    let data = format!(
+        "cat,tag\na,{}\na,{}\nb,{}\n",
+        tag.display(),
+        tag.display(),
+        tag.display()
+    );
+    wrk.create_from_string("src.csv", &data);
+
+    let mut get = wrk.command("get");
+    get.env("QSV_CACHE_DIR", &cache_dir)
+        .env("TMPDIR", &tmp_dir)
+        .env("TMP", &tmp_dir)
+        .env("TEMP", &tmp_dir)
+        .args(["--name", "cats.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut get);
+
+    let mut stats = wrk.command("stats");
+    stats
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .env("TMPDIR", &tmp_dir)
+        .env("TMP", &tmp_dir)
+        .env("TEMP", &tmp_dir)
+        .args(["--cardinality", "--stats-jsonl", "dc:cats.csv"]);
+    wrk.assert_success(&mut stats);
+
+    let mut create = wrk.command("frequency");
+    create
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .env("TMPDIR", &tmp_dir)
+        .env("TMP", &tmp_dir)
+        .env("TEMP", &tmp_dir)
+        .args(["--limit", "0", "--frequency-jsonl", "dc:cats.csv"]);
+    let mut expected = vec![
+        vec![
+            "field".to_owned(),
+            "value".to_owned(),
+            "count".to_owned(),
+            "percentage".to_owned(),
+            "rank".to_owned(),
+        ],
+        frequency_row("cat", "a", "2", "66.66667", "1"),
+        frequency_row("cat", "b", "1", "33.33333", "2"),
+        frequency_row("tag", &tag.display().to_string(), "3", "100", "1"),
+    ];
+    expected.sort_unstable();
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut create);
+    got.sort_unstable();
+    assert_eq!(got, expected, "unexpected complete frequency output");
+
+    let blobs = frequency_blobs(&cache_dir);
+    assert_eq!(
+        blobs.len(),
+        1,
+        "expected one durable frequency sidecar: {blobs:?}"
+    );
+    let temp = frequency_materialization(&tmp_dir, &blobs[0]);
+    assert!(
+        temp.exists(),
+        "expected owned dc materialization at {}",
+        temp.display()
+    );
+    std::fs::remove_dir_all(&temp).unwrap();
+
+    let mut reuse = wrk.command("frequency");
+    reuse
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .env("TMPDIR", &tmp_dir)
+        .env("TMP", &tmp_dir)
+        .env("TEMP", &tmp_dir)
+        .args(["--limit", "0", "dc:cats.csv"]);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut reuse);
+    got.sort_unstable();
+    assert_eq!(
+        got, expected,
+        "frequency result changed after sidecar restore"
+    );
+    assert!(
+        dir_has_file_suffix(&temp, ".freq.csv.data.jsonl"),
+        "frequency sidecar should be restored under the Workdir-owned TMPDIR"
+    );
+
+    let mut selected = wrk.command("frequency");
+    selected
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .env("TMPDIR", &tmp_dir)
+        .env("TMP", &tmp_dir)
+        .env("TEMP", &tmp_dir)
+        .args(["--limit", "0", "--select", "cat", "dc:cats.csv"]);
+    let mut selected_expected = vec![
+        vec![
+            "field".to_owned(),
+            "value".to_owned(),
+            "count".to_owned(),
+            "percentage".to_owned(),
+            "rank".to_owned(),
+        ],
+        frequency_row("cat", "a", "2", "66.66667", "1"),
+        frequency_row("cat", "b", "1", "33.33333", "2"),
+    ];
+    selected_expected.sort_unstable();
+    let mut selected_got: Vec<Vec<String>> = wrk.read_stdout(&mut selected);
+    selected_got.sort_unstable();
+    assert_eq!(
+        selected_got, selected_expected,
+        "selected frequency output must be exact"
+    );
+}
+
+#[test]
+#[serial]
+fn get_dc_frequency_cache_isolated_by_content_and_extension() {
+    let wrk = Workdir::new("get_dc_frequency_cache_isolated_by_content_and_extension");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let tag = wrk.path("unique");
+    wrk.create_from_string("one.csv", &format!("a,b\nx,y\nx,y\nq,{}\n", tag.display()));
+    wrk.create_from_string("two.csv", &format!("a,b\nz,w\nz,w\nq,{}\n", tag.display()));
+
+    for (source, alias) in [
+        ("one.csv", "one.csv"),
+        ("one.csv", "one.tsv"),
+        ("two.csv", "two.csv"),
+    ] {
+        let mut get = wrk.command("get");
+        get.env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--name", alias])
+            .arg(source);
+        wrk.assert_success(&mut get);
+
+        let mut stats = wrk.command("stats");
+        stats
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--cardinality", "--stats-jsonl"])
+            .arg(format!("dc:{alias}"));
+        wrk.assert_success(&mut stats);
+
+        let mut freq = wrk.command("frequency");
+        freq.env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--limit", "0", "--frequency-jsonl"])
+            .arg(format!("dc:{alias}"));
+        wrk.assert_success(&mut freq);
+    }
+
+    let blobs = frequency_blobs(&cache_dir);
+    assert_eq!(
+        blobs.len(),
+        3,
+        "content and extension need separate blobs: {blobs:?}"
+    );
+    assert_eq!(
+        blobs
+            .iter()
+            .filter(|p| p.to_string_lossy().ends_with(".csv.freq.jsonl.zst"))
+            .count(),
+        2,
+        "expected distinct CSV blobs for the two contents"
+    );
+    assert_eq!(
+        blobs
+            .iter()
+            .filter(|p| p.to_string_lossy().ends_with(".tsv.freq.jsonl.zst"))
+            .count(),
+        1,
+        "expected a separate TSV blob for the same content"
+    );
+
+    // Remove only the exact materialization subtrees named by this Workdir's three blobs.
+    for blob in &blobs {
+        let temp = frequency_materialization(&tmp_dir, blob);
+        assert!(
+            temp.is_dir(),
+            "expected owned materialization at {}",
+            temp.display()
+        );
+        std::fs::remove_dir_all(&temp).unwrap();
+    }
+
+    let tag_value = tag.display().to_string();
+    for alias in ["one.csv", "one.tsv", "two.csv"] {
+        let mut freq = wrk.command("frequency");
+        freq.env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--limit", "0"])
+            .arg(format!("dc:{alias}"));
+        let mut expected = vec![vec![
+            "field".to_owned(),
+            "value".to_owned(),
+            "count".to_owned(),
+            "percentage".to_owned(),
+            "rank".to_owned(),
+        ]];
+        match alias {
+            "one.csv" => expected.extend([
+                frequency_row("a", "x", "2", "66.66667", "1"),
+                frequency_row("a", "q", "1", "33.33333", "2"),
+                frequency_row("b", "y", "2", "66.66667", "1"),
+                frequency_row("b", &tag_value, "1", "33.33333", "2"),
+            ]),
+            "one.tsv" => expected.extend([
+                frequency_row("a,b", "x,y", "2", "66.66667", "1"),
+                frequency_row("a,b", &format!("q,{tag_value}"), "1", "33.33333", "2"),
+            ]),
+            "two.csv" => expected.extend([
+                frequency_row("a", "z", "2", "66.66667", "1"),
+                frequency_row("a", "q", "1", "33.33333", "2"),
+                frequency_row("b", "w", "2", "66.66667", "1"),
+                frequency_row("b", &tag_value, "1", "33.33333", "2"),
+            ]),
+            _ => unreachable!(),
+        }
+        expected.sort_unstable();
+        let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut freq);
+        got.sort_unstable();
+        assert_eq!(got, expected, "wrong complete restored output for {alias}");
+    }
+    // Every exact content/extension subtree must now contain its restored sidecar.
+    for blob in &blobs {
+        let temp = frequency_materialization(&tmp_dir, blob);
+        assert!(
+            dir_has_file_suffix(&temp, ".freq.csv.data.jsonl"),
+            "expected restored sidecar under {}",
+            temp.display()
+        );
+    }
+}
+
+#[test]
+#[serial]
+fn get_dc_frequency_cache_removed_by_prune_and_clear() {
+    for action in ["cache-prune", "cache-clear"] {
+        let wrk = Workdir::new("get_dc_frequency_cache_removed_by_prune_and_clear");
+        let cache_dir = wrk.path("qsvcache");
+        let tmp_dir = private_qsv_tmp(&wrk);
+        let tag = wrk.path("unique");
+        wrk.create_from_string(
+            "src.csv",
+            &format!(
+                "cat,tag\na,{}\na,{}\nb,{}\n",
+                tag.display(),
+                tag.display(),
+                tag.display()
+            ),
+        );
+
+        let mut get = wrk.command("get");
+        get.env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--name", "cats.csv"])
+            .arg("src.csv");
+        wrk.assert_success(&mut get);
+
+        let mut stats = wrk.command("stats");
+        stats
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--cardinality", "--stats-jsonl", "dc:cats.csv"]);
+        wrk.assert_success(&mut stats);
+
+        let mut freq = wrk.command("frequency");
+        freq.env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .args(["--frequency-jsonl", "dc:cats.csv"]);
+        wrk.assert_success(&mut freq);
+        assert_eq!(frequency_blobs(&cache_dir).len(), 1);
+
+        let mut remove = wrk.command("get");
+        remove
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .env("TMPDIR", &tmp_dir)
+            .env("TMP", &tmp_dir)
+            .env("TEMP", &tmp_dir)
+            .arg(action);
+        if action == "cache-prune" {
+            remove.args(["--older-than", "0s"]);
+        }
+        wrk.assert_success(&mut remove);
+        assert!(
+            frequency_blobs(&cache_dir).is_empty(),
+            "{action} retained a durable frequency blob"
+        );
+    }
+}

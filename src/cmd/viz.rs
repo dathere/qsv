@@ -15182,8 +15182,9 @@ const MAP_SELECT_CHROME: &str = r##"<script>
 /// map is serialized as a JS object literal with the same `&`/`<`/`>` escape trio the other
 /// inline JSON payloads use, so no cell value can smuggle a `</script>` into the page.
 fn choro_filter_chrome(rf: &RegionFilter) -> String {
+    // sorted so a regenerated page is byte-stable: HashMap iteration order is per-process random
     let escape = |m: &HashMap<String, Vec<String>>| {
-        serde_json::to_string(m)
+        serde_json::to_string(&m.iter().collect::<BTreeMap<_, _>>())
             .unwrap_or_else(|_| "{}".to_string())
             .replace('&', "\\u0026")
             .replace('<', "\\u003c")
@@ -41600,6 +41601,46 @@ fn geo_ref(pos: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #4645: both region-filter maps must serialize in key order, not HashMap order, or a
+    /// regenerated choropleth page is not byte-stable. 64 keys make an accidental pass under hash
+    /// order effectively impossible.
+    #[test]
+    fn choro_filter_chrome_maps_are_key_sorted() {
+        let keys: Vec<String> = (0..64).rev().map(|i| format!("{i:05}")).collect();
+        let raws: HashMap<String, Vec<String>> = keys
+            .iter()
+            .map(|k| (k.clone(), vec![format!("r{k}"), format!("R{k}")]))
+            .collect();
+        let quals: HashMap<String, Vec<String>> = keys
+            .iter()
+            .map(|k| (k.clone(), vec![format!("q{k}")]))
+            .collect();
+        let html = choro_filter_chrome(&RegionFilter {
+            region_col:  0,
+            region_raws: raws,
+            qualifier:   Some((1, quals)),
+        });
+        let sorted = |f: &dyn Fn(&str) -> String| {
+            let body: Vec<String> = (0..64)
+                .map(|i| {
+                    let k = format!("{i:05}");
+                    format!("\"{k}\":{}", f(&k))
+                })
+                .collect();
+            format!("{{{}}}", body.join(","))
+        };
+        let want_raws = sorted(&|k| format!("[\"r{k}\",\"R{k}\"]"));
+        let want_quals = sorted(&|k| format!("[\"q{k}\"]"));
+        assert!(
+            html.contains(&format!("var RAWS = {want_raws};")),
+            "RAWS not emitted in sorted key order"
+        );
+        assert!(
+            html.contains(&format!("var QUAL_RAWS = {want_quals};")),
+            "QUAL_RAWS not emitted in sorted key order"
+        );
+    }
 
     // `classify*` return `Result<PanelKind, SkipReason>` so the skip REASON survives to the Data
     // Dictionary drawer. These tests predate that and assert on chart SELECTION, which the reason

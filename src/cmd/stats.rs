@@ -4947,7 +4947,9 @@ impl Stats {
         }
         if which.dist {
             online = Some(stats::OnlineStats::default());
-            online_len = Some(stats::OnlineStats::default());
+            // only stddev/variance are read from online_len, so skip the per-sample
+            // ln()/reciprocal for the never-output geometric/harmonic means
+            online_len = Some(stats::OnlineStats::without_hg_sums());
             if use_weights {
                 weighted_online = Some(WeightedOnlineStats::new());
             }

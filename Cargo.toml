@@ -526,8 +526,8 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 # until the next plotly.rs release.
 plotly = { git = "https://github.com/plotly/plotly.rs", rev = "00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d" }
 
-# Use our patched fork of polars-readstat-rs using object_store 0.14 until our PR is merged
-polars-readstat-rs = { git = "https://github.com/jqnatividad/polars_readstat", branch = "bump-object_store-0.14", optional = true }
+# Our PR has been merged upstream! We can now use the official polars-readstat-rs crate instead of our fork.
+polars-readstat-rs = { git = "https://github.com/jrothbaum/polars_readstat", rev = "f62c90a127cbc94e63ae692fd14408ff529b9226", optional = true }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }

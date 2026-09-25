@@ -6558,7 +6558,7 @@ dependencies = [
 [[package]]
 name = "polars-readstat-rs"
 version = "0.23.0"
-source = "git+https://github.com/jqnatividad/polars_readstat?branch=bump-object_store-0.14#8dde076afea3e1087783e80fe5fdd0cbbca4c057"
+source = "git+https://github.com/jrothbaum/polars_readstat?rev=f62c90a127cbc94e63ae692fd14408ff529b9226#f62c90a127cbc94e63ae692fd14408ff529b9226"
 dependencies = [
  "byteorder",
  "chrono",

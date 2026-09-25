@@ -1978,7 +1978,7 @@ dependencies = [
 [[package]]
 name = "csvs_convert"
 version = "0.13.2"
-source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats-redux#51b530c8b73999323bfd0ca425281bcd9b8db8fc"
+source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats-redux#c23a7708980d51a225f3863d7bb27eba6d73de1b"
 dependencies = [
  "chrono",
  "counter",
@@ -7150,9 +7150,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-stats"
-version = "0.55.0"
+version = "0.56.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0e9e03d266aaa0531920d43393c87703321bb2ad544aa15d90ee3bbcc9203a8"
+checksum = "be6b7857266d4ceae3dd6022eec0fa4a030ab81362db7f83129c8bbda82b0f34"
 dependencies = [
  "hashbrown 0.17.1",
  "num-traits",

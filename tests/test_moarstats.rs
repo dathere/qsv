@@ -6814,6 +6814,113 @@ fn moarstats_regenerates_a_stale_baseline_stats_csv() {
     );
 }
 
+// Regression: moarstats judged the baseline by mtime alone and then skipped every column already in
+// it, so after an upgrade an extended cache kept the OLD release's values for columns whose formula
+// had since been fixed (#4651's jarque_bera/bimodality_coefficient/kurtosis) - beside new columns
+// computed by the new release. A sidecar from a different qsv version now forces a rebuild.
+// Returns (jarque_bera before planting, jarque_bera after the re-run, re-run stderr).
+fn moarstats_rerun_over_planted_jarque_bera(
+    name: &str,
+    sidecar_version: Option<&str>,
+) -> (String, String, String) {
+    let wrk = Workdir::new(name);
+    let mut rows = vec![svec!["v"]];
+    for i in 1..=200_u32 {
+        rows.push(vec![(i * i % 997).to_string()]);
+    }
+    wrk.create("ver.csv", rows);
+
+    let run = || {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg("--advanced").arg("ver.csv");
+        cmd
+    };
+    wrk.assert_success(&mut run());
+
+    let jb_of = |content: &str| -> String {
+        let mut rdr = csv::Reader::from_reader(content.as_bytes());
+        let idx = rdr
+            .headers()
+            .unwrap()
+            .iter()
+            .position(|h| h == "jarque_bera")
+            .expect("no jarque_bera column");
+        let rec = rdr.records().next().unwrap().unwrap();
+        rec[idx].to_string()
+    };
+    let extended = wrk.read_to_string("ver.stats.csv").unwrap();
+    let original = jb_of(&extended);
+    assert!(!original.is_empty(), "setup: jarque_bera is empty");
+
+    // plant a value no correct computation produces
+    let mut rdr = csv::Reader::from_reader(extended.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let idx = headers.iter().position(|h| h == "jarque_bera").unwrap();
+    let mut wtr = csv::Writer::from_path(wrk.path("ver.stats.csv")).unwrap();
+    wtr.write_record(&headers).unwrap();
+    for rec in rdr.records() {
+        let rec = rec.unwrap();
+        let planted: Vec<&str> = rec
+            .iter()
+            .enumerate()
+            .map(|(i, f)| if i == idx { "999999" } else { f })
+            .collect();
+        wtr.write_record(&planted).unwrap();
+    }
+    wtr.flush().unwrap();
+    drop(wtr);
+
+    if let Some(version) = sidecar_version {
+        let sidecar = wrk.path("ver.stats.csv.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+        meta["qsv_version"] = serde_json::Value::String(version.to_string());
+        std::fs::write(&sidecar, serde_json::to_string(&meta).unwrap()).unwrap();
+    }
+
+    let stderr = wrk.stderr_on_success(&mut run());
+    let after = jb_of(&wrk.read_to_string("ver.stats.csv").unwrap());
+    // the rebuild must leave a current-version sidecar, or every later run would rebuild again
+    let meta: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("ver.stats.csv.json").unwrap()).unwrap();
+    assert_eq!(meta["qsv_version"], env!("CARGO_PKG_VERSION"));
+    (original, after, stderr)
+}
+
+#[test]
+fn moarstats_recomputes_an_extended_cache_from_another_qsv_version() {
+    let (original, after, stderr) = moarstats_rerun_over_planted_jarque_bera(
+        "moarstats_recomputes_an_extended_cache_from_another_qsv_version",
+        Some("0.0.1"),
+    );
+    assert_eq!(
+        after, original,
+        "the planted jarque_bera survived a qsv-version change; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("different qsv version"),
+        "expected the version-mismatch warning; stderr: {stderr}"
+    );
+}
+
+// Control for the test above: on the SAME version the extended cache is reused as-is, so the check
+// only fires on a genuine version change rather than on every run.
+#[test]
+fn moarstats_keeps_an_extended_cache_from_the_same_qsv_version() {
+    let (_, after, stderr) = moarstats_rerun_over_planted_jarque_bera(
+        "moarstats_keeps_an_extended_cache_from_the_same_qsv_version",
+        None,
+    );
+    assert_eq!(
+        after, "999999",
+        "a same-version cache was recomputed; stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("different qsv version"),
+        "unexpected version-mismatch warning; stderr: {stderr}"
+    );
+}
+
 #[test]
 fn moarstats_fractional_pct_thresholds_find_their_percentiles() {
     // `stats --percentile-list` casts each entry `as u8`, so asking for 33.3 computes p33 and

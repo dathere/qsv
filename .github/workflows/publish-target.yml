@@ -288,8 +288,9 @@ jobs:
       # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
       # ARM runner — qsvmcp is already excluded there too) and all non-Linux targets.
       if: ${{ matrix.part != 'mcp' && inputs.target != 'aarch64-unknown-linux-gnu' && inputs.os_name == 'linux' }}
-      env:
-        RUSTFLAGS: ${{ inputs.addl_rustflags }}
+      # Deliberately NO `addl_rustflags` (i.e. no -C target-cpu=x86-64-v3): qsvdp stays on the
+      # portable x86-64 baseline. DataPusher+ servers often run on VMs with conservative CPU
+      # models (kvm64/qemu64) that lack AVX2, and a SIGILLing qsvdp can't `--update` itself back.
       shell: bash
       run: |
         # shellcheck disable=SC2086

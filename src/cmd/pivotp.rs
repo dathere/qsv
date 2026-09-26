@@ -68,8 +68,9 @@ pivotp options:
                                       When moarstats has been run, also leverages outlier profile,
                                       Pearson skewness, MAD/stddev ratio, median/mean ratio, and
                                       quartile coefficient of dispersion for smarter selection.
-                                      With moarstats --advanced, also uses kurtosis, bimodality,
-                                      entropy and Gini coefficient.
+                                      With moarstats --advanced, also uses kurtosis, bimodality
+                                      (bimodality coefficient >= 0.555 with negative excess
+                                      kurtosis), entropy and Gini coefficient.
                                       For Date/DateTime values, checks sparsity and sort order.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
@@ -549,12 +550,18 @@ fn suggest_agg_function(
                     }
                     Expr::Element.len()
                 } else if let Some(bc) = stats.bimodality_coefficient {
-                    if bc >= 0.555 {
-                        // Bimodal distribution — central tendency is misleading
+                    // Bimodal distribution — central tendency is misleading. Require negative
+                    // excess kurtosis too: heavily skewed UNIMODAL data (amounts, counts,
+                    // durations) also inflates BC past 0.555, but is leptokurtic, whereas a
+                    // genuinely two-peaked distribution is flat-topped.
+                    if bc >= 0.555
+                        && let Some(kurt) = stats.kurtosis
+                        && kurt < 0.0
+                    {
                         if !quiet {
                             eprintln!(
                                 "Info: Bimodal distribution detected (bimodality coefficient \
-                                 {bc:.3} >= 0.555), using Len"
+                                 {bc:.3} >= 0.555, excess kurtosis {kurt:.3} < 0), using Len"
                             );
                         }
                         Expr::Element.len()

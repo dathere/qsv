@@ -18,7 +18,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 25 additional univariate statistics:
+Currently computes the following 40 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -63,56 +63,112 @@ Currently computes the following 25 additional univariate statistics:
     Robust Coefficient of Variation using MAD and the magnitude of the median.
     Always non-negative. Resistant to outliers, useful for comparing variability.
     https://en.wikipedia.org/wiki/Robust_measures_of_scale
-14. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
+14. Normalized MAD: MAD / 0.6745 (≈ 1.4826 * MAD)
+    Robust estimate of the standard deviation, consistent with stddev for normal data.
+    https://en.wikipedia.org/wiki/Median_absolute_deviation
+15. Normalized IQR: IQR / 1.349
+    Robust estimate of the standard deviation, consistent with stddev for normal data.
+16. Robust Z-Score of Min: 0.6745 * (min - median) / MAD
+    Iglewicz-Hoaglin modified z-score of the minimum.
+    Values beyond ±3.5 are commonly flagged as potential outliers.
+17. Robust Z-Score of Max: 0.6745 * (max - median) / MAD
+    Iglewicz-Hoaglin modified z-score of the maximum.
+18. Kelly Skewness: (P90 + P10 - 2*median) / (P90 - P10)
+    Percentile-based skewness. Less sensitive to extreme tails than moment skewness,
+    and uses more of the distribution than quartile skewness.
+    Requires the 10th & 90th percentiles (included in the default percentile list).
+19. P90/P10 Ratio: P90 / P10
+    Common spread/inequality ratio. Only computed when P10 > 0.
+20. Zero Share: n_zero / (n_zero + n_positive + n_negative)
+    Share of non-null numeric values that are exactly zero (zero-inflation).
+21. Berger-Parker Dominance: mode_occurrences / row count
+    Share of rows taken by the most frequent value (NULL counts as a value, as in mode).
+    Works for all field types. Not meaningful on weighted stats.
+    https://en.wikipedia.org/wiki/Diversity_index#Berger%E2%80%93Parker_index
+22. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
+    Moment-based counterpart to the quantile-based `skewness` from stats.
+    Positive values indicate right skew, negative values indicate left skew.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Skewness#Sample_skewness
+23. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
-15. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
-    BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal.
-    Computed as (skewness² + 1) / (kurtosis + 3).
-    Requires --advanced flag (needs skewness from base stats and kurtosis from --advanced flag).
+24. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+    BC > 0.555 (the value for a uniform distribution) suggests bimodal/multimodal.
+    Computed as (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))), using moment skewness and kurtosis.
+    Heavily skewed unimodal data can also exceed 0.555.
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Bimodality
-16. Jarque-Bera Test: (n/6) * (S² + K²/4)
-    Standard test for normality using skewness and kurtosis.
+25. Jarque-Bera Test: (n/6) * (S² + K²/4)
+    Standard test for normality, where S and K are the (biased) moment skewness and
+    excess kurtosis.
     Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
     Low p-values (< 0.05) indicate the data is NOT normally distributed.
-    Requires --advanced flag (needs kurtosis).
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test
-17. Gini Coefficient: Measures inequality/dispersion in the distribution.
+26. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-18. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+27. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     The Atkinson Index is a more general form of the Gini coefficient that allows for
     different sensitivity to inequality. Sensitivity is configurable via --epsilon.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Atkinson_index
-19. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+28. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     Measures inequality/concentration. Unlike Gini, it is decomposable into
     within-group and between-group components. Only computed for positive values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Theil_index
-20. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+29. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
     Average absolute distance from the mean. Different from MAD (which uses median).
     Less robust but more statistically efficient than MAD.
     Requires --advanced flag.
-21. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+30. Hoover Index: Σ|x_i - mean| / (2 * Σx_i)
+    Share of the total that would have to be redistributed to reach equality (0 to 1).
+    Only computed for non-negative numeric data. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Hoover_index
+31. L-CV: λ2 / λ1
+    Coefficient of L-variation - a robust, bounded analogue of the CV based on
+    L-moments (linear combinations of order statistics). Only computed for numeric data
+    with a positive mean; 0 for a constant column. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/L-moment
+32. L-Skewness: τ3 = λ3 / λ2
+    Robust analogue of skewness, bounded in [-1, 1]; exists whenever the mean does.
+    Requires --advanced flag.
+33. L-Kurtosis: τ4 = λ4 / λ2
+    Robust analogue of kurtosis. About 0.1226 for a normal distribution. The population
+    value lies in [-1/4, 1], but the sample estimate can fall below -1/4 for small n
+    (e.g. 0,0,6,6 gives -1.5). Requires --advanced flag.
+34. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
+    Correlation between consecutive non-null values in file order. Values near 1 indicate
+    a trend, drift or clustered/sorted data; near 0 no serial dependence; negative values
+    alternation. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Autocorrelation
+35. Benford MAD: mean absolute deviation between the first-significant-digit
+    proportions and Benford's law. Nigrini's thresholds: < 0.006 close conformity,
+    < 0.012 acceptable, < 0.015 marginal, otherwise nonconformity - a data quality or
+    fabrication signal. Only computed for numeric data with at least 100 non-zero values
+    spanning at least two orders of magnitude. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Benford%27s_law
+36. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-22. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+37. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-23. Simpson's Diversity Index: 1 - Σ(p_i²)
+38. Simpson's Diversity Index: 1 - Σ(p_i²)
     Probability that two randomly chosen values are different.
     Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
     Requires --advanced flag (computed alongside entropy from frequency data).
     https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
-24. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+39. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -120,7 +176,7 @@ Currently computes the following 25 additional univariate statistics:
     winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
     (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
     before _stddev_ratio, unlike the others.
-25. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+40. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -184,7 +240,7 @@ all values for computation.
 
 BIVARIATE STATISTICS:
 
-The `moarstats` command also computes the following 7 bivariate statistics:
+The `moarstats` command also computes the following 9 bivariate statistics:
  1. Pearson's correlation
     Measures linear correlation between two numeric/date fields.
     Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
@@ -219,6 +275,16 @@ The `moarstats` command also computes the following 7 bivariate statistics:
     Values range from 0 (no reduction) to 1 (fully determined).
     Selected with `u` in --bivariate-stats (or via "all").
     https://en.wikipedia.org/wiki/Uncertainty_coefficient
+ 8. Cramér's V: sqrt(χ² / (n * (min(r, c) - 1)))
+    Chi-squared based association between two fields of any type, from the same
+    joint frequency table as mutual information. Ranges from 0 (independent) to 1.
+    Selected with `cramersv` in --bivariate-stats (or via "all").
+    https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
+ 9. Linear Regression: ordinary least-squares fit of field2 on field1
+    Emits regression_slope, regression_intercept and r_squared (the coefficient of
+    determination; empty when field2 is constant) for numeric/date field pairs, from the
+    same streaming state as Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
+    https://en.wikipedia.org/wiki/Simple_linear_regression
 
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
@@ -271,9 +337,11 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Kurtosis, Shannon Entropy, Bimodality Coefficient,
-                           Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index,
-                           Mean Absolute Deviation, and Simpson's Diversity Index.
+    --advanced             Compute Moment Skewness, Kurtosis, Shannon Entropy,
+                           Bimodality Coefficient, Jarque-Bera, Gini Coefficient,
+                           Atkinson Index, Theil Index, Mean Absolute Deviation,
+                           Hoover Index, L-moment ratios, Lag-1 Autocorrelation,
+                           Benford MAD and Simpson's Diversity Index.
                            These advanced statistics computations require reading the
                            original CSV file to collect all values
                            for computation and are computationally expensive.
@@ -323,16 +391,17 @@ moarstats options:
                            Comma-separated list of bivariate statistics to compute.
                            Options: pearson, spearman, kendall, covariance, mi (mutual information),
                            nmi (normalized mutual information), u (Theil's directed uncertainty
-                           coefficient; emits u_field2_given_field1 and u_field1_given_field2)
+                           coefficient; emits u_field2_given_field1 and u_field1_given_field2),
+                           cramersv (Cramér's V) and regression (slope, intercept & r_squared).
                            Use "all" to compute all statistics or "fast" to compute only
                            pearson & covariance, which is much faster as it doesn't require storing
                            all values and uses streaming algorithms.
                            [default: fast]
     -C, --cardinality-threshold <n>
-                           Skip mutual information (mi/nmi/u) for field pairs where either
-                           field's cardinality exceeds this threshold. Such pairs also skip
-                           building their joint-frequency table, which is the dominant memory
-                           cost of --bivariate-stats all.
+                           Skip mutual information (mi/nmi/u) and cramersv for field pairs
+                           where either field's cardinality exceeds this threshold. Such pairs
+                           also skip building their joint-frequency table, which is the
+                           dominant memory cost of --bivariate-stats all.
                            Defaults to half the row count, floored at 1000, so it stays inert
                            on small inputs and scales with large ones. Mutual information
                            between near-unique columns saturates at log(n) and is noise
@@ -390,7 +459,7 @@ use qsv_dateparser::parse_with_preference;
 use rayon::prelude::*;
 use serde::Deserialize;
 use simdutf8::basic::from_utf8;
-use stats::{atkinson, gini, kurtosis};
+use stats::{atkinson, gini};
 use threadpool::ThreadPool;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
@@ -433,6 +502,8 @@ struct BivariateStatsConfig {
     mi:         bool, // mutual information
     nmi:        bool, // normalized mutual information
     u:          bool, // directed uncertainty coefficient (Theil's U), both directions
+    cramersv:   bool, // Cramér's V (chi-squared association)
+    regression: bool, // OLS slope, intercept & r² of field2 on field1
 }
 
 impl BivariateStatsConfig {
@@ -459,6 +530,8 @@ impl BivariateStatsConfig {
                 "u" | "uncertainty" | "uncertainty_coefficient" | "uncertainty-coefficient" => {
                     config.u = true;
                 },
+                "cramersv" | "cramers_v" | "cramers-v" => config.cramersv = true,
+                "regression" | "ols" => config.regression = true,
                 "all" => return Ok(Self::all()),
                 "fast" => {
                     config.pearson = true;
@@ -475,7 +548,8 @@ impl BivariateStatsConfig {
                 "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
                  covariance (or cov), mi (or mutual_information or mutual-information), nmi (or \
                  normalized_mutual_information or normalized-mutual-information), u (or \
-                 uncertainty or uncertainty_coefficient), fast, all",
+                 uncertainty or uncertainty_coefficient), cramersv (or cramers_v), regression (or \
+                 ols), fast, all",
                 invalid_stats.join(", ")
             );
         }
@@ -488,12 +562,15 @@ impl BivariateStatsConfig {
             && !config.mi
             && !config.nmi
             && !config.u
+            && !config.cramersv
+            && !config.regression
         {
             return fail_clierror!(
                 "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
                  kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
                  nmi (or normalized_mutual_information or normalized-mutual-information), u (or \
-                 uncertainty or uncertainty_coefficient), fast, all"
+                 uncertainty or uncertainty_coefficient), cramersv (or cramers_v), regression (or \
+                 ols), fast, all"
             );
         }
 
@@ -510,6 +587,8 @@ impl BivariateStatsConfig {
             mi:         true,
             nmi:        true,
             u:          true,
+            cramersv:   true,
+            regression: true,
         }
     }
 
@@ -523,7 +602,7 @@ impl BivariateStatsConfig {
     /// information)
     #[inline]
     const fn needs_frequency_counts(self) -> bool {
-        self.mi || self.nmi || self.u
+        self.mi || self.nmi || self.u || self.cramersv
     }
 }
 
@@ -1181,40 +1260,55 @@ fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
     }
 }
 
-/// Compute Jarque-Bera test statistic: (n/6) * (S^2 + K^2/4)
-/// Tests whether data follows a normal distribution.
-/// Returns (`jb_statistic`, `p_value`) where `p_value` is from chi-squared(2) distribution.
+/// Φ⁻¹(3/4): the MAD and half-IQR of a standard normal distribution.
+const NORMAL_Q3: f64 = 0.674_489_750_196_081_7;
+
+/// Normalized MAD: MAD / Φ⁻¹(3/4) ≈ 1.4826·MAD, a consistent estimator of σ under normality
 #[inline]
-fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> Option<(f64, f64)> {
-    if n < 3 {
-        return None;
-    }
-    if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
-        #[allow(clippy::cast_precision_loss)]
-        let n_f64 = n as f64;
-        let jb = (n_f64 / 6.0) * skew_val.mul_add(skew_val, kurt_val * kurt_val / 4.0);
-        // Upper-tail p-value from chi-squared distribution with 2 degrees of freedom
-        // For chi-squared(2), the survival function (1 - CDF) is e^(-x/2)
-        let p_value = (-jb / 2.0_f64).exp();
-        Some((jb, p_value))
-    } else {
-        None
+fn compute_mad_normalized(mad: Option<f64>) -> Option<f64> {
+    mad.map(|m| m / NORMAL_Q3)
+}
+
+/// Normalized IQR: IQR / (2·Φ⁻¹(3/4)) ≈ IQR / 1.349, a consistent estimator of σ under normality
+#[inline]
+fn compute_iqr_normalized(iqr: Option<f64>) -> Option<f64> {
+    iqr.map(|i| i / (2.0 * NORMAL_Q3))
+}
+
+/// Robust (Iglewicz-Hoaglin modified) z-score: Φ⁻¹(3/4)·(x - median) / MAD
+#[inline]
+fn compute_robust_zscore(x: Option<f64>, median: Option<f64>, mad: Option<f64>) -> Option<f64> {
+    match (x, median, mad) {
+        (Some(x), Some(med), Some(mad)) if mad > 0.0 => Some(NORMAL_Q3 * (x - med) / mad),
+        _ => None,
     }
 }
 
-/// Compute Bimodality Coefficient: (skewness² + 1) / (kurtosis + 3)
-/// BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal
-fn compute_bimodality_coefficient(skewness: Option<f64>, kurtosis: Option<f64>) -> Option<f64> {
-    if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
-        let denominator = kurt_val + 3.0;
-        if denominator.abs() > f64::EPSILON {
-            Some(skew_val.mul_add(skew_val, 1.0) / denominator)
-        } else {
-            None
-        }
-    } else {
-        None
+/// Kelly's percentile skewness: (P90 + P10 - 2·median) / (P90 - P10)
+#[inline]
+fn compute_kelly_skewness(p10: Option<f64>, median: Option<f64>, p90: Option<f64>) -> Option<f64> {
+    match (p10, median, p90) {
+        (Some(p10), Some(med), Some(p90)) if p90 > p10 => {
+            Some(2.0f64.mul_add(-med, p90 + p10) / (p90 - p10))
+        },
+        _ => None,
     }
+}
+
+/// P90/P10 percentile ratio - only meaningful for strictly positive data
+#[inline]
+fn compute_percentile_ratio(p10: Option<f64>, p90: Option<f64>) -> Option<f64> {
+    match (p10, p90) {
+        (Some(p10), Some(p90)) if p10 > 0.0 && p90 > 0.0 => Some(p90 / p10),
+        _ => None,
+    }
+}
+
+/// part / total, None when total is zero
+#[inline]
+#[allow(clippy::cast_precision_loss)]
+fn compute_share(part: u64, total: u64) -> Option<f64> {
+    (total > 0).then(|| part as f64 / total as f64)
 }
 
 /// Compute Normalized Entropy: `shannon_entropy` / log2(cardinality)
@@ -1801,14 +1895,34 @@ struct OutlierStats {
     count_all:              u64,
 }
 
-/// Statistics for Kurtosis, Gini & Atkinson Index
+/// `--advanced` columns computed in `finalize_kga`, beyond the original
+/// kurtosis/Gini/Atkinson/Theil/`mean_ad` set
+const ADVANCED_VECTOR_COLUMNS: &[&str] = &[
+    "hoover_index",
+    "l_cv",
+    "l_skewness",
+    "l_kurtosis",
+    "lag1_autocorrelation",
+    "benford_mad",
+];
+
+/// Statistics computed from a field's full value vector in the `--advanced` pass
 #[derive(Clone, Default)]
 struct KGAStats {
-    kurtosis:         Option<f64>,
-    gini_coefficient: Option<f64>,
-    atkinson_index:   Option<f64>,
-    theil_index:      Option<f64>,
-    mean_ad:          Option<f64>,
+    moment_skewness:        Option<f64>,
+    kurtosis:               Option<f64>,
+    bimodality_coefficient: Option<f64>,
+    jarque_bera:            Option<(f64, f64)>,
+    gini_coefficient:       Option<f64>,
+    atkinson_index:         Option<f64>,
+    theil_index:            Option<f64>,
+    mean_ad:                Option<f64>,
+    hoover_index:           Option<f64>,
+    l_cv:                   Option<f64>,
+    l_skewness:             Option<f64>,
+    l_kurtosis:             Option<f64>,
+    lag1_autocorrelation:   Option<f64>,
+    benford_mad:            Option<f64>,
 }
 
 /// Statistics for Shannon Entropy and Simpson's Diversity Index
@@ -1879,6 +1993,10 @@ struct BivariateStats {
     // `finalize_bivariate_pair_stats`).
     u_field2_given_field1: Option<f64>, // U(field2|field1) = MI / H(field2)
     u_field1_given_field2: Option<f64>, // U(field1|field2) = MI / H(field1)
+    cramers_v: Option<f64>,
+    regression_slope: Option<f64>,
+    regression_intercept: Option<f64>,
+    r_squared: Option<f64>,
     n_pairs: u64,
 }
 
@@ -2239,6 +2357,55 @@ fn finalize_pearson_correlation(state: &CorrelationState) -> Option<f64> {
     } else {
         None
     }
+}
+
+/// Ordinary least-squares regression of y (field2) on x (field1) from the Welford state.
+/// Returns (slope, intercept, r²). A constant response (e.g. after pairwise NULL
+/// exclusion) still has a valid fit - slope 0, intercept = `mean_y` - but r² is undefined.
+fn finalize_regression(state: &CorrelationState) -> Option<(f64, f64, Option<f64>)> {
+    if state.count < 2 || state.m2_x <= 0.0 {
+        return None;
+    }
+    let slope = state.cxy / state.m2_x;
+    let intercept = slope.mul_add(-state.mean_x, state.mean_y);
+    if !slope.is_finite() || !intercept.is_finite() {
+        return None;
+    }
+    // normalize before squaring: cxy² and m2_x·m2_y overflow long before r does
+    let r_squared = (state.m2_y > 0.0)
+        .then(|| {
+            let r = state.cxy / (state.m2_x.sqrt() * state.m2_y.sqrt());
+            (r * r).min(1.0)
+        })
+        .filter(|r2| r2.is_finite());
+    Some((slope, intercept, r_squared))
+}
+
+/// Cramér's V from joint and marginal frequency counts:
+/// `V = sqrt(χ² / (N·(min(r, c) - 1)))`, where `χ² = N·(Σ n_xy² / (n_x·n_y) - 1)`.
+/// The closed form sums only over observed cells, so unobserved (zero) cells need no
+/// materialization. Returns None when either variable has fewer than 2 categories.
+#[allow(clippy::cast_precision_loss)]
+fn compute_cramers_v(
+    xy_counts: &HashMap<u64, u64>,
+    x_counts: &HashMap<u32, u64>,
+    y_counts: &HashMap<u32, u64>,
+    total: u64,
+) -> Option<f64> {
+    let k = x_counts.len().min(y_counts.len());
+    if total == 0 || k < 2 {
+        return None;
+    }
+    let mut sum = 0.0_f64;
+    for (joint_key, &n_xy) in xy_counts {
+        let n_x = *x_counts.get(&((joint_key >> 32) as u32))? as f64;
+        let n_y = *y_counts.get(&((joint_key & 0xFFFF_FFFF) as u32))? as f64;
+        let n_xy = n_xy as f64;
+        sum += n_xy * n_xy / (n_x * n_y);
+    }
+    // χ²/N = sum - 1; clamp tiny negative rounding noise for independent data
+    let phi_sq = (sum - 1.0).max(0.0);
+    Some((phi_sq / (k as f64 - 1.0)).sqrt().min(1.0))
 }
 
 /// Compute final covariance from correlation state
@@ -2622,9 +2789,6 @@ fn compute_uncertainty_coefficient(mi: Option<f64>, h_target: Option<f64>) -> Op
 struct KGAFieldInfo {
     col_idx:    usize,
     field_type: FieldType,
-    mean:       Option<f64>,
-    variance:   Option<f64>, // variance = stddev^2
-    sum:        Option<f64>, // sum for Gini coefficient
 }
 
 /// Combined per-chunk output from a single fused scan that BOTH counts outliers
@@ -2680,29 +2844,238 @@ fn merge_outlier_stats(total: &mut OutlierStats, stats: &OutlierStats) {
     }
 }
 
-/// Finalize Kurtosis, Gini, Atkinson, Theil & mean absolute deviation for a single
-/// field from its full (file-ordered) value vector. Kept bit-identical to the former
-/// sequential `compute_all_kga_from_reader` finalize block.
-fn finalize_kga(
-    values: &[f64],
-    precalc_mean: Option<f64>,
-    precalc_variance: Option<f64>,
-    precalc_sum: Option<f64>,
-    atkinson_epsilon: f64,
-) -> KGAStats {
+/// Exact population central moments of a value vector (two-pass).
+#[derive(Clone, Copy, Debug)]
+struct CentralMoments {
+    n:            f64,
+    sum:          f64,
+    mean:         f64,
+    m2:           f64,
+    m3:           f64,
+    m4:           f64,
+    mean_abs_dev: f64,
+}
+
+impl CentralMoments {
+    #[allow(clippy::cast_precision_loss)]
+    fn from_values(values: &[f64]) -> Self {
+        let n = values.len() as f64;
+        let sum: f64 = values.iter().sum();
+        // One refinement pass corrects the rounding error of the naive mean. Without it a
+        // constant column (e.g. ten 0.1s, whose naive mean is off by an ulp) gets identical
+        // NONZERO deviations, fabricating skewness = 1, lag-1 autocorrelation ≈ 1, etc.
+        // For a constant column the correction is exact, so every deviation becomes 0.
+        let naive = sum / n;
+        let mean = naive + values.iter().map(|&x| x - naive).sum::<f64>() / n;
+        let (mut s2, mut s3, mut s4, mut sabs) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        for &x in values {
+            let d = x - mean;
+            let d2 = d * d;
+            s2 += d2;
+            s3 = d2.mul_add(d, s3);
+            s4 = d2.mul_add(d2, s4);
+            sabs += d.abs();
+        }
+        Self {
+            n,
+            sum,
+            mean,
+            m2: s2 / n,
+            m3: s3 / n,
+            m4: s4 / n,
+            mean_abs_dev: sabs / n,
+        }
+    }
+
+    /// Biased moment skewness g1 = m3 / m2^1.5
+    fn g1(&self) -> Option<f64> {
+        (self.m2 > 0.0).then(|| self.m3 / self.m2.powf(1.5))
+    }
+
+    /// Biased excess kurtosis g2 = m4 / m2² - 3
+    fn g2(&self) -> Option<f64> {
+        (self.m2 > 0.0).then(|| self.m4 / (self.m2 * self.m2) - 3.0)
+    }
+
+    /// Adjusted Fisher-Pearson sample skewness G1 (scipy `skew(bias=False)`).
+    fn sample_skewness(&self) -> Option<f64> {
+        let n = self.n;
+        if n < 3.0 {
+            return None;
+        }
+        self.g1().map(|g1| g1 * (n * (n - 1.0)).sqrt() / (n - 2.0))
+    }
+
+    /// Sample excess kurtosis G2 (scipy `kurtosis(bias=False)`).
+    fn sample_excess_kurtosis(&self) -> Option<f64> {
+        let n = self.n;
+        if n < 4.0 {
+            return None;
+        }
+        self.g2()
+            .map(|g2| (n + 1.0).mul_add(g2, 6.0) * (n - 1.0) / ((n - 2.0) * (n - 3.0)))
+    }
+
+    /// Bimodality Coefficient with finite-sample correction (Pfister et al., 2013):
+    /// (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))).
+    /// BC > 0.555 (the value for a uniform distribution) suggests bi/multimodality.
+    fn bimodality_coefficient(&self) -> Option<f64> {
+        let n = self.n;
+        let skew = self.sample_skewness()?;
+        let kurt = self.sample_excess_kurtosis()?;
+        let denominator = kurt + 3.0 * (n - 1.0) * (n - 1.0) / ((n - 2.0) * (n - 3.0));
+        (denominator.abs() > f64::EPSILON).then(|| skew.mul_add(skew, 1.0) / denominator)
+    }
+
+    /// Jarque-Bera statistic (n/6)·(g1² + g2²/4) using the biased moment estimators,
+    /// matching scipy `stats.jarque_bera`. Returns (statistic, p-value) where the
+    /// p-value is the chi-squared(2) survival function e^(-JB/2).
+    fn jarque_bera(&self) -> Option<(f64, f64)> {
+        if self.n < 3.0 {
+            return None;
+        }
+        let g1 = self.g1()?;
+        let g2 = self.g2()?;
+        let jb = (self.n / 6.0) * g1.mul_add(g1, g2 * g2 / 4.0);
+        Some((jb, (-jb / 2.0).exp()))
+    }
+}
+
+/// Sample L-moments λ1..λ4 from ascending-sorted values via unbiased probability-weighted
+/// moments (Hosking, 1990). Requires n >= 4.
+///
+/// The PWMs are accumulated on `x - shift` (pass the mean): λ2..λ4 are translation
+/// invariant, and uncentered PWMs of large-offset data lose λ2..λ4 to cancellation.
+#[allow(clippy::cast_precision_loss)]
+fn compute_l_moments(sorted: &[f64], shift: f64) -> Option<[f64; 4]> {
+    let len = sorted.len();
+    if len < 4 {
+        return None;
+    }
+    let n = len as f64;
+    let (mut b0, mut b1, mut b2, mut b3) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    for (i, &x) in sorted.iter().enumerate() {
+        let i = i as f64;
+        let w1 = i / (n - 1.0);
+        let w2 = w1 * (i - 1.0) / (n - 2.0);
+        let w3 = w2 * (i - 2.0) / (n - 3.0);
+        let x = x - shift;
+        b0 += x;
+        b1 = w1.mul_add(x, b1);
+        b2 = w2.mul_add(x, b2);
+        b3 = w3.mul_add(x, b3);
+    }
+    let (b0, b1, b2, b3) = (b0 / n, b1 / n, b2 / n, b3 / n);
+    Some([
+        b0 + shift,
+        2.0f64.mul_add(b1, -b0),
+        6.0f64.mul_add(b2, (-6.0f64).mul_add(b1, b0)),
+        20.0f64.mul_add(b3, (-30.0f64).mul_add(b2, 12.0f64.mul_add(b1, -b0))),
+    ])
+}
+
+/// Lag-1 autocorrelation of the values in file order:
+/// `Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²`
+fn compute_lag1_autocorrelation(values: &[f64], mean: f64) -> Option<f64> {
+    if values.len() < 3 {
+        return None;
+    }
+    let mut num = 0.0_f64;
+    let mut den = 0.0_f64;
+    for (&a, &b) in values.iter().zip(&values[1..]) {
+        num = (a - mean).mul_add(b - mean, num);
+    }
+    for &x in values {
+        let d = x - mean;
+        den = d.mul_add(d, den);
+    }
+    (den > 0.0).then(|| num / den)
+}
+
+/// Minimum count of non-zero values for a Benford first-digit test
+const BENFORD_MIN_N: usize = 100;
+
+/// Nigrini's mean absolute deviation between the observed first-significant-digit
+/// proportions and Benford's law. Only computed when there are at least
+/// `BENFORD_MIN_N` finite non-zero values spanning at least two orders of magnitude,
+/// since Benford's law does not apply to narrow-range data.
+/// Nigrini's conformity thresholds: < 0.006 close, < 0.012 acceptable,
+/// < 0.015 marginal, otherwise nonconforming.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn compute_benford_mad(values: &[f64]) -> Option<f64> {
+    let mut counts = [0_u64; 9];
+    let mut n: usize = 0;
+    let (mut min_abs, mut max_abs) = (f64::INFINITY, 0.0_f64);
+    for &x in values {
+        let a = x.abs();
+        if a == 0.0 || !a.is_finite() {
+            continue;
+        }
+        min_abs = min_abs.min(a);
+        max_abs = max_abs.max(a);
+        let mut m = a / 10f64.powi(a.log10().floor() as i32);
+        // guard against log10/powi rounding at exact powers of ten
+        if m >= 10.0 {
+            m /= 10.0;
+        } else if m < 1.0 {
+            m *= 10.0;
+        }
+        let digit = (m as usize).clamp(1, 9);
+        counts[digit - 1] += 1;
+        n += 1;
+    }
+    if n < BENFORD_MIN_N || max_abs / min_abs < 100.0 {
+        return None;
+    }
+    let n = n as f64;
+    let mad = counts
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            let expected = (1.0 + 1.0 / (i as f64 + 1.0)).log10();
+            (c as f64 / n - expected).abs()
+        })
+        .sum::<f64>()
+        / 9.0;
+    Some(mad)
+}
+
+/// Finalize the `--advanced` per-field statistics from its full (file-ordered) value
+/// vector. Runs after the chunk merge, so parallel and sequential scans produce
+/// bit-identical results.
+///
+/// Mean and central moments are recomputed exactly from `values` rather than taken
+/// from the stats cache: the cached mean/stddev are rounded (default 4 dp), which
+/// badly distorts moment statistics on small-scale data.
+///
+/// Takes ownership of `values`: order-dependent statistics are computed first, then
+/// the vector is sorted in place for the L-moments. `is_date` values are days since
+/// the epoch, so origin-dependent statistics (L-CV, Hoover, Benford) are skipped.
+fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> KGAStats {
     // Need at least 2 values for meaningful statistics
     if values.len() < 2 {
         return KGAStats::default();
     }
 
-    // Compute kurtosis with precalculated mean and variance
-    let kurtosis_val = kurtosis(values.iter().copied(), precalc_mean, precalc_variance);
+    let moments = CentralMoments::from_values(&values);
 
-    // Compute Gini coefficient with precalculated sum (not mean!)
-    let gini_val = gini(values.iter().copied(), precalc_sum);
+    // order-dependent: must run before the sort below
+    let lag1_val = compute_lag1_autocorrelation(&values, moments.mean);
+
+    // Compute Gini coefficient with exact sum
+    let gini_val = gini(values.iter().copied(), Some(moments.sum));
 
     // Compute Atkinson Index (epsilon parameter configurable via --epsilon)
-    let atkinson_val = atkinson(values.iter().copied(), atkinson_epsilon, precalc_mean, None);
+    let atkinson_val = atkinson(
+        values.iter().copied(),
+        atkinson_epsilon,
+        Some(moments.mean),
+        None,
+    );
 
     // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     // Only for positive values (Theil index is undefined for non-positive values)
@@ -2711,7 +3084,7 @@ fn finalize_kga(
         // First pass: compute sum and count of positive values
         let mut pos_sum = 0.0_f64;
         let mut pos_count: usize = 0;
-        for &v in values {
+        for &v in &values {
             if v > 0.0 {
                 pos_sum += v;
                 pos_count += 1;
@@ -2724,7 +3097,7 @@ fn finalize_kga(
             if pos_mean > f64::EPSILON {
                 // Second pass: accumulate Theil sum over positive values
                 let mut theil_sum = 0.0_f64;
-                for &v in values {
+                for &v in &values {
                     if v > 0.0 {
                         let ratio = v / pos_mean;
                         // use CPU's Fused Multiply-Add (FMA) for better precision
@@ -2740,22 +3113,41 @@ fn finalize_kga(
         }
     };
 
-    // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
-    #[allow(clippy::cast_precision_loss)]
-    let mean_ad_val = if let Some(mean_val) = precalc_mean {
-        let n = values.len() as f64;
-        let sum_abs_dev: f64 = values.iter().map(|&x| (x - mean_val).abs()).sum();
-        Some(sum_abs_dev / n)
-    } else {
+    let non_negative = !is_date && values.iter().all(|&v| v >= 0.0);
+    let hoover_val =
+        (non_negative && moments.sum > 0.0).then(|| moments.mean_abs_dev / (2.0 * moments.mean));
+    let benford_val = if is_date {
         None
+    } else {
+        compute_benford_mad(&values)
+    };
+
+    values.sort_unstable_by(f64::total_cmp);
+    let (l_cv_val, l_skew_val, l_kurt_val) = match compute_l_moments(&values, moments.mean) {
+        // l_cv of a constant positive column is a genuine 0; the ratios over l2 are not
+        Some([l1, l2, l3, l4]) => (
+            (!is_date && l1 > 0.0 && l2 >= 0.0).then(|| l2 / l1),
+            (l2 > 0.0).then(|| l3 / l2),
+            (l2 > 0.0).then(|| l4 / l2),
+        ),
+        None => (None, None, None),
     };
 
     KGAStats {
-        kurtosis:         kurtosis_val,
-        gini_coefficient: gini_val,
-        atkinson_index:   atkinson_val,
-        theil_index:      theil_val,
-        mean_ad:          mean_ad_val,
+        moment_skewness:        moments.sample_skewness(),
+        kurtosis:               moments.sample_excess_kurtosis(),
+        bimodality_coefficient: moments.bimodality_coefficient(),
+        jarque_bera:            moments.jarque_bera(),
+        gini_coefficient:       gini_val,
+        atkinson_index:         atkinson_val,
+        theil_index:            theil_val,
+        mean_ad:                Some(moments.mean_abs_dev),
+        hoover_index:           hoover_val,
+        l_cv:                   l_cv_val,
+        l_skewness:             l_skew_val,
+        l_kurtosis:             l_kurt_val,
+        lag1_autocorrelation:   lag1_val,
+        benford_mad:            benford_val,
     }
 }
 
@@ -2931,13 +3323,6 @@ fn compute_outliers_and_kga(
         return Ok((HashMap::new(), HashMap::new()));
     }
 
-    // Precompute KGA per-field (mean, variance, sum) for finalize BEFORE the field
-    // list is moved into an Arc for the parallel workers.
-    let kga_precalc: Vec<(Option<f64>, Option<f64>, Option<f64>)> = kga_fields
-        .iter()
-        .map(|f| (f.mean, f.variance, f.sum))
-        .collect();
-
     let input_path_str = input_path
         .to_str()
         .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
@@ -2948,6 +3333,10 @@ fn compute_outliers_and_kga(
 
     let n_outlier = outlier_fields.len();
     let n_kga = kga_fields.len();
+    let kga_is_date: Vec<bool> = kga_fields
+        .iter()
+        .map(|f| f.field_type.is_date_or_datetime())
+        .collect();
 
     // Resolve the job count up front (also sizes Rayon's global pool via
     // `util::njobs`). This must happen on EVERY path — including the sequential
@@ -3087,19 +3476,14 @@ fn compute_outliers_and_kga(
 
     // Finalize KGA per field (slot -> name) over its file-ordered value vector.
     // Each field's finalize is independent and dominated by a per-column sort
-    // (Gini) plus kurtosis/Theil/mean_ad, so fan out across fields with rayon.
+    // (Gini) plus moments/Theil, so fan out across fields with rayon.
     // Results are keyed by name and each field's math is order-independent of the
     // others, so this stays bit-identical to a sequential finalize.
     let kga_stats: HashMap<String, KGAStats> = kga_concat
         .into_par_iter()
-        .zip(kga_precalc)
+        .zip(kga_is_date)
         .zip(kga_names)
-        .map(|((values, (mean, variance, sum)), name)| {
-            (
-                name,
-                finalize_kga(&values, mean, variance, sum, atkinson_epsilon),
-            )
-        })
+        .map(|((values, is_date), name)| (name, finalize_kga(values, is_date, atkinson_epsilon)))
         .collect();
 
     Ok((outlier_counts, kga_stats))
@@ -3432,6 +3816,14 @@ fn finalize_bivariate_pair_stats(
             )
         };
 
+    let (regression_slope, regression_intercept, r_squared) =
+        if !stats_config.regression || has_zero_variance {
+            (None, None, None)
+        } else {
+            finalize_regression(&chunk_stats.correlation_state)
+                .map_or((None, None, None), |(m, b, r2)| (Some(m), Some(b), r2))
+        };
+
     let spearman = if !stats_config.spearman || has_zero_variance || chunk_stats.x_values.len() < 2
     {
         None
@@ -3473,7 +3865,7 @@ fn finalize_bivariate_pair_stats(
     // so deriving them under the same condition avoids building maps nothing reads.
     // Finalize runs under `into_par_iter`, so this bounds live marginals to roughly
     // the job count rather than one pair of maps per field pair.
-    let needs_marginals = (stats_config.mi || stats_config.nmi || stats_config.u)
+    let needs_marginals = stats_config.needs_frequency_counts()
         && chunk_stats.total_pairs > 0
         && exceeds_cardinality != Some(true);
     // Symbol-keyed, not dense Vec<u64> indexed by symbol. A dense table would have to
@@ -3509,6 +3901,20 @@ fn finalize_bivariate_pair_stats(
         None
     } else {
         compute_mutual_information_from_counts(
+            &chunk_stats.xy_counts,
+            &x_counts,
+            &y_counts,
+            chunk_stats.total_pairs,
+        )
+    };
+
+    let cramers_v = if !stats_config.cramersv {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("Cramér's V");
+        None
+    } else {
+        compute_cramers_v(
             &chunk_stats.xy_counts,
             &x_counts,
             &y_counts,
@@ -3574,6 +3980,10 @@ fn finalize_bivariate_pair_stats(
             normalized_mutual_information,
             u_field2_given_field1,
             u_field1_given_field2,
+            cramers_v,
+            regression_slope,
+            regression_intercept,
+            r_squared,
             n_pairs,
         },
     ))
@@ -4730,6 +5140,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.headers()?.clone();
 
+    // Read all records
+    let mut records = Vec::new();
+    for result in rdr.records() {
+        let record = result?;
+        records.push(record);
+    }
+
     let type_idx = headers
         .iter()
         .position(|h| h == "type")
@@ -4750,18 +5167,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let iqr_idx = headers.iter().position(|h| h == "iqr");
     let mad_idx = headers.iter().position(|h| h == "mad");
     let field_idx = headers.iter().position(|h| h == "field");
-    let sum_idx = headers.iter().position(|h| h == "sum");
-    let skewness_idx = headers.iter().position(|h| h == "skewness");
     let cardinality_idx = headers.iter().position(|h| h == "cardinality");
-    let n_positive_idx = headers.iter().position(|h| h == "n_positive");
-    let n_negative_idx = headers.iter().position(|h| h == "n_negative");
-    let n_zero_idx = headers.iter().position(|h| h == "n_zero");
-    let kurtosis_idx = headers.iter().position(|h| h == "kurtosis");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
     let upper_outer_fence_idx = headers.iter().position(|h| h == "upper_outer_fence");
     let percentiles_idx = headers.iter().position(|h| h == "percentiles");
+    let n_positive_idx = headers.iter().position(|h| h == "n_positive");
+    let n_negative_idx = headers.iter().position(|h| h == "n_negative");
+    let n_zero_idx = headers.iter().position(|h| h == "n_zero");
+    let mode_count_idx = headers.iter().position(|h| h == "mode_count");
+    let mode_occurrences_idx = headers.iter().position(|h| h == "mode_occurrences");
 
     // Parse and validate scan mode for Gregorian XSD date type detection
     let scan_mode = args.flag_xsd_gdate_scan.as_deref().unwrap_or("quick");
@@ -4880,6 +5296,68 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("robust_cv".to_string(), new_columns.len() - 1);
     }
 
+    let mut add_column = |name: &str| {
+        if !column_exists(name) {
+            new_columns.push(name.to_string());
+            new_column_indices.insert(name.to_string(), new_columns.len() - 1);
+        }
+    };
+
+    // Normalized MAD & IQR - robust, normal-consistent estimates of the standard deviation
+    if mad_idx.is_some() {
+        add_column("mad_normalized");
+    }
+    if iqr_idx.is_some() {
+        add_column("iqr_normalized");
+    }
+
+    // Robust (modified) z-scores of min & max, using median and MAD
+    if mad_idx.is_some() && (median_idx.is_some() || q2_median_idx.is_some()) {
+        if min_idx.is_some() {
+            add_column("robust_min_zscore");
+        }
+        if max_idx.is_some() {
+            add_column("robust_max_zscore");
+        }
+    }
+
+    // Kelly skewness & P90/P10 ratio need both the 10th and 90th percentiles
+    let has_p10_p90 = percentiles_idx.is_some_and(|idx| {
+        records.iter().any(|r| {
+            r.get(idx).is_some_and(|p| {
+                let labels: Vec<&str> = p
+                    .split(stats_separator.as_str())
+                    .filter_map(|e| e.split_once(':').map(|(l, _)| l.trim()))
+                    .collect();
+                labels.contains(&"10") && labels.contains(&"90")
+            })
+        })
+    });
+    if has_p10_p90 {
+        if median_idx.is_some() || q2_median_idx.is_some() {
+            add_column("kelly_skewness");
+        }
+        add_column("percentile_ratio_90_10");
+    }
+
+    // Share of zero values among non-null numeric values
+    if n_zero_idx.is_some() && n_positive_idx.is_some() && n_negative_idx.is_some() {
+        add_column("zero_share");
+    }
+
+    // Berger-Parker dominance: share of rows taken by the mode (works for all field types)
+    if mode_occurrences_idx.is_some() && mode_count_idx.is_some() {
+        add_column("berger_parker_dominance");
+    }
+
+    // Add moment skewness column (requires reading raw data, computed for numeric/date
+    // types). Unlike the base `skewness` (quantile-based Bowley skewness), this is the
+    // adjusted Fisher-Pearson moment coefficient G1.
+    if args.flag_advanced && !column_exists("moment_skewness") {
+        new_columns.push("moment_skewness".to_string());
+        new_column_indices.insert("moment_skewness".to_string(), new_columns.len() - 1);
+    }
+
     // Add kurtosis column (requires reading raw data, computed for numeric/date types)
     // Only add if --advanced flag is set
     if args.flag_advanced && !column_exists("kurtosis") {
@@ -4887,28 +5365,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("kurtosis".to_string(), new_columns.len() - 1);
     }
 
-    // Add bimodality coefficient (requires skewness from base stats and kurtosis from --advanced)
-    // Only add if --advanced flag is set (since it requires kurtosis)
-    if args.flag_advanced
-        && skewness_idx.is_some()
-        && new_column_indices.contains_key("kurtosis")
-        && !column_exists("bimodality_coefficient")
-    {
+    // Add bimodality coefficient (moment skewness & kurtosis from the --advanced scan)
+    if args.flag_advanced && !column_exists("bimodality_coefficient") {
         new_columns.push("bimodality_coefficient".to_string());
         new_column_indices.insert("bimodality_coefficient".to_string(), new_columns.len() - 1);
     }
 
-    // Add Jarque-Bera test statistic (requires skewness and kurtosis)
-    // Only add if --advanced flag is set. Kurtosis can come from this run (new column)
-    // or from a previous run (existing column in stats CSV).
-    if args.flag_advanced
-        && skewness_idx.is_some()
-        && (new_column_indices.contains_key("kurtosis") || kurtosis_idx.is_some())
-        && n_positive_idx.is_some()
-        && n_negative_idx.is_some()
-        && n_zero_idx.is_some()
-        && !column_exists("jarque_bera")
-    {
+    // Add Jarque-Bera test statistic (moments from the --advanced scan)
+    if args.flag_advanced && !column_exists("jarque_bera") {
         new_columns.push("jarque_bera".to_string());
         new_column_indices.insert("jarque_bera".to_string(), new_columns.len() - 1);
         new_columns.push("jarque_bera_pvalue".to_string());
@@ -4941,6 +5405,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_advanced && !column_exists("mean_ad") {
         new_columns.push("mean_ad".to_string());
         new_column_indices.insert("mean_ad".to_string(), new_columns.len() - 1);
+    }
+
+    // Further value-vector statistics from the --advanced scan
+    if args.flag_advanced {
+        for col in ADVANCED_VECTOR_COLUMNS {
+            if !column_exists(col) {
+                new_columns.push((*col).to_string());
+                new_column_indices.insert((*col).to_string(), new_columns.len() - 1);
+            }
+        }
     }
 
     // Add Shannon Entropy column (requires reading raw data, computed for all field types)
@@ -5191,13 +5665,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Read all records
-    let mut records = Vec::new();
-    for result in rdr.records() {
-        let record = result?;
-        records.push(record);
-    }
-
     // Collect fields that need outlier counting and/or winsorized/trimmed means
     let mut fields_to_count: HashMap<String, OutlierFieldInfo> = HashMap::new();
     let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower_cnt");
@@ -5206,11 +5673,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Collect fields that need Kurtosis, Gini & Atkinson Index computation
     // (with their precalculated stats)
-    let needs_kga = new_column_indices.contains_key("kurtosis")
+    let needs_kga = new_column_indices.contains_key("moment_skewness")
+        || new_column_indices.contains_key("kurtosis")
+        || new_column_indices.contains_key("bimodality_coefficient")
+        || new_column_indices.contains_key("jarque_bera")
         || new_column_indices.contains_key("gini_coefficient")
         || new_column_indices.contains_key(&atkinson_index_col_name)
         || new_column_indices.contains_key("theil_index")
-        || new_column_indices.contains_key("mean_ad");
+        || new_column_indices.contains_key("mean_ad")
+        || ADVANCED_VECTOR_COLUMNS
+            .iter()
+            .any(|c| new_column_indices.contains_key(*c));
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {
@@ -5379,27 +5852,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 continue;
             }
 
-            // Parse precalculated stats
-            let mean_val = mean_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-            let stddev_val = stddev_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-            let variance_val = stddev_val.map(|s| s * s); // variance = stddev^2
-            let sum_val = sum_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-
             // We'll find the column index when we read the CSV
             fields_for_kga.insert(
                 field_name.to_string(),
                 KGAFieldInfo {
                     col_idx: 0, // Will be set when we read CSV headers
                     field_type,
-                    mean: mean_val,
-                    variance: variance_val,
-                    sum: sum_val,
                 },
             );
         }
@@ -6087,6 +6545,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_config.mi.then_some("mi"),
                 stats_config.nmi.then_some("nmi"),
                 stats_config.u.then_some("u"),
+                stats_config.cramersv.then_some("cramersv"),
+                stats_config.regression.then_some("regression"),
             ]
             .into_iter()
             .flatten()
@@ -6151,6 +6611,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if stats_config.u {
             headers.push("u_field2_given_field1");
             headers.push("u_field1_given_field2");
+        }
+        if stats_config.cramersv {
+            headers.push("cramers_v");
+        }
+        if stats_config.regression {
+            headers.push("regression_slope");
+            headers.push("regression_intercept");
+            headers.push("r_squared");
         }
         headers.push("n_pairs");
 
@@ -6238,6 +6706,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
                     );
                 }
+                let fmt = |v: Option<f64>| {
+                    v.map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                };
+                if stats_config.cramersv {
+                    record.push(fmt(stats.cramers_v));
+                }
+                if stats_config.regression {
+                    record.push(fmt(stats.regression_slope));
+                    record.push(fmt(stats.regression_intercept));
+                    record.push(fmt(stats.r_squared));
+                }
                 record.push(stats.n_pairs.to_string());
 
                 bivariate_wtr.write_record(&record)?;
@@ -6253,6 +6732,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Prepare output
     let output_path: &Path = args.flag_output.as_ref().map_or(&stats_csv_path, Path::new);
+    // Row count for Berger-Parker dominance
+    let dominance_record_count: Option<u64> =
+        if new_column_indices.contains_key("berger_parker_dominance") {
+            if let Ok(Some(idx)) = read_conf.indexed() {
+                Some(idx.count())
+            } else if !read_conf.is_stdin() {
+                util::count_rows(&read_conf).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
     let mut wtr = WriterBuilder::new()
         .has_headers(true)
         .from_path(output_path)?;
@@ -6422,6 +6915,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             new_values[*idx] = util::round_num(simpsons_val, args.flag_round);
         }
 
+        // Berger-Parker dominance (works for all field types). stats counts NULL as a
+        // value for mode, so the denominator is all rows. When every value is unique,
+        // stats reports mode_count 0 and the top frequency is 1.
+        if let Some(idx) = new_column_indices.get("berger_parker_dominance")
+            && let Some(rc) = dominance_record_count
+        {
+            let get_u64 = |i: Option<usize>| -> Option<u64> {
+                i.and_then(|i| record.get(i)).and_then(|s| s.parse().ok())
+            };
+            let top = match (get_u64(mode_count_idx), get_u64(mode_occurrences_idx)) {
+                (Some(0), _) => Some(1),
+                (Some(_), Some(occ)) => Some(occ),
+                _ => None,
+            };
+            if let Some(val) = top.and_then(|top| compute_share(top, rc)) {
+                new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+        }
+
         // Only compute other stats for numeric/date types
         let Some(field_type) = field_type_opt else {
             // For unrecognized types, write existing fields + new values directly
@@ -6572,58 +7084,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 new_values[*idx] = util::round_num(val, args.flag_round);
             }
 
-            // Compute Bimodality Coefficient (requires skewness and kurtosis)
-            if let Some(idx) = new_column_indices.get("bimodality_coefficient")
-                && !field_name.is_empty()
-                && let Some(kga_stats_val) = kga_stats.get(field_name)
-                && let Some(kurtosis_val) = kga_stats_val.kurtosis
-            {
-                let skewness = skewness_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(parse_float_opt);
-                if let Some(val) = compute_bimodality_coefficient(skewness, Some(kurtosis_val)) {
+            let p10_p90 = || {
+                let pstr = percentiles_idx.and_then(|idx| record.get(idx))?;
+                let pct = |label| {
+                    parse_percentile_value(pstr, label, field_type, &stats_separator, prefer_dmy)
+                };
+                Some((pct("10"), pct("90")))
+            };
+            let (p10, p90) = p10_p90().unwrap_or((None, None));
+            let parse_u64 =
+                |idx: Option<usize>| idx.and_then(|i| record.get(i)).and_then(|s| s.parse().ok());
+
+            for (name, val) in [
+                ("mad_normalized", compute_mad_normalized(mad)),
+                ("iqr_normalized", compute_iqr_normalized(iqr)),
+                ("robust_min_zscore", compute_robust_zscore(min, median, mad)),
+                ("robust_max_zscore", compute_robust_zscore(max, median, mad)),
+                ("kelly_skewness", compute_kelly_skewness(p10, median, p90)),
+                (
+                    "percentile_ratio_90_10",
+                    if field_type.is_date_or_datetime() {
+                        None
+                    } else {
+                        compute_percentile_ratio(p10, p90)
+                    },
+                ),
+                (
+                    "zero_share",
+                    match (
+                        parse_u64(n_zero_idx),
+                        parse_u64(n_positive_idx),
+                        parse_u64(n_negative_idx),
+                    ) {
+                        (Some(z), Some(pos), Some(neg)) => compute_share(z, z + pos + neg),
+                        _ => None,
+                    },
+                ),
+            ] {
+                if let Some(val) = val
+                    && let Some(idx) = new_column_indices.get(name)
+                {
                     new_values[*idx] = util::round_num(val, args.flag_round);
-                }
-            }
-
-            // Compute Jarque-Bera test (requires skewness and kurtosis)
-            // Prefer kurtosis from KGA stats when available, otherwise fall back
-            // to the kurtosis value already present in the stats CSV record.
-            if new_column_indices.contains_key("jarque_bera") && !field_name.is_empty() {
-                let kurtosis_from_kga = kga_stats
-                    .get(field_name)
-                    .and_then(|kga_stats_val| kga_stats_val.kurtosis);
-                let kurtosis_from_stats = kurtosis_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(parse_float_opt);
-                let kurtosis_val = kurtosis_from_kga.or(kurtosis_from_stats);
-
-                if let Some(kurtosis_val) = kurtosis_val {
-                    let skewness = skewness_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(parse_float_opt);
-                    // Compute n from n_positive + n_negative + n_zero
-                    let n_pos = n_positive_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n_neg = n_negative_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n_z = n_zero_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n = n_pos + n_neg + n_z;
-                    if let Some((jb, pval)) = compute_jarque_bera(skewness, Some(kurtosis_val), n) {
-                        if let Some(idx) = new_column_indices.get("jarque_bera") {
-                            new_values[*idx] = util::round_num(jb, args.flag_round);
-                        }
-                        if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
-                            new_values[*idx] = util::round_num(pval, args.flag_round);
-                        }
-                    }
                 }
             }
 
@@ -6976,13 +7477,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // Write Kurtosis, Gini & Atkinson Index from pre-computed results
-            if (new_column_indices.contains_key("kurtosis")
-                || new_column_indices.contains_key("gini_coefficient")
-                || new_column_indices.contains_key(&atkinson_index_col_name))
+            // Write --advanced value-vector statistics from pre-computed results
+            if needs_kga
                 && !field_name.is_empty()
                 && let Some(stats) = kga_stats.get(field_name)
             {
+                if let Some(val) = stats.moment_skewness
+                    && let Some(idx) = new_column_indices.get("moment_skewness")
+                {
+                    new_values[*idx] = util::round_num(val, args.flag_round);
+                }
+
+                if let Some(val) = stats.bimodality_coefficient
+                    && let Some(idx) = new_column_indices.get("bimodality_coefficient")
+                {
+                    new_values[*idx] = util::round_num(val, args.flag_round);
+                }
+
+                if let Some((jb, pval)) = stats.jarque_bera {
+                    if let Some(idx) = new_column_indices.get("jarque_bera") {
+                        new_values[*idx] = util::round_num(jb, args.flag_round);
+                    }
+                    if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
+                        new_values[*idx] = util::round_num(pval, args.flag_round);
+                    }
+                }
+
                 // Kurtosis
                 if let Some(kurtosis_val) = stats.kurtosis
                     && let Some(idx) = new_column_indices.get("kurtosis")
@@ -7016,6 +7536,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && let Some(idx) = new_column_indices.get("mean_ad")
                 {
                     new_values[*idx] = util::round_num(mean_ad_val, args.flag_round);
+                }
+
+                for (name, val) in [
+                    ("hoover_index", stats.hoover_index),
+                    ("l_cv", stats.l_cv),
+                    ("l_skewness", stats.l_skewness),
+                    ("l_kurtosis", stats.l_kurtosis),
+                    ("lag1_autocorrelation", stats.lag1_autocorrelation),
+                    ("benford_mad", stats.benford_mad),
+                ] {
+                    if let Some(val) = val
+                        && let Some(idx) = new_column_indices.get(name)
+                    {
+                        new_values[*idx] = util::round_num(val, args.flag_round);
+                    }
                 }
             }
         }
@@ -7244,37 +7779,224 @@ mod tests {
     }
 
     #[test]
-    fn compute_bimodality_coefficient_basic_and_singularity() {
-        // (skew^2 + 1) / (kurt + 3) for skew=0, kurt=0 -> 1/3.
-        let got = compute_bimodality_coefficient(Some(0.0), Some(0.0)).unwrap();
-        assert!((got - 1.0 / 3.0).abs() < 1e-12);
-        // kurt == -3 makes the denominator zero -> None.
-        assert_eq!(compute_bimodality_coefficient(Some(0.0), Some(-3.0)), None,);
-        assert_eq!(compute_bimodality_coefficient(None, Some(0.0)), None);
-        assert_eq!(compute_bimodality_coefficient(Some(0.0), None), None);
+    fn central_moments_match_scipy() {
+        // Oracle: scipy 1.18 stats.skew/kurtosis(bias=False), stats.jarque_bera.
+        let m = CentralMoments::from_values(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.]);
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(m.sample_skewness().unwrap(), 2.021_294_486_935_496_5));
+        assert!(close(
+            m.sample_excess_kurtosis().unwrap(),
+            3.940_822_783_164_566
+        ));
+        let (jb, p) = m.jarque_bera().unwrap();
+        assert!(close(jb, 6.023_412_338_355_193));
+        assert!(close(p, 0.049_207_650_521_029_09));
+        assert!(close(
+            m.bimodality_coefficient().unwrap(),
+            0.614_198_642_986_606_6
+        ));
+        assert!(close(m.mean_abs_dev, 2.96));
     }
 
     #[test]
-    fn compute_jarque_bera_small_n_and_known_values() {
-        // The `kurtosis` parameter here is *excess* kurtosis (i.e. raw - 3),
-        // matching the convention produced by qsv's stats command. The hand-
-        // computed expectations below silently encode that — if the function
-        // ever switches to raw kurtosis, the second case will break.
-        // n < 3 -> None.
-        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 0), None);
-        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 2), None);
-        // Skew = 0, excess kurt = 0 -> JB = 0, p = exp(0) = 1 (normal-looking moments).
-        let (jb, p) = compute_jarque_bera(Some(0.0), Some(0.0), 100).unwrap();
-        assert!(jb.abs() < 1e-12);
-        assert!((p - 1.0).abs() < 1e-12);
-        // Hand-computed (excess kurtosis convention):
-        //   n = 60, skew = 1, excess kurt = 2 -> JB = (60/6) * (1 + 4/4) = 20, p = exp(-10).
-        let (jb, p) = compute_jarque_bera(Some(1.0), Some(2.0), 60).unwrap();
-        assert!((jb - 20.0).abs() < 1e-9);
-        assert!((p - (-10.0_f64).exp()).abs() < 1e-12);
-        // Either moment None -> None.
-        assert_eq!(compute_jarque_bera(None, Some(0.0), 100), None);
-        assert_eq!(compute_jarque_bera(Some(0.0), None, 100), None);
+    fn central_moments_degenerate_inputs() {
+        // Zero variance -> every moment ratio undefined.
+        let flat = CentralMoments::from_values(&[5.0; 10]);
+        assert_eq!(flat.sample_skewness(), None);
+        assert_eq!(flat.sample_excess_kurtosis(), None);
+        assert_eq!(flat.jarque_bera(), None);
+        assert_eq!(flat.bimodality_coefficient(), None);
+        // n = 3: skewness and JB defined, kurtosis (needs n >= 4) and BC are not.
+        let three = CentralMoments::from_values(&[1.0, 2.0, 3.0]);
+        assert_eq!(three.sample_skewness(), Some(0.0));
+        assert!((three.jarque_bera().unwrap().0 - 0.28125).abs() < 1e-12);
+        assert_eq!(three.sample_excess_kurtosis(), None);
+        assert_eq!(three.bimodality_coefficient(), None);
+        // A constant 0.1 column: naive sum/n is off by an ulp from 0.1, which used to
+        // fabricate skewness 1, lag-1 autocorrelation 0.9 and BC > 1.
+        let tenths = CentralMoments::from_values(&[0.1; 10]);
+        assert_eq!(tenths.m2, 0.0);
+        assert_eq!(tenths.sample_skewness(), None);
+        assert_eq!(tenths.bimodality_coefficient(), None);
+        assert_eq!(tenths.jarque_bera(), None);
+        let kga = finalize_kga(vec![0.1; 10], false, 1.0);
+        assert_eq!(kga.moment_skewness, None);
+        assert_eq!(kga.kurtosis, None);
+        assert_eq!(kga.lag1_autocorrelation, None);
+        assert_eq!(kga.l_skewness, None);
+        assert_eq!(kga.l_kurtosis, None);
+        assert_eq!(kga.l_cv, Some(0.0));
+        // n = 2 -> no skewness.
+        assert_eq!(
+            CentralMoments::from_values(&[1.0, 2.0]).sample_skewness(),
+            None
+        );
+    }
+
+    #[test]
+    fn robust_scale_and_zscores() {
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        // Normal-consistency constants: MAD·1.4826, IQR/1.349.
+        assert!(close(
+            compute_mad_normalized(Some(1.0)).unwrap(),
+            1.482_602_218_505_602
+        ));
+        assert!(close(
+            compute_iqr_normalized(Some(1.0)).unwrap(),
+            0.741_301_109_252_801
+        ));
+        assert_eq!(compute_mad_normalized(None), None);
+        // Modified z-score: 0.6745·(x - median)/MAD.
+        let z = compute_robust_zscore(Some(10.0), Some(4.0), Some(2.0)).unwrap();
+        assert!(close(z, 3.0 * 0.674_489_750_196_081_7));
+        assert_eq!(
+            compute_robust_zscore(Some(10.0), Some(4.0), Some(0.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn kelly_skewness_and_percentile_ratio() {
+        // Symmetric -> 0; right-skewed -> positive; left-skewed -> negative.
+        assert_eq!(
+            compute_kelly_skewness(Some(1.0), Some(5.0), Some(9.0)),
+            Some(0.0)
+        );
+        let right = compute_kelly_skewness(Some(1.0), Some(2.0), Some(9.0)).unwrap();
+        assert!((right - 0.75).abs() < 1e-12);
+        let left = compute_kelly_skewness(Some(1.0), Some(8.0), Some(9.0)).unwrap();
+        assert!((left + 0.75).abs() < 1e-12);
+        // Degenerate spread -> None.
+        assert_eq!(
+            compute_kelly_skewness(Some(3.0), Some(3.0), Some(3.0)),
+            None
+        );
+        assert_eq!(compute_percentile_ratio(Some(2.0), Some(10.0)), Some(5.0));
+        // Non-positive P10 -> ratio undefined.
+        assert_eq!(compute_percentile_ratio(Some(0.0), Some(10.0)), None);
+        assert_eq!(compute_percentile_ratio(Some(-1.0), Some(10.0)), None);
+    }
+
+    #[test]
+    fn compute_share_basic() {
+        assert_eq!(compute_share(1, 4), Some(0.25));
+        assert_eq!(compute_share(0, 0), None);
+    }
+
+    #[test]
+    fn l_moments_match_scipy() {
+        // Oracle: scipy 1.18 stats.lmoment (orders >= 3 standardized by default).
+        let [l1, l2, l3, l4] =
+            compute_l_moments(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.], 4.6).unwrap();
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(l1, 4.6));
+        assert!(close(l2, 2.088_888_888_888_888_6));
+        assert!(close(l3 / l2, 0.534_574_468_085_106_7));
+        assert!(close(l4 / l2, 0.443_389_057_750_757_1));
+        assert_eq!(compute_l_moments(&[1.0, 2.0, 3.0], 2.0), None);
+        // translation invariance: a 1e15 offset must not disturb λ2..λ4. The shifted
+        // integers stay exactly representable, so any drift is cancellation in the PWMs.
+        let base = [1., 2., 2., 3., 3., 3., 4., 4., 9., 15.];
+        let shifted: Vec<f64> = base.iter().map(|x| x + 1e15).collect();
+        let shift = CentralMoments::from_values(&shifted).mean;
+        let [s1, s2, s3, s4] = compute_l_moments(&shifted, shift).unwrap();
+        assert!((s1 - (1e15 + 4.6)).abs() < 1.0);
+        assert!(close(s2, l2) && close(s3 / s2, l3 / l2) && close(s4 / s2, l4 / l2));
+    }
+
+    #[test]
+    fn lag1_autocorrelation_basic() {
+        let x = [1., 2., 2., 3., 3., 3., 4., 4., 9., 15.];
+        let r1 = compute_lag1_autocorrelation(&x, 4.6).unwrap();
+        assert!((r1 - 0.430_049_261_083_743_86).abs() < 1e-9);
+        // Alternating series is perfectly anti-persistent in sign.
+        let alt = [1., -1., 1., -1., 1., -1.];
+        assert!(compute_lag1_autocorrelation(&alt, 0.0).unwrap() < -0.8);
+        assert_eq!(compute_lag1_autocorrelation(&[5.0; 4], 5.0), None);
+        assert_eq!(compute_lag1_autocorrelation(&[1.0, 2.0], 1.5), None);
+    }
+
+    #[test]
+    fn benford_mad_conformity_and_gates() {
+        // Geometric growth over whole decades (1.01^1389 ≈ 10^6) follows Benford closely.
+        let geometric: Vec<f64> = (0..1389).map(|i| 1.01_f64.powi(i)).collect();
+        assert!(compute_benford_mad(&geometric).unwrap() < 0.006);
+        // All leading 5s -> maximally nonconforming.
+        let fives: Vec<f64> = (0..200).map(|i| 5.0 * 10f64.powi(i % 5)).collect();
+        assert!(compute_benford_mad(&fives).unwrap() > 0.015);
+        // Values one ULP below a power of ten have first digit 9, but log10 rounds them
+        // up to the next integer, so the mantissa falls below 1 unless re-normalized.
+        let nines: Vec<f64> = (0..200)
+            .map(|i| f64::from_bits(10f64.powi(i % 10 - 5).to_bits() - 1))
+            .collect();
+        let e: Vec<f64> = (1..=9)
+            .map(|d| (1.0 + 1.0 / f64::from(d)).log10())
+            .collect();
+        let want = (e[..8].iter().sum::<f64>() + (1.0 - e[8])) / 9.0;
+        assert!((compute_benford_mad(&nines).unwrap() - want).abs() < 1e-12);
+        // Too few values, or a range under two orders of magnitude -> None.
+        assert_eq!(compute_benford_mad(&geometric[..50]), None);
+        let narrow: Vec<f64> = (0..500).map(|i| 100.0 + f64::from(i % 50)).collect();
+        assert_eq!(compute_benford_mad(&narrow), None);
+    }
+
+    #[test]
+    fn cramers_v_matches_scipy() {
+        // Oracle: scipy.stats.contingency.association([[10,20,5],[30,5,15]], method="cramer").
+        let table = [[10_u64, 20, 5], [30, 5, 15]];
+        let mut xy = HashMap::new();
+        let mut xc: HashMap<u32, u64> = HashMap::new();
+        let mut yc: HashMap<u32, u64> = HashMap::new();
+        let mut total = 0;
+        for (x, row) in (0_u32..).zip(table) {
+            for (y, n) in (0_u32..).zip(row) {
+                xy.insert((u64::from(x) << 32) | u64::from(y), n);
+                *xc.entry(x).or_default() += n;
+                *yc.entry(y).or_default() += n;
+                total += n;
+            }
+        }
+        let v = compute_cramers_v(&xy, &xc, &yc, total).unwrap();
+        assert!((v - 0.509_201_054_874_903_3).abs() < 1e-12);
+        // A single category on either side -> undefined.
+        let one: HashMap<u32, u64> = [(0, 5)].into_iter().collect();
+        assert_eq!(compute_cramers_v(&xy, &one, &yc, 5), None);
+    }
+
+    #[test]
+    fn regression_from_welford_state() {
+        let mut state = CorrelationState::default();
+        for x in 0..10 {
+            let x = f64::from(x);
+            update_correlation_state(&mut state, x, 3.0f64.mul_add(x, -2.0));
+        }
+        let (m, b, r2) = finalize_regression(&state).unwrap();
+        assert!((m - 3.0).abs() < 1e-12);
+        assert!((b + 2.0).abs() < 1e-12);
+        assert!((r2.unwrap() - 1.0).abs() < 1e-12);
+        // constant response: a valid flat fit, but r² is undefined
+        let mut flat = CorrelationState::default();
+        for x in 0..5 {
+            update_correlation_state(&mut flat, f64::from(x), 7.0);
+        }
+        let (m, b, r2) = finalize_regression(&flat).unwrap();
+        assert!(m.abs() < 1e-12 && (b - 7.0).abs() < 1e-12);
+        assert_eq!(r2, None);
+        // constant predictor -> no fit
+        let mut vert = CorrelationState::default();
+        for y in 0..5 {
+            update_correlation_state(&mut vert, 3.0, f64::from(y));
+        }
+        assert_eq!(finalize_regression(&vert), None);
+        // huge magnitudes: cxy² overflows, but r² must still be 0.75, not NaN -> 1
+        let mut big = CorrelationState::default();
+        for _ in 0..3 {
+            for (x, y) in [(0.0, 0.0), (1e100, 1e100), (2e100, 1e100)] {
+                update_correlation_state(&mut big, x, y);
+            }
+        }
+        let r2 = finalize_regression(&big).unwrap().2.unwrap();
+        assert!((r2 - 0.75).abs() < 1e-9, "r2 = {r2}");
     }
 
     #[test]

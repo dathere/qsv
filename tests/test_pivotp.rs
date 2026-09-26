@@ -1134,6 +1134,66 @@ fn pivotp_smart_moarstats_bimodal() {
     );
 }
 
+// Skewed UNIMODAL data can push the bimodality coefficient past 0.555 too, but it is
+// leptokurtic; smart agg must not mistake it for bimodal and fall back to Len.
+#[test]
+fn pivotp_smart_moarstats_skewed_unimodal_not_bimodal() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_skewed_unimodal");
+    // Exponential-distribution quantiles: moment skewness ~1.9, excess kurtosis ~4.1,
+    // bimodality coefficient ~0.60.
+    let n = 120;
+    let mut data = vec![svec!["category", "group", "value"]];
+    for i in 0..n {
+        let cat = ["A", "B", "C"][i % 3];
+        let grp = if i % 2 == 0 { "X" } else { "Y" };
+        #[allow(clippy::cast_precision_loss)]
+        let u = (i as f64 + 0.5) / n as f64;
+        let val = format!("{:.4}", -100.0 * (1.0 - u).ln());
+        data.push(vec![cat.to_string(), grp.to_string(), val]);
+    }
+    wrk.create("skewed.csv", data);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "skewed.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["--advanced", "skewed.csv"]);
+    wrk.assert_success(&mut moar_cmd);
+
+    // Guard the fixture itself: BC must clear 0.555 with positive excess kurtosis,
+    // otherwise this test would pass without exercising the kurtosis guard.
+    let stats: Vec<Vec<String>> = wrk.read_stdout(&mut {
+        let mut c = wrk.command("select");
+        c.args(["field,bimodality_coefficient,kurtosis", "skewed.stats.csv"]);
+        c
+    });
+    let row = stats.iter().find(|r| r[0] == "value").unwrap();
+    let bc: f64 = row[1].parse().unwrap();
+    let kurt: f64 = row[2].parse().unwrap();
+    assert!(
+        bc >= 0.555 && kurt > 0.0,
+        "fixture drifted: bc={bc}, kurtosis={kurt}"
+    );
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "skewed.csv",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        !stderr.contains("Bimodal") && !stderr.contains("using Len"),
+        "skewed unimodal data was treated as bimodal: {stderr}"
+    );
+}
+
 // Test smart aggregation with moarstats — data with many outliers should pick Median
 #[test]
 fn pivotp_smart_moarstats_outliers() {

@@ -7826,9 +7826,24 @@ fn unit_value_suffix(code: Option<&str>) -> String {
 /// #4552 put their unit in the panel subtitle. So this is the axis-title half of the same idea,
 /// applied to the panels that DO have one and get no unit subtitle (`classify_columns` writes
 /// that subtitle only in its per-column loop, which the pair/3D panels never enter).
-fn unit_axis_note(code: Option<&str>) -> String {
+///
+/// `label` is the text the note will follow: a header that already states its unit (`Temp (°C)`)
+/// gets no second copy.
+fn unit_axis_note(label: &str, code: Option<&str>) -> String {
     code.and_then(crate::cmd::describegpt::dictionary::ucum_display_symbol)
+        .filter(|sym| !ends_with_paren_note(label, sym))
         .map_or_else(String::new, |sym| format!(" ({sym})"))
+}
+
+/// Does `label` already end with `(note)`? A dictionary title or CSV header often states its unit
+/// or currency itself ("Depth (km)", "Budget (USD)"), and appending the note again rendered
+/// "Depth (km) (km)". Exact match only: units are case-sensitive, and "(kg)" is not "(g)".
+fn ends_with_paren_note(label: &str, note: &str) -> bool {
+    label
+        .trim_end()
+        .strip_suffix(')')
+        .and_then(|l| l.strip_suffix(note))
+        .is_some_and(|l| l.ends_with('('))
 }
 
 /// Insert `,` thousands separators into the integer part of a formatted number string, preserving
@@ -11434,6 +11449,17 @@ fn read_numeric_columns(
     } else {
         Vec::new()
     };
+    // whether every numeric cell is written as an integer (no `.`/exponent) - the same syntactic
+    // test `stats` types a column Integer by. Only a near-unique INTEGER column is presumed an ID;
+    // a near-unique Float is a full-precision measurement, as in `viz smart` (#4653).
+    let mut all_integer = vec![
+        true;
+        if drop_near_unique {
+            candidates.len()
+        } else {
+            0
+        }
+    ];
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         for (k, &idx) in candidates.iter().enumerate() {
@@ -11445,9 +11471,13 @@ fn read_numeric_columns(
                 if v.is_some() {
                     parsed[k] += 1;
                     if drop_near_unique {
+                        let bytes = cell.expect("nonempty implies Some");
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                        cell.expect("nonempty implies Some").hash(&mut hasher);
+                        bytes.hash(&mut hasher);
                         distinct[k].insert(hasher.finish());
+                        if all_integer[k] && bytes.iter().any(|b| matches!(b, b'.' | b'e' | b'E')) {
+                            all_integer[k] = false;
+                        }
                     }
                 }
             }
@@ -11468,7 +11498,7 @@ fn read_numeric_columns(
             .map(|&k| {
                 #[allow(clippy::cast_precision_loss)]
                 let ratio = distinct[k].len() as f64 / parsed[k] as f64;
-                ratio > 0.95
+                all_integer[k] && ratio > 0.95
             })
             .collect();
         if near_unique.iter().filter(|&&nu| !nu).count() >= 2 {
@@ -12044,9 +12074,9 @@ fn build_heatmap_correlation(
     // key, a serial id): they hold a distinct value in nearly every row, carry no meaningful linear
     // relationship, and only add a noise row/column to the matrix. `read_numeric_columns` applies
     // this BEFORE its listwise row-drop, so a sparse identifier can't discard rows from the
-    // surviving measures. Same > 0.95 uniqueness cutoff as `viz smart`'s correlation filter, but
-    // type-blind (there are no stats here), so unlike `viz smart` it also drops a near-unique Float
-    // measure. An explicit --cols is the user's deliberate selection and is charted as-is.
+    // surviving measures. Same rule as `viz smart`'s correlation filter: only a near-unique column
+    // written as integers is dropped (a near-unique Float is a measurement). An explicit --cols is
+    // the user's deliberate selection and is charted as-is.
     let (labels, columns, _) =
         read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
     if labels.len() < 2 {
@@ -33739,7 +33769,11 @@ impl<'a> SmartCtx<'a> {
                     .and_then(|code| unit_suffix(code).map(|sym| sym.trim().to_string()))
             });
             let subtitle = match (&annotation, subtitle) {
+                (Some(note), Some(label)) if ends_with_paren_note(&label, note) => Some(label),
                 (Some(note), Some(label)) => Some(format!("{label} ({note})")),
+                // the panel is titled with the header, so a header that states the unit already
+                // says it
+                (Some(note), None) if ends_with_paren_note(&name, note) => None,
                 (Some(note), None) => Some(format!("({note})")),
                 (None, sub) => sub,
             };
@@ -34993,11 +35027,10 @@ impl<'a> SmartCtx<'a> {
         //
         // Measure candidates are computed separately from `numeric_indices` (the correlation list):
         // a genuine per-row measure like revenue/amount is often near-unique, and the correlation
-        // list drops near-unique INTEGERS to keep IDs out of the matrix. Here we exclude
-        // near-unique columns (of either numeric type) ONLY for untagged (`Defer`)
-        // stats-only columns; a column the dictionary explicitly routes as `Measure`
-        // qualifies regardless of uniqueness — mirroring the time-series panel, which
-        // deliberately allows near-unique measures.
+        // list drops near-unique INTEGERS to keep IDs out of the matrix. Here we apply the same
+        // near-unique-Integer exclusion, but ONLY to untagged (`Defer`) columns: a column the
+        // dictionary explicitly routes as `Measure` qualifies regardless of uniqueness —
+        // mirroring the time-series panel, which deliberately allows near-unique measures.
         let measure_indices: Vec<usize> = self
             .stats
             .iter()
@@ -35008,7 +35041,8 @@ impl<'a> SmartCtx<'a> {
                     && matches!(route, Route::Defer | Route::Measure)
                     && matches!(s.r#type.as_str(), "Integer" | "Float")
                     && s.cardinality > 1
-                    && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
+                    && (route == Route::Measure
+                        || !(s.r#type == "Integer" && s.uniqueness_ratio.is_some_and(|r| r > 0.95)))
             })
             .map(|(i, _)| i)
             .collect();
@@ -38566,7 +38600,7 @@ fn inline_panel_plot_scatter3d(
         Axis::new().title(Title::with_text(format!(
             "{}{}",
             escape_hover(label),
-            unit_axis_note(unit.as_deref())
+            unit_axis_note(label, unit.as_deref())
         )))
     };
     let scene = LayoutScene::new()
@@ -38949,14 +38983,14 @@ fn inline_panel_plot_animated_bubble(panel: &Panel, theme: Option<BuiltinTheme>)
         .title(Title::with_text(format!(
             "{}{}",
             escape_hover(x_label),
-            unit_axis_note(x_unit.as_deref())
+            unit_axis_note(x_label, x_unit.as_deref())
         )))
         .range(vec![x_range.0, x_range.1]);
     let y_axis = Axis::new()
         .title(Title::with_text(format!(
             "{}{}",
             escape_hover(y_label),
-            unit_axis_note(y_unit.as_deref())
+            unit_axis_note(y_label, y_unit.as_deref())
         )))
         .range(vec![y_range.0, y_range.1]);
     let mut layout = Layout::new()
@@ -39064,14 +39098,14 @@ fn inline_panel_plot_animated_scatter_pair(panel: &Panel, theme: Option<BuiltinT
         .title(Title::with_text(format!(
             "{}{}",
             escape_hover(x_label),
-            unit_axis_note(x_unit.as_deref())
+            unit_axis_note(x_label, x_unit.as_deref())
         )))
         .range(vec![x_range.0, x_range.1]);
     let y_axis = Axis::new()
         .title(Title::with_text(format!(
             "{}{}",
             escape_hover(y_label),
-            unit_axis_note(y_unit.as_deref())
+            unit_axis_note(y_label, y_unit.as_deref())
         )))
         .range(vec![y_range.0, y_range.1]);
     let mut layout = Layout::new()
@@ -53527,6 +53561,21 @@ mod tests {
         viz_i18n::set_active(viz_i18n::parse_lang("ja").unwrap());
         assert_eq!(fmt(), "\"SI\"");
         viz_i18n::reset_active();
+    }
+
+    #[test]
+    fn a_label_that_states_its_unit_gets_no_second_copy() {
+        assert!(ends_with_paren_note("Depth (km)", "km"));
+        assert!(ends_with_paren_note("Budget (USD) ", "USD"));
+        assert!(!ends_with_paren_note("Depth", "km"));
+        // exact and case-sensitive: a different unit, or a suffix of one, is not the same note
+        assert!(!ends_with_paren_note("Mass (kg)", "g"));
+        assert!(!ends_with_paren_note("Power (MW)", "mW"));
+        assert!(!ends_with_paren_note("depth_km", "km"));
+
+        assert_eq!(unit_axis_note("Air Temp", Some("Cel")), " (°C)");
+        assert_eq!(unit_axis_note("Air Temp (°C)", Some("Cel")), "");
+        assert_eq!(unit_axis_note("Air Temp (°F)", Some("Cel")), " (°C)");
     }
 
     #[test]

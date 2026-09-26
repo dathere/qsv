@@ -6662,7 +6662,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Write bivariate statistics CSV if computed
     // Always use the original input path for naming, even if we joined datasets
-    if args.flag_bivariate && !bivariate_stats.is_empty() {
+    // Written even when no pair survived (header only): skipping the write would leave a
+    // previous run's sidecar in place, silently presenting stale pairs as this run's result.
+    if args.flag_bivariate {
         let is_joined = temp_joined_path.is_some();
         let bivariate_csv_path = get_bivariate_csv_path(input_path, is_joined)?;
         let mut bivariate_wtr = WriterBuilder::new()

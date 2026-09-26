@@ -14112,11 +14112,10 @@ fn viz_smart_bivariate_top_relationships_lollipop_encodings() {
 #[test]
 fn viz_smart_bivariate_ignores_stale_sidecar() {
     let wrk = Workdir::new("viz_smart_bivariate_ignores_stale_sidecar");
-    // A single-column input makes moarstats --bivariate produce ZERO pairs, and moarstats then
-    // does NOT (re)write the deterministic `<stem>.stats.bivariate.csv` sidecar. So a sidecar left
-    // by a PRIOR run (on since-changed data) would otherwise be read as if it described this input.
-    // The fix deletes the expected sidecar before moarstats runs, so a pair-less/failed run leaves
-    // no sidecar to reuse.
+    // A single-column input makes moarstats --bivariate produce ZERO pairs. A sidecar left by a
+    // PRIOR run (on since-changed data) must not be read as if it described this input. viz
+    // deletes the expected sidecar before moarstats runs, and moarstats itself now rewrites a
+    // header-only sidecar when no pair survives - either way nothing stale can be reused.
     wrk.create_from_string("oned.csv", "a\n1\n2\n3\n2\n1\n4\n5\n2\n1\n3\n");
     // plant a stale sidecar carrying recognizable ghost pairs that WOULD parse if read.
     wrk.create_from_string(
@@ -14142,11 +14141,13 @@ fn viz_smart_bivariate_ignores_stale_sidecar() {
     .arg(wrk.path("trivial.schema.json"));
     wrk.assert_success(&mut cmd);
 
-    // the stale sidecar must have been removed before the (pair-less) moarstats run — moarstats
-    // never rewrote it, so its continued existence would mean viz reused stale data.
+    // whatever sidecar exists now must be this run's (header-only), never the planted ghost.
+    let sidecar = wrk
+        .read_to_string("oned.stats.bivariate.csv")
+        .unwrap_or_default();
     assert!(
-        !wrk.path("oned.stats.bivariate.csv").exists(),
-        "stale bivariate sidecar should be deleted before the moarstats run, not reused"
+        !sidecar.contains("ghost_field_x"),
+        "stale bivariate sidecar must not survive the moarstats run; got: {sidecar}"
     );
     // and no association panel sourced from the stale ghost pairs may appear.
     let html = wrk.read_to_string("dash.html").unwrap();

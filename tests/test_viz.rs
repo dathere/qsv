@@ -3978,8 +3978,8 @@ fn viz_heatmap_correlation_insufficient_rows_errors() {
 fn viz_heatmap_correlation_excludes_identifier() {
     // A standalone correlation heatmap in auto mode (no --cols) drops near-unique identifier
     // columns — a monotonic order key holds a distinct value in nearly every row and has no
-    // meaningful linear relationship. (`viz smart` drops only near-unique Integers; this path has
-    // no stats to type-check.) The two repeated-value measures remain.
+    // meaningful linear relationship — mirroring `viz smart`, which also drops only near-unique
+    // INTEGER columns. The two repeated-value measures remain.
     let wrk = Workdir::new("viz_heatmap_correlation_excludes_identifier");
     let mut rows = String::from("order_id,units,revenue\n");
     for i in 0..60 {
@@ -4009,6 +4009,35 @@ fn viz_heatmap_correlation_excludes_identifier() {
     assert!(
         html.contains("order_id"),
         "explicit --cols must keep the identifier column"
+    );
+}
+
+#[test]
+fn viz_heatmap_correlation_keeps_near_unique_float_measures() {
+    // Only a near-unique column written as INTEGERS is presumed an ID; full-precision Float
+    // measurements are near-unique as a matter of course and are what the matrix is for (#4653).
+    // Two low-cardinality measures keep the >= 2 correlation core, so the ID filter is active.
+    let wrk = Workdir::new("viz_heatmap_correlation_keeps_near_unique_float_measures");
+    let mut rows = String::from("order_id,units,revenue,unit_price\n");
+    for i in 0..60 {
+        let u = i % 6;
+        let price = 1.0 + f64::from(i) * 0.731 + f64::from(i % 7) * 0.013;
+        rows.push_str(&format!("{},{u},{},{price:.4}\n", 1000 + i, u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("order_id"),
+        "the near-unique integer identifier is still excluded"
+    );
+    assert!(
+        html.contains("unit_price"),
+        "a near-unique Float measure must stay in the auto correlation heatmap"
     );
 }
 
@@ -5164,6 +5193,35 @@ fn viz_smart_measure_by_dimension_keeps_near_unique_dictionary_measure() {
     assert!(
         html.contains("Revenue by Region ("),
         "a dictionary-tagged near-unique measure should still yield a measure-by-dimension bar"
+    );
+}
+
+#[test]
+fn viz_smart_measure_by_dimension_keeps_untagged_near_unique_float_measure() {
+    // Without a dictionary every column is Defer, and the pool used to drop ANY near-unique
+    // column as a presumed ID - stricter than the correlation list, which keeps near-unique
+    // Floats (#4653). A full-precision Float measure explained by a low-card dimension must yield
+    // the bar; the Integer twin of this data is still an ID-safety exclusion.
+    let wrk =
+        Workdir::new("viz_smart_measure_by_dimension_keeps_untagged_near_unique_float_measure");
+    let mut rows = String::from("region,revenue\n");
+    for i in 0..30 {
+        rows.push_str(&format!("east,{:.2}\n", 1000.0 + f64::from(i) * 1.37));
+    }
+    for i in 0..30 {
+        rows.push_str(&format!("west,{:.2}\n", 5000.0 + f64::from(i) * 1.37));
+    }
+    wrk.create_from_string("rev.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("revenue by region ("),
+        "an untagged near-unique Float measure should yield a measure-by-dimension bar"
     );
 }
 
@@ -19244,6 +19302,45 @@ fn viz_smart_unit_symbol_suffix_and_subtitle() {
     assert!(
         !html.contains(r#""prefix":"$""#),
         "a unit must not produce a currency prefix; html: {html}"
+    );
+}
+
+// A dictionary title that already states its unit ("Depth (km)", as an LLM-inferred dictionary
+// wrote for the seismic gallery page) rendered "Depth (km) (km)", because the subtitle appended
+// the unit again. roborev 4884.
+#[test]
+fn viz_smart_unit_already_in_the_title_is_not_repeated() {
+    let wrk = Workdir::new("viz_smart_unit_already_in_the_title_is_not_repeated");
+    let mut csv = String::from("region,depth_km\n");
+    for i in 0..40 {
+        csv.push_str(&format!("R{},{}\n", i % 5, 5 + (i * 7) % 90));
+    }
+    wrk.create_from_string("quakes.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{"depth_km":{"title":"Depth (km)","type":"number","x-qsv":{"role":"measure","concept":"measure.amount","unit":"km"}}}}"#,
+    );
+
+    let out_html = wrk.path("q.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "quakes.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("q.html").unwrap();
+
+    assert!(
+        html.contains("Depth (km)"),
+        "the dictionary title must still be shown; html: {html}"
+    );
+    assert!(
+        !html.contains("(km) (km)"),
+        "the unit must not be appended to a title that already states it"
     );
 }
 

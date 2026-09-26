@@ -119,7 +119,7 @@ viz:
     prov_warning_generic: "WARNUNG: Von einem LLM erzeugt; kann Ungenauigkeiten enthalten. Vor der Verwendung prüfen!"
   omit:
     bivariate_unreadable: "die bivariate Ausgabe von moarstats konnte nicht gelesen werden (%{q_err}); die Assoziationspanels werden übersprungen."
-    bivariate_no_pairs: "moarstats hat keine bivariaten Paare erzeugt; die Assoziationspanels werden übersprungen."
+    bivariate_no_pairs: "moarstats hat keine Paare mit einem NMI-Wert erzeugt; die Assoziationspanels werden übersprungen."
     sankey_other_dominates: "Sankey-Panel '%{q_source} → %{q_target}' übersprungen: nachdem die %{q_top_n} häufigsten Kategorien je Seite behalten wurden, dominiert die Sammelgruppe 'Sonstige' eine Seite (>%{q_pct}% ihres Flusses), was die Verteilung verzerren würde."
     map_animation_over_budget: "animierte Karte übersprungen: %{q_buckets} Zeitintervalle würden das Budget von %{q_budget} Punkten selbst bei voller Ausdünnung überschreiten. Verwenden Sie eine gröbere Datumsspalte für die Animation."
     region_no_points_inside: "keiner der %{q_total} Punkte liegt in einer --geojson-Region, daher wurde kein Regionen-Panel erstellt. Prüfen Sie, ob die Grenzdatei diese Daten abdeckt und ob --lat/--lon nicht vertauscht sind."

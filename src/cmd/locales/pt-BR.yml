@@ -125,7 +125,7 @@ viz:
     prov_warning_generic: "AVISO: gerado por um LLM, pode conter imprecisões. Verifique antes de usar!"
   omit:
     bivariate_unreadable: "não foi possível ler a saída bivariada do moarstats (%{q_err}); os painéis de associação foram omitidos."
-    bivariate_no_pairs: "o moarstats não produziu pares bivariados; os painéis de associação foram omitidos."
+    bivariate_no_pairs: "o moarstats não produziu pares com valor de NMI; os painéis de associação foram omitidos."
     sankey_other_dominates: "painel Sankey '%{q_source} → %{q_target}' omitido: após manter as %{q_top_n} principais categorias por lado, o grupo 'Outros' domina um lado (>%{q_pct}% do seu fluxo), o que distorceria a distribuição."
     map_animation_over_budget: "mapa animado omitido: %{q_buckets} intervalos de tempo ultrapassariam o orçamento de %{q_budget} pontos mesmo com subamostragem completa. Use uma coluna de data mais grossa para animá-lo."
     region_no_points_inside: "nenhum dos %{q_total} pontos caiu dentro de uma região --geojson, portanto nenhum painel de regiões foi construído. Verifique se o arquivo de limites cobre estes dados e se --lat/--lon não estão trocados."

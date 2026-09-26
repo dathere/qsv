@@ -12044,8 +12044,9 @@ fn build_heatmap_correlation(
     // key, a serial id): they hold a distinct value in nearly every row, carry no meaningful linear
     // relationship, and only add a noise row/column to the matrix. `read_numeric_columns` applies
     // this BEFORE its listwise row-drop, so a sparse identifier can't discard rows from the
-    // surviving measures. Mirrors `viz smart`'s correlation filter (uniqueness_ratio > 0.95). An
-    // explicit --cols is the user's deliberate selection and is charted as-is.
+    // surviving measures. Same > 0.95 uniqueness cutoff as `viz smart`'s correlation filter, but
+    // type-blind (there are no stats here), so unlike `viz smart` it also drops a near-unique Float
+    // measure. An explicit --cols is the user's deliberate selection and is charted as-is.
     let (labels, columns, _) =
         read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
     if labels.len() < 2 {
@@ -34078,7 +34079,10 @@ impl<'a> SmartCtx<'a> {
                 && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
                 && s.cardinality > 1
-                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+                // near-unique INTEGERS are presumed IDs, as in `classify`; a near-unique Float is a
+                // full-precision measurement (price, duration), which is exactly the continuous
+                // pair NMI cannot score and this matrix exists to show (#4653)
+                && !(s.r#type == "Integer" && s.uniqueness_ratio.is_some_and(|r| r > 0.95))
             })
             .map(|(i, _)| i)
             .collect();
@@ -34989,10 +34993,11 @@ impl<'a> SmartCtx<'a> {
         //
         // Measure candidates are computed separately from `numeric_indices` (the correlation list):
         // a genuine per-row measure like revenue/amount is often near-unique, and the correlation
-        // list drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique
-        // columns ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a
-        // column the dictionary explicitly routes as `Measure` qualifies regardless of uniqueness —
-        // mirroring the time-series panel, which deliberately allows near-unique measures.
+        // list drops near-unique INTEGERS to keep IDs out of the matrix. Here we exclude
+        // near-unique columns (of either numeric type) ONLY for untagged (`Defer`)
+        // stats-only columns; a column the dictionary explicitly routes as `Measure`
+        // qualifies regardless of uniqueness — mirroring the time-series panel, which
+        // deliberately allows near-unique measures.
         let measure_indices: Vec<usize> = self
             .stats
             .iter()

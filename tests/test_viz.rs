@@ -3978,8 +3978,8 @@ fn viz_heatmap_correlation_insufficient_rows_errors() {
 fn viz_heatmap_correlation_excludes_identifier() {
     // A standalone correlation heatmap in auto mode (no --cols) drops near-unique identifier
     // columns — a monotonic order key holds a distinct value in nearly every row and has no
-    // meaningful linear relationship — mirroring `viz smart`. The two repeated-value measures
-    // remain.
+    // meaningful linear relationship. (`viz smart` drops only near-unique Integers; this path has
+    // no stats to type-check.) The two repeated-value measures remain.
     let wrk = Workdir::new("viz_heatmap_correlation_excludes_identifier");
     let mut rows = String::from("order_id,units,revenue\n");
     for i in 0..60 {
@@ -5093,6 +5093,33 @@ fn viz_smart_correlation_stays_pearson_on_well_behaved_columns() {
         "a well-behaved numeric table should keep — and name — the Pearson correlation panel"
     );
     assert!(!html.contains("Correlation (Spearman"));
+}
+
+#[test]
+fn viz_smart_correlation_keeps_near_unique_float_measures() {
+    // Full-precision measurements are all-unique as a matter of course. The correlation matrix used
+    // to drop every near-unique column as a presumed ID, so a price/qty table - the continuous pair
+    // NMI cannot score either - got no correlation panel at all (#4653). Only near-unique INTEGERS
+    // are presumed IDs now, as in `classify`.
+    let wrk = Workdir::new("viz_smart_correlation_keeps_near_unique_float_measures");
+    let mut rows = String::from("price,qty\n");
+    for i in 0..60_u32 {
+        let price = 1.0 + f64::from(i) * 1.618_034 + f64::from(i % 7) * 0.013;
+        let qty = 200.0 - 1.5 * price + f64::from(i % 5) * 0.271;
+        rows.push_str(&format!("{price:.6},{qty:.6}\n"));
+    }
+    wrk.create_from_string("prices.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "prices.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Correlation (Pearson r)") || html.contains("Correlation (Spearman"),
+        "two near-unique Float measures should get a correlation panel"
+    );
 }
 
 #[test]

@@ -3771,9 +3771,15 @@ where
                 } else {
                     memo[s]
                 }
-            } else {
+            } else if field_type.is_numeric_or_date_type() {
                 // Numeric parsing reads bytes directly, so it never allocates.
                 parse_float_opt_from_bytes(value_bytes)
+            } else {
+                // A String column still takes part in its pairs' frequency statistics, but
+                // must not feed correlation: its few numeric-looking values ("2", "1001" in a
+                // column of dog names) would otherwise be correlated on their own while
+                // n_pairs counted every row, reporting a spurious rho from a handful of rows.
+                None
             };
         }
 

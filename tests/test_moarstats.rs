@@ -7270,3 +7270,65 @@ fn moarstats_join_inputs_jsonl_never_out_permissions_the_private_secondary() {
         "sanity: the JSONL should hold the joined secondary's values, else this proves nothing"
     );
 }
+
+#[test]
+#[serial]
+fn moarstats_bivariate_cramersv_and_regression() {
+    let wrk = Workdir::new("moarstats_bivariate_cramersv_regression");
+    // y = 3x + 1 exactly; g determines h (V = 1); g and k are independent (V = 0).
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y", "g", "h", "k"],
+            svec!["1", "4", "a", "p", "p"],
+            svec!["2", "7", "a", "p", "q"],
+            svec!["3", "10", "b", "q", "p"],
+            svec!["4", "13", "b", "q", "q"],
+            svec!["1", "4", "a", "p", "p"],
+            svec!["2", "7", "a", "p", "q"],
+            svec!["3", "10", "b", "q", "p"],
+            svec!["4", "13", "b", "q", "q"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .args(["--bivariate-stats", "cramersv,regression"])
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    assert_eq!(
+        headers.iter().collect::<Vec<_>>(),
+        vec![
+            "field1",
+            "field2",
+            "cramers_v",
+            "regression_slope",
+            "regression_intercept",
+            "r_squared",
+            "n_pairs"
+        ]
+    );
+    let rows: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
+    let row = |f1: &str, f2: &str| {
+        rows.iter()
+            .find(|r| &r[0] == f1 && &r[1] == f2)
+            .unwrap_or_else(|| panic!("missing pair ({f1}, {f2}):\n{content}"))
+            .iter()
+            .skip(2)
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(row("x", "y"), vec!["1", "3", "1", "1", "8"]);
+    assert_eq!(row("g", "h"), vec!["1", "", "", "", "8"]);
+    assert_eq!(row("g", "k"), vec!["0", "", "", "", "8"]);
+}

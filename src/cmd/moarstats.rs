@@ -231,7 +231,7 @@ all values for computation.
 
 BIVARIATE STATISTICS:
 
-The `moarstats` command also computes the following 7 bivariate statistics:
+The `moarstats` command also computes the following 9 bivariate statistics:
  1. Pearson's correlation
     Measures linear correlation between two numeric/date fields.
     Values range from -1 (perfect negative correlation) to +1 (perfect positive correlation).
@@ -266,6 +266,16 @@ The `moarstats` command also computes the following 7 bivariate statistics:
     Values range from 0 (no reduction) to 1 (fully determined).
     Selected with `u` in --bivariate-stats (or via "all").
     https://en.wikipedia.org/wiki/Uncertainty_coefficient
+ 8. Cramér's V: sqrt(χ² / (n * (min(r, c) - 1)))
+    Chi-squared based association between two fields of any type, from the same
+    joint frequency table as mutual information. Ranges from 0 (independent) to 1.
+    Selected with `cramersv` in --bivariate-stats (or via "all").
+    https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
+ 9. Linear Regression: ordinary least-squares fit of field2 on field1
+    Emits regression_slope, regression_intercept and r_squared (the coefficient of
+    determination) for numeric/date field pairs, from the same streaming state as
+    Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
+    https://en.wikipedia.org/wiki/Simple_linear_regression
 
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
@@ -372,16 +382,17 @@ moarstats options:
                            Comma-separated list of bivariate statistics to compute.
                            Options: pearson, spearman, kendall, covariance, mi (mutual information),
                            nmi (normalized mutual information), u (Theil's directed uncertainty
-                           coefficient; emits u_field2_given_field1 and u_field1_given_field2)
+                           coefficient; emits u_field2_given_field1 and u_field1_given_field2),
+                           cramersv (Cramér's V) and regression (slope, intercept & r_squared).
                            Use "all" to compute all statistics or "fast" to compute only
                            pearson & covariance, which is much faster as it doesn't require storing
                            all values and uses streaming algorithms.
                            [default: fast]
     -C, --cardinality-threshold <n>
-                           Skip mutual information (mi/nmi/u) for field pairs where either
-                           field's cardinality exceeds this threshold. Such pairs also skip
-                           building their joint-frequency table, which is the dominant memory
-                           cost of --bivariate-stats all.
+                           Skip mutual information (mi/nmi/u) and cramersv for field pairs
+                           where either field's cardinality exceeds this threshold. Such pairs
+                           also skip building their joint-frequency table, which is the
+                           dominant memory cost of --bivariate-stats all.
                            Defaults to half the row count, floored at 1000, so it stays inert
                            on small inputs and scales with large ones. Mutual information
                            between near-unique columns saturates at log(n) and is noise
@@ -482,6 +493,8 @@ struct BivariateStatsConfig {
     mi:         bool, // mutual information
     nmi:        bool, // normalized mutual information
     u:          bool, // directed uncertainty coefficient (Theil's U), both directions
+    cramersv:   bool, // Cramér's V (chi-squared association)
+    regression: bool, // OLS slope, intercept & r² of field2 on field1
 }
 
 impl BivariateStatsConfig {
@@ -508,6 +521,8 @@ impl BivariateStatsConfig {
                 "u" | "uncertainty" | "uncertainty_coefficient" | "uncertainty-coefficient" => {
                     config.u = true;
                 },
+                "cramersv" | "cramers_v" | "cramers-v" => config.cramersv = true,
+                "regression" | "ols" => config.regression = true,
                 "all" => return Ok(Self::all()),
                 "fast" => {
                     config.pearson = true;
@@ -524,7 +539,8 @@ impl BivariateStatsConfig {
                 "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
                  covariance (or cov), mi (or mutual_information or mutual-information), nmi (or \
                  normalized_mutual_information or normalized-mutual-information), u (or \
-                 uncertainty or uncertainty_coefficient), fast, all",
+                 uncertainty or uncertainty_coefficient), cramersv (or cramers_v), regression (or \
+                 ols), fast, all",
                 invalid_stats.join(", ")
             );
         }
@@ -537,12 +553,15 @@ impl BivariateStatsConfig {
             && !config.mi
             && !config.nmi
             && !config.u
+            && !config.cramersv
+            && !config.regression
         {
             return fail_clierror!(
                 "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
                  kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
                  nmi (or normalized_mutual_information or normalized-mutual-information), u (or \
-                 uncertainty or uncertainty_coefficient), fast, all"
+                 uncertainty or uncertainty_coefficient), cramersv (or cramers_v), regression (or \
+                 ols), fast, all"
             );
         }
 
@@ -559,6 +578,8 @@ impl BivariateStatsConfig {
             mi:         true,
             nmi:        true,
             u:          true,
+            cramersv:   true,
+            regression: true,
         }
     }
 
@@ -572,7 +593,7 @@ impl BivariateStatsConfig {
     /// information)
     #[inline]
     const fn needs_frequency_counts(self) -> bool {
-        self.mi || self.nmi || self.u
+        self.mi || self.nmi || self.u || self.cramersv
     }
 }
 
@@ -1963,6 +1984,10 @@ struct BivariateStats {
     // `finalize_bivariate_pair_stats`).
     u_field2_given_field1: Option<f64>, // U(field2|field1) = MI / H(field2)
     u_field1_given_field2: Option<f64>, // U(field1|field2) = MI / H(field1)
+    cramers_v: Option<f64>,
+    regression_slope: Option<f64>,
+    regression_intercept: Option<f64>,
+    r_squared: Option<f64>,
     n_pairs: u64,
 }
 
@@ -2323,6 +2348,45 @@ fn finalize_pearson_correlation(state: &CorrelationState) -> Option<f64> {
     } else {
         None
     }
+}
+
+/// Ordinary least-squares regression of y (field2) on x (field1) from the Welford state.
+/// Returns (slope, intercept, r²).
+fn finalize_regression(state: &CorrelationState) -> Option<(f64, f64, f64)> {
+    if state.count < 2 || state.m2_x <= 0.0 || state.m2_y <= 0.0 {
+        return None;
+    }
+    let slope = state.cxy / state.m2_x;
+    let intercept = slope.mul_add(-state.mean_x, state.mean_y);
+    let r_squared = (state.cxy * state.cxy) / (state.m2_x * state.m2_y);
+    Some((slope, intercept, r_squared.min(1.0)))
+}
+
+/// Cramér's V from joint and marginal frequency counts:
+/// `V = sqrt(χ² / (N·(min(r, c) - 1)))`, where `χ² = N·(Σ n_xy² / (n_x·n_y) - 1)`.
+/// The closed form sums only over observed cells, so unobserved (zero) cells need no
+/// materialization. Returns None when either variable has fewer than 2 categories.
+#[allow(clippy::cast_precision_loss)]
+fn compute_cramers_v(
+    xy_counts: &HashMap<u64, u64>,
+    x_counts: &HashMap<u32, u64>,
+    y_counts: &HashMap<u32, u64>,
+    total: u64,
+) -> Option<f64> {
+    let k = x_counts.len().min(y_counts.len());
+    if total == 0 || k < 2 {
+        return None;
+    }
+    let mut sum = 0.0_f64;
+    for (joint_key, &n_xy) in xy_counts {
+        let n_x = *x_counts.get(&((joint_key >> 32) as u32))? as f64;
+        let n_y = *y_counts.get(&((joint_key & 0xFFFF_FFFF) as u32))? as f64;
+        let n_xy = n_xy as f64;
+        sum += n_xy * n_xy / (n_x * n_y);
+    }
+    // χ²/N = sum - 1; clamp tiny negative rounding noise for independent data
+    let phi_sq = (sum - 1.0).max(0.0);
+    Some((phi_sq / (k as f64 - 1.0)).sqrt().min(1.0))
 }
 
 /// Compute final covariance from correlation state
@@ -3723,6 +3787,16 @@ fn finalize_bivariate_pair_stats(
             )
         };
 
+    let (regression_slope, regression_intercept, r_squared) =
+        if !stats_config.regression || has_zero_variance {
+            (None, None, None)
+        } else {
+            finalize_regression(&chunk_stats.correlation_state)
+                .map_or((None, None, None), |(m, b, r2)| {
+                    (Some(m), Some(b), Some(r2))
+                })
+        };
+
     let spearman = if !stats_config.spearman || has_zero_variance || chunk_stats.x_values.len() < 2
     {
         None
@@ -3764,7 +3838,7 @@ fn finalize_bivariate_pair_stats(
     // so deriving them under the same condition avoids building maps nothing reads.
     // Finalize runs under `into_par_iter`, so this bounds live marginals to roughly
     // the job count rather than one pair of maps per field pair.
-    let needs_marginals = (stats_config.mi || stats_config.nmi || stats_config.u)
+    let needs_marginals = stats_config.needs_frequency_counts()
         && chunk_stats.total_pairs > 0
         && exceeds_cardinality != Some(true);
     // Symbol-keyed, not dense Vec<u64> indexed by symbol. A dense table would have to
@@ -3800,6 +3874,20 @@ fn finalize_bivariate_pair_stats(
         None
     } else {
         compute_mutual_information_from_counts(
+            &chunk_stats.xy_counts,
+            &x_counts,
+            &y_counts,
+            chunk_stats.total_pairs,
+        )
+    };
+
+    let cramers_v = if !stats_config.cramersv {
+        None
+    } else if exceeds_cardinality == Some(true) {
+        log_skip("Cramér's V");
+        None
+    } else {
+        compute_cramers_v(
             &chunk_stats.xy_counts,
             &x_counts,
             &y_counts,
@@ -3865,6 +3953,10 @@ fn finalize_bivariate_pair_stats(
             normalized_mutual_information,
             u_field2_given_field1,
             u_field1_given_field2,
+            cramers_v,
+            regression_slope,
+            regression_intercept,
+            r_squared,
             n_pairs,
         },
     ))
@@ -6426,6 +6518,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_config.mi.then_some("mi"),
                 stats_config.nmi.then_some("nmi"),
                 stats_config.u.then_some("u"),
+                stats_config.cramersv.then_some("cramersv"),
+                stats_config.regression.then_some("regression"),
             ]
             .into_iter()
             .flatten()
@@ -6490,6 +6584,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if stats_config.u {
             headers.push("u_field2_given_field1");
             headers.push("u_field1_given_field2");
+        }
+        if stats_config.cramersv {
+            headers.push("cramers_v");
+        }
+        if stats_config.regression {
+            headers.push("regression_slope");
+            headers.push("regression_intercept");
+            headers.push("r_squared");
         }
         headers.push("n_pairs");
 
@@ -6576,6 +6678,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             .u_field1_given_field2
                             .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
                     );
+                }
+                let fmt = |v: Option<f64>| {
+                    v.map_or(String::new(), |v| util::round_num(v, args.flag_round))
+                };
+                if stats_config.cramersv {
+                    record.push(fmt(stats.cramers_v));
+                }
+                if stats_config.regression {
+                    record.push(fmt(stats.regression_slope));
+                    record.push(fmt(stats.regression_intercept));
+                    record.push(fmt(stats.r_squared));
                 }
                 record.push(stats.n_pairs.to_string());
 
@@ -7776,6 +7889,47 @@ mod tests {
         assert_eq!(compute_benford_mad(&geometric[..50]), None);
         let narrow: Vec<f64> = (0..500).map(|i| 100.0 + f64::from(i % 50)).collect();
         assert_eq!(compute_benford_mad(&narrow), None);
+    }
+
+    #[test]
+    fn cramers_v_matches_scipy() {
+        // Oracle: scipy.stats.contingency.association([[10,20,5],[30,5,15]], method="cramer").
+        let table = [[10_u64, 20, 5], [30, 5, 15]];
+        let mut xy = HashMap::new();
+        let mut xc: HashMap<u32, u64> = HashMap::new();
+        let mut yc: HashMap<u32, u64> = HashMap::new();
+        let mut total = 0;
+        for (x, row) in (0_u32..).zip(table) {
+            for (y, n) in (0_u32..).zip(row) {
+                xy.insert((u64::from(x) << 32) | u64::from(y), n);
+                *xc.entry(x).or_default() += n;
+                *yc.entry(y).or_default() += n;
+                total += n;
+            }
+        }
+        let v = compute_cramers_v(&xy, &xc, &yc, total).unwrap();
+        assert!((v - 0.509_201_054_874_903_3).abs() < 1e-12);
+        // A single category on either side -> undefined.
+        let one: HashMap<u32, u64> = [(0, 5)].into_iter().collect();
+        assert_eq!(compute_cramers_v(&xy, &one, &yc, 5), None);
+    }
+
+    #[test]
+    fn regression_from_welford_state() {
+        let mut state = CorrelationState::default();
+        for x in 0..10 {
+            let x = f64::from(x);
+            update_correlation_state(&mut state, x, 3.0f64.mul_add(x, -2.0));
+        }
+        let (m, b, r2) = finalize_regression(&state).unwrap();
+        assert!((m - 3.0).abs() < 1e-12);
+        assert!((b + 2.0).abs() < 1e-12);
+        assert!((r2 - 1.0).abs() < 1e-12);
+        let mut flat = CorrelationState::default();
+        for x in 0..5 {
+            update_correlation_state(&mut flat, f64::from(x), 7.0);
+        }
+        assert_eq!(finalize_regression(&flat), None);
     }
 
     #[test]

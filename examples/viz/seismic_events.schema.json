@@ -153,7 +153,7 @@
       "type": [
         "number"
       ],
-      "title": "Depth (km)",
+      "title": "Depth",
       "description": "The depth of the earthquake focus below the Earth's surface, measured in kilometers.",
       "minimum": 1.0,
       "maximum": 600.0,

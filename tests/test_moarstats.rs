@@ -6921,6 +6921,55 @@ fn moarstats_keeps_an_extended_cache_from_the_same_qsv_version() {
     );
 }
 
+// Regression: the bivariate decode parsed EVERY non-date column numerically, String columns
+// included, so a column of names correlated on its few numeric-looking values alone while n_pairs
+// counted every row. 300 names + 3 numeric "names" reported spearman=1, pearson=0.84, n_pairs=303.
+#[test]
+fn moarstats_bivariate_does_not_correlate_a_string_column() {
+    let wrk = Workdir::new("moarstats_bivariate_does_not_correlate_a_string_column");
+    let names = [
+        "Rex", "Bella", "Max", "Luna", "Coco", "Buddy", "Daisy", "Rocky",
+    ];
+    let mut rows = vec![svec!["name", "score"]];
+    for i in 0..300_usize {
+        rows.push(vec![
+            names[i % names.len()].to_string(),
+            ((i * 37) % 100 + 1).to_string(),
+        ]);
+    }
+    for (name, score) in [("2", "10"), ("50", "60"), ("900", "95")] {
+        rows.push(svec![name, score]);
+    }
+    wrk.create("d.csv", rows);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.args([
+        "--bivariate",
+        "--bivariate-stats",
+        "pearson,spearman,nmi",
+        "d.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let sidecar = wrk.read_to_string("d.stats.bivariate.csv").unwrap();
+    let mut rdr = csv::Reader::from_reader(sidecar.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let col = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let rec = rdr
+        .records()
+        .map(Result::unwrap)
+        .find(|r| &r[col("field1")] == "name" && &r[col("field2")] == "score")
+        .expect("the name x score pair should be kept for its frequency statistics");
+    assert!(
+        rec[col("pearson_correlation")].is_empty() && rec[col("spearman_correlation")].is_empty(),
+        "a String column must not be correlated; row: {rec:?}"
+    );
+    assert!(
+        !rec[col("normalized_mutual_information")].is_empty(),
+        "NMI is defined for a String column and must still be reported; row: {rec:?}"
+    );
+}
+
 #[test]
 fn moarstats_fractional_pct_thresholds_find_their_percentiles() {
     // `stats --percentile-list` casts each entry `as u8`, so asking for 33.3 computes p33 and

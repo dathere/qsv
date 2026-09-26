@@ -198,7 +198,8 @@ describegpt options:
                            Fields where cardinality equals the row count (i.e. every row has a distinct
                            non-null value - primary keys, surrogate keys, sequence numbers) are
                            deterministically classified as "unique_id", overriding any token the LLM
-                           returned for that field.
+                           returned for that field. Float fields are exempt: a full-precision
+                           measurement (a price, a coordinate) is all-unique without being a key.
                            For Date/DateTime fields, the LLM also infers the column's strftime date
                            format (e.g. "date:%m/%d/%Y"); the Markdown, JSON & JSON Schema dictionaries
                            then render Min/Max AND Examples in that inferred format so they match how

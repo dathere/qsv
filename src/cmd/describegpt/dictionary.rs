@@ -1407,8 +1407,14 @@ pub(super) fn generate_code_based_dictionary(
         // Pre-set value takes precedence over whatever the LLM returns (see
         // `combine_dictionary_entries`). Only populate when `--infer-content-type`
         // is on; otherwise the `content_type` column is suppressed entirely.
+        //
+        // `Float` is exempt: keys are integers, strings or timestamps, whereas a continuous
+        // measurement at full precision (a price, a coordinate, a duration) is all-unique as a
+        // matter of course. Stamping those `unique_id` made `viz smart --bivariate` (which infers a
+        // dictionary) route every such measure to Skip, dropping it from all panels (#4653).
         let is_all_unique = stats_record.cardinality > 1
             && stats_record.nullcount == 0
+            && stats_record.r#type != "Float"
             && field_frequencies.len() == 1
             && field_frequencies[0].count == stats_record.cardinality
             && (field_frequencies[0].percentage - 100.0).abs() < 0.0001;
@@ -5556,6 +5562,44 @@ mod tests {
             entries[1].content_type.is_empty(),
             "non-ALL_UNIQUE field must leave content_type empty for LLM fill"
         );
+    }
+
+    #[test]
+    fn generate_does_not_mark_an_all_unique_float_as_unique_id() {
+        // A full-precision continuous measure is all-unique as a matter of course; it is not a
+        // key. The Integer twin (same structural ALL_UNIQUE frequency) still is, so the exemption
+        // is by type and not a side effect of the frequency shape.
+        let stat = |field: &str, r#type: &str| StatsRecord {
+            field:       field.to_string(),
+            r#type:      r#type.to_string(),
+            cardinality: 500,
+            nullcount:   0,
+            min:         "1".to_string(),
+            max:         "99".to_string(),
+            addl_cols:   IndexMap::new(),
+        };
+        let all_unique = |field: &str| FrequencyRecord {
+            field:      field.to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      500,
+            percentage: 100.0,
+            rank:       1.0,
+        };
+        let stats = vec![stat("price", "Float"), stat("id", "Integer")];
+        let frequencies = vec![all_unique("price"), all_unique("id")];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert!(
+            !entries[0].is_unique_id,
+            "an all-unique Float must not be a unique id"
+        );
+        assert!(entries[0].content_type.is_empty());
+        assert!(entries[0].role.is_empty());
+        assert!(entries[0].concept.is_empty());
+        assert!(
+            entries[1].is_unique_id,
+            "an all-unique Integer is still a unique id"
+        );
+        assert_eq!(entries[1].content_type, "unique_id");
     }
 
     #[test]

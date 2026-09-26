@@ -6115,7 +6115,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut skipped_field2_missing_in_csv: u64 = 0;
         let mut skipped_zero_variance: u64 = 0;
         let mut skipped_both_constant: u64 = 0;
-        let mut skipped_card_eq_rowcount: u64 = 0;
+        let mut skipped_all_unique_no_stat: u64 = 0;
         let mut skipped_type_filter: u64 = 0;
 
         for (i, field1_name) in stats_field_names.iter().enumerate() {
@@ -6249,7 +6249,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         && field1_type.is_numeric_or_date_type()
                         && field2_type.is_numeric_or_date_type())
                 {
-                    skipped_card_eq_rowcount += 1;
+                    skipped_all_unique_no_stat += 1;
                     log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                          (i={i}, j={j}): an all-unique field (cardinality >= rowcount \
@@ -6306,7 +6306,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             + skipped_field2_missing_in_csv
             + skipped_zero_variance
             + skipped_both_constant
-            + skipped_card_eq_rowcount
+            + skipped_all_unique_no_stat
             + skipped_type_filter;
         if total_skipped > 0 || field_pairs.is_empty() {
             // Always log a summary when something was skipped or when no
@@ -6327,8 +6327,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                  field2_bad_type={skipped_field2_bad_type}, \
                  field2_missing_in_csv={skipped_field2_missing_in_csv}, \
                  zero_variance={skipped_zero_variance}, both_constant={skipped_both_constant}, \
-                 card_eq_rowcount={skipped_card_eq_rowcount}, type_filter={skipped_type_filter}; \
-                 csv_headers={csv_headers:?}",
+                 all_unique_no_stat={skipped_all_unique_no_stat}, \
+                 type_filter={skipped_type_filter}; csv_headers={csv_headers:?}",
                 built = field_pairs.len(),
                 nfields = stats_field_names.len(),
                 csv_headers = csv_headers.iter().collect::<Vec<_>>()

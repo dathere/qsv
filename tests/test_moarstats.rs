@@ -7411,4 +7411,29 @@ fn moarstats_bivariate_all_unique_numeric_pair_keeps_correlations() {
         !rows.iter().any(|r| &r[0] == "sid" || &r[1] == "sid"),
         "pairs with an all-unique string field should be skipped:\n{content}"
     );
+    // ...and so is an all-unique NUMERIC field paired with a string: only frequency stats apply.
+    assert!(
+        !rows
+            .iter()
+            .any(|r| (&r[0] == "x" || &r[0] == "y") && &r[1] == "g"),
+        "all-unique numeric x string pairs should be skipped:\n{content}"
+    );
+
+    // A frequency-only run has nothing to report for an all-unique pair, so (x, y) is dropped.
+    // Here that leaves NO pairs, and moarstats writes no sidecar at all when none survive - so
+    // remove the previous run's sidecar first, or it would be read back unchanged.
+    std::fs::remove_file(wrk.path("test.stats.bivariate.csv")).unwrap();
+    let mut freq_only = wrk.command("moarstats");
+    freq_only
+        .arg("--bivariate")
+        .args(["--bivariate-stats", "nmi"])
+        .arg("test.csv");
+    wrk.assert_success(&mut freq_only);
+    let content = wrk
+        .read_to_string("test.stats.bivariate.csv")
+        .unwrap_or_default();
+    assert!(
+        !content.lines().any(|l| l.starts_with("x,y,")),
+        "a frequency-only run should drop the all-unique (x, y) pair:\n{content}"
+    );
 }

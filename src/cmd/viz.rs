@@ -1085,10 +1085,12 @@ const CHOROPLETH_MAP_FILL_OPACITY: f64 = 0.9;
 /// a box plot (which hides them). The coefficient is supplied by moarstats under `--smarter`, or
 /// computed in one streaming pass by `enrich_bimodality` for plain `viz smart`.
 ///
-/// Sarle's textbook cutoff is 5/9 (~0.5556) — the value for a UNIFORM distribution. But finite
-/// samples of a uniform (or near-uniform) column scatter just ABOVE 5/9, so a strict cutoff
-/// over-flags flat-but-unimodal data as "bimodal". A small margin (0.60) keeps genuinely two-peaked
-/// columns (BC typically 0.7-1.0) while letting near-uniform columns stay box plots.
+/// Sarle's textbook cutoff is 5/9 (~0.5556) — the value for a UNIFORM distribution. Finite
+/// uniform samples scatter AROUND 5/9 (the finite-sample BC centers a little below it: median
+/// ~0.52 at n=60, ~0.55 at n=300), and a uniform is platykurtic, so the kurtosis guard does not
+/// catch them — a strict 5/9 cutoff would flag a sizeable share of flat-but-unimodal columns as
+/// "bimodal". The 0.60 margin holds that to ~3% at n=60 and <0.5% at n=300 (simulated), while
+/// genuinely two-peaked columns (BC typically 0.7-1.0) still clear it.
 const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 
 /// A violin's KDE over fewer distinct values than this reads as a lumpy comb, not a shape —
@@ -22391,19 +22393,22 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<Pane
 }
 
 /// Populate `bimodality_coefficient` for continuous-numeric columns that don't already have one —
-/// the plain `viz smart` path, where the stats cache carries `skewness` but not the moarstats-only
+/// the plain `viz smart` path, where the stats cache carries no moarstats-only
 /// `kurtosis`/`bimodality_coefficient`. Without it a bimodal column (two separated peaks) renders
 /// as a box plot whose median can sit in the empty gap BETWEEN the peaks — actively misleading;
 /// `classify_measure` upgrades a flagged column to a histogram instead, which shows the peaks.
 ///
-/// Sarle's bimodality coefficient is computed EXACTLY as moarstats does — `BC = (skewness² + 1) /
-/// (kurtosis + 3)` with the same qsv-stats sample excess-kurtosis definition and the SAME cached
-/// `mean`/`variance`/`skewness` inputs — so a column classifies identically with or without
-/// `--smarter`. The 4th central moment is accumulated in a single streaming pass (O(1) memory per
-/// column, no value buffering) using each column's cached mean. Columns moarstats already enriched
-/// (BC present) are skipped, so this is a no-op — with no data pass at all — under `--smarter` or
-/// when no column qualifies.
+/// The coefficient and kurtosis come from the SAME `CentralMoments` definitions moarstats
+/// `--advanced` uses (moment skewness G1, sample excess kurtosis G2, finite-sample BC), so a
+/// column classifies identically with or without `--smarter`. The moments are accumulated in a
+/// single streaming pass (O(1) memory per column, no value buffering) with a numerically stable
+/// online update that needs no cached mean — the cache's mean/variance are rounded, and the
+/// cache's `skewness` is quantile (Bowley) skewness, not the moment skewness BC is defined on.
+/// Columns moarstats already enriched (BC present) are skipped, so this is a no-op — with no data
+/// pass at all — under `--smarter` or when no column qualifies.
 fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) -> CliResult<()> {
+    use crate::cmd::moarstats::MomentAccumulator;
+
     // candidates: columns that would become a box plot (continuous numeric with quartiles) and lack
     // a bimodality coefficient. Mirrors classify()/classify_measure()'s box-vs-bar conditions so we
     // don't pay for columns that chart as frequency bars or are skipped as ID-like.
@@ -22420,9 +22425,6 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
                 && s.q1.is_some()
                 && s.q2_median.is_some()
                 && s.q3.is_some()
-                && s.skewness.is_some()
-                && s.mean.is_some()
-                && s.variance.is_some_and(|v| v > 0.0)
         })
         .map(|(i, _)| i)
         .collect();
@@ -22430,12 +22432,7 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
         return Ok(());
     }
 
-    let means: Vec<f64> = candidates
-        .iter()
-        .map(|&i| stats[i].mean_f64().unwrap_or_default())
-        .collect();
-    let mut counts = vec![0_u64; candidates.len()];
-    let mut sum4 = vec![0.0_f64; candidates.len()]; // Σ(x - mean)⁴ per candidate column
+    let mut accs = vec![MomentAccumulator::default(); candidates.len()];
 
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
@@ -22456,37 +22453,20 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
                 .and_then(|s| s.parse::<f64>().ok())
                 && x.is_finite()
             {
-                let d2 = (x - means[k]) * (x - means[k]);
-                sum4[k] = d2.mul_add(d2, sum4[k]);
-                counts[k] += 1;
+                accs[k].push(x);
             }
         }
     }
 
-    for (k, &col) in candidates.iter().enumerate() {
-        let n = counts[k];
-        // qsv-stats requires >= 4 observations for a defined sample excess kurtosis.
-        if n < 4 {
-            continue;
-        }
-        let (Some(skew), Some(variance)) = (stats[col].skewness, stats[col].variance) else {
-            continue;
-        };
-        let variance_sq = variance * variance;
-        if variance_sq == 0.0 {
-            continue;
-        }
-        #[allow(clippy::cast_precision_loss)]
-        let nf = n as f64;
-        // sample excess kurtosis, matching qsv-stats `kurtosis` with precalc mean+variance:
-        // (n(n+1) Σ(x-mean)⁴) / ((n-1)(n-2)(n-3) variance²) - 3(n-1)²/((n-2)(n-3))
-        let denominator = (nf - 1.0) * (nf - 2.0) * (nf - 3.0);
-        let adjustment = 3.0 * (nf - 1.0) * (nf - 1.0) / ((nf - 2.0) * (nf - 3.0));
-        let kurtosis =
-            (nf * (nf + 1.0) * sum4[k]).mul_add(1.0 / (denominator * variance_sq), -adjustment);
-        // Sarle's bimodality coefficient (moarstats `compute_bimodality_coefficient`).
-        let bc = skew.mul_add(skew, 1.0) / (kurtosis + 3.0);
-        if bc.is_finite() && kurtosis.is_finite() {
+    for (acc, &col) in accs.iter().zip(&candidates) {
+        let moments = acc.finish();
+        // both are None for n < 4 or a constant column
+        if let (Some(kurtosis), Some(bc)) = (
+            moments.sample_excess_kurtosis(),
+            moments.bimodality_coefficient(),
+        ) && kurtosis.is_finite()
+            && bc.is_finite()
+        {
             // store both so classify_measure's platykurtic guard (BC high AND excess kurtosis < 0)
             // sees the same pair moarstats would have written under `--smarter`.
             stats[col].kurtosis = Some(kurtosis);

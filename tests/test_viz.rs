@@ -2658,6 +2658,41 @@ fn viz_smart_plain_promotes_bimodal_to_histogram() {
 }
 
 #[test]
+fn viz_smart_plain_and_smarter_agree_on_asymmetric_bimodal() {
+    // An ASYMMETRIC bimodal column: 77% of rows in one cluster, 23% in a far one. All three
+    // quartiles fall inside the big cluster, so the stats cache's quantile (Bowley) `skewness` is
+    // ~0 - and plain `viz smart` used to build Sarle's BC from it (BC ~0.38 -> box), while
+    // `--smarter` (moarstats, moment skewness) gave BC ~1.0 -> histogram. Both paths now share
+    // moarstats' CentralMoments, so the column must chart the same way either way. p = 0.23 keeps
+    // the mixture platykurtic (a two-point mix has negative excess kurtosis once p(1-p) > 1/6).
+    let wrk = Workdir::new("viz_smart_plain_and_smarter_agree_on_asymmetric_bimodal");
+    let mut rows = String::from("id,measure\n");
+    for i in 0..231 {
+        rows.push_str(&format!("{i},{}\n", i % 40));
+    }
+    for i in 231..300 {
+        rows.push_str(&format!("{i},{}\n", 1000 + i % 40));
+    }
+    wrk.create_from_string("asym.csv", &rows);
+
+    let run = |extra: &[&str], out: &str| {
+        let out_html = wrk.path(out).to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "asym.csv", "-o", &out_html]).args(extra);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(out).unwrap()
+    };
+    let plain = run(&[], "plain.html");
+    let smarter = run(&["--smarter"], "smarter.html");
+    for (label, html) in [("plain", &plain), ("--smarter", &smarter)] {
+        assert!(
+            html.contains(r#""type":"histogram""#) && !html.contains(r#""type":"box""#),
+            "{label} viz smart should chart the asymmetric bimodal column as a histogram"
+        );
+    }
+}
+
+#[test]
 fn viz_smart_plain_skewed_outliers_stay_box_not_histogram() {
     // A heavily right-skewed UNIMODAL column (long tail of large values) has a high Sarle BC purely
     // from skewness, but it's leptokurtic — plain `viz smart`'s platykurtic guard must keep it a

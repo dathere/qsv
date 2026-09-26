@@ -18,7 +18,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 25 additional univariate statistics:
+Currently computes the following 26 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -63,56 +63,63 @@ Currently computes the following 25 additional univariate statistics:
     Robust Coefficient of Variation using MAD and the magnitude of the median.
     Always non-negative. Resistant to outliers, useful for comparing variability.
     https://en.wikipedia.org/wiki/Robust_measures_of_scale
-14. Kurtosis: Measures the "tailedness" of the distribution (excess kurtosis).
+14. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
+    Moment-based counterpart to the quantile-based `skewness` from stats.
+    Positive values indicate right skew, negative values indicate left skew.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Skewness#Sample_skewness
+15. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
-15. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
-    BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal.
-    Computed as (skewness² + 1) / (kurtosis + 3).
-    Requires --advanced flag (needs skewness from base stats and kurtosis from --advanced flag).
+16. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+    BC > 0.555 (the value for a uniform distribution) suggests bimodal/multimodal.
+    Computed as (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))), using moment skewness and kurtosis.
+    Heavily skewed unimodal data can also exceed 0.555.
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Bimodality
-16. Jarque-Bera Test: (n/6) * (S² + K²/4)
-    Standard test for normality using skewness and kurtosis.
+17. Jarque-Bera Test: (n/6) * (S² + K²/4)
+    Standard test for normality, where S and K are the (biased) moment skewness and
+    excess kurtosis.
     Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
     Low p-values (< 0.05) indicate the data is NOT normally distributed.
-    Requires --advanced flag (needs kurtosis).
+    Requires --advanced flag.
     https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test
-17. Gini Coefficient: Measures inequality/dispersion in the distribution.
+18. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-18. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+19. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     The Atkinson Index is a more general form of the Gini coefficient that allows for
     different sensitivity to inequality. Sensitivity is configurable via --epsilon.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Atkinson_index
-19. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+20. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     Measures inequality/concentration. Unlike Gini, it is decomposable into
     within-group and between-group components. Only computed for positive values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Theil_index
-20. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+21. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
     Average absolute distance from the mean. Different from MAD (which uses median).
     Less robust but more statistically efficient than MAD.
     Requires --advanced flag.
-21. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+22. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-22. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+23. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-23. Simpson's Diversity Index: 1 - Σ(p_i²)
+24. Simpson's Diversity Index: 1 - Σ(p_i²)
     Probability that two randomly chosen values are different.
     Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
     Requires --advanced flag (computed alongside entropy from frequency data).
     https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
-24. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+25. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -120,7 +127,7 @@ Currently computes the following 25 additional univariate statistics:
     winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
     (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
     before _stddev_ratio, unlike the others.
-25. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+26. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -271,9 +278,10 @@ Usage:
     qsv moarstats --help
 
 moarstats options:
-    --advanced             Compute Kurtosis, Shannon Entropy, Bimodality Coefficient,
-                           Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index,
-                           Mean Absolute Deviation, and Simpson's Diversity Index.
+    --advanced             Compute Moment Skewness, Kurtosis, Shannon Entropy,
+                           Bimodality Coefficient, Jarque-Bera, Gini Coefficient,
+                           Atkinson Index, Theil Index, Mean Absolute Deviation,
+                           and Simpson's Diversity Index.
                            These advanced statistics computations require reading the
                            original CSV file to collect all values
                            for computation and are computationally expensive.
@@ -390,7 +398,7 @@ use qsv_dateparser::parse_with_preference;
 use rayon::prelude::*;
 use serde::Deserialize;
 use simdutf8::basic::from_utf8;
-use stats::{atkinson, gini, kurtosis};
+use stats::{atkinson, gini};
 use threadpool::ThreadPool;
 
 use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
@@ -1181,42 +1189,6 @@ fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
     }
 }
 
-/// Compute Jarque-Bera test statistic: (n/6) * (S^2 + K^2/4)
-/// Tests whether data follows a normal distribution.
-/// Returns (`jb_statistic`, `p_value`) where `p_value` is from chi-squared(2) distribution.
-#[inline]
-fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> Option<(f64, f64)> {
-    if n < 3 {
-        return None;
-    }
-    if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
-        #[allow(clippy::cast_precision_loss)]
-        let n_f64 = n as f64;
-        let jb = (n_f64 / 6.0) * skew_val.mul_add(skew_val, kurt_val * kurt_val / 4.0);
-        // Upper-tail p-value from chi-squared distribution with 2 degrees of freedom
-        // For chi-squared(2), the survival function (1 - CDF) is e^(-x/2)
-        let p_value = (-jb / 2.0_f64).exp();
-        Some((jb, p_value))
-    } else {
-        None
-    }
-}
-
-/// Compute Bimodality Coefficient: (skewness² + 1) / (kurtosis + 3)
-/// BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal
-fn compute_bimodality_coefficient(skewness: Option<f64>, kurtosis: Option<f64>) -> Option<f64> {
-    if let (Some(skew_val), Some(kurt_val)) = (skewness, kurtosis) {
-        let denominator = kurt_val + 3.0;
-        if denominator.abs() > f64::EPSILON {
-            Some(skew_val.mul_add(skew_val, 1.0) / denominator)
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
 /// Compute Normalized Entropy: `shannon_entropy` / log2(cardinality)
 /// Values range from 0 (all values identical) to 1 (all values equally distributed)
 fn compute_normalized_entropy(
@@ -1801,14 +1773,17 @@ struct OutlierStats {
     count_all:              u64,
 }
 
-/// Statistics for Kurtosis, Gini & Atkinson Index
+/// Statistics computed from a field's full value vector in the `--advanced` pass
 #[derive(Clone, Default)]
 struct KGAStats {
-    kurtosis:         Option<f64>,
-    gini_coefficient: Option<f64>,
-    atkinson_index:   Option<f64>,
-    theil_index:      Option<f64>,
-    mean_ad:          Option<f64>,
+    moment_skewness:        Option<f64>,
+    kurtosis:               Option<f64>,
+    bimodality_coefficient: Option<f64>,
+    jarque_bera:            Option<(f64, f64)>,
+    gini_coefficient:       Option<f64>,
+    atkinson_index:         Option<f64>,
+    theil_index:            Option<f64>,
+    mean_ad:                Option<f64>,
 }
 
 /// Statistics for Shannon Entropy and Simpson's Diversity Index
@@ -2622,9 +2597,6 @@ fn compute_uncertainty_coefficient(mi: Option<f64>, h_target: Option<f64>) -> Op
 struct KGAFieldInfo {
     col_idx:    usize,
     field_type: FieldType,
-    mean:       Option<f64>,
-    variance:   Option<f64>, // variance = stddev^2
-    sum:        Option<f64>, // sum for Gini coefficient
 }
 
 /// Combined per-chunk output from a single fused scan that BOTH counts outliers
@@ -2680,29 +2652,123 @@ fn merge_outlier_stats(total: &mut OutlierStats, stats: &OutlierStats) {
     }
 }
 
-/// Finalize Kurtosis, Gini, Atkinson, Theil & mean absolute deviation for a single
-/// field from its full (file-ordered) value vector. Kept bit-identical to the former
-/// sequential `compute_all_kga_from_reader` finalize block.
-fn finalize_kga(
-    values: &[f64],
-    precalc_mean: Option<f64>,
-    precalc_variance: Option<f64>,
-    precalc_sum: Option<f64>,
-    atkinson_epsilon: f64,
-) -> KGAStats {
+/// Exact population central moments of a value vector (two-pass).
+#[derive(Clone, Copy, Debug)]
+struct CentralMoments {
+    n:            f64,
+    sum:          f64,
+    mean:         f64,
+    m2:           f64,
+    m3:           f64,
+    m4:           f64,
+    mean_abs_dev: f64,
+}
+
+impl CentralMoments {
+    #[allow(clippy::cast_precision_loss)]
+    fn from_values(values: &[f64]) -> Self {
+        let n = values.len() as f64;
+        let sum: f64 = values.iter().sum();
+        let mean = sum / n;
+        let (mut s2, mut s3, mut s4, mut sabs) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        for &x in values {
+            let d = x - mean;
+            let d2 = d * d;
+            s2 += d2;
+            s3 = d2.mul_add(d, s3);
+            s4 = d2.mul_add(d2, s4);
+            sabs += d.abs();
+        }
+        Self {
+            n,
+            sum,
+            mean,
+            m2: s2 / n,
+            m3: s3 / n,
+            m4: s4 / n,
+            mean_abs_dev: sabs / n,
+        }
+    }
+
+    /// Biased moment skewness g1 = m3 / m2^1.5
+    fn g1(&self) -> Option<f64> {
+        (self.m2 > 0.0).then(|| self.m3 / self.m2.powf(1.5))
+    }
+
+    /// Biased excess kurtosis g2 = m4 / m2² - 3
+    fn g2(&self) -> Option<f64> {
+        (self.m2 > 0.0).then(|| self.m4 / (self.m2 * self.m2) - 3.0)
+    }
+
+    /// Adjusted Fisher-Pearson sample skewness G1 (scipy `skew(bias=False)`).
+    fn sample_skewness(&self) -> Option<f64> {
+        let n = self.n;
+        if n < 3.0 {
+            return None;
+        }
+        self.g1().map(|g1| g1 * (n * (n - 1.0)).sqrt() / (n - 2.0))
+    }
+
+    /// Sample excess kurtosis G2 (scipy `kurtosis(bias=False)`).
+    fn sample_excess_kurtosis(&self) -> Option<f64> {
+        let n = self.n;
+        if n < 4.0 {
+            return None;
+        }
+        self.g2()
+            .map(|g2| (n + 1.0).mul_add(g2, 6.0) * (n - 1.0) / ((n - 2.0) * (n - 3.0)))
+    }
+
+    /// Bimodality Coefficient with finite-sample correction (Pfister et al., 2013):
+    /// (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))).
+    /// BC > 0.555 (the value for a uniform distribution) suggests bi/multimodality.
+    fn bimodality_coefficient(&self) -> Option<f64> {
+        let n = self.n;
+        let skew = self.sample_skewness()?;
+        let kurt = self.sample_excess_kurtosis()?;
+        let denominator = kurt + 3.0 * (n - 1.0) * (n - 1.0) / ((n - 2.0) * (n - 3.0));
+        (denominator.abs() > f64::EPSILON).then(|| skew.mul_add(skew, 1.0) / denominator)
+    }
+
+    /// Jarque-Bera statistic (n/6)·(g1² + g2²/4) using the biased moment estimators,
+    /// matching scipy `stats.jarque_bera`. Returns (statistic, p-value) where the
+    /// p-value is the chi-squared(2) survival function e^(-JB/2).
+    fn jarque_bera(&self) -> Option<(f64, f64)> {
+        if self.n < 3.0 {
+            return None;
+        }
+        let g1 = self.g1()?;
+        let g2 = self.g2()?;
+        let jb = (self.n / 6.0) * g1.mul_add(g1, g2 * g2 / 4.0);
+        Some((jb, (-jb / 2.0).exp()))
+    }
+}
+
+/// Finalize the `--advanced` per-field statistics from its full (file-ordered) value
+/// vector. Runs after the chunk merge, so parallel and sequential scans produce
+/// bit-identical results.
+///
+/// Mean and central moments are recomputed exactly from `values` rather than taken
+/// from the stats cache: the cached mean/stddev are rounded (default 4 dp), which
+/// badly distorts moment statistics on small-scale data.
+fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
     // Need at least 2 values for meaningful statistics
     if values.len() < 2 {
         return KGAStats::default();
     }
 
-    // Compute kurtosis with precalculated mean and variance
-    let kurtosis_val = kurtosis(values.iter().copied(), precalc_mean, precalc_variance);
+    let moments = CentralMoments::from_values(values);
 
-    // Compute Gini coefficient with precalculated sum (not mean!)
-    let gini_val = gini(values.iter().copied(), precalc_sum);
+    // Compute Gini coefficient with exact sum
+    let gini_val = gini(values.iter().copied(), Some(moments.sum));
 
     // Compute Atkinson Index (epsilon parameter configurable via --epsilon)
-    let atkinson_val = atkinson(values.iter().copied(), atkinson_epsilon, precalc_mean, None);
+    let atkinson_val = atkinson(
+        values.iter().copied(),
+        atkinson_epsilon,
+        Some(moments.mean),
+        None,
+    );
 
     // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     // Only for positive values (Theil index is undefined for non-positive values)
@@ -2740,22 +2806,15 @@ fn finalize_kga(
         }
     };
 
-    // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
-    #[allow(clippy::cast_precision_loss)]
-    let mean_ad_val = if let Some(mean_val) = precalc_mean {
-        let n = values.len() as f64;
-        let sum_abs_dev: f64 = values.iter().map(|&x| (x - mean_val).abs()).sum();
-        Some(sum_abs_dev / n)
-    } else {
-        None
-    };
-
     KGAStats {
-        kurtosis:         kurtosis_val,
-        gini_coefficient: gini_val,
-        atkinson_index:   atkinson_val,
-        theil_index:      theil_val,
-        mean_ad:          mean_ad_val,
+        moment_skewness:        moments.sample_skewness(),
+        kurtosis:               moments.sample_excess_kurtosis(),
+        bimodality_coefficient: moments.bimodality_coefficient(),
+        jarque_bera:            moments.jarque_bera(),
+        gini_coefficient:       gini_val,
+        atkinson_index:         atkinson_val,
+        theil_index:            theil_val,
+        mean_ad:                Some(moments.mean_abs_dev),
     }
 }
 
@@ -2931,13 +2990,6 @@ fn compute_outliers_and_kga(
         return Ok((HashMap::new(), HashMap::new()));
     }
 
-    // Precompute KGA per-field (mean, variance, sum) for finalize BEFORE the field
-    // list is moved into an Arc for the parallel workers.
-    let kga_precalc: Vec<(Option<f64>, Option<f64>, Option<f64>)> = kga_fields
-        .iter()
-        .map(|f| (f.mean, f.variance, f.sum))
-        .collect();
-
     let input_path_str = input_path
         .to_str()
         .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
@@ -3087,19 +3139,13 @@ fn compute_outliers_and_kga(
 
     // Finalize KGA per field (slot -> name) over its file-ordered value vector.
     // Each field's finalize is independent and dominated by a per-column sort
-    // (Gini) plus kurtosis/Theil/mean_ad, so fan out across fields with rayon.
+    // (Gini) plus moments/Theil, so fan out across fields with rayon.
     // Results are keyed by name and each field's math is order-independent of the
     // others, so this stays bit-identical to a sequential finalize.
     let kga_stats: HashMap<String, KGAStats> = kga_concat
         .into_par_iter()
-        .zip(kga_precalc)
         .zip(kga_names)
-        .map(|((values, (mean, variance, sum)), name)| {
-            (
-                name,
-                finalize_kga(&values, mean, variance, sum, atkinson_epsilon),
-            )
-        })
+        .map(|(values, name)| (name, finalize_kga(&values, atkinson_epsilon)))
         .collect();
 
     Ok((outlier_counts, kga_stats))
@@ -4750,13 +4796,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let iqr_idx = headers.iter().position(|h| h == "iqr");
     let mad_idx = headers.iter().position(|h| h == "mad");
     let field_idx = headers.iter().position(|h| h == "field");
-    let sum_idx = headers.iter().position(|h| h == "sum");
-    let skewness_idx = headers.iter().position(|h| h == "skewness");
     let cardinality_idx = headers.iter().position(|h| h == "cardinality");
-    let n_positive_idx = headers.iter().position(|h| h == "n_positive");
-    let n_negative_idx = headers.iter().position(|h| h == "n_negative");
-    let n_zero_idx = headers.iter().position(|h| h == "n_zero");
-    let kurtosis_idx = headers.iter().position(|h| h == "kurtosis");
     let lower_outer_fence_idx = headers.iter().position(|h| h == "lower_outer_fence");
     let lower_inner_fence_idx = headers.iter().position(|h| h == "lower_inner_fence");
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
@@ -4880,6 +4920,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("robust_cv".to_string(), new_columns.len() - 1);
     }
 
+    // Add moment skewness column (requires reading raw data, computed for numeric/date
+    // types). Unlike the base `skewness` (quantile-based Bowley skewness), this is the
+    // adjusted Fisher-Pearson moment coefficient G1.
+    if args.flag_advanced && !column_exists("moment_skewness") {
+        new_columns.push("moment_skewness".to_string());
+        new_column_indices.insert("moment_skewness".to_string(), new_columns.len() - 1);
+    }
+
     // Add kurtosis column (requires reading raw data, computed for numeric/date types)
     // Only add if --advanced flag is set
     if args.flag_advanced && !column_exists("kurtosis") {
@@ -4887,28 +4935,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("kurtosis".to_string(), new_columns.len() - 1);
     }
 
-    // Add bimodality coefficient (requires skewness from base stats and kurtosis from --advanced)
-    // Only add if --advanced flag is set (since it requires kurtosis)
-    if args.flag_advanced
-        && skewness_idx.is_some()
-        && new_column_indices.contains_key("kurtosis")
-        && !column_exists("bimodality_coefficient")
-    {
+    // Add bimodality coefficient (moment skewness & kurtosis from the --advanced scan)
+    if args.flag_advanced && !column_exists("bimodality_coefficient") {
         new_columns.push("bimodality_coefficient".to_string());
         new_column_indices.insert("bimodality_coefficient".to_string(), new_columns.len() - 1);
     }
 
-    // Add Jarque-Bera test statistic (requires skewness and kurtosis)
-    // Only add if --advanced flag is set. Kurtosis can come from this run (new column)
-    // or from a previous run (existing column in stats CSV).
-    if args.flag_advanced
-        && skewness_idx.is_some()
-        && (new_column_indices.contains_key("kurtosis") || kurtosis_idx.is_some())
-        && n_positive_idx.is_some()
-        && n_negative_idx.is_some()
-        && n_zero_idx.is_some()
-        && !column_exists("jarque_bera")
-    {
+    // Add Jarque-Bera test statistic (moments from the --advanced scan)
+    if args.flag_advanced && !column_exists("jarque_bera") {
         new_columns.push("jarque_bera".to_string());
         new_column_indices.insert("jarque_bera".to_string(), new_columns.len() - 1);
         new_columns.push("jarque_bera_pvalue".to_string());
@@ -5206,7 +5240,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Collect fields that need Kurtosis, Gini & Atkinson Index computation
     // (with their precalculated stats)
-    let needs_kga = new_column_indices.contains_key("kurtosis")
+    let needs_kga = new_column_indices.contains_key("moment_skewness")
+        || new_column_indices.contains_key("kurtosis")
+        || new_column_indices.contains_key("bimodality_coefficient")
+        || new_column_indices.contains_key("jarque_bera")
         || new_column_indices.contains_key("gini_coefficient")
         || new_column_indices.contains_key(&atkinson_index_col_name)
         || new_column_indices.contains_key("theil_index")
@@ -5379,27 +5416,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 continue;
             }
 
-            // Parse precalculated stats
-            let mean_val = mean_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-            let stddev_val = stddev_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-            let variance_val = stddev_val.map(|s| s * s); // variance = stddev^2
-            let sum_val = sum_idx
-                .and_then(|idx| record.get(idx))
-                .and_then(parse_float_opt);
-
             // We'll find the column index when we read the CSV
             fields_for_kga.insert(
                 field_name.to_string(),
                 KGAFieldInfo {
                     col_idx: 0, // Will be set when we read CSV headers
                     field_type,
-                    mean: mean_val,
-                    variance: variance_val,
-                    sum: sum_val,
                 },
             );
         }
@@ -6572,61 +6594,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 new_values[*idx] = util::round_num(val, args.flag_round);
             }
 
-            // Compute Bimodality Coefficient (requires skewness and kurtosis)
-            if let Some(idx) = new_column_indices.get("bimodality_coefficient")
-                && !field_name.is_empty()
-                && let Some(kga_stats_val) = kga_stats.get(field_name)
-                && let Some(kurtosis_val) = kga_stats_val.kurtosis
-            {
-                let skewness = skewness_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(parse_float_opt);
-                if let Some(val) = compute_bimodality_coefficient(skewness, Some(kurtosis_val)) {
-                    new_values[*idx] = util::round_num(val, args.flag_round);
-                }
-            }
-
-            // Compute Jarque-Bera test (requires skewness and kurtosis)
-            // Prefer kurtosis from KGA stats when available, otherwise fall back
-            // to the kurtosis value already present in the stats CSV record.
-            if new_column_indices.contains_key("jarque_bera") && !field_name.is_empty() {
-                let kurtosis_from_kga = kga_stats
-                    .get(field_name)
-                    .and_then(|kga_stats_val| kga_stats_val.kurtosis);
-                let kurtosis_from_stats = kurtosis_idx
-                    .and_then(|idx| record.get(idx))
-                    .and_then(parse_float_opt);
-                let kurtosis_val = kurtosis_from_kga.or(kurtosis_from_stats);
-
-                if let Some(kurtosis_val) = kurtosis_val {
-                    let skewness = skewness_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(parse_float_opt);
-                    // Compute n from n_positive + n_negative + n_zero
-                    let n_pos = n_positive_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n_neg = n_negative_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n_z = n_zero_idx
-                        .and_then(|idx| record.get(idx))
-                        .and_then(|s| s.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let n = n_pos + n_neg + n_z;
-                    if let Some((jb, pval)) = compute_jarque_bera(skewness, Some(kurtosis_val), n) {
-                        if let Some(idx) = new_column_indices.get("jarque_bera") {
-                            new_values[*idx] = util::round_num(jb, args.flag_round);
-                        }
-                        if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
-                            new_values[*idx] = util::round_num(pval, args.flag_round);
-                        }
-                    }
-                }
-            }
-
             // Get outlier statistics from pre-computed results
             if new_column_indices.contains_key("outliers_extreme_lower_cnt")
                 && !field_name.is_empty()
@@ -6976,13 +6943,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
             }
 
-            // Write Kurtosis, Gini & Atkinson Index from pre-computed results
-            if (new_column_indices.contains_key("kurtosis")
-                || new_column_indices.contains_key("gini_coefficient")
-                || new_column_indices.contains_key(&atkinson_index_col_name))
+            // Write --advanced value-vector statistics from pre-computed results
+            if needs_kga
                 && !field_name.is_empty()
                 && let Some(stats) = kga_stats.get(field_name)
             {
+                if let Some(val) = stats.moment_skewness
+                    && let Some(idx) = new_column_indices.get("moment_skewness")
+                {
+                    new_values[*idx] = util::round_num(val, args.flag_round);
+                }
+
+                if let Some(val) = stats.bimodality_coefficient
+                    && let Some(idx) = new_column_indices.get("bimodality_coefficient")
+                {
+                    new_values[*idx] = util::round_num(val, args.flag_round);
+                }
+
+                if let Some((jb, pval)) = stats.jarque_bera {
+                    if let Some(idx) = new_column_indices.get("jarque_bera") {
+                        new_values[*idx] = util::round_num(jb, args.flag_round);
+                    }
+                    if let Some(idx) = new_column_indices.get("jarque_bera_pvalue") {
+                        new_values[*idx] = util::round_num(pval, args.flag_round);
+                    }
+                }
+
                 // Kurtosis
                 if let Some(kurtosis_val) = stats.kurtosis
                     && let Some(idx) = new_column_indices.get("kurtosis")
@@ -7244,37 +7230,44 @@ mod tests {
     }
 
     #[test]
-    fn compute_bimodality_coefficient_basic_and_singularity() {
-        // (skew^2 + 1) / (kurt + 3) for skew=0, kurt=0 -> 1/3.
-        let got = compute_bimodality_coefficient(Some(0.0), Some(0.0)).unwrap();
-        assert!((got - 1.0 / 3.0).abs() < 1e-12);
-        // kurt == -3 makes the denominator zero -> None.
-        assert_eq!(compute_bimodality_coefficient(Some(0.0), Some(-3.0)), None,);
-        assert_eq!(compute_bimodality_coefficient(None, Some(0.0)), None);
-        assert_eq!(compute_bimodality_coefficient(Some(0.0), None), None);
+    fn central_moments_match_scipy() {
+        // Oracle: scipy 1.18 stats.skew/kurtosis(bias=False), stats.jarque_bera.
+        let m = CentralMoments::from_values(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.]);
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(m.sample_skewness().unwrap(), 2.021_294_486_935_496_5));
+        assert!(close(
+            m.sample_excess_kurtosis().unwrap(),
+            3.940_822_783_164_566
+        ));
+        let (jb, p) = m.jarque_bera().unwrap();
+        assert!(close(jb, 6.023_412_338_355_193));
+        assert!(close(p, 0.049_207_650_521_029_09));
+        assert!(close(
+            m.bimodality_coefficient().unwrap(),
+            0.614_198_642_986_606_6
+        ));
+        assert!(close(m.mean_abs_dev, 2.96));
     }
 
     #[test]
-    fn compute_jarque_bera_small_n_and_known_values() {
-        // The `kurtosis` parameter here is *excess* kurtosis (i.e. raw - 3),
-        // matching the convention produced by qsv's stats command. The hand-
-        // computed expectations below silently encode that — if the function
-        // ever switches to raw kurtosis, the second case will break.
-        // n < 3 -> None.
-        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 0), None);
-        assert_eq!(compute_jarque_bera(Some(0.0), Some(0.0), 2), None);
-        // Skew = 0, excess kurt = 0 -> JB = 0, p = exp(0) = 1 (normal-looking moments).
-        let (jb, p) = compute_jarque_bera(Some(0.0), Some(0.0), 100).unwrap();
-        assert!(jb.abs() < 1e-12);
-        assert!((p - 1.0).abs() < 1e-12);
-        // Hand-computed (excess kurtosis convention):
-        //   n = 60, skew = 1, excess kurt = 2 -> JB = (60/6) * (1 + 4/4) = 20, p = exp(-10).
-        let (jb, p) = compute_jarque_bera(Some(1.0), Some(2.0), 60).unwrap();
-        assert!((jb - 20.0).abs() < 1e-9);
-        assert!((p - (-10.0_f64).exp()).abs() < 1e-12);
-        // Either moment None -> None.
-        assert_eq!(compute_jarque_bera(None, Some(0.0), 100), None);
-        assert_eq!(compute_jarque_bera(Some(0.0), None, 100), None);
+    fn central_moments_degenerate_inputs() {
+        // Zero variance -> every moment ratio undefined.
+        let flat = CentralMoments::from_values(&[5.0; 10]);
+        assert_eq!(flat.sample_skewness(), None);
+        assert_eq!(flat.sample_excess_kurtosis(), None);
+        assert_eq!(flat.jarque_bera(), None);
+        assert_eq!(flat.bimodality_coefficient(), None);
+        // n = 3: skewness and JB defined, kurtosis (needs n >= 4) and BC are not.
+        let three = CentralMoments::from_values(&[1.0, 2.0, 3.0]);
+        assert_eq!(three.sample_skewness(), Some(0.0));
+        assert!((three.jarque_bera().unwrap().0 - 0.28125).abs() < 1e-12);
+        assert_eq!(three.sample_excess_kurtosis(), None);
+        assert_eq!(three.bimodality_coefficient(), None);
+        // n = 2 -> no skewness.
+        assert_eq!(
+            CentralMoments::from_values(&[1.0, 2.0]).sample_skewness(),
+            None
+        );
     }
 
     #[test]

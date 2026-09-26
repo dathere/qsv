@@ -2844,16 +2844,17 @@ fn merge_outlier_stats(total: &mut OutlierStats, stats: &OutlierStats) {
     }
 }
 
-/// Exact population central moments of a value vector (two-pass).
+/// Population central moments (`m_k = Σ(x - mean)^k / n`) and the moment-ratio statistics
+/// derived from them. Built from a value vector (`from_values`, two-pass) by moarstats
+/// `--advanced`, or from a single streaming pass (`MomentAccumulator`) by `viz smart`, so
+/// both commands share ONE definition of skewness, kurtosis, BC and Jarque-Bera.
 #[derive(Clone, Copy, Debug)]
-struct CentralMoments {
-    n:            f64,
-    sum:          f64,
-    mean:         f64,
-    m2:           f64,
-    m3:           f64,
-    m4:           f64,
-    mean_abs_dev: f64,
+pub(crate) struct CentralMoments {
+    n:    f64,
+    mean: f64,
+    m2:   f64,
+    m3:   f64,
+    m4:   f64,
 }
 
 impl CentralMoments {
@@ -2867,23 +2868,20 @@ impl CentralMoments {
         // For a constant column the correction is exact, so every deviation becomes 0.
         let naive = sum / n;
         let mean = naive + values.iter().map(|&x| x - naive).sum::<f64>() / n;
-        let (mut s2, mut s3, mut s4, mut sabs) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        let (mut s2, mut s3, mut s4) = (0.0_f64, 0.0_f64, 0.0_f64);
         for &x in values {
             let d = x - mean;
             let d2 = d * d;
             s2 += d2;
             s3 = d2.mul_add(d, s3);
             s4 = d2.mul_add(d2, s4);
-            sabs += d.abs();
         }
         Self {
             n,
-            sum,
             mean,
             m2: s2 / n,
             m3: s3 / n,
             m4: s4 / n,
-            mean_abs_dev: sabs / n,
         }
     }
 
@@ -2898,7 +2896,7 @@ impl CentralMoments {
     }
 
     /// Adjusted Fisher-Pearson sample skewness G1 (scipy `skew(bias=False)`).
-    fn sample_skewness(&self) -> Option<f64> {
+    pub(crate) fn sample_skewness(&self) -> Option<f64> {
         let n = self.n;
         if n < 3.0 {
             return None;
@@ -2907,7 +2905,7 @@ impl CentralMoments {
     }
 
     /// Sample excess kurtosis G2 (scipy `kurtosis(bias=False)`).
-    fn sample_excess_kurtosis(&self) -> Option<f64> {
+    pub(crate) fn sample_excess_kurtosis(&self) -> Option<f64> {
         let n = self.n;
         if n < 4.0 {
             return None;
@@ -2919,7 +2917,7 @@ impl CentralMoments {
     /// Bimodality Coefficient with finite-sample correction (Pfister et al., 2013):
     /// (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))).
     /// BC > 0.555 (the value for a uniform distribution) suggests bi/multimodality.
-    fn bimodality_coefficient(&self) -> Option<f64> {
+    pub(crate) fn bimodality_coefficient(&self) -> Option<f64> {
         let n = self.n;
         let skew = self.sample_skewness()?;
         let kurt = self.sample_excess_kurtosis()?;
@@ -2938,6 +2936,49 @@ impl CentralMoments {
         let g2 = self.g2()?;
         let jb = (self.n / 6.0) * g1.mul_add(g1, g2 * g2 / 4.0);
         Some((jb, (-jb / 2.0).exp()))
+    }
+}
+
+/// Single-pass, O(1)-memory accumulator for `CentralMoments`, using Terriberry's
+/// numerically stable online update of the 2nd-4th central moment sums (the higher-order
+/// extension of Welford). It needs no precomputed mean, so it is immune to the rounding of
+/// a cached `mean`, and a constant stream accumulates exactly zero moments.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct MomentAccumulator {
+    n:    u64,
+    mean: f64,
+    m2:   f64, // Σ(x - mean)²
+    m3:   f64, // Σ(x - mean)³
+    m4:   f64, // Σ(x - mean)⁴
+}
+
+impl MomentAccumulator {
+    #[allow(clippy::cast_precision_loss)]
+    pub(crate) fn push(&mut self, x: f64) {
+        let n1 = self.n as f64;
+        self.n += 1;
+        let n = self.n as f64;
+        let delta = x - self.mean;
+        let delta_n = delta / n;
+        let delta_n2 = delta_n * delta_n;
+        let term1 = delta * delta_n * n1;
+        self.mean += delta_n;
+        self.m4 += term1 * delta_n2 * (n * n - 3.0 * n + 3.0) + 6.0 * delta_n2 * self.m2
+            - 4.0 * delta_n * self.m3;
+        self.m3 += term1 * delta_n * (n - 2.0) - 3.0 * delta_n * self.m2;
+        self.m2 += term1;
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    pub(crate) fn finish(&self) -> CentralMoments {
+        let n = self.n as f64;
+        CentralMoments {
+            n,
+            mean: self.mean,
+            m2: self.m2 / n,
+            m3: self.m3 / n,
+            m4: self.m4 / n,
+        }
     }
 }
 
@@ -3062,12 +3103,19 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
     }
 
     let moments = CentralMoments::from_values(&values);
+    let sum: f64 = values.iter().sum();
+    #[allow(clippy::cast_precision_loss)]
+    let mean_abs_dev = values
+        .iter()
+        .map(|&x| (x - moments.mean).abs())
+        .sum::<f64>()
+        / values.len() as f64;
 
     // order-dependent: must run before the sort below
     let lag1_val = compute_lag1_autocorrelation(&values, moments.mean);
 
     // Compute Gini coefficient with exact sum
-    let gini_val = gini(values.iter().copied(), Some(moments.sum));
+    let gini_val = gini(values.iter().copied(), Some(sum));
 
     // Compute Atkinson Index (epsilon parameter configurable via --epsilon)
     let atkinson_val = atkinson(
@@ -3114,8 +3162,7 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
     };
 
     let non_negative = !is_date && values.iter().all(|&v| v >= 0.0);
-    let hoover_val =
-        (non_negative && moments.sum > 0.0).then(|| moments.mean_abs_dev / (2.0 * moments.mean));
+    let hoover_val = (non_negative && sum > 0.0).then(|| mean_abs_dev / (2.0 * moments.mean));
     let benford_val = if is_date {
         None
     } else {
@@ -3141,7 +3188,7 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
         gini_coefficient:       gini_val,
         atkinson_index:         atkinson_val,
         theil_index:            theil_val,
-        mean_ad:                Some(moments.mean_abs_dev),
+        mean_ad:                Some(mean_abs_dev),
         hoover_index:           hoover_val,
         l_cv:                   l_cv_val,
         l_skewness:             l_skew_val,
@@ -7795,7 +7842,6 @@ mod tests {
             m.bimodality_coefficient().unwrap(),
             0.614_198_642_986_606_6
         ));
-        assert!(close(m.mean_abs_dev, 2.96));
     }
 
     #[test]
@@ -7831,6 +7877,43 @@ mod tests {
             CentralMoments::from_values(&[1.0, 2.0]).sample_skewness(),
             None
         );
+    }
+
+    #[test]
+    fn moment_accumulator_matches_two_pass() {
+        let stream = |xs: &[f64]| {
+            let mut acc = MomentAccumulator::default();
+            for &x in xs {
+                acc.push(x);
+            }
+            acc.finish()
+        };
+        let small = [1., 2., 2., 3., 3., 3., 4., 4., 9., 15.];
+        let offset: Vec<f64> = small.iter().map(|x| x + 1e9).collect();
+        let bimodal: Vec<f64> = (0..200)
+            .map(|i| if i % 2 == 0 { 10.0 } else { 20.0 })
+            .collect();
+        for xs in [&small[..], &offset, &bimodal] {
+            let (a, b) = (stream(xs), CentralMoments::from_values(xs));
+            let rel = |x: Option<f64>, y: Option<f64>| {
+                let (x, y) = (x.unwrap(), y.unwrap());
+                // a 1e9 offset costs both methods ~1e-8 relative (x - mean is only
+                // representable to ~1e9·ε), far below the 4-dp output rounding
+                (x - y).abs() <= 1e-6 * (1.0 + y.abs())
+            };
+            assert!(rel(a.sample_skewness(), b.sample_skewness()));
+            assert!(rel(a.sample_excess_kurtosis(), b.sample_excess_kurtosis()));
+            assert!(rel(a.bimodality_coefficient(), b.bimodality_coefficient()));
+        }
+        // scipy oracle carried over from the two-pass test
+        assert!(
+            (stream(&small).bimodality_coefficient().unwrap() - 0.614_198_642_986_606_6).abs()
+                < 1e-9
+        );
+        // a constant stream has exactly zero moments -> every ratio undefined
+        let flat = stream(&[0.1; 10]);
+        assert_eq!(flat.m2, 0.0);
+        assert_eq!(flat.bimodality_coefficient(), None);
     }
 
     #[test]

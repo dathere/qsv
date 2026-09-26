@@ -18,7 +18,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 26 additional univariate statistics:
+Currently computes the following 33 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -63,63 +63,82 @@ Currently computes the following 26 additional univariate statistics:
     Robust Coefficient of Variation using MAD and the magnitude of the median.
     Always non-negative. Resistant to outliers, useful for comparing variability.
     https://en.wikipedia.org/wiki/Robust_measures_of_scale
-14. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
+14. Normalized MAD: MAD / 0.6745 (≈ 1.4826 * MAD)
+    Robust estimate of the standard deviation, consistent with stddev for normal data.
+    https://en.wikipedia.org/wiki/Median_absolute_deviation
+15. Normalized IQR: IQR / 1.349
+    Robust estimate of the standard deviation, consistent with stddev for normal data.
+16. Robust Z-Scores of Min & Max: 0.6745 * (x - median) / MAD
+    Iglewicz-Hoaglin modified z-scores of the min and max (robust_min_zscore, robust_max_zscore).
+    Values beyond ±3.5 are commonly flagged as potential outliers.
+17. Kelly Skewness: (P90 + P10 - 2*median) / (P90 - P10)
+    Percentile-based skewness, less sensitive to tails than quartile skewness.
+    Requires the 10th & 90th percentiles (included in the default percentile list).
+18. P90/P10 Ratio: P90 / P10
+    Common spread/inequality ratio. Only computed when P10 > 0.
+19. Zero Share: n_zero / (n_zero + n_positive + n_negative)
+    Share of non-null numeric values that are exactly zero (zero-inflation).
+20. Berger-Parker Dominance: mode_occurrences / row count
+    Share of rows taken by the most frequent value (NULL counts as a value, as in mode).
+    Works for all field types. Not meaningful on weighted stats.
+    https://en.wikipedia.org/wiki/Diversity_index#Berger%E2%80%93Parker_index
+21. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
     Moment-based counterpart to the quantile-based `skewness` from stats.
     Positive values indicate right skew, negative values indicate left skew.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Skewness#Sample_skewness
-15. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
+22. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
-16. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+23. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
     BC > 0.555 (the value for a uniform distribution) suggests bimodal/multimodal.
     Computed as (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))), using moment skewness and kurtosis.
     Heavily skewed unimodal data can also exceed 0.555.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Bimodality
-17. Jarque-Bera Test: (n/6) * (S² + K²/4)
+24. Jarque-Bera Test: (n/6) * (S² + K²/4)
     Standard test for normality, where S and K are the (biased) moment skewness and
     excess kurtosis.
     Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
     Low p-values (< 0.05) indicate the data is NOT normally distributed.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test
-18. Gini Coefficient: Measures inequality/dispersion in the distribution.
+25. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-19. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+26. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     The Atkinson Index is a more general form of the Gini coefficient that allows for
     different sensitivity to inequality. Sensitivity is configurable via --epsilon.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Atkinson_index
-20. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+27. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     Measures inequality/concentration. Unlike Gini, it is decomposable into
     within-group and between-group components. Only computed for positive values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Theil_index
-21. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+28. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
     Average absolute distance from the mean. Different from MAD (which uses median).
     Less robust but more statistically efficient than MAD.
     Requires --advanced flag.
-22. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+29. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-23. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+30. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-24. Simpson's Diversity Index: 1 - Σ(p_i²)
+31. Simpson's Diversity Index: 1 - Σ(p_i²)
     Probability that two randomly chosen values are different.
     Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
     Requires --advanced flag (computed alongside entropy from frequency data).
     https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
-25. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+32. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -127,7 +146,7 @@ Currently computes the following 26 additional univariate statistics:
     winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
     (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
     before _stddev_ratio, unlike the others.
-26. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+33. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -1187,6 +1206,57 @@ fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
     } else {
         None
     }
+}
+
+/// Φ⁻¹(3/4): the MAD and half-IQR of a standard normal distribution.
+const NORMAL_Q3: f64 = 0.674_489_750_196_081_7;
+
+/// Normalized MAD: MAD / Φ⁻¹(3/4) ≈ 1.4826·MAD, a consistent estimator of σ under normality
+#[inline]
+fn compute_mad_normalized(mad: Option<f64>) -> Option<f64> {
+    mad.map(|m| m / NORMAL_Q3)
+}
+
+/// Normalized IQR: IQR / (2·Φ⁻¹(3/4)) ≈ IQR / 1.349, a consistent estimator of σ under normality
+#[inline]
+fn compute_iqr_normalized(iqr: Option<f64>) -> Option<f64> {
+    iqr.map(|i| i / (2.0 * NORMAL_Q3))
+}
+
+/// Robust (Iglewicz-Hoaglin modified) z-score: Φ⁻¹(3/4)·(x - median) / MAD
+#[inline]
+fn compute_robust_zscore(x: Option<f64>, median: Option<f64>, mad: Option<f64>) -> Option<f64> {
+    match (x, median, mad) {
+        (Some(x), Some(med), Some(mad)) if mad > 0.0 => Some(NORMAL_Q3 * (x - med) / mad),
+        _ => None,
+    }
+}
+
+/// Kelly's percentile skewness: (P90 + P10 - 2·median) / (P90 - P10)
+#[inline]
+fn compute_kelly_skewness(p10: Option<f64>, median: Option<f64>, p90: Option<f64>) -> Option<f64> {
+    match (p10, median, p90) {
+        (Some(p10), Some(med), Some(p90)) if p90 > p10 => {
+            Some(2.0f64.mul_add(-med, p90 + p10) / (p90 - p10))
+        },
+        _ => None,
+    }
+}
+
+/// P90/P10 percentile ratio - only meaningful for strictly positive data
+#[inline]
+fn compute_percentile_ratio(p10: Option<f64>, p90: Option<f64>) -> Option<f64> {
+    match (p10, p90) {
+        (Some(p10), Some(p90)) if p10 > 0.0 && p90 > 0.0 => Some(p90 / p10),
+        _ => None,
+    }
+}
+
+/// part / total, None when total is zero
+#[inline]
+#[allow(clippy::cast_precision_loss)]
+fn compute_share(part: u64, total: u64) -> Option<f64> {
+    (total > 0).then(|| part as f64 / total as f64)
 }
 
 /// Compute Normalized Entropy: `shannon_entropy` / log2(cardinality)
@@ -4776,6 +4846,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.headers()?.clone();
 
+    // Read all records
+    let mut records = Vec::new();
+    for result in rdr.records() {
+        let record = result?;
+        records.push(record);
+    }
+
     let type_idx = headers
         .iter()
         .position(|h| h == "type")
@@ -4802,6 +4879,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let upper_inner_fence_idx = headers.iter().position(|h| h == "upper_inner_fence");
     let upper_outer_fence_idx = headers.iter().position(|h| h == "upper_outer_fence");
     let percentiles_idx = headers.iter().position(|h| h == "percentiles");
+    let n_positive_idx = headers.iter().position(|h| h == "n_positive");
+    let n_negative_idx = headers.iter().position(|h| h == "n_negative");
+    let n_zero_idx = headers.iter().position(|h| h == "n_zero");
+    let mode_count_idx = headers.iter().position(|h| h == "mode_count");
+    let mode_occurrences_idx = headers.iter().position(|h| h == "mode_occurrences");
 
     // Parse and validate scan mode for Gregorian XSD date type detection
     let scan_mode = args.flag_xsd_gdate_scan.as_deref().unwrap_or("quick");
@@ -4918,6 +5000,60 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     {
         new_columns.push("robust_cv".to_string());
         new_column_indices.insert("robust_cv".to_string(), new_columns.len() - 1);
+    }
+
+    let mut add_column = |name: &str| {
+        if !column_exists(name) {
+            new_columns.push(name.to_string());
+            new_column_indices.insert(name.to_string(), new_columns.len() - 1);
+        }
+    };
+
+    // Normalized MAD & IQR - robust, normal-consistent estimates of the standard deviation
+    if mad_idx.is_some() {
+        add_column("mad_normalized");
+    }
+    if iqr_idx.is_some() {
+        add_column("iqr_normalized");
+    }
+
+    // Robust (modified) z-scores of min & max, using median and MAD
+    if mad_idx.is_some() && (median_idx.is_some() || q2_median_idx.is_some()) {
+        if min_idx.is_some() {
+            add_column("robust_min_zscore");
+        }
+        if max_idx.is_some() {
+            add_column("robust_max_zscore");
+        }
+    }
+
+    // Kelly skewness & P90/P10 ratio need both the 10th and 90th percentiles
+    let has_p10_p90 = percentiles_idx.is_some_and(|idx| {
+        records.iter().any(|r| {
+            r.get(idx).is_some_and(|p| {
+                let labels: Vec<&str> = p
+                    .split(stats_separator.as_str())
+                    .filter_map(|e| e.split_once(':').map(|(l, _)| l.trim()))
+                    .collect();
+                labels.contains(&"10") && labels.contains(&"90")
+            })
+        })
+    });
+    if has_p10_p90 {
+        if median_idx.is_some() || q2_median_idx.is_some() {
+            add_column("kelly_skewness");
+        }
+        add_column("percentile_ratio_90_10");
+    }
+
+    // Share of zero values among non-null numeric values
+    if n_zero_idx.is_some() && n_positive_idx.is_some() && n_negative_idx.is_some() {
+        add_column("zero_share");
+    }
+
+    // Berger-Parker dominance: share of rows taken by the mode (works for all field types)
+    if mode_occurrences_idx.is_some() && mode_count_idx.is_some() {
+        add_column("berger_parker_dominance");
     }
 
     // Add moment skewness column (requires reading raw data, computed for numeric/date
@@ -5223,13 +5359,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if !args.flag_bivariate {
             return Ok(());
         }
-    }
-
-    // Read all records
-    let mut records = Vec::new();
-    for result in rdr.records() {
-        let record = result?;
-        records.push(record);
     }
 
     // Collect fields that need outlier counting and/or winsorized/trimmed means
@@ -6275,6 +6404,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Prepare output
     let output_path: &Path = args.flag_output.as_ref().map_or(&stats_csv_path, Path::new);
+    // Row count for Berger-Parker dominance
+    let dominance_record_count: Option<u64> =
+        if new_column_indices.contains_key("berger_parker_dominance") {
+            if let Ok(Some(idx)) = read_conf.indexed() {
+                Some(idx.count())
+            } else if !read_conf.is_stdin() {
+                util::count_rows(&read_conf).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
     let mut wtr = WriterBuilder::new()
         .has_headers(true)
         .from_path(output_path)?;
@@ -6444,6 +6587,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             new_values[*idx] = util::round_num(simpsons_val, args.flag_round);
         }
 
+        // Berger-Parker dominance (works for all field types). stats counts NULL as a
+        // value for mode, so the denominator is all rows. When every value is unique,
+        // stats reports mode_count 0 and the top frequency is 1.
+        if let Some(idx) = new_column_indices.get("berger_parker_dominance")
+            && let Some(rc) = dominance_record_count
+        {
+            let get_u64 = |i: Option<usize>| -> Option<u64> {
+                i.and_then(|i| record.get(i)).and_then(|s| s.parse().ok())
+            };
+            let top = match (get_u64(mode_count_idx), get_u64(mode_occurrences_idx)) {
+                (Some(0), _) => Some(1),
+                (Some(_), Some(occ)) => Some(occ),
+                _ => None,
+            };
+            if let Some(val) = top.and_then(|top| compute_share(top, rc)) {
+                new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+        }
+
         // Only compute other stats for numeric/date types
         let Some(field_type) = field_type_opt else {
             // For unrecognized types, write existing fields + new values directly
@@ -6592,6 +6754,50 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 && let Some(val) = compute_robust_cv(mad, median)
             {
                 new_values[*idx] = util::round_num(val, args.flag_round);
+            }
+
+            let p10_p90 = || {
+                let pstr = percentiles_idx.and_then(|idx| record.get(idx))?;
+                let pct = |label| {
+                    parse_percentile_value(pstr, label, field_type, &stats_separator, prefer_dmy)
+                };
+                Some((pct("10"), pct("90")))
+            };
+            let (p10, p90) = p10_p90().unwrap_or((None, None));
+            let parse_u64 =
+                |idx: Option<usize>| idx.and_then(|i| record.get(i)).and_then(|s| s.parse().ok());
+
+            for (name, val) in [
+                ("mad_normalized", compute_mad_normalized(mad)),
+                ("iqr_normalized", compute_iqr_normalized(iqr)),
+                ("robust_min_zscore", compute_robust_zscore(min, median, mad)),
+                ("robust_max_zscore", compute_robust_zscore(max, median, mad)),
+                ("kelly_skewness", compute_kelly_skewness(p10, median, p90)),
+                (
+                    "percentile_ratio_90_10",
+                    if field_type.is_date_or_datetime() {
+                        None
+                    } else {
+                        compute_percentile_ratio(p10, p90)
+                    },
+                ),
+                (
+                    "zero_share",
+                    match (
+                        parse_u64(n_zero_idx),
+                        parse_u64(n_positive_idx),
+                        parse_u64(n_negative_idx),
+                    ) {
+                        (Some(z), Some(pos), Some(neg)) => compute_share(z, z + pos + neg),
+                        _ => None,
+                    },
+                ),
+            ] {
+                if let Some(val) = val
+                    && let Some(idx) = new_column_indices.get(name)
+                {
+                    new_values[*idx] = util::round_num(val, args.flag_round);
+                }
             }
 
             // Get outlier statistics from pre-computed results
@@ -7268,6 +7474,56 @@ mod tests {
             CentralMoments::from_values(&[1.0, 2.0]).sample_skewness(),
             None
         );
+    }
+
+    #[test]
+    fn robust_scale_and_zscores() {
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        // Normal-consistency constants: MAD·1.4826, IQR/1.349.
+        assert!(close(
+            compute_mad_normalized(Some(1.0)).unwrap(),
+            1.482_602_218_505_602
+        ));
+        assert!(close(
+            compute_iqr_normalized(Some(1.0)).unwrap(),
+            0.741_301_109_252_801
+        ));
+        assert_eq!(compute_mad_normalized(None), None);
+        // Modified z-score: 0.6745·(x - median)/MAD.
+        let z = compute_robust_zscore(Some(10.0), Some(4.0), Some(2.0)).unwrap();
+        assert!(close(z, 3.0 * 0.674_489_750_196_081_7));
+        assert_eq!(
+            compute_robust_zscore(Some(10.0), Some(4.0), Some(0.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn kelly_skewness_and_percentile_ratio() {
+        // Symmetric -> 0; right-skewed -> positive; left-skewed -> negative.
+        assert_eq!(
+            compute_kelly_skewness(Some(1.0), Some(5.0), Some(9.0)),
+            Some(0.0)
+        );
+        let right = compute_kelly_skewness(Some(1.0), Some(2.0), Some(9.0)).unwrap();
+        assert!((right - 0.75).abs() < 1e-12);
+        let left = compute_kelly_skewness(Some(1.0), Some(8.0), Some(9.0)).unwrap();
+        assert!((left + 0.75).abs() < 1e-12);
+        // Degenerate spread -> None.
+        assert_eq!(
+            compute_kelly_skewness(Some(3.0), Some(3.0), Some(3.0)),
+            None
+        );
+        assert_eq!(compute_percentile_ratio(Some(2.0), Some(10.0)), Some(5.0));
+        // Non-positive P10 -> ratio undefined.
+        assert_eq!(compute_percentile_ratio(Some(0.0), Some(10.0)), None);
+        assert_eq!(compute_percentile_ratio(Some(-1.0), Some(10.0)), None);
+    }
+
+    #[test]
+    fn compute_share_basic() {
+        assert_eq!(compute_share(1, 4), Some(0.25));
+        assert_eq!(compute_share(0, 0), None);
     }
 
     #[test]

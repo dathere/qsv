@@ -134,14 +134,15 @@ Currently computes the following 40 additional univariate statistics:
 31. L-CV: λ2 / λ1
     Coefficient of L-variation - a robust, bounded analogue of the CV based on
     L-moments (linear combinations of order statistics). Only computed for numeric data
-    with a positive mean. Requires --advanced flag.
+    with a positive mean; 0 for a constant column. Requires --advanced flag.
     https://en.wikipedia.org/wiki/L-moment
 32. L-Skewness: τ3 = λ3 / λ2
     Robust analogue of skewness, bounded in [-1, 1]; exists whenever the mean does.
     Requires --advanced flag.
 33. L-Kurtosis: τ4 = λ4 / λ2
-    Robust analogue of kurtosis, bounded in [-1/4, 1]. About 0.1226 for a normal
-    distribution. Requires --advanced flag.
+    Robust analogue of kurtosis. About 0.1226 for a normal distribution. The population
+    value lies in [-1/4, 1], but the sample estimate can fall below -1/4 for small n
+    (e.g. 0,0,6,6 gives -1.5). Requires --advanced flag.
 34. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
     Correlation between consecutive non-null values in file order. Values near 1 indicate
     a trend, drift or clustered/sorted data; near 0 no serial dependence; negative values
@@ -281,8 +282,8 @@ The `moarstats` command also computes the following 9 bivariate statistics:
     https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
  9. Linear Regression: ordinary least-squares fit of field2 on field1
     Emits regression_slope, regression_intercept and r_squared (the coefficient of
-    determination) for numeric/date field pairs, from the same streaming state as
-    Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
+    determination; empty when field2 is constant) for numeric/date field pairs, from the
+    same streaming state as Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
     https://en.wikipedia.org/wiki/Simple_linear_regression
 
 These bivariate statistics are computed when the `--bivariate` flag is used
@@ -2359,15 +2360,25 @@ fn finalize_pearson_correlation(state: &CorrelationState) -> Option<f64> {
 }
 
 /// Ordinary least-squares regression of y (field2) on x (field1) from the Welford state.
-/// Returns (slope, intercept, r²).
-fn finalize_regression(state: &CorrelationState) -> Option<(f64, f64, f64)> {
-    if state.count < 2 || state.m2_x <= 0.0 || state.m2_y <= 0.0 {
+/// Returns (slope, intercept, r²). A constant response (e.g. after pairwise NULL
+/// exclusion) still has a valid fit - slope 0, intercept = `mean_y` - but r² is undefined.
+fn finalize_regression(state: &CorrelationState) -> Option<(f64, f64, Option<f64>)> {
+    if state.count < 2 || state.m2_x <= 0.0 {
         return None;
     }
     let slope = state.cxy / state.m2_x;
     let intercept = slope.mul_add(-state.mean_x, state.mean_y);
-    let r_squared = (state.cxy * state.cxy) / (state.m2_x * state.m2_y);
-    Some((slope, intercept, r_squared.min(1.0)))
+    if !slope.is_finite() || !intercept.is_finite() {
+        return None;
+    }
+    // normalize before squaring: cxy² and m2_x·m2_y overflow long before r does
+    let r_squared = (state.m2_y > 0.0)
+        .then(|| {
+            let r = state.cxy / (state.m2_x.sqrt() * state.m2_y.sqrt());
+            (r * r).min(1.0)
+        })
+        .filter(|r2| r2.is_finite());
+    Some((slope, intercept, r_squared))
 }
 
 /// Cramér's V from joint and marginal frequency counts:
@@ -2850,7 +2861,12 @@ impl CentralMoments {
     fn from_values(values: &[f64]) -> Self {
         let n = values.len() as f64;
         let sum: f64 = values.iter().sum();
-        let mean = sum / n;
+        // One refinement pass corrects the rounding error of the naive mean. Without it a
+        // constant column (e.g. ten 0.1s, whose naive mean is off by an ulp) gets identical
+        // NONZERO deviations, fabricating skewness = 1, lag-1 autocorrelation ≈ 1, etc.
+        // For a constant column the correction is exact, so every deviation becomes 0.
+        let naive = sum / n;
+        let mean = naive + values.iter().map(|&x| x - naive).sum::<f64>() / n;
         let (mut s2, mut s3, mut s4, mut sabs) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
         for &x in values {
             let d = x - mean;
@@ -2927,8 +2943,11 @@ impl CentralMoments {
 
 /// Sample L-moments λ1..λ4 from ascending-sorted values via unbiased probability-weighted
 /// moments (Hosking, 1990). Requires n >= 4.
+///
+/// The PWMs are accumulated on `x - shift` (pass the mean): λ2..λ4 are translation
+/// invariant, and uncentered PWMs of large-offset data lose λ2..λ4 to cancellation.
 #[allow(clippy::cast_precision_loss)]
-fn compute_l_moments(sorted: &[f64]) -> Option<[f64; 4]> {
+fn compute_l_moments(sorted: &[f64], shift: f64) -> Option<[f64; 4]> {
     let len = sorted.len();
     if len < 4 {
         return None;
@@ -2940,6 +2959,7 @@ fn compute_l_moments(sorted: &[f64]) -> Option<[f64; 4]> {
         let w1 = i / (n - 1.0);
         let w2 = w1 * (i - 1.0) / (n - 2.0);
         let w3 = w2 * (i - 2.0) / (n - 3.0);
+        let x = x - shift;
         b0 += x;
         b1 = w1.mul_add(x, b1);
         b2 = w2.mul_add(x, b2);
@@ -2947,7 +2967,7 @@ fn compute_l_moments(sorted: &[f64]) -> Option<[f64; 4]> {
     }
     let (b0, b1, b2, b3) = (b0 / n, b1 / n, b2 / n, b3 / n);
     Some([
-        b0,
+        b0 + shift,
         2.0f64.mul_add(b1, -b0),
         6.0f64.mul_add(b2, (-6.0f64).mul_add(b1, b0)),
         20.0f64.mul_add(b3, (-30.0f64).mul_add(b2, 12.0f64.mul_add(b1, -b0))),
@@ -3103,13 +3123,14 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
     };
 
     values.sort_unstable_by(f64::total_cmp);
-    let (l_cv_val, l_skew_val, l_kurt_val) = match compute_l_moments(&values) {
-        Some([l1, l2, l3, l4]) if l2 > 0.0 => (
-            (!is_date && l1 > 0.0).then(|| l2 / l1),
-            Some(l3 / l2),
-            Some(l4 / l2),
+    let (l_cv_val, l_skew_val, l_kurt_val) = match compute_l_moments(&values, moments.mean) {
+        // l_cv of a constant positive column is a genuine 0; the ratios over l2 are not
+        Some([l1, l2, l3, l4]) => (
+            (!is_date && l1 > 0.0 && l2 >= 0.0).then(|| l2 / l1),
+            (l2 > 0.0).then(|| l3 / l2),
+            (l2 > 0.0).then(|| l4 / l2),
         ),
-        _ => (None, None, None),
+        None => (None, None, None),
     };
 
     KGAStats {
@@ -3800,9 +3821,7 @@ fn finalize_bivariate_pair_stats(
             (None, None, None)
         } else {
             finalize_regression(&chunk_stats.correlation_state)
-                .map_or((None, None, None), |(m, b, r2)| {
-                    (Some(m), Some(b), Some(r2))
-                })
+                .map_or((None, None, None), |(m, b, r2)| (Some(m), Some(b), r2))
         };
 
     let spearman = if !stats_config.spearman || has_zero_variance || chunk_stats.x_values.len() < 2
@@ -7793,6 +7812,20 @@ mod tests {
         assert!((three.jarque_bera().unwrap().0 - 0.28125).abs() < 1e-12);
         assert_eq!(three.sample_excess_kurtosis(), None);
         assert_eq!(three.bimodality_coefficient(), None);
+        // A constant 0.1 column: naive sum/n is off by an ulp from 0.1, which used to
+        // fabricate skewness 1, lag-1 autocorrelation 0.9 and BC > 1.
+        let tenths = CentralMoments::from_values(&[0.1; 10]);
+        assert_eq!(tenths.m2, 0.0);
+        assert_eq!(tenths.sample_skewness(), None);
+        assert_eq!(tenths.bimodality_coefficient(), None);
+        assert_eq!(tenths.jarque_bera(), None);
+        let kga = finalize_kga(vec![0.1; 10], false, 1.0);
+        assert_eq!(kga.moment_skewness, None);
+        assert_eq!(kga.kurtosis, None);
+        assert_eq!(kga.lag1_autocorrelation, None);
+        assert_eq!(kga.l_skewness, None);
+        assert_eq!(kga.l_kurtosis, None);
+        assert_eq!(kga.l_cv, Some(0.0));
         // n = 2 -> no skewness.
         assert_eq!(
             CentralMoments::from_values(&[1.0, 2.0]).sample_skewness(),
@@ -7854,13 +7887,21 @@ mod tests {
     fn l_moments_match_scipy() {
         // Oracle: scipy 1.18 stats.lmoment (orders >= 3 standardized by default).
         let [l1, l2, l3, l4] =
-            compute_l_moments(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.]).unwrap();
+            compute_l_moments(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.], 4.6).unwrap();
         let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
         assert!(close(l1, 4.6));
         assert!(close(l2, 2.088_888_888_888_888_6));
         assert!(close(l3 / l2, 0.534_574_468_085_106_7));
         assert!(close(l4 / l2, 0.443_389_057_750_757_1));
-        assert_eq!(compute_l_moments(&[1.0, 2.0, 3.0]), None);
+        assert_eq!(compute_l_moments(&[1.0, 2.0, 3.0], 2.0), None);
+        // translation invariance: a 1e15 offset must not disturb λ2..λ4. The shifted
+        // integers stay exactly representable, so any drift is cancellation in the PWMs.
+        let base = [1., 2., 2., 3., 3., 3., 4., 4., 9., 15.];
+        let shifted: Vec<f64> = base.iter().map(|x| x + 1e15).collect();
+        let shift = CentralMoments::from_values(&shifted).mean;
+        let [s1, s2, s3, s4] = compute_l_moments(&shifted, shift).unwrap();
+        assert!((s1 - (1e15 + 4.6)).abs() < 1.0);
+        assert!(close(s2, l2) && close(s3 / s2, l3 / l2) && close(s4 / s2, l4 / l2));
     }
 
     #[test]
@@ -7932,12 +7973,30 @@ mod tests {
         let (m, b, r2) = finalize_regression(&state).unwrap();
         assert!((m - 3.0).abs() < 1e-12);
         assert!((b + 2.0).abs() < 1e-12);
-        assert!((r2 - 1.0).abs() < 1e-12);
+        assert!((r2.unwrap() - 1.0).abs() < 1e-12);
+        // constant response: a valid flat fit, but r² is undefined
         let mut flat = CorrelationState::default();
         for x in 0..5 {
             update_correlation_state(&mut flat, f64::from(x), 7.0);
         }
-        assert_eq!(finalize_regression(&flat), None);
+        let (m, b, r2) = finalize_regression(&flat).unwrap();
+        assert!(m.abs() < 1e-12 && (b - 7.0).abs() < 1e-12);
+        assert_eq!(r2, None);
+        // constant predictor -> no fit
+        let mut vert = CorrelationState::default();
+        for y in 0..5 {
+            update_correlation_state(&mut vert, 3.0, f64::from(y));
+        }
+        assert_eq!(finalize_regression(&vert), None);
+        // huge magnitudes: cxy² overflows, but r² must still be 0.75, not NaN -> 1
+        let mut big = CorrelationState::default();
+        for _ in 0..3 {
+            for (x, y) in [(0.0, 0.0), (1e100, 1e100), (2e100, 1e100)] {
+                update_correlation_state(&mut big, x, y);
+            }
+        }
+        let r2 = finalize_regression(&big).unwrap().2.unwrap();
+        assert!((r2 - 0.75).abs() < 1e-9, "r2 = {r2}");
     }
 
     #[test]

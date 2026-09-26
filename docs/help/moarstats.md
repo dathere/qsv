@@ -146,14 +146,15 @@ Only computed for non-negative numeric data. Requires --advanced flag.
 31. L-CV: λ2 / λ1
 Coefficient of L-variation - a robust, bounded analogue of the CV based on
 L-moments (linear combinations of order statistics). Only computed for numeric data
-with a positive mean. Requires --advanced flag.
+with a positive mean; 0 for a constant column. Requires --advanced flag.
 <https://en.wikipedia.org/wiki/L-moment>
 32. L-Skewness: τ3 = λ3 / λ2
 Robust analogue of skewness, bounded in [-1, 1]; exists whenever the mean does.
 Requires --advanced flag.
 33. L-Kurtosis: τ4 = λ4 / λ2
-Robust analogue of kurtosis, bounded in [-1/4, 1]. About 0.1226 for a normal
-distribution. Requires --advanced flag.
+Robust analogue of kurtosis. About 0.1226 for a normal distribution. The population
+value lies in [-1/4, 1], but the sample estimate can fall below -1/4 for small n
+(e.g. 0,0,6,6 gives -1.5). Requires --advanced flag.
 34. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
 Correlation between consecutive non-null values in file order. Values near 1 indicate
 a trend, drift or clustered/sorted data; near 0 no serial dependence; negative values
@@ -296,8 +297,8 @@ Selected with `cramersv` in --bivariate-stats (or via "all").
 <https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V>
 9. Linear Regression: ordinary least-squares fit of field2 on field1
 Emits regression_slope, regression_intercept and r_squared (the coefficient of
-determination) for numeric/date field pairs, from the same streaming state as
-Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
+determination; empty when field2 is constant) for numeric/date field pairs, from the
+same streaming state as Pearson's correlation. Selected with `regression` in --bivariate-stats (or via "all").
 <https://en.wikipedia.org/wiki/Simple_linear_regression>
 
 These bivariate statistics are computed when the `--bivariate` flag is used

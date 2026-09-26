@@ -2943,6 +2943,7 @@ impl CentralMoments {
 /// numerically stable online update of the 2nd-4th central moment sums (the higher-order
 /// extension of Welford). It needs no precomputed mean, so it is immune to the rounding of
 /// a cached `mean`, and a constant stream accumulates exactly zero moments.
+#[cfg(any(test, all(feature = "viz", feature = "feature_capable")))]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct MomentAccumulator {
     n:    u64,
@@ -2952,6 +2953,7 @@ pub(crate) struct MomentAccumulator {
     m4:   f64, // Σ(x - mean)⁴
 }
 
+#[cfg(any(test, all(feature = "viz", feature = "feature_capable")))]
 impl MomentAccumulator {
     #[allow(clippy::cast_precision_loss)]
     pub(crate) fn push(&mut self, x: f64) {

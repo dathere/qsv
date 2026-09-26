@@ -1089,7 +1089,7 @@ const CHOROPLETH_MAP_FILL_OPACITY: f64 = 0.9;
 /// uniform samples scatter AROUND 5/9 (the finite-sample BC centers a little below it: median
 /// ~0.52 at n=60, ~0.55 at n=300), and a uniform is platykurtic, so the kurtosis guard does not
 /// catch them — a strict 5/9 cutoff would flag a sizeable share of flat-but-unimodal columns as
-/// "bimodal". The 0.60 margin holds that to ~2.5% at n=60 and <0.5% at n=300 (simulated), while
+/// "bimodal". The 0.60 margin holds that to ~3% at n=60 and <0.5% at n=300 (simulated), while
 /// genuinely two-peaked columns (BC typically 0.7-1.0) still clear it.
 const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 

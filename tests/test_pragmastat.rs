@@ -1702,3 +1702,104 @@ fn pragmastat_from_zip_parallel_autoindexed() {
         );
     }
 }
+
+// Existing ps_* columns are kept unless --force, so a cache appended by an older qsv kept that
+// version's values after an upgrade. A sidecar from a different qsv version now forces a rebuild.
+// Returns (ps_center before planting, ps_center after the re-run, re-run stderr).
+fn pragmastat_rerun_over_planted_center(
+    name: &str,
+    sidecar_version: Option<&str>,
+) -> (String, String, String) {
+    let wrk = Workdir::new(name);
+    let mut rows = vec![svec!["v"]];
+    for i in 1..=100_u32 {
+        rows.push(vec![(i * i % 97).to_string()]);
+    }
+    wrk.create("ver.csv", rows);
+
+    let run = || {
+        let mut cmd = wrk.command("pragmastat");
+        cmd.arg("ver.csv");
+        cmd
+    };
+    wrk.assert_success(&mut run());
+
+    let center_of = |content: &str| -> String {
+        let mut rdr = csv::Reader::from_reader(content.as_bytes());
+        let idx = rdr
+            .headers()
+            .unwrap()
+            .iter()
+            .position(|h| h == "ps_center")
+            .expect("no ps_center column");
+        rdr.records().next().unwrap().unwrap()[idx].to_string()
+    };
+    let appended = wrk.read_to_string("ver.stats.csv").unwrap();
+    let original = center_of(&appended);
+    assert!(!original.is_empty(), "setup: ps_center is empty");
+
+    let mut rdr = csv::Reader::from_reader(appended.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let idx = headers.iter().position(|h| h == "ps_center").unwrap();
+    let mut wtr = csv::Writer::from_path(wrk.path("ver.stats.csv")).unwrap();
+    wtr.write_record(&headers).unwrap();
+    for rec in rdr.records() {
+        let rec = rec.unwrap();
+        let planted: Vec<&str> = rec
+            .iter()
+            .enumerate()
+            .map(|(i, f)| if i == idx { "999999" } else { f })
+            .collect();
+        wtr.write_record(&planted).unwrap();
+    }
+    wtr.flush().unwrap();
+    drop(wtr);
+
+    if let Some(version) = sidecar_version {
+        let sidecar = wrk.path("ver.stats.csv.json");
+        let mut meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+        meta["qsv_version"] = serde_json::Value::String(version.to_string());
+        std::fs::write(&sidecar, serde_json::to_string(&meta).unwrap()).unwrap();
+    }
+
+    let stderr = wrk.stderr_on_success(&mut run());
+    let after = center_of(&wrk.read_to_string("ver.stats.csv").unwrap());
+    // the rebuild must leave a current-version sidecar, or every later run would rebuild again
+    let meta: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("ver.stats.csv.json").unwrap()).unwrap();
+    assert_eq!(meta["qsv_version"], env!("CARGO_PKG_VERSION"));
+    (original, after, stderr)
+}
+
+#[test]
+fn pragmastat_recomputes_a_cache_from_another_qsv_version() {
+    let (original, after, stderr) = pragmastat_rerun_over_planted_center(
+        "pragmastat_recomputes_a_cache_from_another_qsv_version",
+        Some("0.0.1"),
+    );
+    assert_eq!(
+        after, original,
+        "the planted ps_center survived a qsv-version change; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("different qsv version"),
+        "expected the version-mismatch warning; stderr: {stderr}"
+    );
+}
+
+#[test]
+fn pragmastat_keeps_a_cache_from_the_same_qsv_version() {
+    let (_, after, stderr) = pragmastat_rerun_over_planted_center(
+        "pragmastat_keeps_a_cache_from_the_same_qsv_version",
+        None,
+    );
+    assert_eq!(
+        after, "999999",
+        "a same-version cache was recomputed; stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("different qsv version"),
+        "unexpected version-mismatch warning; stderr: {stderr}"
+    );
+}

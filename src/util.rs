@@ -3697,6 +3697,28 @@ pub fn stats_csv_is_current(stats_csv_path: &Path, input_path: &Path) -> bool {
     stats_modified > input_modified
 }
 
+/// Was the `<FILESTEM>.stats.csv` beside this path written by a DIFFERENT qsv version?
+///
+/// `moarstats` and `pragmastat` append derived columns to the stats CSV and skip any column that
+/// already exists, so an extended cache built by an older qsv keeps that version's values forever
+/// once its mtime is current - including values a later release fixed (e.g. `jarque_bera` and
+/// `bimodality_coefficient` before #4651). `stats` itself invalidates on `qsv_version`; this lets
+/// those callers apply the same rule, and the `stats` rerun it triggers rewrites the CSV and its
+/// sidecar, dropping every appended column.
+///
+/// Only a readable sidecar counts. No sidecar, or one that does not parse, is "no opinion",
+/// matching `stats_cache_parsing_opts_conflict`. A parsed sidecar without a `qsv_version` string IS
+/// a mismatch, because `stats` treats it that way too and would recompute regardless.
+pub fn stats_csv_version_mismatch(stats_csv_path: &Path) -> bool {
+    std::fs::read_to_string(stats_csv_path.with_extension("csv.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|m| {
+            m.get("qsv_version").and_then(serde_json::Value::as_str)
+                != Some(env!("CARGO_PKG_VERSION"))
+        })
+}
+
 /// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
 ///
 /// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats

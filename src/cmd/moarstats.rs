@@ -18,7 +18,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 33 additional univariate statistics:
+Currently computes the following 37 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -124,21 +124,42 @@ Currently computes the following 33 additional univariate statistics:
     Average absolute distance from the mean. Different from MAD (which uses median).
     Less robust but more statistically efficient than MAD.
     Requires --advanced flag.
-29. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+29. Hoover Index: Σ|x_i - mean| / (2 * Σx_i)
+    Share of the total that would have to be redistributed to reach equality (0 to 1).
+    Only computed for non-negative numeric data. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Hoover_index
+30. L-Moment Ratios: l_cv (L-CV, λ2/λ1), l_skewness (τ3, λ3/λ2), l_kurtosis (τ4, λ4/λ2)
+    Robust, bounded alternatives to CV, skewness and kurtosis based on linear
+    combinations of order statistics. τ3 and τ4 are in [-1, 1] and exist whenever the
+    mean does. l_cv is only computed for numeric data with a positive mean.
+    Requires --advanced flag.
+    https://en.wikipedia.org/wiki/L-moment
+31. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
+    Correlation between consecutive non-null values in file order. Values near 1 indicate
+    a trend, drift or clustered/sorted data; near 0 no serial dependence; negative values
+    alternation. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Autocorrelation
+32. Benford MAD: mean absolute deviation between the first-significant-digit
+    proportions and Benford's law. Nigrini's thresholds: < 0.006 close conformity,
+    < 0.012 acceptable, < 0.015 marginal, otherwise nonconformity - a data quality or
+    fabrication signal. Only computed for numeric data with at least 100 non-zero values
+    spanning at least two orders of magnitude. Requires --advanced flag.
+    https://en.wikipedia.org/wiki/Benford%27s_law
+33. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-30. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+34. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-31. Simpson's Diversity Index: 1 - Σ(p_i²)
+35. Simpson's Diversity Index: 1 - Σ(p_i²)
     Probability that two randomly chosen values are different.
     Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
     Requires --advanced flag (computed alongside entropy from frequency data).
     https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
-32. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+36. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -146,7 +167,7 @@ Currently computes the following 33 additional univariate statistics:
     winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
     (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
     before _stddev_ratio, unlike the others.
-33. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+37. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -300,7 +321,8 @@ moarstats options:
     --advanced             Compute Moment Skewness, Kurtosis, Shannon Entropy,
                            Bimodality Coefficient, Jarque-Bera, Gini Coefficient,
                            Atkinson Index, Theil Index, Mean Absolute Deviation,
-                           and Simpson's Diversity Index.
+                           Hoover Index, L-moment ratios, Lag-1 Autocorrelation,
+                           Benford MAD and Simpson's Diversity Index.
                            These advanced statistics computations require reading the
                            original CSV file to collect all values
                            for computation and are computationally expensive.
@@ -1843,6 +1865,17 @@ struct OutlierStats {
     count_all:              u64,
 }
 
+/// `--advanced` columns computed in `finalize_kga`, beyond the original
+/// kurtosis/Gini/Atkinson/Theil/`mean_ad` set
+const ADVANCED_VECTOR_COLUMNS: &[&str] = &[
+    "hoover_index",
+    "l_cv",
+    "l_skewness",
+    "l_kurtosis",
+    "lag1_autocorrelation",
+    "benford_mad",
+];
+
 /// Statistics computed from a field's full value vector in the `--advanced` pass
 #[derive(Clone, Default)]
 struct KGAStats {
@@ -1854,6 +1887,12 @@ struct KGAStats {
     atkinson_index:         Option<f64>,
     theil_index:            Option<f64>,
     mean_ad:                Option<f64>,
+    hoover_index:           Option<f64>,
+    l_cv:                   Option<f64>,
+    l_skewness:             Option<f64>,
+    l_kurtosis:             Option<f64>,
+    lag1_autocorrelation:   Option<f64>,
+    benford_mad:            Option<f64>,
 }
 
 /// Statistics for Shannon Entropy and Simpson's Diversity Index
@@ -2814,6 +2853,105 @@ impl CentralMoments {
     }
 }
 
+/// Sample L-moments λ1..λ4 from ascending-sorted values via unbiased probability-weighted
+/// moments (Hosking, 1990). Requires n >= 4.
+#[allow(clippy::cast_precision_loss)]
+fn compute_l_moments(sorted: &[f64]) -> Option<[f64; 4]> {
+    let len = sorted.len();
+    if len < 4 {
+        return None;
+    }
+    let n = len as f64;
+    let (mut b0, mut b1, mut b2, mut b3) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    for (i, &x) in sorted.iter().enumerate() {
+        let i = i as f64;
+        let w1 = i / (n - 1.0);
+        let w2 = w1 * (i - 1.0) / (n - 2.0);
+        let w3 = w2 * (i - 2.0) / (n - 3.0);
+        b0 += x;
+        b1 = w1.mul_add(x, b1);
+        b2 = w2.mul_add(x, b2);
+        b3 = w3.mul_add(x, b3);
+    }
+    let (b0, b1, b2, b3) = (b0 / n, b1 / n, b2 / n, b3 / n);
+    Some([
+        b0,
+        2.0f64.mul_add(b1, -b0),
+        6.0f64.mul_add(b2, (-6.0f64).mul_add(b1, b0)),
+        20.0f64.mul_add(b3, (-30.0f64).mul_add(b2, 12.0f64.mul_add(b1, -b0))),
+    ])
+}
+
+/// Lag-1 autocorrelation of the values in file order:
+/// `Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²`
+fn compute_lag1_autocorrelation(values: &[f64], mean: f64) -> Option<f64> {
+    if values.len() < 3 {
+        return None;
+    }
+    let mut num = 0.0_f64;
+    let mut den = 0.0_f64;
+    for (&a, &b) in values.iter().zip(&values[1..]) {
+        num = (a - mean).mul_add(b - mean, num);
+    }
+    for &x in values {
+        let d = x - mean;
+        den = d.mul_add(d, den);
+    }
+    (den > 0.0).then(|| num / den)
+}
+
+/// Minimum count of non-zero values for a Benford first-digit test
+const BENFORD_MIN_N: usize = 100;
+
+/// Nigrini's mean absolute deviation between the observed first-significant-digit
+/// proportions and Benford's law. Only computed when there are at least
+/// `BENFORD_MIN_N` finite non-zero values spanning at least two orders of magnitude,
+/// since Benford's law does not apply to narrow-range data.
+/// Nigrini's conformity thresholds: < 0.006 close, < 0.012 acceptable,
+/// < 0.015 marginal, otherwise nonconforming.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+fn compute_benford_mad(values: &[f64]) -> Option<f64> {
+    let mut counts = [0_u64; 9];
+    let mut n: usize = 0;
+    let (mut min_abs, mut max_abs) = (f64::INFINITY, 0.0_f64);
+    for &x in values {
+        let a = x.abs();
+        if a == 0.0 || !a.is_finite() {
+            continue;
+        }
+        min_abs = min_abs.min(a);
+        max_abs = max_abs.max(a);
+        let mut m = a / 10f64.powi(a.log10().floor() as i32);
+        // guard against log10/powi rounding at exact powers of ten
+        if m >= 10.0 {
+            m /= 10.0;
+        } else if m < 1.0 {
+            m *= 10.0;
+        }
+        let digit = (m as usize).clamp(1, 9);
+        counts[digit - 1] += 1;
+        n += 1;
+    }
+    if n < BENFORD_MIN_N || max_abs / min_abs < 100.0 {
+        return None;
+    }
+    let n = n as f64;
+    let mad = counts
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            let expected = (1.0 + 1.0 / (i as f64 + 1.0)).log10();
+            (c as f64 / n - expected).abs()
+        })
+        .sum::<f64>()
+        / 9.0;
+    Some(mad)
+}
+
 /// Finalize the `--advanced` per-field statistics from its full (file-ordered) value
 /// vector. Runs after the chunk merge, so parallel and sequential scans produce
 /// bit-identical results.
@@ -2821,13 +2959,20 @@ impl CentralMoments {
 /// Mean and central moments are recomputed exactly from `values` rather than taken
 /// from the stats cache: the cached mean/stddev are rounded (default 4 dp), which
 /// badly distorts moment statistics on small-scale data.
-fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
+///
+/// Takes ownership of `values`: order-dependent statistics are computed first, then
+/// the vector is sorted in place for the L-moments. `is_date` values are days since
+/// the epoch, so origin-dependent statistics (L-CV, Hoover, Benford) are skipped.
+fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> KGAStats {
     // Need at least 2 values for meaningful statistics
     if values.len() < 2 {
         return KGAStats::default();
     }
 
-    let moments = CentralMoments::from_values(values);
+    let moments = CentralMoments::from_values(&values);
+
+    // order-dependent: must run before the sort below
+    let lag1_val = compute_lag1_autocorrelation(&values, moments.mean);
 
     // Compute Gini coefficient with exact sum
     let gini_val = gini(values.iter().copied(), Some(moments.sum));
@@ -2847,7 +2992,7 @@ fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
         // First pass: compute sum and count of positive values
         let mut pos_sum = 0.0_f64;
         let mut pos_count: usize = 0;
-        for &v in values {
+        for &v in &values {
             if v > 0.0 {
                 pos_sum += v;
                 pos_count += 1;
@@ -2860,7 +3005,7 @@ fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
             if pos_mean > f64::EPSILON {
                 // Second pass: accumulate Theil sum over positive values
                 let mut theil_sum = 0.0_f64;
-                for &v in values {
+                for &v in &values {
                     if v > 0.0 {
                         let ratio = v / pos_mean;
                         // use CPU's Fused Multiply-Add (FMA) for better precision
@@ -2876,6 +3021,25 @@ fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
         }
     };
 
+    let non_negative = !is_date && values.iter().all(|&v| v >= 0.0);
+    let hoover_val =
+        (non_negative && moments.sum > 0.0).then(|| moments.mean_abs_dev / (2.0 * moments.mean));
+    let benford_val = if is_date {
+        None
+    } else {
+        compute_benford_mad(&values)
+    };
+
+    values.sort_unstable_by(f64::total_cmp);
+    let (l_cv_val, l_skew_val, l_kurt_val) = match compute_l_moments(&values) {
+        Some([l1, l2, l3, l4]) if l2 > 0.0 => (
+            (!is_date && l1 > 0.0).then(|| l2 / l1),
+            Some(l3 / l2),
+            Some(l4 / l2),
+        ),
+        _ => (None, None, None),
+    };
+
     KGAStats {
         moment_skewness:        moments.sample_skewness(),
         kurtosis:               moments.sample_excess_kurtosis(),
@@ -2885,6 +3049,12 @@ fn finalize_kga(values: &[f64], atkinson_epsilon: f64) -> KGAStats {
         atkinson_index:         atkinson_val,
         theil_index:            theil_val,
         mean_ad:                Some(moments.mean_abs_dev),
+        hoover_index:           hoover_val,
+        l_cv:                   l_cv_val,
+        l_skewness:             l_skew_val,
+        l_kurtosis:             l_kurt_val,
+        lag1_autocorrelation:   lag1_val,
+        benford_mad:            benford_val,
     }
 }
 
@@ -3070,6 +3240,10 @@ fn compute_outliers_and_kga(
 
     let n_outlier = outlier_fields.len();
     let n_kga = kga_fields.len();
+    let kga_is_date: Vec<bool> = kga_fields
+        .iter()
+        .map(|f| f.field_type.is_date_or_datetime())
+        .collect();
 
     // Resolve the job count up front (also sizes Rayon's global pool via
     // `util::njobs`). This must happen on EVERY path — including the sequential
@@ -3214,8 +3388,9 @@ fn compute_outliers_and_kga(
     // others, so this stays bit-identical to a sequential finalize.
     let kga_stats: HashMap<String, KGAStats> = kga_concat
         .into_par_iter()
+        .zip(kga_is_date)
         .zip(kga_names)
-        .map(|(values, name)| (name, finalize_kga(&values, atkinson_epsilon)))
+        .map(|((values, is_date), name)| (name, finalize_kga(values, is_date, atkinson_epsilon)))
         .collect();
 
     Ok((outlier_counts, kga_stats))
@@ -5113,6 +5288,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         new_column_indices.insert("mean_ad".to_string(), new_columns.len() - 1);
     }
 
+    // Further value-vector statistics from the --advanced scan
+    if args.flag_advanced {
+        for col in ADVANCED_VECTOR_COLUMNS {
+            if !column_exists(col) {
+                new_columns.push((*col).to_string());
+                new_column_indices.insert((*col).to_string(), new_columns.len() - 1);
+            }
+        }
+    }
+
     // Add Shannon Entropy column (requires reading raw data, computed for all field types)
     // Only add if --advanced flag is set
     if args.flag_advanced && !column_exists("shannon_entropy") {
@@ -5376,7 +5561,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         || new_column_indices.contains_key("gini_coefficient")
         || new_column_indices.contains_key(&atkinson_index_col_name)
         || new_column_indices.contains_key("theil_index")
-        || new_column_indices.contains_key("mean_ad");
+        || new_column_indices.contains_key("mean_ad")
+        || ADVANCED_VECTOR_COLUMNS
+            .iter()
+            .any(|c| new_column_indices.contains_key(*c));
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {
@@ -7209,6 +7397,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 {
                     new_values[*idx] = util::round_num(mean_ad_val, args.flag_round);
                 }
+
+                for (name, val) in [
+                    ("hoover_index", stats.hoover_index),
+                    ("l_cv", stats.l_cv),
+                    ("l_skewness", stats.l_skewness),
+                    ("l_kurtosis", stats.l_kurtosis),
+                    ("lag1_autocorrelation", stats.lag1_autocorrelation),
+                    ("benford_mad", stats.benford_mad),
+                ] {
+                    if let Some(val) = val
+                        && let Some(idx) = new_column_indices.get(name)
+                    {
+                        new_values[*idx] = util::round_num(val, args.flag_round);
+                    }
+                }
             }
         }
         // Write existing fields + new values directly (avoids record.clone())
@@ -7524,6 +7727,55 @@ mod tests {
     fn compute_share_basic() {
         assert_eq!(compute_share(1, 4), Some(0.25));
         assert_eq!(compute_share(0, 0), None);
+    }
+
+    #[test]
+    fn l_moments_match_scipy() {
+        // Oracle: scipy 1.18 stats.lmoment (orders >= 3 standardized by default).
+        let [l1, l2, l3, l4] =
+            compute_l_moments(&[1., 2., 2., 3., 3., 3., 4., 4., 9., 15.]).unwrap();
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(l1, 4.6));
+        assert!(close(l2, 2.088_888_888_888_888_6));
+        assert!(close(l3 / l2, 0.534_574_468_085_106_7));
+        assert!(close(l4 / l2, 0.443_389_057_750_757_1));
+        assert_eq!(compute_l_moments(&[1.0, 2.0, 3.0]), None);
+    }
+
+    #[test]
+    fn lag1_autocorrelation_basic() {
+        let x = [1., 2., 2., 3., 3., 3., 4., 4., 9., 15.];
+        let r1 = compute_lag1_autocorrelation(&x, 4.6).unwrap();
+        assert!((r1 - 0.430_049_261_083_743_86).abs() < 1e-9);
+        // Alternating series is perfectly anti-persistent in sign.
+        let alt = [1., -1., 1., -1., 1., -1.];
+        assert!(compute_lag1_autocorrelation(&alt, 0.0).unwrap() < -0.8);
+        assert_eq!(compute_lag1_autocorrelation(&[5.0; 4], 5.0), None);
+        assert_eq!(compute_lag1_autocorrelation(&[1.0, 2.0], 1.5), None);
+    }
+
+    #[test]
+    fn benford_mad_conformity_and_gates() {
+        // Geometric growth over whole decades (1.01^1389 ≈ 10^6) follows Benford closely.
+        let geometric: Vec<f64> = (0..1389).map(|i| 1.01_f64.powi(i)).collect();
+        assert!(compute_benford_mad(&geometric).unwrap() < 0.006);
+        // All leading 5s -> maximally nonconforming.
+        let fives: Vec<f64> = (0..200).map(|i| 5.0 * 10f64.powi(i % 5)).collect();
+        assert!(compute_benford_mad(&fives).unwrap() > 0.015);
+        // Values one ULP below a power of ten have first digit 9, but log10 rounds them
+        // up to the next integer, so the mantissa falls below 1 unless re-normalized.
+        let nines: Vec<f64> = (0..200)
+            .map(|i| f64::from_bits(10f64.powi(i % 10 - 5).to_bits() - 1))
+            .collect();
+        let e: Vec<f64> = (1..=9)
+            .map(|d| (1.0 + 1.0 / f64::from(d)).log10())
+            .collect();
+        let want = (e[..8].iter().sum::<f64>() + (1.0 - e[8])) / 9.0;
+        assert!((compute_benford_mad(&nines).unwrap() - want).abs() < 1e-12);
+        // Too few values, or a range under two orders of magnitude -> None.
+        assert_eq!(compute_benford_mad(&geometric[..50]), None);
+        let narrow: Vec<f64> = (0..500).map(|i| 100.0 + f64::from(i % 50)).collect();
+        assert_eq!(compute_benford_mad(&narrow), None);
     }
 
     #[test]

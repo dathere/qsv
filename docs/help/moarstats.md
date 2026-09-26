@@ -86,7 +86,8 @@ Values beyond ±3.5 are commonly flagged as potential outliers.
 17. Robust Z-Score of Max: 0.6745 * (max - median) / MAD
 Iglewicz-Hoaglin modified z-score of the maximum.
 18. Kelly Skewness: (P90 + P10 - 2*median) / (P90 - P10)
-Percentile-based skewness, less sensitive to tails than quartile skewness.
+Percentile-based skewness. Less sensitive to extreme tails than moment skewness,
+and uses more of the distribution than quartile skewness.
 Requires the 10th & 90th percentiles (included in the default percentile list).
 19. P90/P10 Ratio: P90 / P10
 Common spread/inequality ratio. Only computed when P10 > 0.

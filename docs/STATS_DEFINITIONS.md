@@ -615,7 +615,7 @@ These statistics examine relationships between pairs of columns in a dataset. Th
 
 **Configuration Options:**
 - `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi, u, cramersv, regression) or use "all" or "fast" (pearson + covariance). Default: `fast`.
-- `--cardinality-threshold`: Skip mutual information (and Cramér's V) for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
+- `--cardinality-threshold`: Skip mutual information (and Cramér's V) for field pairs where either field exceeds cardinality threshold (default: half the row count, floored at 1,000)
 - `--join-inputs`: Join multiple datasets before computing bivariate statistics
 - `--join-keys`: Specify join keys for each dataset
 - `--join-type`: Specify join type (inner, left, right, full; default: inner)

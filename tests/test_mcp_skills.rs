@@ -4,8 +4,11 @@
 
 use std::{fs, path::PathBuf};
 
+// Checks docs/tool-definitions, which holds a definition for EVERY command (#4638): the
+// curated MCP skills in .claude/skills/qsv are byte-identical copies of a subset of it
+// (asserted by test_tool_defs::mcp_skills_are_copies_of_their_tool_definitions).
 fn skills_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".claude/skills/qsv")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/tool-definitions")
 }
 
 fn skill_files() -> Vec<PathBuf> {

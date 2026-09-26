@@ -466,6 +466,8 @@ qsvmcp --update-mcp-skills   # or: qsv --update-mcp-skills
 cd .claude/skills && npm run build
 ```
 
+Regeneration parses the qsv source, so it only works inside a qsv repo checkout. To get the definitions that match an *installed* binary from anywhere, use `qsvmcp --export-tool-definitions <dir>` or `qsvmcp --tool-definition <command>` (also available in the prebuilt `qsv`).
+
 ## Troubleshooting
 
 ### Tools Not Appearing in Claude Desktop

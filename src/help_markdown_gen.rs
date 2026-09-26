@@ -18,20 +18,20 @@ const MAX_ITERATIONS: usize = 100;
 const GITHUB_BASE: &str = "https://github.com/dathere/qsv/blob/master/";
 
 /// Information about a command extracted from README.md
-struct CommandInfo {
+pub(crate) struct CommandInfo {
     /// The invocation name (e.g. "enum", "py")
-    invocation_name: String,
+    pub(crate) invocation_name: String,
     /// The source file stem (e.g. "enumerate", "python")
-    source_file:     String,
+    pub(crate) source_file:     String,
     /// Short description from README table
-    description:     String,
+    description:                String,
     /// Emoji markers from README table
-    emoji_markers:   String,
+    emoji_markers:              String,
 }
 
 /// Extract all commands from the README.md command table.
 /// Returns a Vec of `CommandInfo` with invocation name, source file, description and emojis.
-fn extract_commands_from_readme(repo_root: &Path) -> Result<Vec<CommandInfo>, String> {
+pub(crate) fn extract_commands_from_readme(repo_root: &Path) -> Result<Vec<CommandInfo>, String> {
     let readme_path = repo_root.join("README.md");
     let readme_content =
         fs::read_to_string(&readme_path).map_err(|e| format!("Failed to read README.md: {e}"))?;
@@ -2428,7 +2428,8 @@ pub fn generate_help_markdown() -> CliResult<()> {
             return fail_clierror!(
                 "Could not find qsv repository root after checking {} parent directories. This \
                  command must be run from within the qsv repository directory.\nOriginal \
-                 directory: {}",
+                 directory: {}\n\nTo get the help Markdown for this qsv binary without a repo \
+                 checkout, run: qsv --export-tool-definitions <dir>",
                 MAX_ITERATIONS,
                 original_dir.display()
             );
@@ -2436,7 +2437,9 @@ pub fn generate_help_markdown() -> CliResult<()> {
 
         if !repo_root.pop() {
             return fail_clierror!(
-                "Could not find qsv repository root.\nOriginal directory: {}",
+                "Could not find qsv repository root.\nOriginal directory: {}\n\nTo get the help \
+                 Markdown for this qsv binary without a repo checkout, run: qsv \
+                 --export-tool-definitions <dir>",
                 original_dir.display()
             );
         }

@@ -165,6 +165,8 @@ mod test_template;
 mod test_to;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_tojsonl;
+#[cfg(feature = "feature_capable")]
+mod test_tool_defs;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_transpose;
 mod test_validate;

@@ -1,1 +1,3 @@
 These JSON files describe the tools the qsv MCP Server can invoke. They include metadata about the tool, such as its name, description, and arguments, as well as instructions for how to use it.
+
+They are the curated MCP subset of [`docs/tool-definitions/`](../../../docs/tool-definitions), which has a byte-identical definition for EVERY qsv command; both are written by `qsv --update-mcp-skills`. The full set is embedded in the `qsv` and `qsvmcp` binaries, so you can get the definitions that match your installed version without a repo checkout: `qsv --tool-definition <command>` prints one to stdout, and `qsv --export-tool-definitions <dir>` writes all of them (plus the help Markdown and a version manifest) to `<dir>`.

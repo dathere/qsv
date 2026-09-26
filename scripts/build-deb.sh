@@ -15,6 +15,7 @@ build_variant() {
 
 default_path=$(build_variant "default")
 lite_path=$(build_variant "lite")
-datapusher_plus_path=$(build_variant "datapusher_plus")
+# qsvdp stays on the portable x86-64 baseline (no x86-64-v3) - see publish-target.yml
+datapusher_plus_path=$(unset RUSTFLAGS; build_variant "datapusher_plus")
 
 echo "DEB_PATHS=${default_path} ${lite_path} ${datapusher_plus_path}"

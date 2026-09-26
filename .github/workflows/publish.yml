@@ -46,7 +46,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags:
+            addl-rustflags: -C target-cpu=x86-64-v3
             # native runner - PGO-optimize the main qsv binary (issue #1448)
             pgo: true
             pgo-train-flags:
@@ -66,7 +66,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags:
+            addl-rustflags: -C target-cpu=x86-64-v3
             # musl is a reduced-feature, lower-priority target - PGO deferred (plan #1448)
             pgo: false
             pgo-train-flags:
@@ -99,7 +99,7 @@ jobs:
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags:
+            addl-rustflags: -C target-cpu=x86-64-v3
             # native runner - PGO with --minimal training (benchmarks.sh data prep
             # does not run natively on Windows; train via git-bash on a synthesized CSV)
             pgo: true
@@ -149,7 +149,7 @@ jobs:
             default-features: --no-default-features
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags:
+            addl-rustflags: -C target-cpu=x86-64-v3
             # PGO disabled for windows-gnu: the msvc host cross-compiles to the gnu
             # target, but rustup's stable rust-std for x86_64-pc-windows-gnu does not
             # ship the profiler runtime, so PGO instrumentation fails to build

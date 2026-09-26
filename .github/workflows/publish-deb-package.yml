@@ -95,6 +95,10 @@ jobs:
 
       - name: Build all Debian packages
         id: build
+        env:
+          # x86-64-v3 (requires AVX2/FMA/BMI2) - same baseline as the other x86_64 prebuilts.
+          # build-deb.sh unsets it for the datapusher_plus (qsvdp) variant, which stays portable.
+          RUSTFLAGS: -C target-cpu=x86-64-v3
         run: |
           chmod +x scripts/build-deb.sh
           echo "▶ Running build-deb.sh …"

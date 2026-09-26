@@ -107,7 +107,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            addl-rustflags:
+            addl-rustflags: -C target-cpu=x86-64-v3
             # native runner - PGO-optimize the main qsv binary (issue #1448)
             pgo: true
             pgo-train-flags:

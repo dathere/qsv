@@ -414,7 +414,7 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 - Uses parallel processing when an index is available for large files
 
 **Requirements:**
-- All statistics are computed only for numeric and date/datetime columns (except Shannon Entropy which works for all field types)
+- All statistics are computed only for numeric and date/datetime columns (except Shannon Entropy, Simpson's Diversity Index, Berger-Parker Dominance and XSD type, which work for all field types)
 - Derived statistics require specific base statistics to be present in the stats CSV
 - Advanced statistics require `--advanced` flag and reading the entire CSV file
 - Outlier statistics require quartiles (and thus fences) to be computed in the baseline stats
@@ -422,13 +422,13 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 
 ### Count Reference
 
-`moarstats` documentation cites "up to an additional 56 statistical measures." That figure is
+`moarstats` documentation cites "up to an additional 73 statistical measures." That figure is
 the union of the three groups below; each is enumerated explicitly in this document so the
 total can be audited against the source-of-truth in [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs).
 
 **Counting convention.** Each conceptual statistical *measure* counts once even when it
 emits multiple companion columns; the count is therefore over distinct concepts, not over
-output column names. Four grouping rules are applied below:
+output column names. Five grouping rules are applied below:
 
 - **Jarque-Bera** (#17) counts as one measure even though it emits two columns
   (`jarque_bera` plus its `jarque_bera_pvalue`); the p-value is a derived companion of the
@@ -443,11 +443,17 @@ output column names. Four grouping rules are applied below:
 - **Theil's U** (bivariate #7) counts as one measure even though it emits two columns
   (`u_field2_given_field1` and `u_field1_given_field2`); the coefficient is asymmetric, so
   both directions are reported.
+- **Linear regression** (bivariate #9) counts as one measure even though it emits three
+  columns (`regression_slope`, `regression_intercept`, `r_squared`); they describe one fitted
+  model.
+
+Conversely, the robust z-scores of min and max (#29, #30) and the three L-moment ratios
+(#36–#38) count individually, mirroring `min_zscore`/`max_zscore` and CV/skewness/kurtosis.
 
 A reader regenerating the count by tallying named output columns in `src/cmd/moarstats.rs`
-will arrive at a higher number; arrive at 56 by collapsing the four groups above.
+will arrive at a higher number; arrive at 73 by collapsing the five groups above.
 
-**Univariate measures (25)** — see [Derived Statistics](#derived-statistics), [Advanced Statistics](#advanced-statistics) and [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means):
+**Univariate measures (40)** — see [Derived Statistics](#derived-statistics), [Advanced Statistics](#advanced-statistics) and [Robust Statistics (Winsorized & Trimmed Means)](#robust-statistics-winsorized--trimmed-means):
 
 |  # | Measure | Section / Flag |
 |---:|:---|:---|
@@ -476,6 +482,21 @@ will arrive at a higher number; arrive at 56 by collapsing the four groups above
 | 23 | Normalized Entropy (`normalized_entropy`) | `--advanced` (when `cardinality` is present) |
 | 24 | Simpson's Diversity Index (`simpsons_diversity_index`) | `--advanced` |
 | 25 | Winsorized Mean (`winsorized_mean` + 5 companion columns) and Trimmed Mean (`trimmed_mean` + 5 companion columns) | Robust (counted as one measure pair, emits 12 columns) |
+| 26 | Normalized MAD (`mad_normalized`) | Derived |
+| 27 | Normalized IQR (`iqr_normalized`) | Derived |
+| 28 | Kelly Skewness (`kelly_skewness`) | Derived (needs P10 & P90) |
+| 29 | Robust Z-Score of Min (`robust_min_zscore`) | Derived |
+| 30 | Robust Z-Score of Max (`robust_max_zscore`) | Derived |
+| 31 | P90/P10 Ratio (`percentile_ratio_90_10`) | Derived (needs P10 & P90) |
+| 32 | Zero Share (`zero_share`) | Derived |
+| 33 | Berger-Parker Dominance (`berger_parker_dominance`) | Derived (all field types) |
+| 34 | Moment Skewness (`moment_skewness`) | `--advanced` |
+| 35 | Hoover Index (`hoover_index`) | `--advanced` |
+| 36 | L-CV (`l_cv`) | `--advanced` |
+| 37 | L-Skewness (`l_skewness`) | `--advanced` |
+| 38 | L-Kurtosis (`l_kurtosis`) | `--advanced` |
+| 39 | Lag-1 Autocorrelation (`lag1_autocorrelation`) | `--advanced` |
+| 40 | Benford MAD (`benford_mad`) | `--advanced` |
 
 **Outlier measures (24)** — see [Outlier Statistics](#outlier-statistics):
 
@@ -487,7 +508,7 @@ will arrive at a higher number; arrive at 56 by collapsing the four groups above
 | 21–22 | Outlier impact | `outlier_impact`, `outlier_impact_ratio` |
 | 23–24 | Outlier boundary | `lower_outer_fence_zscore`, `upper_outer_fence_zscore` |
 
-**Bivariate measures (7, written to `<FILESTEM>.stats.bivariate.csv` under `--bivariate`)** — see [Bivariate Statistics](#bivariate-statistics):
+**Bivariate measures (9, written to `<FILESTEM>.stats.bivariate.csv` under `--bivariate`)** — see [Bivariate Statistics](#bivariate-statistics):
 
 | # | Measure |
 |---:|:---|
@@ -498,8 +519,10 @@ will arrive at a higher number; arrive at 56 by collapsing the four groups above
 | 5 | Mutual Information (`mutual_information`) |
 | 6 | Normalized Mutual Information (`normalized_mutual_information`) |
 | 7 | Theil's U / uncertainty coefficient (`u_field2_given_field1` + `u_field1_given_field2` — counted as one measure, emits 2 columns) |
+| 8 | Cramér's V (`cramers_v`) |
+| 9 | Linear regression (`regression_slope` + `regression_intercept` + `r_squared` — counted as one measure, emits 3 columns) |
 
-**Total: 25 + 24 + 7 = 56 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 56.
+**Total: 40 + 24 + 9 = 73 statistical measures.** Note that several measures expand into more than one output column (e.g. Jarque-Bera → 2 columns, Winsorized/Trimmed Means → 12 columns combined, Covariance → 2 columns, Linear regression → 3 columns), so the actual column count in a `<FILESTEM>.stats.csv` extended by `moarstats --advanced` plus its bivariate sidecar is higher than 73.
 
 ### Derived Statistics
 
@@ -520,22 +543,39 @@ These statistics are computed directly from existing stats columns without scann
 | <a id="trimean"></a>`trimean` | Variable | Tukey's Trimean. Robust estimator of central tendency combining median with the midhinge. More robust than mean, more efficient than median alone. | `(Q1 + 2*median + Q3) / 4`. Requires: `q1`, `median` (or `q2_median`), `q3`. See: [Trimean](https://en.wikipedia.org/wiki/Trimean) |
 | <a id="midhinge"></a>`midhinge` | Variable | Midhinge. Midpoint of the middle 50% of data. A robust central tendency measure that complements the mean and median. | `(Q1 + Q3) / 2`. Requires: `q1`, `q3`. See: [Midhinge](https://en.wikipedia.org/wiki/Midhinge) |
 | <a id="robust_cv"></a>`robust_cv` | Variable | Robust Coefficient of Variation. Non-negative, outlier-resistant alternative to CV using MAD and the magnitude of the median instead of stddev and mean. | `MAD / abs(median)`. Requires: `mad`, `median` (or `q2_median`). Returns `None` if median is zero. See: [Robust measures of scale](https://en.wikipedia.org/wiki/Robust_measures_of_scale) |
+| `mad_normalized` | Variable | Normalized MAD. Robust estimate of the standard deviation, consistent with `stddev` for normally distributed data. | `mad / Φ⁻¹(3/4)` ≈ `1.4826 * mad`. Requires: `mad`. See: [Median absolute deviation](https://en.wikipedia.org/wiki/Median_absolute_deviation#Relation_to_standard_deviation) |
+| `iqr_normalized` | Variable | Normalized IQR. Robust estimate of the standard deviation, consistent with `stddev` for normally distributed data. | `iqr / (2 * Φ⁻¹(3/4))` ≈ `iqr / 1.349`. Requires: `iqr`. |
+| `robust_min_zscore` | Variable | Robust (Iglewicz-Hoaglin modified) z-score of the minimum. Values beyond ±3.5 are commonly flagged as potential outliers. | `0.6745 * (min - median) / mad`. Requires: `min`, `median` (or `q2_median`), `mad`. Returns `None` if mad is zero. Empty for Date/DateTime columns. |
+| `robust_max_zscore` | Variable | Robust (Iglewicz-Hoaglin modified) z-score of the maximum. | `0.6745 * (max - median) / mad`. Requires: `max`, `median` (or `q2_median`), `mad`. Returns `None` if mad is zero. Empty for Date/DateTime columns. |
+| `kelly_skewness` | Variable | Kelly's percentile skewness. Less sensitive to the extreme tails than moment skewness, and uses more of the distribution than quartile skewness. | `(P90 + P10 - 2*median) / (P90 - P10)`. Requires: `percentiles` including 10 and 90 (the default percentile list does), `median` (or `q2_median`). The column is only added when some field's percentiles contain both. Returns `None` if P90 = P10. |
+| `percentile_ratio_90_10` | Variable | P90/P10 ratio. A common spread/inequality ratio (e.g. for incomes). | `P90 / P10`. Requires: `percentiles` including 10 and 90. Only computed when both are positive. Empty for Date/DateTime columns. |
+| `zero_share` | Variable | Share of non-null numeric values that are exactly zero. Flags zero-inflation. | `n_zero / (n_zero + n_positive + n_negative)`. Requires: `n_zero`, `n_positive`, `n_negative`. |
+| `berger_parker_dominance` | Variable | Berger-Parker dominance. Share of rows taken by the most frequent value. Works for **all field types**. | `mode_occurrences / record_count`. NULL counts as a value, as in `stats`' mode. When all values are unique (`mode_count` = 0) returns `1 / record_count`. Skipped when `--mode-cardinality-cap` fired. Not meaningful on a weighted stats cache (`mode_occurrences` is then a weight). Requires: `mode_count`, `mode_occurrences`. See: [Berger-Parker index](https://en.wikipedia.org/wiki/Diversity_index#Berger%E2%80%93Parker_index) |
 | `xsd_type` | Variable | Inferred W3C XML Schema datatype. Infers the most specific XSD type based on field type and min/max values. Works for **all field types**. | Computed from `type`, `min`, and `max` columns. For Integer types, refines to most specific type (e.g., `byte`, `short`, `int`, `long`, `unsignedByte`, `unsignedShort`, `unsignedInt`, `unsignedLong`, `positiveInteger`, `nonNegativeInteger`, `negativeInteger`, `nonPositiveInteger`, or `integer`) based on min/max ranges. Also detects Gregorian date types (`gYear`, `gYearMonth`, `gMonthDay`, `gDay`, `gMonth`) with confidence markers (`?` = more confident from thorough scan, `??` = less confident from quick scan). For other types: Float → `decimal`, String → `string`, Date → `date`, DateTime → `dateTime`, Boolean → `boolean`, NULL → empty string. If min/max are not available for Integer types, defaults to `integer`. See: [XML Schema Part 2: Datatypes](https://www.w3.org/TR/xmlschema-2/) |
 
 ### Advanced Statistics
 
 These statistics require the `--advanced` flag and reading the entire CSV file to collect all values for computation. They are computationally expensive.
 
+The mean and central moments used below are computed exactly from the collected values, **not** taken from the stats cache (whose `mean`/`stddev` are rounded, by default to 4 decimal places, which badly distorts moment statistics on small-scale data). Date/DateTime values are processed as days since the epoch.
+
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `kurtosis` | Variable | Excess kurtosis. Measures the "tailedness" of the distribution. Positive values indicate heavy tails, negative values indicate light tails. Values near 0 indicate a normal distribution. | Computed from all values in the column. Uses precalculated mean and variance from baseline stats for efficiency. Requires: `mean`, `variance` (or `stddev`). See: [Kurtosis](https://en.wikipedia.org/wiki/Kurtosis) |
-| `bimodality_coefficient` | Variable | Bimodality Coefficient. Measures whether a distribution has two modes (peaks) or is unimodal. BC < 0.555 indicates unimodal, BC >= 0.555 indicates bimodal/multimodal. | Computed as `(skewness² + 1) / (kurtosis + 3)`. Requires: `skewness` (from base stats) and `kurtosis` (from `--advanced` flag). See: [Bimodality](https://en.wikipedia.org/wiki/Bimodality) |
-| <a id="jarque_bera"></a>`jarque_bera` | Variable | Jarque-Bera test statistic. Standard test for normality using skewness and kurtosis. Higher values indicate greater departure from normality. | Computed as `(n/6) * (S² + K²/4)` where S is skewness and K is excess kurtosis. Requires: `skewness` (from base stats), `kurtosis` (from `--advanced` flag), and sample size n (from `n_positive + n_negative + n_zero`). See: [Jarque-Bera test](https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test) |
+| `moment_skewness` | Variable | Moment skewness. The adjusted Fisher-Pearson standardized moment coefficient G1 - the moment-based counterpart to the quantile-based `skewness` from `stats`. Positive values indicate right skew. | `G1 = g1 * sqrt(n(n-1)) / (n-2)` where `g1 = m3 / m2^1.5` and `m_k` are the central moments. Matches `scipy.stats.skew(bias=False)`. Requires n >= 3. See: [Sample skewness](https://en.wikipedia.org/wiki/Skewness#Sample_skewness) |
+| `kurtosis` | Variable | Excess kurtosis. Measures the "tailedness" of the distribution. Positive values indicate heavy tails, negative values indicate light tails. Values near 0 indicate a normal distribution. | Sample excess kurtosis `G2 = ((n+1) g2 + 6)(n-1) / ((n-2)(n-3))` where `g2 = m4 / m2² - 3`. Matches `scipy.stats.kurtosis(bias=False)`. Requires n >= 4. See: [Kurtosis](https://en.wikipedia.org/wiki/Kurtosis) |
+| `bimodality_coefficient` | Variable | Bimodality Coefficient. Measures whether a distribution has two modes (peaks) or is unimodal. BC > 0.555 (the value for a uniform distribution) suggests bimodality/multimodality. Heavily skewed unimodal data can also exceed 0.555. | Finite-sample form `(G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3)))` (Pfister et al., 2013), using `moment_skewness` and `kurtosis`. Requires n >= 4. See: [Bimodality](https://en.wikipedia.org/wiki/Bimodality) |
+| <a id="jarque_bera"></a>`jarque_bera` | Variable | Jarque-Bera test statistic. Standard test for normality using skewness and kurtosis. Higher values indicate greater departure from normality. | Computed as `(n/6) * (g1² + g2²/4)` using the biased moment skewness g1 and excess kurtosis g2. Matches `scipy.stats.jarque_bera`. Requires n >= 3. See: [Jarque-Bera test](https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test) |
 | `jarque_bera_pvalue` | Variable | P-value for the Jarque-Bera test. Low values (< 0.05) indicate the data is NOT normally distributed. | Computed from the chi-squared distribution with 2 degrees of freedom: `p = e^(-JB/2)`. Requires: `jarque_bera`. |
-| `gini_coefficient` | Variable | Gini Coefficient. Measures inequality/dispersion in the distribution. Values range from 0 (perfect equality) to 1 (maximum inequality). | Computed from all values in the column. Uses precalculated sum from baseline stats for efficiency. Requires: `sum`. See: [Gini Coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) |
-| `atkinson_index_(<ε>)` | Variable | Atkinson Index. Measures inequality in the distribution with a sensitivity parameter. The column name interpolates the epsilon value (e.g. `atkinson_index_(1)` with the default `--epsilon 1.0`). Values range from 0 (perfect equality) to 1 (maximum inequality). The Atkinson Index is a more general form of the Gini coefficient that allows for different sensitivity to inequality. | Computed from all values in the column. Uses precalculated mean from baseline stats for efficiency. The epsilon (ε) parameter controls sensitivity to inequality (configurable via `--epsilon`, default: 1.0). Higher epsilon values indicate greater sensitivity to inequality. Requires: `mean`. See: [Atkinson Index](https://en.wikipedia.org/wiki/Atkinson_index) |
+| `gini_coefficient` | Variable | Gini Coefficient. Measures inequality/dispersion in the distribution. Values range from 0 (perfect equality) to 1 (maximum inequality). | Computed from all values in the column, using their exact sum. See: [Gini Coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) |
+| `atkinson_index_(<ε>)` | Variable | Atkinson Index. Measures inequality in the distribution with a sensitivity parameter. The column name interpolates the epsilon value (e.g. `atkinson_index_(1)` with the default `--epsilon 1.0`). Values range from 0 (perfect equality) to 1 (maximum inequality). The Atkinson Index is a more general form of the Gini coefficient that allows for different sensitivity to inequality. | Computed from all values in the column, using their exact mean. The epsilon (ε) parameter controls sensitivity to inequality (configurable via `--epsilon`, default: 1.0). Higher epsilon values indicate greater sensitivity to inequality. See: [Atkinson Index](https://en.wikipedia.org/wiki/Atkinson_index) |
 | <a id="theil_index"></a>`theil_index` | Variable | Theil Index (Generalized Entropy GE(1)). Measures inequality/concentration in the distribution. Unlike Gini, it is decomposable into within-group and between-group components. Only computed for positive values. | Computed as `(1/n) * Σ((x_i / mean) * ln(x_i / mean))` for positive values. Computes mean from positive values only (not the overall precalculated mean). Requires positive values in the column. See: [Theil Index](https://en.wikipedia.org/wiki/Theil_index) |
-| <a id="mean_ad"></a>`mean_ad` | Variable | Mean Absolute Deviation from mean. Average absolute distance of values from the arithmetic mean. Less robust than MAD (which uses median) but more statistically efficient. | Computed as `(1/n) * Σ|x_i - mean|`. Uses precalculated mean from baseline stats. Requires: `mean`. |
+| <a id="mean_ad"></a>`mean_ad` | Variable | Mean Absolute Deviation from mean. Average absolute distance of values from the arithmetic mean. Less robust than MAD (which uses median) but more statistically efficient. | Computed as `(1/n) * Σ|x_i - mean|`, using the exact mean. For Date/DateTime columns, returned in days. |
+| <a id="hoover_index"></a>`hoover_index` | Variable | Hoover (Robin Hood) Index. Share of the total that would have to be redistributed to reach perfect equality. Ranges from 0 to 1. | `Σ|x_i - mean| / (2 * Σx_i)` = `mean_ad / (2 * mean)`. Only computed when all values are non-negative and the sum is positive. Not computed for Date/DateTime columns. See: [Hoover index](https://en.wikipedia.org/wiki/Hoover_index) |
+| `l_cv` | Variable | L-CV (coefficient of L-variation). Robust, bounded analogue of the coefficient of variation. | `λ2 / λ1`, from sample L-moments computed via unbiased probability-weighted moments on the sorted values (Hosking, 1990). Matches `scipy.stats.lmoment`. Only computed when `λ1 > 0`; not computed for Date/DateTime columns. Requires n >= 4. See: [L-moment](https://en.wikipedia.org/wiki/L-moment) |
+| `l_skewness` | Variable | L-skewness (τ3). Robust analogue of skewness, bounded in [-1, 1]. Exists whenever the mean does, unlike moment skewness. | `λ3 / λ2`. Requires n >= 4. |
+| `l_kurtosis` | Variable | L-kurtosis (τ4). Robust analogue of kurtosis, bounded in [-1/4, 1]. About 0.1226 for a normal distribution. | `λ4 / λ2`. Requires n >= 4. |
+| `lag1_autocorrelation` | Variable | Lag-1 autocorrelation of the column in file order. Values near 1 indicate trends, drift, or clustered/sorted data; near 0 no serial dependence; negative values alternation. Complements `sortiness`. | `Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²` over consecutive non-null values in file order. Identical under sequential and parallel (indexed) processing. Requires n >= 3. See: [Autocorrelation](https://en.wikipedia.org/wiki/Autocorrelation) |
+| `benford_mad` | Variable | Benford MAD. Nigrini's mean absolute deviation between the observed first-significant-digit proportions and [Benford's law](https://en.wikipedia.org/wiki/Benford%27s_law). A data quality / fabrication signal. Nigrini's conformity thresholds: < 0.006 close, < 0.012 acceptable, < 0.015 marginal, otherwise nonconforming. | `(1/9) * Σ_d |p_d - log10(1 + 1/d)|` for d = 1..9. Only computed for numeric columns with at least 100 finite non-zero values spanning at least two orders of magnitude (Benford's law does not apply to narrow-range data). |
 | `shannon_entropy` | Variable | Shannon Entropy. Measures the information content/uncertainty in the distribution. Higher values indicate more diversity, lower values indicate more concentration. Values range from 0 (all values identical) to log2(n) where n is the number of unique values. | Computed using the `frequency` command with `--limit 0` to collect all frequencies, then calculates: `H(X) = -Σ p_i * log2(p_i)` where p_i is the probability of value i. Works for **all field types** (not just numeric). For all-unique fields, returns log2(n). See: [Entropy (Information Theory)](https://en.wikipedia.org/wiki/Entropy_(information_theory)) |
 | `normalized_entropy` | Variable | Normalized Entropy. Normalized version of Shannon Entropy scaled to [0, 1]. Values range from 0 (all values identical) to 1 (all values equally distributed). | Computed as `shannon_entropy / log2(cardinality)`. Requires: `shannon_entropy` (from `--advanced` flag) and `cardinality` (from base stats). If cardinality is 0 or 1, returns 0. |
 | <a id="simpsons_diversity_index"></a>`simpsons_diversity_index` | Variable | Simpson's Diversity Index. Probability that two randomly chosen values are different. More intuitive than entropy for many users. Ranges from 0 (all identical) to 1 (all unique). | Computed as `1 - Σ(p_i²)` where p_i are value proportions from frequency data. Computed alongside Shannon Entropy. Works for **all field types**. For all-unique fields, returns `1 - 1/n`. See: [Simpson's Diversity Index](https://en.wikipedia.org/wiki/Diversity_index#Simpson_index) |
@@ -567,11 +607,15 @@ These statistics examine relationships between pairs of columns in a dataset. Th
 | `normalized_mutual_information` | Pairwise | Normalized Mutual Information. Normalized version of mutual information, scaled by the geometric mean of individual entropies. Values range from 0 (independent) to 1 (perfectly dependent). | Computed as `MI(X,Y) / sqrt(H(X) * H(Y))` where H(X) and H(Y) are Shannon entropies of individual fields. Requires mutual information computation. See: [Normalized Mutual Information](https://en.wikipedia.org/wiki/Mutual_information#Normalized_variants) |
 | `u_field2_given_field1` | Pairwise | Theil's U (uncertainty coefficient) for field2 given field1. Directed measure of how much knowing field1 reduces uncertainty about field2. Values range from 0 (no reduction) to 1 (fully determined). | `mutual_information / H(field2)`. Emitted when `u` is selected. |
 | `u_field1_given_field2` | Pairwise | Theil's U (uncertainty coefficient) for field1 given field2. The reverse direction — Theil's U is asymmetric, so both are emitted. | `mutual_information / H(field1)`. Emitted when `u` is selected. |
+| `cramers_v` | Pairwise | Cramér's V. Chi-squared based association between two fields. Values range from 0 (independent) to 1 (perfect association). Works for **all field types**. | `sqrt(χ² / (N * (min(r, c) - 1)))` where r and c are the numbers of distinct values, and `χ² = N * (Σ n_xy² / (n_x * n_y) - 1)` over the observed cells of the same joint frequency table used for mutual information. Matches `scipy.stats.contingency.association(method="cramer")`. Returns `None` if either field has fewer than 2 distinct values. Skipped by `--cardinality-threshold` like mutual information. Emitted when `cramersv` is selected. See: [Cramér's V](https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V) |
+| `regression_slope` | Pairwise | Slope of the ordinary least-squares regression of field2 on field1. | `cov(x, y) / var(x)` from the same streaming Welford state as Pearson's correlation. Requires both fields to be numeric or date types. Emitted when `regression` is selected. See: [Simple linear regression](https://en.wikipedia.org/wiki/Simple_linear_regression) |
+| `regression_intercept` | Pairwise | Intercept of the OLS regression of field2 on field1. | `mean_y - slope * mean_x`. For date fields, in days since the epoch. |
+| `r_squared` | Pairwise | Coefficient of determination of the OLS fit. | `cov(x, y)² / (var(x) * var(y))` (= `pearson_correlation²`). |
 | `n_pairs` | Pairwise | Number of valid pairs used in computation. Indicates how many non-null value pairs were available for computing the relationship statistics. | Count of records where both fields have non-empty values. |
 
 **Configuration Options:**
-- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi, u) or use "all" or "fast" (pearson + covariance). Default: `fast`.
-- `--cardinality-threshold`: Skip mutual information for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
+- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi, u, cramersv, regression) or use "all" or "fast" (pearson + covariance). Default: `fast`.
+- `--cardinality-threshold`: Skip mutual information (and Cramér's V) for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
 - `--join-inputs`: Join multiple datasets before computing bivariate statistics
 - `--join-keys`: Specify join keys for each dataset
 - `--join-type`: Specify join type (inner, left, right, full; default: inner)

@@ -1,7 +1,7 @@
 {
   "name": "qsv-moarstats",
   "version": "23.0.1",
-  "description": "Add up to an additional 56 statistical measures, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example).",
+  "description": "Add up to an additional 73 statistical measures, including extended outlier, robust & bivariate statistics to an existing stats CSV file. (example).",
   "category": "aggregation",
   "command": {
     "subcommand": "moarstats",
@@ -17,7 +17,7 @@
       {
         "flag": "--advanced",
         "type": "flag",
-        "description": "Compute Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
+        "description": "Compute Moment Skewness, Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, Hoover Index, L-moment ratios, Lag-1 Autocorrelation, Benford MAD and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing."
       },
       {
         "flag": "--bivariate",
@@ -33,13 +33,13 @@
       {
         "flag": "--bivariate-stats",
         "type": "string",
-        "description": "Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information), u (Theil's directed uncertainty coefficient; emits u_field2_given_field1 and u_field1_given_field2) Use \"all\" to compute all statistics or \"fast\" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms.",
+        "description": "Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information), u (Theil's directed uncertainty coefficient; emits u_field2_given_field1 and u_field1_given_field2), cramersv (Cramér's V) and regression (slope, intercept & r_squared). Use \"all\" to compute all statistics or \"fast\" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms.",
         "default": "fast"
       },
       {
         "flag": "--cardinality-threshold",
         "type": "number",
-        "description": "Skip mutual information (mi/nmi/u) for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed."
+        "description": "Skip mutual information (mi/nmi/u) and cramersv for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed."
       },
       {
         "flag": "--epsilon",

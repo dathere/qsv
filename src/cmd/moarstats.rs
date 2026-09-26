@@ -18,7 +18,7 @@ the baseline stats, to which it will add more stats columns.
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
 stats columns.
 
-Currently computes the following 37 additional univariate statistics:
+Currently computes the following 40 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
     Measures asymmetry of the distribution.
     Positive values indicate right skew, negative values indicate left skew.
@@ -68,98 +68,105 @@ Currently computes the following 37 additional univariate statistics:
     https://en.wikipedia.org/wiki/Median_absolute_deviation
 15. Normalized IQR: IQR / 1.349
     Robust estimate of the standard deviation, consistent with stddev for normal data.
-16. Robust Z-Scores of Min & Max: 0.6745 * (x - median) / MAD
-    Iglewicz-Hoaglin modified z-scores of the min and max (robust_min_zscore, robust_max_zscore).
+16. Robust Z-Score of Min: 0.6745 * (min - median) / MAD
+    Iglewicz-Hoaglin modified z-score of the minimum.
     Values beyond ±3.5 are commonly flagged as potential outliers.
-17. Kelly Skewness: (P90 + P10 - 2*median) / (P90 - P10)
+17. Robust Z-Score of Max: 0.6745 * (max - median) / MAD
+    Iglewicz-Hoaglin modified z-score of the maximum.
+18. Kelly Skewness: (P90 + P10 - 2*median) / (P90 - P10)
     Percentile-based skewness, less sensitive to tails than quartile skewness.
     Requires the 10th & 90th percentiles (included in the default percentile list).
-18. P90/P10 Ratio: P90 / P10
+19. P90/P10 Ratio: P90 / P10
     Common spread/inequality ratio. Only computed when P10 > 0.
-19. Zero Share: n_zero / (n_zero + n_positive + n_negative)
+20. Zero Share: n_zero / (n_zero + n_positive + n_negative)
     Share of non-null numeric values that are exactly zero (zero-inflation).
-20. Berger-Parker Dominance: mode_occurrences / row count
+21. Berger-Parker Dominance: mode_occurrences / row count
     Share of rows taken by the most frequent value (NULL counts as a value, as in mode).
     Works for all field types. Not meaningful on weighted stats.
     https://en.wikipedia.org/wiki/Diversity_index#Berger%E2%80%93Parker_index
-21. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
+22. Moment Skewness: adjusted Fisher-Pearson standardized moment coefficient (G1).
     Moment-based counterpart to the quantile-based `skewness` from stats.
     Positive values indicate right skew, negative values indicate left skew.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Skewness#Sample_skewness
-22. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
+23. Kurtosis: Measures the "tailedness" of the distribution (sample excess kurtosis, G2).
     Positive values indicate heavy tails, negative values indicate light tails.
     Values near 0 indicate a normal distribution.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Kurtosis
-23. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
+24. Bimodality Coefficient: Measures whether a distribution has two modes (peaks) or is unimodal.
     BC > 0.555 (the value for a uniform distribution) suggests bimodal/multimodal.
     Computed as (G1² + 1) / (G2 + 3(n-1)² / ((n-2)(n-3))), using moment skewness and kurtosis.
     Heavily skewed unimodal data can also exceed 0.555.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Bimodality
-24. Jarque-Bera Test: (n/6) * (S² + K²/4)
+25. Jarque-Bera Test: (n/6) * (S² + K²/4)
     Standard test for normality, where S and K are the (biased) moment skewness and
     excess kurtosis.
     Also computes jarque_bera_pvalue (from chi-squared distribution with 2 df).
     Low p-values (< 0.05) indicate the data is NOT normally distributed.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test
-25. Gini Coefficient: Measures inequality/dispersion in the distribution.
+26. Gini Coefficient: Measures inequality/dispersion in the distribution.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Gini_coefficient
-26. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
+27. Atkinson Index: Measures inequality in the distribution with a sensitivity parameter.
     Values range from 0 (perfect equality) to 1 (maximum inequality).
     The Atkinson Index is a more general form of the Gini coefficient that allows for
     different sensitivity to inequality. Sensitivity is configurable via --epsilon.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Atkinson_index
-27. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+28. Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
     Measures inequality/concentration. Unlike Gini, it is decomposable into
     within-group and between-group components. Only computed for positive values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Theil_index
-28. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
+29. Mean Absolute Deviation (from mean): (1/n) * Σ|x_i - mean|
     Average absolute distance from the mean. Different from MAD (which uses median).
     Less robust but more statistically efficient than MAD.
     Requires --advanced flag.
-29. Hoover Index: Σ|x_i - mean| / (2 * Σx_i)
+30. Hoover Index: Σ|x_i - mean| / (2 * Σx_i)
     Share of the total that would have to be redistributed to reach equality (0 to 1).
     Only computed for non-negative numeric data. Requires --advanced flag.
     https://en.wikipedia.org/wiki/Hoover_index
-30. L-Moment Ratios: l_cv (L-CV, λ2/λ1), l_skewness (τ3, λ3/λ2), l_kurtosis (τ4, λ4/λ2)
-    Robust, bounded alternatives to CV, skewness and kurtosis based on linear
-    combinations of order statistics. τ3 and τ4 are in [-1, 1] and exist whenever the
-    mean does. l_cv is only computed for numeric data with a positive mean.
-    Requires --advanced flag.
+31. L-CV: λ2 / λ1
+    Coefficient of L-variation - a robust, bounded analogue of the CV based on
+    L-moments (linear combinations of order statistics). Only computed for numeric data
+    with a positive mean. Requires --advanced flag.
     https://en.wikipedia.org/wiki/L-moment
-31. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
+32. L-Skewness: τ3 = λ3 / λ2
+    Robust analogue of skewness, bounded in [-1, 1]; exists whenever the mean does.
+    Requires --advanced flag.
+33. L-Kurtosis: τ4 = λ4 / λ2
+    Robust analogue of kurtosis, bounded in [-1/4, 1]. About 0.1226 for a normal
+    distribution. Requires --advanced flag.
+34. Lag-1 Autocorrelation: Σ(x_t - mean)(x_{t+1} - mean) / Σ(x_t - mean)²
     Correlation between consecutive non-null values in file order. Values near 1 indicate
     a trend, drift or clustered/sorted data; near 0 no serial dependence; negative values
     alternation. Requires --advanced flag.
     https://en.wikipedia.org/wiki/Autocorrelation
-32. Benford MAD: mean absolute deviation between the first-significant-digit
+35. Benford MAD: mean absolute deviation between the first-significant-digit
     proportions and Benford's law. Nigrini's thresholds: < 0.006 close conformity,
     < 0.012 acceptable, < 0.015 marginal, otherwise nonconformity - a data quality or
     fabrication signal. Only computed for numeric data with at least 100 non-zero values
     spanning at least two orders of magnitude. Requires --advanced flag.
     https://en.wikipedia.org/wiki/Benford%27s_law
-33. Shannon Entropy: Measures the information content/uncertainty in the distribution.
+36. Shannon Entropy: Measures the information content/uncertainty in the distribution.
     Higher values indicate more diversity, lower values indicate more concentration.
     Values range from 0 (all values identical) to log2(n) where n is the number of unique values.
     Requires --advanced flag.
     https://en.wikipedia.org/wiki/Entropy_(information_theory)
-34. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
+37. Normalized Entropy: Normalized version of Shannon Entropy scaled to [0, 1].
     Values range from 0 (all values identical) to 1 (all values equally distributed).
     Computed as shannon_entropy / log2(cardinality).
     Requires shannon_entropy (from --advanced flag) and cardinality (from base stats).
-35. Simpson's Diversity Index: 1 - Σ(p_i²)
+38. Simpson's Diversity Index: 1 - Σ(p_i²)
     Probability that two randomly chosen values are different.
     Ranges from 0 (all identical) to 1 (all unique). More intuitive than entropy.
     Requires --advanced flag (computed alongside entropy from frequency data).
     https://en.wikipedia.org/wiki/Diversity_index#Simpson_index
-36. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
+39. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
     All values are included in the calculation, but extreme values are capped at thresholds.
     https://en.wikipedia.org/wiki/Winsorized_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):
@@ -167,7 +174,7 @@ Currently computes the following 37 additional univariate statistics:
     winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
     (winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
     before _stddev_ratio, unlike the others.
-37. Trimmed Mean: Excludes values outside thresholds, then computes mean.
+40. Trimmed Mean: Excludes values outside thresholds, then computes mean.
     Only values within thresholds are included in the calculation.
     https://en.wikipedia.org/wiki/Truncated_mean
     Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):

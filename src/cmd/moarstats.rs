@@ -592,6 +592,13 @@ impl BivariateStatsConfig {
         }
     }
 
+    /// Whether any stat that works on numeric/date pairs (rather than joint frequencies)
+    /// was requested
+    #[inline]
+    const fn needs_numeric_pairs(self) -> bool {
+        self.pearson || self.spearman || self.kendall || self.covariance || self.regression
+    }
+
     /// Check if we need to store all values (required for Spearman/Kendall)
     #[inline]
     const fn needs_all_values(self) -> bool {
@@ -2009,6 +2016,27 @@ struct BivariateFieldInfo {
     stddev:      Option<f64>, // Pre-computed standard deviation (used for filtering)
     variance:    Option<f64>, // Pre-computed variance (used for filtering)
     cardinality: Option<u64>, // Pre-computed cardinality (used for threshold filtering)
+    // Every value is unique (cardinality >= row count). Such a field keeps its correlation /
+    // covariance / regression pairs, but frequency-based stats (mi/nmi/u/cramersv) are
+    // meaningless for it - MI with an all-unique field just saturates at log(n).
+    all_unique:  bool,
+}
+
+/// Whether a pair skips the joint-frequency table and every stat built on it
+/// (mi/nmi/u/cramersv): either field exceeds the cardinality threshold, or either field is
+/// all-unique. The single predicate both `build_bivariate_plan` (scan time) and
+/// `finalize_bivariate_pair_stats` use, so they cannot disagree.
+fn skips_joint_freq(
+    field1: &BivariateFieldInfo,
+    field2: &BivariateFieldInfo,
+    cardinality_threshold: Option<u64>,
+) -> bool {
+    field1.all_unique
+        || field2.all_unique
+        || cardinality_threshold.is_some_and(|threshold| {
+            field1.cardinality.is_some_and(|c| c > threshold)
+                || field2.cardinality.is_some_and(|c| c > threshold)
+        })
 }
 
 /// Per-column value dictionary: distinct raw values in first-seen order, so a
@@ -2224,11 +2252,8 @@ fn build_bivariate_plan(
 
         // Same predicate finalize uses, evaluated once here instead of after the
         // joint map has already been paid for.
-        let exceeds_cardinality = cardinality_threshold.is_some_and(|threshold| {
-            field1_info.cardinality.is_some_and(|c| c > threshold)
-                || field2_info.cardinality.is_some_and(|c| c > threshold)
-        });
-        if exceeds_cardinality {
+        let skip_freq = skips_joint_freq(field1_info, field2_info, cardinality_threshold);
+        if skip_freq {
             skipped_high_cardinality += 1;
         }
 
@@ -2236,7 +2261,7 @@ fn build_bivariate_plan(
             key,
             x_slot,
             y_slot,
-            accumulate_freq: !exceeds_cardinality,
+            accumulate_freq: !skip_freq,
         });
     }
 
@@ -2246,8 +2271,8 @@ fn build_bivariate_plan(
     if report && skipped_high_cardinality > 0 {
         log::info!(
             "bivariate plan: {skipped_high_cardinality} of {} pairs will not accumulate joint \
-             frequencies (cardinality exceeds threshold {:?}); mi/nmi/u are reported empty for \
-             them",
+             frequencies (a field is all-unique or its cardinality exceeds threshold {:?}); \
+             mi/nmi/u/cramersv are reported empty for them",
             pairs.len(),
             cardinality_threshold,
         );
@@ -3886,27 +3911,23 @@ fn finalize_bivariate_pair_stats(
         compute_kendall_tau(&chunk_stats.x_values, &chunk_stats.y_values)
     };
 
-    // MI / NMI share a cardinality-threshold gate; compute it once.
-    // `exceeds_cardinality` is None when no threshold is configured (always proceed).
-    let exceeds_cardinality = cardinality_threshold.map(|threshold| {
-        field1_info.cardinality.is_some_and(|c| c > threshold)
-            || field2_info.cardinality.is_some_and(|c| c > threshold)
-    });
+    // MI / NMI / U / Cramer's V share one joint-frequency gate; compute it once.
+    let skip_freq = skips_joint_freq(field1_info, field2_info, cardinality_threshold);
 
     let log_skip = |what: &str| {
-        if let Some(threshold) = cardinality_threshold {
-            let (idx1, idx2) = pair_key;
-            let field1_name = field_names
-                .get(idx1 as usize)
-                .map_or("?", std::string::String::as_str);
-            let field2_name = field_names
-                .get(idx2 as usize)
-                .map_or("?", std::string::String::as_str);
-            log::debug!(
-                "Skipping {what} for pair ({field1_name}, {field2_name}) - cardinality exceeds \
-                 threshold {threshold}"
-            );
-        }
+        let (idx1, idx2) = pair_key;
+        let field1_name = field_names
+            .get(idx1 as usize)
+            .map_or("?", std::string::String::as_str);
+        let field2_name = field_names
+            .get(idx2 as usize)
+            .map_or("?", std::string::String::as_str);
+        let reason = if field1_info.all_unique || field2_info.all_unique {
+            "a field is all-unique".to_string()
+        } else {
+            format!("cardinality exceeds threshold {cardinality_threshold:?}")
+        };
+        log::debug!("Skipping {what} for pair ({field1_name}, {field2_name}) - {reason}");
     };
 
     // Marginal frequencies, derived from the joint counts. Only MI/NMI/U consume
@@ -3914,9 +3935,8 @@ fn finalize_bivariate_pair_stats(
     // so deriving them under the same condition avoids building maps nothing reads.
     // Finalize runs under `into_par_iter`, so this bounds live marginals to roughly
     // the job count rather than one pair of maps per field pair.
-    let needs_marginals = stats_config.needs_frequency_counts()
-        && chunk_stats.total_pairs > 0
-        && exceeds_cardinality != Some(true);
+    let needs_marginals =
+        stats_config.needs_frequency_counts() && chunk_stats.total_pairs > 0 && !skip_freq;
     // Symbol-keyed, not dense Vec<u64> indexed by symbol. A dense table would have to
     // be sized to the COLUMN's cardinality, and two of them are built per pair inside
     // a rayon finalize -- allocation proportional to something other than this pair's
@@ -3943,7 +3963,7 @@ fn finalize_bivariate_pair_stats(
     // the "skipped, cardinality exceeds threshold" log line.
     let mutual_information = if !stats_config.mi {
         None
-    } else if exceeds_cardinality == Some(true) {
+    } else if skip_freq {
         log_skip("mutual information");
         None
     } else if chunk_stats.total_pairs == 0 {
@@ -3959,7 +3979,7 @@ fn finalize_bivariate_pair_stats(
 
     let cramers_v = if !stats_config.cramersv {
         None
-    } else if exceeds_cardinality == Some(true) {
+    } else if skip_freq {
         log_skip("Cramér's V");
         None
     } else {
@@ -3976,7 +3996,7 @@ fn finalize_bivariate_pair_stats(
     let (normalized_mutual_information, u_field2_given_field1, u_field1_given_field2) =
         if !stats_config.nmi && !stats_config.u {
             (None, None, None)
-        } else if exceeds_cardinality == Some(true) {
+        } else if skip_freq {
             if stats_config.nmi {
                 log_skip("normalized mutual information");
             }
@@ -6095,7 +6115,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut skipped_field2_missing_in_csv: u64 = 0;
         let mut skipped_zero_variance: u64 = 0;
         let mut skipped_both_constant: u64 = 0;
-        let mut skipped_card_eq_rowcount: u64 = 0;
+        let mut skipped_all_unique_no_stat: u64 = 0;
         let mut skipped_type_filter: u64 = 0;
 
         for (i, field1_name) in stats_field_names.iter().enumerate() {
@@ -6213,19 +6233,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     continue; // Both constant, no meaningful correlation
                 }
 
-                // Filter invalid pairs: skip fields with all unique values (cardinality ==
-                // rowcount)
-                if let Some(rowcount) = record_count
-                    && (field1_cardinality.is_some_and(|c| c == rowcount)
-                        || field2_cardinality.is_some_and(|c| c == rowcount))
+                // An all-unique field (cardinality >= rowcount; >= because an approximate
+                // cardinality can overshoot) has no usable joint frequencies, but correlation,
+                // covariance and regression are perfectly valid for it - continuous
+                // measurements are usually all-unique. Keep the pair (flagged, so the
+                // frequency stats are skipped) unless it could produce nothing at all: a
+                // non-numeric pair, or a run that requested only frequency stats.
+                let is_all_unique = |card: Option<u64>| {
+                    record_count.is_some_and(|rowcount| card.is_some_and(|c| c >= rowcount))
+                };
+                let field1_all_unique = is_all_unique(field1_cardinality);
+                let field2_all_unique = is_all_unique(field2_cardinality);
+                if (field1_all_unique || field2_all_unique)
+                    && !(stats_config.needs_numeric_pairs()
+                        && field1_type.is_numeric_or_date_type()
+                        && field2_type.is_numeric_or_date_type())
                 {
-                    skipped_card_eq_rowcount += 1;
+                    skipped_all_unique_no_stat += 1;
                     log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
-                         (i={i}, j={j}): cardinality == rowcount ({rowcount}) \
+                         (i={i}, j={j}): an all-unique field (cardinality >= rowcount \
+                         {record_count:?}) in a pair with no applicable non-frequency stat \
                          (c1={field1_cardinality:?}, c2={field2_cardinality:?})",
                     );
-                    continue; // All values are unique, correlations are not meaningful
+                    continue; // all-unique and nothing but frequency stats could apply
                 }
 
                 // Include pairs where at least one field is numeric/date/string
@@ -6246,6 +6277,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 stddev:      field1_stddev,
                                 variance:    field1_variance,
                                 cardinality: field1_cardinality,
+                                all_unique:  field1_all_unique,
                             },
                             BivariateFieldInfo {
                                 col_idx:     field2_col_idx,
@@ -6253,6 +6285,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 stddev:      field2_stddev,
                                 variance:    field2_variance,
                                 cardinality: field2_cardinality,
+                                all_unique:  field2_all_unique,
                             },
                         ),
                     );
@@ -6273,7 +6306,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             + skipped_field2_missing_in_csv
             + skipped_zero_variance
             + skipped_both_constant
-            + skipped_card_eq_rowcount
+            + skipped_all_unique_no_stat
             + skipped_type_filter;
         if total_skipped > 0 || field_pairs.is_empty() {
             // Always log a summary when something was skipped or when no
@@ -6294,8 +6327,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                  field2_bad_type={skipped_field2_bad_type}, \
                  field2_missing_in_csv={skipped_field2_missing_in_csv}, \
                  zero_variance={skipped_zero_variance}, both_constant={skipped_both_constant}, \
-                 card_eq_rowcount={skipped_card_eq_rowcount}, type_filter={skipped_type_filter}; \
-                 csv_headers={csv_headers:?}",
+                 all_unique_no_stat={skipped_all_unique_no_stat}, \
+                 type_filter={skipped_type_filter}; csv_headers={csv_headers:?}",
                 built = field_pairs.len(),
                 nfields = stats_field_names.len(),
                 csv_headers = csv_headers.iter().collect::<Vec<_>>()
@@ -6575,8 +6608,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             //
             // Floored so it stays inert on small inputs: on an 8-row fixture nothing
             // is meaningfully "high cardinality", and half of 8 would prune ordinary
-            // 5-value columns. The fully-unique case is already excluded earlier by
-            // the cardinality == rowcount filter.
+            // 5-value columns. All-unique fields skip the frequency stats regardless of
+            // the threshold (see `skips_joint_freq`).
             let cardinality_threshold = args.flag_cardinality_threshold.or_else(|| {
                 Some(
                     record_count
@@ -6629,7 +6662,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Write bivariate statistics CSV if computed
     // Always use the original input path for naming, even if we joined datasets
-    if args.flag_bivariate && !bivariate_stats.is_empty() {
+    // Written even when no pair survived (header only): skipping the write would leave a
+    // previous run's sidecar in place, silently presenting stale pairs as this run's result.
+    if args.flag_bivariate {
         let is_joined = temp_joined_path.is_some();
         let bivariate_csv_path = get_bivariate_csv_path(input_path, is_joined)?;
         let mut bivariate_wtr = WriterBuilder::new()
@@ -8425,6 +8460,7 @@ mod tests {
             stddev: None,
             variance: None,
             cardinality: Some(5),
+            all_unique: false,
         };
         let cols = [10_usize, 20, 30, 40];
         let mut field_pairs = HashMap::new();
@@ -8527,6 +8563,7 @@ mod tests {
             stddev: None,
             variance: None,
             cardinality: Some(5),
+            all_unique: false,
         };
         // Mirrors headers `a,b,a` where stats infers Integer for the first `a` and Date
         // for the second, and both resolve to col_idx 0. Keys are the (col_idx, col_idx)

@@ -7332,3 +7332,83 @@ fn moarstats_bivariate_cramersv_and_regression() {
     assert_eq!(row("g", "h"), vec!["1", "", "", "", "8"]);
     assert_eq!(row("g", "k"), vec!["0", "", "", "", "8"]);
 }
+
+#[test]
+#[serial]
+fn moarstats_bivariate_all_unique_numeric_pair_keeps_correlations() {
+    // Continuous measurements are usually all-unique (cardinality == rowcount). Such pairs used to
+    // be dropped wholesale, losing pearson/spearman/regression. They are now kept, with only the
+    // frequency stats (mi/nmi/u/cramersv) left empty - MI against an all-unique field saturates at
+    // log(n). 8 rows keeps the default --cardinality-threshold (floored at 1000) inert, so the
+    // empty MI can only come from the all-unique gate.
+    let wrk = Workdir::new("moarstats_bivariate_all_unique_numeric_pair");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["x", "y", "g", "sid"],
+            svec!["1.5", "3.1", "a", "s1"],
+            svec!["2.25", "4.4", "a", "s2"],
+            svec!["3.75", "8.2", "b", "s3"],
+            svec!["4.5", "9.0", "b", "s4"],
+            svec!["5.25", "11.7", "a", "s5"],
+            svec!["6.5", "12.9", "b", "s6"],
+            svec!["7.75", "16.3", "a", "s7"],
+            svec!["8.0", "15.8", "b", "s8"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .args(["--bivariate-stats", "all"])
+        .arg("test.csv");
+    wrk.assert_success(&mut cmd);
+
+    let content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let col = |name: &str| get_column_index(&headers, name).unwrap();
+    let rows: Vec<csv::StringRecord> = rdr.records().map(|r| r.unwrap()).collect();
+
+    let xy = rows
+        .iter()
+        .find(|r| &r[0] == "x" && &r[1] == "y")
+        .unwrap_or_else(|| panic!("all-unique numeric pair (x, y) must be kept:\n{content}"));
+    for name in [
+        "pearson_correlation",
+        "spearman_correlation",
+        "kendall_tau",
+        "covariance_sample",
+        "regression_slope",
+        "r_squared",
+    ] {
+        assert!(
+            !xy[col(name)].is_empty(),
+            "{name} should be populated:\n{content}"
+        );
+    }
+    for name in [
+        "mutual_information",
+        "normalized_mutual_information",
+        "u_field2_given_field1",
+        "u_field1_given_field2",
+        "cramers_v",
+    ] {
+        assert!(
+            xy[col(name)].is_empty(),
+            "{name} must be empty for an all-unique pair:\n{content}"
+        );
+    }
+    assert_eq!(&xy[col("n_pairs")], "8");
+
+    // An all-unique STRING field has nothing but frequency stats, so its pairs are still dropped.
+    assert!(
+        !rows.iter().any(|r| &r[0] == "sid" || &r[1] == "sid"),
+        "pairs with an all-unique string field should be skipped:\n{content}"
+    );
+}

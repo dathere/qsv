@@ -119,7 +119,7 @@ viz:
     prov_warning_generic: "AVERTISSEMENT : généré par un LLM, ce contenu peut contenir des inexactitudes. Vérifiez-le avant utilisation !"
   omit:
     bivariate_unreadable: "impossible de lire la sortie bivariée de moarstats (%{q_err}) ; les panneaux d'association sont ignorés."
-    bivariate_no_pairs: "moarstats n'a produit aucune paire bivariée ; les panneaux d'association sont ignorés."
+    bivariate_no_pairs: "moarstats n'a produit aucune paire avec un score NMI ; les panneaux d'association sont ignorés."
     sankey_other_dominates: "panneau Sankey '%{q_source} → %{q_target}' ignoré : après avoir conservé les %{q_top_n} principales catégories par côté, le groupe « Autres » domine un côté (>%{q_pct}% de son flux), ce qui fausserait la distribution."
     map_animation_over_budget: "carte animée ignorée : %{q_buckets} intervalles temporels dépasseraient le budget de %{q_budget} points même entièrement sous-échantillonnés. Utilisez une colonne de date plus grossière pour l'animer."
     region_no_points_inside: "aucun des %{q_total} points ne tombe dans une région --geojson ; aucun panneau de régions n'a été construit. Vérifiez que le fichier de limites couvre ces données et que --lat/--lon ne sont pas inversés."

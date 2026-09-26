@@ -126,7 +126,7 @@ viz:
     prov_warning_generic: "警告: 由 LLM 生成,可能包含不准确之处。使用前请核实!"
   omit:
     bivariate_unreadable: "无法读取 moarstats 的双变量输出 (%{q_err})；跳过关联面板。"
-    bivariate_no_pairs: "moarstats 未生成双变量对；跳过关联面板。"
+    bivariate_no_pairs: "moarstats 未生成具有 NMI 值的变量对；跳过关联面板。"
     sankey_other_dominates: "跳过 '%{q_source} → %{q_target}' 桑基图面板：在每侧保留前 %{q_top_n} 个类别后，合并的“其他”类别占据了一侧（超过其流量的 %{q_pct}%），这会歪曲分布。"
     map_animation_over_budget: "跳过动画地图：%{q_buckets} 个时间区间即使完全降采样也会超出 %{q_budget} 个点的预算。请使用更粗粒度的日期列来制作动画。"
     region_no_points_inside: "%{q_total} 个点无一落在任何 --geojson 区域内，因此未构建区域面板。请检查边界文件是否覆盖这些数据，以及 --lat/--lon 是否颠倒。"

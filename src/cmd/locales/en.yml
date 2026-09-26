@@ -180,7 +180,7 @@ viz:
   # The `%{q_err}` values are error strings from the underlying failure and stay English.
   omit:
     bivariate_unreadable: "could not read moarstats bivariate output (%{q_err}); skipping the association panels."
-    bivariate_no_pairs: "moarstats produced no bivariate pairs; skipping the association panels."
+    bivariate_no_pairs: "moarstats produced no pairs with an NMI score; skipping the association panels."
     sankey_other_dominates: "skipping the '%{q_source} → %{q_target}' Sankey panel — after keeping the top %{q_top_n} categories per side, the collapsed 'Other' bucket dominates a side (>%{q_pct}% of its flow), which would misrepresent the distribution."
     map_animation_over_budget: "skipped the animated map — %{q_buckets} time buckets would embed more than the %{q_budget} point budget even fully downsampled. Use a coarser date column to animate it."
     region_no_points_inside: "none of the %{q_total} points fell inside any --geojson region, so no region panel was built. Check that the boundary file covers this data and that --lat/--lon are not swapped."

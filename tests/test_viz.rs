@@ -14517,9 +14517,9 @@ fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
 
 #[test]
 fn viz_smart_derives_skew_hint_without_smarter() {
-    // Plain `viz smart` (no moarstats): the skew hint is derived from the BASE stats cache
-    // (3 * (mean - median) / stddev — the same formula moarstats uses), so a right-skewed box
-    // panel is annotated even though pearson_skewness was never computed.
+    // Plain `viz smart` (no moarstats): the skew hint comes from the moment skewness G1 that
+    // `enrich_bimodality` computes in its streaming pass (the same `CentralMoments` moarstats
+    // `--advanced` uses), so a right-skewed box panel is annotated without --smarter.
     let wrk = Workdir::new("viz_smart_derives_skew_hint_without_smarter");
     // continuous right-skewed column: bulk at 1..=40 with a heavy tail of 1000s
     let mut rows = String::from("id,amount\n");
@@ -14542,6 +14542,126 @@ fn viz_smart_derives_skew_hint_without_smarter() {
         "box panel title should carry the derived skew hint without --smarter; html: {html}"
     );
     assert!(html.contains(r#""type":"box""#));
+}
+
+#[test]
+fn viz_smart_skew_hint_sees_heavy_tails_pearson_misses() {
+    // A Pareto(alpha=0.8) column built from its exact quantiles: mean ~9x its median, yet Pearson's
+    // second coefficient 3*(mean-median)/stddev SATURATES at ~0.34 — under its 0.5 cut, so a
+    // Pearson-gated title called this column un-skewed. Moment skewness G1 (~15) sees the tail.
+    // Plain `viz smart` gets G1 from `enrich_bimodality`'s streaming pass; `--smarter` from
+    // moarstats `--advanced`'s `moment_skewness` (same `CentralMoments`) — both must agree.
+    let wrk = Workdir::new("viz_smart_skew_hint_sees_heavy_tails_pearson_misses");
+    let n = 300_u32;
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=n {
+        let u = (f64::from(i) - 0.5) / f64::from(n);
+        rows.push_str(&format!("{i},{:.3}\n", (1.0 - u).powf(-1.0 / 0.8)));
+    }
+    wrk.create_from_string("pareto.csv", &rows);
+
+    for smarter in [false, true] {
+        let out_html = wrk
+            .path(&format!("pareto_{smarter}.html"))
+            .to_string_lossy()
+            .to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "pareto.csv", "-o", &out_html]);
+        if smarter {
+            cmd.arg("--smarter");
+        }
+        wrk.assert_success(&mut cmd);
+        let html = std::fs::read_to_string(&out_html).unwrap();
+        assert!(
+            html.contains("right-skewed"),
+            "--smarter={smarter}: the heavy-tailed box panel should carry the skew hint"
+        );
+    }
+}
+
+#[test]
+fn viz_smart_title_hints_overflow_to_an_ellipsis_and_hover() {
+    // Under --smarter a heavy-tailed column has more notable hints (mean impact, outlier share,
+    // skew, Gini) than may fit its single-line panel title. How many fit depends on the viewer's
+    // window, so the page renders the full title and embeds the shorter variants — each ending in
+    // an ellipsis, with a hover listing the rest — for its title fitter to swap in. Both render
+    // paths are checked: the typed grid, and the inline-div layout a map panel forces (whose
+    // title must then be an annotation: a plain layout title has no hover).
+    let wrk = Workdir::new("viz_smart_title_hints_overflow_to_an_ellipsis_and_hover");
+    let n = 300_u32;
+    let mut plain = String::from("id,amount\n");
+    let mut geo = String::from("id,amount,latitude,longitude\n");
+    for i in 1..=n {
+        let u = (f64::from(i) - 0.5) / f64::from(n);
+        let amount = (1.0 - u).powf(-1.0 / 0.8);
+        plain.push_str(&format!("{i},{amount:.3}\n"));
+        geo.push_str(&format!(
+            "{i},{amount:.3},{:.4},{:.4}\n",
+            40.6 + f64::from(i % 50) * 0.004,
+            -74.0 + f64::from(i % 37) * 0.005
+        ));
+    }
+    wrk.create_from_string("plain.csv", &plain);
+    wrk.create_from_string("geo.csv", &geo);
+
+    for (input, inline) in [("plain.csv", false), ("geo.csv", true)] {
+        let out_html = wrk
+            .path(&format!("{input}.html"))
+            .to_string_lossy()
+            .to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", input, "--smarter", "-o", &out_html]);
+        wrk.assert_success(&mut cmd);
+        let html = std::fs::read_to_string(&out_html).unwrap();
+        assert_eq!(
+            html.contains("qsv-viz-panel-1"),
+            inline,
+            "{input}: unexpected layout"
+        );
+        let payload = html
+            .split(r#"id="qsv-title-fit">"#)
+            .nth(1)
+            .and_then(|rest| rest.split("</script>").next())
+            .unwrap_or_else(|| panic!("{input}: no title-fit payload"));
+        let variants: serde_json::Value = serde_json::from_str(payload).unwrap();
+        let amount = variants
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| {
+                v[0]["m"]
+                    .as_str()
+                    .is_some_and(|m| m.starts_with("amount ("))
+            })
+            .unwrap_or_else(|| panic!("{input}: no variants for the amount title"));
+        // the rendered title carries every hint; shorter variants keep fewer + an ellipsis, down
+        // to a bare "(…)" whose hover lists them all
+        let full = amount[0]["t"].as_str().unwrap();
+        assert!(
+            html.contains(full),
+            "{input}: page should render the full title"
+        );
+        let variants = amount.as_array().unwrap();
+        let (one, last) = (&variants[variants.len() - 2], &variants[variants.len() - 1]);
+        assert!(one["m"].as_str().unwrap().ends_with(", \u{2026})"), "{one}");
+        assert_eq!(last["m"], "amount (\u{2026})");
+        let hidden_all = last["h"].as_str().unwrap();
+        assert!(
+            hidden_all.starts_with("also: ")
+                && hidden_all.matches(", ").count() == variants.len() - 2,
+            "{input}: the bare title's hover should list every hint: {hidden_all}"
+        );
+        assert!(
+            html.contains("measureText"),
+            "{input}: the title fitter script"
+        );
+        // the fitter only rewrites annotations, so the title must not be a plain layout title
+        // (the inline layout's default without --dict-info)
+        assert!(
+            !html.contains(&format!(r#""title":{{"text":"{full}""#)),
+            "{input}: the title should be an annotation"
+        );
+    }
 }
 
 #[test]
@@ -15431,6 +15551,86 @@ fn viz_smart_smarter_adds_lorenz_for_unequal_measure() {
     assert!(
         html.contains(r#""type":"box""#) || html.contains(r#""type":"violin""#),
         "the distribution panel should remain alongside the Lorenz curve; html: {html}"
+    );
+
+    // Hoover index: in the title next to Gini, and drawn once as the max-gap marker. The value is
+    // measured on the curve; it must agree with moarstats' own `hoover_index` (mean_ad / 2*mean)
+    // for the same column — 250 ones + 50 values ~1000: the gap peaks after the 250 ones, at
+    // 250/300 - 250/51475 = 0.8285.
+    assert_eq!(
+        html.matches(r#""name":"Hoover""#).count(),
+        1,
+        "exactly one Hoover marker trace expected"
+    );
+    let stats_path = wrk.path("inc.stats.csv");
+    let mut rdr = csv::Reader::from_path(&stats_path).unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let col = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let (field_i, hoover_i) = (col("field"), col("hoover_index"));
+    let moarstats_hoover: f64 = rdr
+        .records()
+        .map(Result::unwrap)
+        .find(|r| &r[field_i] == "income")
+        .expect("income row in the stats cache")[hoover_i]
+        .parse()
+        .unwrap();
+    assert!(
+        (moarstats_hoover - 0.8285).abs() < 5e-4,
+        "moarstats hoover_index {moarstats_hoover}"
+    );
+    assert!(
+        html.contains(&format!("Hoover {moarstats_hoover:.2})")),
+        "the Lorenz title should carry Hoover {moarstats_hoover:.2}"
+    );
+}
+
+#[test]
+fn viz_smart_lorenz_hoover_marker_on_inline_layout() {
+    // The inline-div layout (taken when any non-cartesian panel — here a map — is present) builds
+    // each Lorenz plot separately from the typed grid, so the Hoover marker has to be added there
+    // too. Same unequal income column as `viz_smart_smarter_adds_lorenz_for_unequal_measure`,
+    // plus a coordinate pair that forces the inline layout.
+    let wrk = Workdir::new("viz_smart_lorenz_hoover_marker_on_inline_layout");
+    let mut rows = String::from("id,income,latitude,longitude\n");
+    for id in 1..=300_u32 {
+        let income = if id <= 250 { 1 } else { 750 + id };
+        let (lat, lon) = (
+            40.6 + f64::from(id % 50) * 0.004,
+            -74.0 + f64::from(id % 37) * 0.005,
+        );
+        rows.push_str(&format!("{id},{income},{lat:.4},{lon:.4}\n"));
+    }
+    wrk.create_from_string("inc_geo.csv", &rows);
+
+    let out_html = wrk.path("inc_geo.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "inc_geo.csv",
+        "--smarter",
+        "-o",
+        &out_html,
+        "--lat",
+        "latitude",
+        "--lon",
+        "longitude",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("inc_geo.html").unwrap();
+    assert!(
+        html.contains("qsv-viz-panel-1"),
+        "expected the inline-div layout (one div per panel)"
+    );
+    assert_eq!(
+        html.matches(r#""name":"equality""#).count(),
+        1,
+        "exactly one Lorenz panel expected"
+    );
+    assert_eq!(
+        html.matches(r#""name":"Hoover""#).count(),
+        1,
+        "the inline Lorenz plot should carry its Hoover marker"
     );
 }
 

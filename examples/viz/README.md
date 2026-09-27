@@ -237,9 +237,11 @@ itself before building the Data Schematic (or run `qsv moarstats` first by hand)
 
 - a **bimodal/multimodal** continuous column (high bimodality coefficient) renders
   as a **histogram** instead of a box plot, which would hide the separate peaks;
-- **box panels are annotated** with the column's skew direction and outlier share
-  (e.g. `account_age_days (right-skewed, 4.7% outliers)`), from the Pearson
-  skewness and outlier-percentage stats;
+- **box panels are annotated** with shape hints: null and zero share, how far outliers
+  move the mean, outlier share, skew direction (moment skewness G1) and Gini — e.g.
+  `account_age_days (right-skewed, mean +18% from outliers, 4.7% outliers)`. The page shows
+  as many as fit each chart's width, ends the title in `…` when some don't, and lists the rest
+  when you hover the title;
 - a **concentrated** high-cardinality categorical that would normally be skipped as
   ID-like noise is kept as a top-N bar (when its normalized entropy is low).
 
@@ -254,8 +256,9 @@ qsv viz smart customer_spend.csv -o spend_dashboard.html
 ```
 
 > `moarstats --advanced` (which `--smarter` runs for you) reads the whole file and auto-creates
-> an `.idx` index; the bimodality test needs the advanced stats, while the skew/outlier box hints
-> work from a plain `qsv moarstats` run. `--smarter` applies only with default parsing — inputs
+> an `.idx` index. Plain `viz smart` computes the bimodality coefficient and the moment skewness
+> behind the skew hint itself, in one streaming pass, so both classify the same with or without
+> `--smarter`; the outlier-share hint needs a `qsv moarstats` run. `--smarter` applies only with default parsing — inputs
 > using `--no-headers` or a custom `--delimiter` fall back to the standard Data Schematic.
 
 ```bash

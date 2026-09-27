@@ -301,6 +301,10 @@ viz:
     # `%{x:.0%}` (see the ORDERING RULE in this file's header).
     contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} Zeilen<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>die unteren %{x:.0%} der Datensätze halten %{y:.0%}<extra></extra>"
+    # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
+    lorenz_hoover: "Hoover %{q_hoover}: %{q_pct}% der Gesamtsumme müssten umverteilt werden, um Gleichheit zu erreichen<extra></extra>"
+    # Title hover listing the shape hints hidden behind a panel title's ellipsis.
+    more_hints: "außerdem: %{q_hints}"
     ohlc: "Eröffnung: %{open}<br>Hoch: %{high}<br>Tief: %{low}<br>Schluss: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>Anzahl: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>Anzahl: %{y:,}<extra></extra>"
@@ -388,6 +392,8 @@ viz:
       log_axis: "Ihre Werteachse ist logarithmisch, weil die Werte mehrere Größenordnungen umspannen."
       log_axis_count: "Ihre Anzahlachse ist logarithmisch, weil die Kategorienhäufigkeiten mehrere Größenordnungen umspannen."
       sampled: "Aus einer deterministischen Stichprobe der Zeilen gezeichnet, um reaktionsschnell zu bleiben."
+      # Tour backstop: every shape hint, when the panel title could only show some of them.
+      hints: "Auffällig: %{q_hints}."
     meta_heading: "Tour-Erzählung"
     meta_audience: "Zielgruppe:"
     meta_language: "Sprache:"

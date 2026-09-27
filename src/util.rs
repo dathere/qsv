@@ -6443,6 +6443,34 @@ mod tests {
     }
 
     #[test]
+    fn statsdata_moment_skewness_accepts_string_caches() {
+        // moarstats 23.0.0 wrote `moment_skewness` into `.data.jsonl` as a JSON STRING (it was not
+        // yet in STATSDATA_TYPES_MAP), and `get_stats_records` does not version-check the JSONL.
+        // A strict f64 would fail the WHOLE record on those files — i.e. break plain `viz smart`
+        // on any directory where moarstats ran before the upgrade.
+        let de = |v: &str| {
+            let line = format!(
+                r#"{{"field":"x","type":"Float","nullcount":0,"cardinality":9,"moment_skewness":{v}}}"#
+            );
+            serde_json::from_str::<crate::cmd::stats::StatsData>(&line)
+                .unwrap()
+                .moment_skewness
+        };
+        assert_eq!(de(r#""1.87""#), Some(1.87));
+        assert_eq!(de(r#"" -0.5 ""#), Some(-0.5));
+        assert_eq!(de("1.87"), Some(1.87));
+        assert_eq!(de("3"), Some(3.0));
+        assert_eq!(de(r#""""#), None);
+        assert_eq!(de(r#""abc""#), None);
+        assert_eq!(de(r#""NaN""#), None);
+        assert_eq!(de("null"), None);
+        let absent: crate::cmd::stats::StatsData =
+            serde_json::from_str(r#"{"field":"x","type":"Float","nullcount":0,"cardinality":9}"#)
+                .unwrap();
+        assert_eq!(absent.moment_skewness, None);
+    }
+
+    #[test]
     fn statsdata_carries_every_column_stats_emits() {
         // StatsData has no deny_unknown_fields, so a column present in the cache but missing
         // from the struct is SILENTLY DROPPED on deserialize rather than erroring. That is how

@@ -966,14 +966,24 @@ const SMART_3D_COLLINEAR_MAX_ABS_R: f64 = 0.97;
 /// reader doesn't read the cloud as merely linear. Pearson alone can't see this.
 const SMART_NONLINEAR_MIN_GAP: f64 = 0.15;
 
-/// Pearson skewness at or above which a column reads as pronouncedly RIGHT-skewed — a long high
-/// tail over a dense low bulk. Matches `box_shape_hint`'s `SKEW_MIN_ABS`, so a column the box
-/// panel titles "right-skewed" is the same column that gets a log value axis
-/// (`box_log_skew_fallback`).
+/// Moment skewness (adjusted Fisher-Pearson G1) at or above which a column reads as pronouncedly
+/// RIGHT-skewed — a long high tail over a dense low bulk. 0.5 is the conventional lower bound of
+/// MODERATE skew (|G1| 0.5–1 moderate, above 1 high), the regime the Pearson cut below was always
+/// meant to catch. The preferred scale — see `skew_strength`.
 ///
-/// This detects MODERATE skew. It deliberately does NOT gate the robust-statistics choices
-/// (`mean_is_outlier_driven`), which target a far more extreme regime this coefficient cannot
-/// see — see that function for why.
+/// Calibrated against the charted columns of the `viz` gallery: at 0.5 the skew VERDICT changes on
+/// ten of them — the heavy money tails Pearson saturated on and three moderately skewed price
+/// columns become skewed, two discrete counts Pearson called "left-skewed" (median above mean)
+/// flip to right, one column becomes left-skewed, and one borderline column (G1 0.46) stops
+/// being skewed. A 1.0 cut would also have un-skewed six moderately skewed columns (G1 0.46–0.88).
+const RIGHT_SKEW_MIN_G1: f64 = 0.5;
+
+/// The same cut on Pearson's second skewness coefficient (`3 * (mean - median) / stddev`), used
+/// only when a column has no moment skewness. Pearson's coefficient SATURATES on heavy tails (a
+/// lognormal with sigma=2 scores ~0.35 while its G1 is ~400), which is why G1 is preferred.
+///
+/// Both cuts detect MODERATE skew. They deliberately do NOT gate the robust-statistics choices
+/// (`mean_is_outlier_driven`), which target a far more extreme regime — see that function.
 const RIGHT_SKEW_MIN: f64 = 0.5;
 
 /// How many times the median a column's mean must reach before the mean is treated as
@@ -2064,6 +2074,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 metadata,
                 data_chrome,
                 tour_chrome,
+                title_fit,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
@@ -2077,6 +2088,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         metadata.as_deref(),
                         data_chrome.as_deref(),
                         tour_chrome.as_deref(),
+                        &title_fit,
                     );
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
@@ -2139,6 +2151,8 @@ enum SmartRender {
         data_chrome: Option<String>,
         /// The guided-tour chrome (issue #4389; HTML output only, `None` under `--tour-steps 0`).
         tour_chrome: Option<String>,
+        /// The panel-title fitter (`title_fit_chrome`); "" when no title can shorten.
+        title_fit:   String,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -16470,6 +16484,15 @@ fn tour_panel_explanation(
         out.push(' ');
         out.push_str(&t!("viz.tour.explain.sampled"));
     }
+    // the page may shorten the title to fit its cell (see `TITLE_FIT_JS`): spell every hint out
+    // here, the backstop for touch screens, where a title hover can't be relied on
+    if panel.has_title_variants() {
+        out.push(' ');
+        out.push_str(&t!(
+            "viz.tour.explain.hints",
+            q_hints = panel.hints.join(", ")
+        ));
+    }
     out
 }
 
@@ -20096,6 +20119,13 @@ struct Panel {
     /// (shape hints, "(sampled)") and is a positional "col N" placeholder on headerless input,
     /// so neither it nor `s.field` can carry the identity. See `build_kpi_row`.
     stat_idx:        Option<usize>,
+    /// Every notable shape hint for the column, in priority order (`box_shape_hints`). On HTML
+    /// output `name` carries all of them; on a static image, only those that fit.
+    hints:           Vec<String>,
+    /// HTML only: `name` with ALL, then one fewer, … then no hints (the shorter ones ending in an
+    /// ellipsis, the last just `(…)`). The page's `TITLE_FIT_JS` shows the longest that fits the
+    /// rendered cell and lists the dropped hints in the title hover. Empty without hints.
+    title_variants:  Vec<String>,
 }
 
 impl Panel {
@@ -20115,6 +20145,8 @@ impl Panel {
             geojson_overlay: None,
             dict_info: None,
             stat_idx: None,
+            hints: Vec::new(),
+            title_variants: Vec::new(),
         }
     }
 
@@ -20143,6 +20175,18 @@ impl Panel {
         self
     }
 
+    /// Record the panel's shape hints and (HTML) its fit-to-width title variants.
+    fn with_hints(mut self, hints: Vec<String>, title_variants: Vec<String>) -> Self {
+        self.hints = hints;
+        self.title_variants = title_variants;
+        self
+    }
+
+    /// Whether the page may shorten this title at view time (and so needs a title hover).
+    fn has_title_variants(&self) -> bool {
+        !self.title_variants.is_empty()
+    }
+
     /// Attach an optional subtitle (the dictionary label) shown beneath the title.
     fn with_subtitle(mut self, subtitle: Option<String>) -> Self {
         self.subtitle = subtitle;
@@ -20168,6 +20212,11 @@ impl Panel {
     /// annotations of BOTH render paths (`panel_title_annotation`), whose hover box / click
     /// event carry the dictionary lookup.
     fn display_title_with_icon(&self, icon: bool) -> String {
+        self.display_title_for(&self.name, icon)
+    }
+
+    /// `display_title_with_icon` for an alternative title line `name` (a `title_variants` entry).
+    fn display_title_for(&self, name: &str, icon: bool) -> String {
         let icon_sfx = if icon && self.dict_info.is_some() {
             format!(" <span style=\"font-size:12px;color:{MUTED_COLOR}\">\u{24D8}</span>")
         } else {
@@ -20176,13 +20225,13 @@ impl Panel {
         match &self.subtitle {
             Some(sub) => format!(
                 "{}{icon_sfx}<br><span style=\"font-size:11px;color:{}\">{}</span>",
-                html_escape(&self.name),
+                html_escape(name),
                 MUTED_COLOR,
                 html_escape(sub)
             ),
             // escape here too, NOT at the source: `name` must stay plain (it also feeds trace
             // names and stderr status messages), so both arms escape at this render sink.
-            None => format!("{}{icon_sfx}", html_escape(&self.name)),
+            None => format!("{}{icon_sfx}", html_escape(name)),
         }
     }
 }
@@ -20537,10 +20586,12 @@ enum PanelKind {
     /// plain cartesian Scatter (lines), so it composes with the typed subplot grid and static
     /// image export.
     Lorenz {
-        pop:   Vec<f64>,
-        share: Vec<f64>,
-        gini:  f64,
-        label: String,
+        pop:    Vec<f64>,
+        share:  Vec<f64>,
+        gini:   f64,
+        label:  String,
+        /// the Hoover index and where it sits on the curve — see `LorenzGap`
+        hoover: LorenzGap,
     },
     /// Ordered pipeline funnel over process STAGES — planned → committed → spent, impressions →
     /// clicks → conversions (issue #4222). Built ONLY from a dictionary declaration
@@ -22435,8 +22486,11 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Result<Pane
 /// single streaming pass (O(1) memory per column, no value buffering) with a numerically stable
 /// online update that needs no cached mean — the cache's mean/variance are rounded, and the
 /// cache's `skewness` is quantile (Bowley) skewness, not the moment skewness BC is defined on.
-/// Columns moarstats already enriched (BC present) are skipped, so this is a no-op — with no data
-/// pass at all — under `--smarter` or when no column qualifies.
+/// The same pass also records moment skewness G1 (`moment_skewness`), which `skew_strength`
+/// prefers over Pearson's saturating second coefficient for the skew title hint, the box log-axis
+/// fallback and `panel_interest` — again the value moarstats `--advanced` writes, so both paths
+/// agree. Columns moarstats already enriched (BC present) are skipped, so this is a no-op — with no
+/// data pass at all — under `--smarter` or when no column qualifies.
 fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) -> CliResult<()> {
     use crate::cmd::moarstats::MomentAccumulator;
 
@@ -22491,6 +22545,13 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
 
     for (acc, &col) in accs.iter().zip(&candidates) {
         let moments = acc.finish();
+        // moment skewness G1 (None for n < 3 or a constant column) drives `skew_strength`; stored
+        // on its own because it is defined for one fewer value than the kurtosis/BC pair.
+        if let Some(g1) = moments.sample_skewness()
+            && g1.is_finite()
+        {
+            stats[col].moment_skewness = Some(g1);
+        }
         // both are None for n < 4 or a constant column
         if let (Some(kurtosis), Some(bc)) = (
             moments.sample_excess_kurtosis(),
@@ -25447,13 +25508,151 @@ fn panel_title_annotation(panel: &Panel, title_x: f64, title_y: f64, font: Font)
         .y_anchor(Anchor::Bottom)
         .show_arrow(false)
         .font(font);
-    if let Some((anchor, desc)) = &panel.dict_info {
+    // Rendered with every hint, so no "also:" part yet: `TITLE_FIT_JS` swaps in a shorter variant
+    // together with its hover (`title_hover`). Only a dictionary panel captures clicks (see this
+    // fn's doc comment).
+    if let Some((anchor, _)) = &panel.dict_info {
         ann = ann
-            .hover_text(html_escape(desc))
+            .hover_text(title_hover(panel, &[]).unwrap_or_default())
             .capture_events(true)
             .name(anchor.clone());
     }
     ann
+}
+
+/// A panel title's hover text: the shape hints a shortened title dropped (`hidden`, behind its
+/// ellipsis), above the `--dict-info` dictionary description when there is one. `None` when
+/// there is neither.
+fn title_hover(panel: &Panel, hidden: &[String]) -> Option<String> {
+    let more = (!hidden.is_empty())
+        .then(|| html_escape(&t!("viz.hover.more_hints", q_hints = hidden.join(", "))));
+    let desc = panel.dict_info.as_ref().map(|(_, d)| html_escape(d));
+    match (more, desc) {
+        (Some(m), Some(d)) => Some(format!("{m}<br><br>{d}")),
+        (Some(m), None) => Some(m),
+        (None, d) => d,
+    }
+}
+
+/// The page script that fits hint-bearing panel titles to their RENDERED cell width (see
+/// `Panel::title_variants`). Build-time fitting can't work: a cell is the viewer's window width
+/// split across `--grid-cols`, and on a narrow window even the two-hint titles of old were
+/// clipped at both edges. The payload carries each title's variants, longest first: the plain
+/// title line to measure (`m`), the plotly markup (`t`) and the hover (`h`). All text is built
+/// and escaped in Rust; the script only measures (canvas `measureText`, in the annotation's own
+/// resolved font) and swaps in the longest variant that fits, else the shortest.
+///
+/// Stateless on purpose: plots render lazily (gzip payloads) and are re-created by the
+/// fullscreen enhancer and theme toggle, which drops per-plot listeners. So it re-fits on page
+/// readiness, on a debounced resize or fullscreen change and on a short poll after load, and
+/// relayouts a title only when its current text is not already the right variant.
+const TITLE_FIT_JS: &str = r#"<script>
+(function () {
+  var el = document.getElementById("qsv-title-fit");
+  if (!el) return;
+  var entries = JSON.parse(el.textContent), byText = {};
+  entries.forEach(function (e) { e.forEach(function (v) { byText[v.t] = e; }); });
+  var ctx = document.createElement("canvas").getContext("2d");
+  // the room a centred title has: the whole panel div on the inline layout. On the typed grid,
+  // twice the distance from its centre to the nearer limit: the middle of the gap to the
+  // neighbouring column (whose title needs the other half), or the page margin at an outer edge.
+  // Columns come from the partial-width x-axis domains, which every grid row shares.
+  function room(gd, a) {
+    var fl = gd._fullLayout, s = fl._size, px = function (x) { return x * s.w; };
+    if (gd.id !== "qsv-viz-smart-grid") return fl.width - 16;
+    var lo = -s.l, hi = s.w + s.r, c = px(a.x), own = null;
+    Object.keys(fl).forEach(function (k) {
+      var d = /^xaxis\d*$/.test(k) && fl[k].domain;
+      if (!d || d[1] - d[0] > 0.99) return;
+      if (d[0] <= a.x && a.x <= d[1]) own = d;
+      else if (d[1] <= a.x) lo = Math.max(lo, px(d[1]));
+      else if (d[0] >= a.x) hi = Math.min(hi, px(d[0]));
+    });
+    // a neighbouring column's edge becomes the middle of the gap between the two cells
+    if (own) {
+      if (lo > -s.l) lo = (lo + px(own[0])) / 2;
+      if (hi < s.w + s.r) hi = (hi + px(own[1])) / 2;
+    }
+    return 2 * Math.min(c - lo, hi - c) - 8;
+  }
+  function fit(gd) {
+    var fl = gd._fullLayout, anns = gd.layout && gd.layout.annotations;
+    if (!fl || !anns || !window.Plotly || !Plotly.relayout) return;
+    var upd = {}, n = 0;
+    anns.forEach(function (a, i) {
+      var e = byText[a.text];
+      if (!e) return;
+      var f = (fl.annotations && fl.annotations[i] && fl.annotations[i].font) || {};
+      ctx.font = (f.size || 13) + "px " + (f.family || "sans-serif");
+      var w = room(gd, a), pick = e[e.length - 1];
+      for (var j = 0; j < e.length; j++) {
+        if (ctx.measureText(e[j].m).width <= w) { pick = e[j]; break; }
+      }
+      if (a.text !== pick.t) {
+        upd["annotations[" + i + "].text"] = pick.t;
+        upd["annotations[" + i + "].hovertext"] = pick.h;
+        n++;
+      }
+    });
+    if (n) Plotly.relayout(gd, upd);
+  }
+  function fitAll() {
+    document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]').forEach(function (gd) {
+      if (gd._fullLayout) fit(gd);
+    });
+  }
+  var timer;
+  function later(ms) { clearTimeout(timer); timer = setTimeout(fitAll, ms); }
+  window.addEventListener("resize", function () { later(300); });
+  // a fullscreened panel is resized by plotly asynchronously; refit once that has settled
+  document.addEventListener("fullscreenchange", function () { later(400); });
+  document.addEventListener("qsv:plotly-ready", function () { later(50); });
+  var tries = 0;
+  (function poll() { fitAll(); if (++tries < 40) setTimeout(poll, 250); })();
+})();
+</script>"#;
+
+/// The `TITLE_FIT_JS` payload + script for a page's panels, or "" when no title can shorten
+/// (keeping such pages byte-identical). A panel whose `name` was decorated after classification
+/// (so its first variant no longer IS the rendered title) is left out rather than mis-fitted.
+fn title_fit_chrome(panels: &[Panel]) -> String {
+    let entries: Vec<serde_json::Value> = panels
+        .iter()
+        .filter(|p| p.title_variants.first() == Some(&p.name))
+        .map(|p| {
+            let n = p.hints.len();
+            let icon = if p.dict_info.is_some() {
+                " \u{24D8}"
+            } else {
+                ""
+            };
+            p.title_variants
+                .iter()
+                .enumerate()
+                .map(|(j, name)| {
+                    serde_json::json!({
+                        "t": p.display_title_for(name, true),
+                        "m": format!("{name}{icon}"),
+                        "h": title_hover(p, &p.hints[n - j..]),
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    if entries.is_empty() {
+        return String::new();
+    }
+    // `<`/`>`/`&` as \u escapes so no title text can close the <script> element
+    let json = serde_json::Value::Array(entries)
+        .to_string()
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
+    format!(
+        r#"
+<script type="application/json" id="qsv-title-fit">{json}</script>
+{TITLE_FIT_JS}"#
+    )
 }
 
 fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)>> {
@@ -26177,12 +26376,30 @@ fn pearson_skewness_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     })
 }
 
-/// Whether a column is pronouncedly RIGHT-skewed (`pearson_skewness_stat >= RIGHT_SKEW_MIN`): a
-/// dense low bulk under a long high tail. Backs the box panel's "right-skewed" title cue and its
-/// log value axis (`box_log_skew_fallback`). A column with no derivable skew (no moarstats value
-/// AND an incomplete base cache) reads as NOT skewed, keeping callers on their prior default.
+/// A column's skewness normalized to its "pronounced skew" threshold: `1.0` sits exactly on the
+/// cut, the sign gives the direction. Prefers moment skewness G1 (`moment_skewness` — moarstats
+/// `--advanced` under `--smarter`, or `enrich_bimodality`'s streaming pass on plain `viz smart`;
+/// both use the same `CentralMoments`, so the two paths agree) over `RIGHT_SKEW_MIN_G1`, and falls
+/// back to Pearson's second coefficient over `RIGHT_SKEW_MIN` only when G1 is absent (fewer than
+/// three values, a constant column, a column `enrich_bimodality` didn't visit, or an older cache).
+///
+/// Normalizing lets the title hint, the log-axis fallback and `panel_interest` share one scale
+/// without caring which coefficient produced it.
+fn skew_strength(s: &crate::cmd::stats::StatsData) -> Option<f64> {
+    if let Some(g1) = s.moment_skewness.filter(|g| g.is_finite()) {
+        return Some(g1 / RIGHT_SKEW_MIN_G1);
+    }
+    pearson_skewness_stat(s)
+        .filter(|p| p.is_finite())
+        .map(|p| p / RIGHT_SKEW_MIN)
+}
+
+/// Whether a column is pronouncedly RIGHT-skewed (`skew_strength >= 1`): a dense low bulk under a
+/// long high tail. Backs the box panel's "right-skewed" title cue and its log value axis
+/// (`box_log_skew_fallback`). A column with no derivable skew (no moment skewness AND an
+/// incomplete base cache) reads as NOT skewed, keeping callers on their prior default.
 fn is_right_skewed(s: &crate::cmd::stats::StatsData) -> bool {
-    pearson_skewness_stat(s).is_some_and(|sk| sk >= RIGHT_SKEW_MIN)
+    skew_strength(s).is_some_and(|sk| sk >= 1.0)
 }
 
 /// Whether a column's MEAN is set by its tail rather than describing a typical row — the test
@@ -26190,13 +26407,13 @@ fn is_right_skewed(s: &crate::cmd::stats::StatsData) -> bool {
 /// group (`measure_by_dim_panel`) and correlating on ranks instead of values
 /// (`corr_prefers_spearman`).
 ///
-/// Deliberately NOT `is_right_skewed`. Pearson's second skewness coefficient
-/// (`3 * (mean - median) / stddev`) SATURATES on exactly the distributions this targets: an
-/// extreme tail inflates `stddev` faster than it inflates `mean - median`, so the ratio stays
-/// small however lopsided the column gets. Measured on issue #4223/#4220's NYC capital-projects
-/// repro, `totalplannedcommit` scores 0.38 — under the moderate-skew threshold — while its mean
-/// ($15.2M) is **41x** its median ($367K) and its Gini is 0.96. A coefficient that calls that
-/// column un-skewed cannot gate a decision about whether its mean is meaningful.
+/// Deliberately NOT `is_right_skewed`, which answers a different question: whether the SHAPE is
+/// at least moderately lopsided (moment skewness G1 >= 0.5), not whether the mean has stopped
+/// describing a typical row. A moderately skewed price column still has a meaningful mean. (The
+/// original reason — Pearson's second coefficient saturating, `totalplannedcommit` scoring 0.38
+/// with a mean **41x** its median and a Gini of 0.96 — no longer applies now that
+/// `is_right_skewed` prefers G1, but a skew coefficient still can't say "the mean is set by the
+/// tail" the way the mean/median ratio does.)
 ///
 /// The mean/median ratio is read directly off the always-present base stats cache and says the
 /// thing that actually matters to a reader: how far the "average" sits from the middle row.
@@ -26241,7 +26458,7 @@ fn mean_is_outlier_driven(s: &crate::cmd::stats::StatsData) -> bool {
 }
 
 /// Zero share at or above which zeros stop being incidental and start reshaping how the
-/// distribution must be read. Shared by `box_shape_hint`'s "% zeros" title part and the Lorenz
+/// distribution must be read. Shared by `box_shape_hints`' "% zeros" title part and the Lorenz
 /// panel's flat-run caveat (`lorenz_caveat`) so the two can never disagree about whether the same
 /// column is zero-inflated — they are routinely shown on the same Data Schematic.
 const ZERO_SHARE_MIN: f64 = 0.30;
@@ -26258,27 +26475,26 @@ fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     (total > 0).then(|| zero as f64 / total as f64)
 }
 
-/// Build a short parenthetical title hint for a box/histogram panel from cached statistics.
-/// Parts are gathered in priority order — data-quality first (nulls and zeros are invisible in
-/// a box and change how its quartiles should be read), then distribution shape — and capped at
-/// `MAX_PARTS` so titles stay readable:
+/// The notable-shape hints for a box/violin/histogram panel, from cached statistics, in priority
+/// order — everything notable, uncapped; `fit_title_hints` decides how many reach the title and
+/// the rest go to the title hover and the tour. The order puts what the chart itself CANNOT show
+/// first:
 ///
 /// 1. null share (`sparsity`, base cache)
 /// 2. zero share (streaming sign counts, base cache)
-/// 3. skew direction (moarstats `pearson_skewness`, or derived from the base cache — see
-///    `pearson_skewness_stat` — so plain `viz smart` gets it too)
+/// 3. outlier impact on the mean (moarstats `outlier_impact_ratio`) — a box draws the median, not
+///    the mean
 /// 4. outlier share (moarstats scan), with a `mad_stddev_ratio` "heavy tails" fallback when the
 ///    outlier scan is absent
-/// 5. outlier impact on the mean (moarstats `outlier_impact_ratio`)
+/// 5. skew direction (moment skewness G1, falling back to Pearson's second coefficient — see
+///    `skew_strength`). The chart's own shape shows skew, so it ranks after the numbers — except on
+///    a LOG value axis (`log_axis`), which straightens the shape; there it ranks third.
 /// 6. concentration (moarstats `gini_coefficient`)
-///
-/// Returns None when nothing notable — the title is left unchanged.
-fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
+fn box_shape_hints(s: &crate::cmd::stats::StatsData, log_axis: bool) -> Vec<String> {
     // nulls below ~a third of the column read as ordinary; above, they reshape the box. Zeros
     // use the shared `ZERO_SHARE_MIN`, which the Lorenz flat-run caveat reads too.
     const NULL_SHARE_MIN: f64 = 0.30;
-    // |Pearson skewness| below this reads as ~symmetric; outlier shares below 1% are negligible.
-    const SKEW_MIN_ABS: f64 = 0.5;
+    // outlier shares below 1% are negligible. (Skew uses `skew_strength`'s shared cut.)
     const OUTLIER_MIN_PCT: f64 = 1.0;
     // outliers shifting the mean by less than 5% aren't worth a title callout.
     const MEAN_IMPACT_MIN_ABS: f64 = 0.05;
@@ -26287,70 +26503,132 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     // by heavy tails. Only consulted when the moarstats outlier scan (`outliers_percentage`)
     // is absent, so it never duplicates the outlier-share part.
     const MAD_STDDEV_HEAVY_TAILS_MAX: f64 = 0.4;
-    const MAX_PARTS: usize = 2;
 
-    // The parts form a comma-separated LIST of noun phrases, not a sentence, so each is its own
-    // catalog string and the ", " joiner stays literal.
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(sp) = s.sparsity
-        && (NULL_SHARE_MIN..=1.0).contains(&sp)
-    {
-        parts.push(t!("viz.notes.box_null", q_pct = format!("{:.0}", sp * 100.0)).into_owned());
-    }
-    if let Some(z) = zero_share(s)
-        && z >= ZERO_SHARE_MIN
-    {
-        parts.push(t!("viz.notes.box_zeros", q_pct = format!("{:.0}", z * 100.0)).into_owned());
-    }
-    if let Some(skew) = pearson_skewness_stat(s)
-        && skew.abs() >= SKEW_MIN_ABS
-    {
-        parts.push(
-            if skew > 0.0 {
-                t!("viz.notes.box_right_skewed")
-            } else {
-                t!("viz.notes.box_left_skewed")
-            }
-            .into_owned(),
-        );
-    }
-    match s.outliers_percentage {
-        Some(pct) if pct >= OUTLIER_MIN_PCT => {
-            parts.push(t!("viz.notes.box_outliers", q_pct = format!("{pct:.1}")).into_owned());
-        },
-        Some(_) => {},
-        None => {
-            if let Some(r) = s.mad_stddev_ratio
-                && r > 0.0
-                && r <= MAD_STDDEV_HEAVY_TAILS_MAX
-            {
-                parts.push(t!("viz.notes.box_heavy_tails").into_owned());
-            }
-        },
-    }
-    if let Some(r) = s.outlier_impact_ratio
-        && r.is_finite()
-        && r.abs() >= MEAN_IMPACT_MIN_ABS
-    {
-        parts.push(
+    // Each part is its own catalog string (a list of noun phrases, not a sentence).
+    let null_part = s
+        .sparsity
+        .filter(|sp| (NULL_SHARE_MIN..=1.0).contains(sp))
+        .map(|sp| t!("viz.notes.box_null", q_pct = format!("{:.0}", sp * 100.0)).into_owned());
+    let zero_part = zero_share(s)
+        .filter(|z| *z >= ZERO_SHARE_MIN)
+        .map(|z| t!("viz.notes.box_zeros", q_pct = format!("{:.0}", z * 100.0)).into_owned());
+    let skew_part = skew_strength(s).filter(|sk| sk.abs() >= 1.0).map(|sk| {
+        if sk > 0.0 {
+            t!("viz.notes.box_right_skewed")
+        } else {
+            t!("viz.notes.box_left_skewed")
+        }
+        .into_owned()
+    });
+    let impact_part = s
+        .outlier_impact_ratio
+        .filter(|r| r.is_finite() && r.abs() >= MEAN_IMPACT_MIN_ABS)
+        .map(|r| {
             t!(
                 "viz.notes.box_mean_impact",
                 q_pct = format!("{:+.0}", r * 100.0)
             )
-            .into_owned(),
-        );
-    }
-    if let Some(g) = s.gini_coefficient
-        && g >= GINI_MIN
-    {
-        parts.push(t!("viz.notes.box_gini", q_gini = format!("{g:.2}")).into_owned());
-    }
-    parts.truncate(MAX_PARTS);
-    if parts.is_empty() {
-        None
+            .into_owned()
+        });
+    let outlier_part = match s.outliers_percentage {
+        Some(pct) if pct >= OUTLIER_MIN_PCT => {
+            Some(t!("viz.notes.box_outliers", q_pct = format!("{pct:.1}")).into_owned())
+        },
+        Some(_) => None,
+        None => s
+            .mad_stddev_ratio
+            .filter(|r| *r > 0.0 && *r <= MAD_STDDEV_HEAVY_TAILS_MAX)
+            .map(|_| t!("viz.notes.box_heavy_tails").into_owned()),
+    };
+    let gini_part = s
+        .gini_coefficient
+        .filter(|g| *g >= GINI_MIN)
+        .map(|g| t!("viz.notes.box_gini", q_gini = format!("{g:.2}")).into_owned());
+
+    // What the chart CAN'T show outranks what it can: a box/violin draws its own skew, but not
+    // its null or zero share, how far outliers drag the (undrawn) mean, or the outlier share. On
+    // a LOG value axis the skew is no longer visible — the log straightens it — so the skew cue
+    // keeps its place right after the data-quality parts there.
+    let order = if log_axis {
+        [
+            null_part,
+            zero_part,
+            skew_part,
+            impact_part,
+            outlier_part,
+            gini_part,
+        ]
     } else {
-        Some(format!("({})", parts.join(", ")))
+        [
+            null_part,
+            zero_part,
+            impact_part,
+            outlier_part,
+            skew_part,
+            gini_part,
+        ]
+    };
+    order.into_iter().flatten().collect()
+}
+
+/// Title display-width budget for a STATIC image cell `cell_px` wide. Grid panel titles are 13 px
+/// (`ann_font(13)`), ~7.5 px per average glyph, less ~24 px of breathing room. Static exports
+/// only: an HTML page fits its titles to the live cell width instead (`TITLE_FIT_JS`).
+fn static_title_hint_budget(cell_px: usize) -> usize {
+    cell_px.saturating_sub(24) * 2 / 15
+}
+
+/// Approximate on-screen width of `text`: East Asian wide/fullwidth characters count 2 columns,
+/// everything else 1. Japanese and Chinese hints are short in characters but not on screen.
+fn display_width(text: &str) -> usize {
+    text.chars()
+        .map(|c| {
+            let wide = matches!(u32::from(c),
+                0x1100..=0x115F
+                    | 0x2E80..=0x303E
+                    | 0x3041..=0x33FF
+                    | 0x3400..=0x4DBF
+                    | 0x4E00..=0x9FFF
+                    | 0xA000..=0xA4CF
+                    | 0xAC00..=0xD7A3
+                    | 0xF900..=0xFAFF
+                    | 0xFE30..=0xFE4F
+                    | 0xFF00..=0xFF60
+                    | 0xFFE0..=0xFFE6
+            );
+            if wide { 2 } else { 1 }
+        })
+        .sum()
+}
+
+/// The title parenthetical for the first `shown` of `hints`, with a trailing ellipsis when
+/// `ellipsis` and more exist: `(a, b)`, `(a, b, …)`, or just `(…)` when none are shown. Empty
+/// when there is nothing to show or mark.
+fn title_hint_suffix(hints: &[String], shown: usize, ellipsis: bool) -> String {
+    let hidden = ellipsis && shown < hints.len();
+    let mut parts: Vec<&str> = hints[..shown].iter().map(String::as_str).collect();
+    if hidden {
+        parts.push("\u{2026}");
     }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("({})", parts.join(", "))
+    }
+}
+
+/// How many of `hints` (priority order) fit in `name`'s static-image title within `budget`
+/// display columns (`static_title_hint_budget`). At least one hint is always shown when any
+/// exist: one cue beats a bare title, and a long column name is already wide.
+fn fit_title_hints(name: &str, hints: &[String], budget: usize) -> usize {
+    if hints.is_empty() {
+        return 0;
+    }
+    let base = display_width(name) + 1; // + the space before the parenthetical
+    (1..=hints.len())
+        .rev()
+        .find(|&k| base + display_width(&title_hint_suffix(hints, k, false)) <= budget)
+        .unwrap_or(1)
 }
 
 /// Minimum Gini coefficient for an additive measure to earn a dedicated Lorenz-curve panel.
@@ -26690,10 +26968,10 @@ fn panel_interest(s: &crate::cmd::stats::StatsData, kind: &PanelKind) -> f64 {
             {
                 score += (pct / 10.0).clamp(0.0, 1.0);
             }
-            if let Some(skew) = pearson_skewness_stat(s)
-                && skew.is_finite()
-            {
-                score += (skew.abs() / 2.0).min(1.0);
+            // a threshold-normalized skew of 4 buys the full point — `|skew| / 2` on either
+            // scale, since both cuts are 0.5 (the Pearson fallback scores exactly as before)
+            if let Some(skew) = skew_strength(s) {
+                score += (skew.abs() / 4.0).min(1.0);
             }
         },
         PanelKind::FreqBar { .. } => {
@@ -27614,18 +27892,22 @@ fn build_lorenz_panel(
         }
     }
 
-    let Some((pop, share)) = lorenz_curve(values) else {
+    let Some((pop, share, hoover)) = lorenz_curve(values) else {
         return Ok(None);
     };
 
     Ok(Some(
         Panel::new(
-            format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
+            format!(
+                "{label} \u{2014} Lorenz curve (Gini {gini:.2}, Hoover {:.2})",
+                hoover.index
+            ),
             PanelKind::Lorenz {
                 pop,
                 share,
                 gini,
                 label,
+                hoover,
             },
         )
         .with_subtitle(Some(lorenz_caveat(stat))),
@@ -27639,8 +27921,9 @@ fn build_lorenz_panel(
 /// values, or a non-positive total — nothing a Gini of ~0 doesn't already say). The finished
 /// monotone curve is thinned (endpoints kept, via `downsample_pair`) to `LORENZ_CURVE_MAX_POINTS`
 /// vertices to bound embedded-HTML size; dropping vertices of an already-computed convex curve
-/// leaves its area — the visual Gini — essentially unchanged.
-fn lorenz_curve(mut values: Vec<f64>) -> Option<(Vec<f64>, Vec<f64>)> {
+/// leaves its area — the visual Gini — essentially unchanged. The Hoover gap (`LorenzGap`) is
+/// measured on the EXACT curve, before thinning, so a dropped vertex can't understate it.
+fn lorenz_curve(mut values: Vec<f64>) -> Option<(Vec<f64>, Vec<f64>, LorenzGap)> {
     if values.len() < 2 {
         return None;
     }
@@ -27657,13 +27940,39 @@ fn lorenz_curve(mut values: Vec<f64>) -> Option<(Vec<f64>, Vec<f64>)> {
     pop.push(0.0);
     share.push(0.0);
     let mut cum = 0.0_f64;
+    let mut gap = LorenzGap::default();
     for (k, v) in values.iter().enumerate() {
         cum += *v;
         #[allow(clippy::cast_precision_loss)]
-        pop.push((k + 1) as f64 / n_f);
-        share.push(cum / sum);
+        let p = (k + 1) as f64 / n_f;
+        let l = cum / sum;
+        if p - l > gap.index {
+            gap = LorenzGap {
+                index: p - l,
+                pop:   p,
+                share: l,
+            };
+        }
+        pop.push(p);
+        share.push(l);
     }
-    Some(downsample_pair(&pop, &share, LORENZ_CURVE_MAX_POINTS))
+    let (pop, share) = downsample_pair(&pop, &share, LORENZ_CURVE_MAX_POINTS);
+    Some((pop, share, gap))
+}
+
+/// The Hoover index of a Lorenz curve and the vertex where it is attained. Hoover is the LARGEST
+/// vertical gap between the equality diagonal and the curve, `max_k(pop_k - share_k)` — the share
+/// of the total that would have to move from the rows above the mean to those below it to reach
+/// perfect equality. The gap peaks where the sorted values cross the mean. Over non-negative values
+/// it equals moarstats' `hoover_index` (`mean_ad / (2 * mean)`); it is taken from the curve rather
+/// than the stats cache so the number and the drawn marker come from ONE source (moarstats leaves
+/// Hoover empty when any value is negative, while the curve silently drops negatives).
+/// `index == 0` (all values equal) means there is no gap to draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct LorenzGap {
+    index: f64,
+    pop:   f64,
+    share: f64,
 }
 
 /// How `viz smart` should treat the `--slider` flag: whether to auto-animate an eligible panel.
@@ -31416,6 +31725,8 @@ fn build_map_panel(
             dict_info: None,
             // a map panel charts a lat/lon PAIR, not a single stats row
             stat_idx: None,
+            hints: Vec::new(),
+            title_variants: Vec::new(),
             #[cfg(feature = "geocode")]
             geo_meta,
             geojson_overlay,
@@ -33536,6 +33847,8 @@ impl<'a> SmartCtx<'a> {
                             interest: p.interest,
                             dict_info: p.dict_info,
                             stat_idx: p.stat_idx,
+                            hints: p.hints,
+                            title_variants: p.title_variants,
                             #[cfg(feature = "geocode")]
                             geo_meta: p.geo_meta,
                             geojson_overlay: p.geojson_overlay,
@@ -33724,6 +34037,12 @@ impl<'a> SmartCtx<'a> {
         // (issue #4416), so copying it out would be a move (and a clone of the whole struct).
         let (out_format, log_scale, violin_mode) = (*out_format, *log_scale, *violin_mode);
         let (map_cols, summary_choro_col) = (*map_cols, *summary_choro_col);
+        // a static image's per-column cell width is fixed at export time: `--width` split across
+        // the grid columns, else the grid's own default column width
+        let static_hint_budget = static_title_hint_budget(
+            args.flag_width
+                .map_or(SMART_COL_WIDTH_PX, |w| w / args.flag_grid_cols.max(1)),
+        );
         // the same two derived values `SmartCtx::is_map_col` / `dict_icons` compute; recreated as
         // locals here because `self` is destructured for the duration of the loop.
         let is_map_col = |idx: usize| {
@@ -33903,28 +34222,6 @@ impl<'a> SmartCtx<'a> {
                             };
                         }
                     }
-                    // for box/histogram panels, append cache-derived shape hints (null/zero share,
-                    // skew direction, outlier share, …) to the panel title when notable.
-                    // Cache-only, no cost; when nothing is notable the hint is
-                    // None and the title is unchanged.
-                    let name = match &kind {
-                        PanelKind::BoxStats { .. }
-                        | PanelKind::BoxRaw { .. }
-                        | PanelKind::BoxOutliers { .. }
-                        | PanelKind::Violin { .. }
-                        | PanelKind::Histogram { .. } => match box_shape_hint(s) {
-                            Some(hint) => format!("{name} {hint}"),
-                            None => name,
-                        },
-                        _ => name,
-                    };
-                    // an honesty cue for violins drawn from a stride sample rather than every value
-                    let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
-                    {
-                        t!("viz.title.sampled", q_name = name).into_owned()
-                    } else {
-                        name
-                    };
                     // box panels resolve their value-axis log verdict now, while the cached
                     // observed min/max are at hand (frequency bars decide from
                     // their counts at render time)
@@ -33942,6 +34239,53 @@ impl<'a> SmartCtx<'a> {
                         ),
                         _ => false,
                     };
+                    // for box/histogram panels, append cache-derived shape hints (null/zero share,
+                    // outlier impact and share, skew direction, …) to the panel title. Cache-only,
+                    // no cost; the order depends on the log verdict above.
+                    //
+                    // How many fit depends on the rendered cell width. HTML titles carry EVERY hint
+                    // plus precomputed shorter variants (`title_variants`) that the page's
+                    // `TITLE_FIT_JS` swaps in at view time, ending in an ellipsis whose hover lists
+                    // the rest. A static image's cell width is known now, so it is fitted here and
+                    // simply drops what doesn't fit (no hover to reveal it).
+                    let mut hints = match &kind {
+                        PanelKind::BoxStats { .. }
+                        | PanelKind::BoxRaw { .. }
+                        | PanelKind::BoxOutliers { .. }
+                        | PanelKind::Violin { .. }
+                        | PanelKind::Histogram { .. } => box_shape_hints(s, value_log),
+                        _ => Vec::new(),
+                    };
+                    let interactive = matches!(out_format, OutFormat::Html);
+                    let hints_shown = if interactive {
+                        hints.len()
+                    } else {
+                        let shown = fit_title_hints(&name, &hints, static_hint_budget);
+                        hints.truncate(shown);
+                        shown
+                    };
+                    // an honesty cue for violins drawn from a stride sample rather than every value
+                    let sampled = matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1);
+                    let decorate = |shown: usize| {
+                        let suffix = title_hint_suffix(&hints, shown, interactive);
+                        let titled = if suffix.is_empty() {
+                            name.clone()
+                        } else {
+                            format!("{name} {suffix}")
+                        };
+                        if sampled {
+                            t!("viz.title.sampled", q_name = titled).into_owned()
+                        } else {
+                            titled
+                        }
+                    };
+                    // most hints first, down to a bare `(…)` for a cell too narrow for even one
+                    let title_variants: Vec<String> = if interactive && !hints.is_empty() {
+                        (0..=hints.len()).rev().map(decorate).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let name = decorate(hints_shown);
                     let interest = panel_interest(s, &kind);
                     panels.push(
                         Panel::new(name, kind)
@@ -33949,7 +34293,8 @@ impl<'a> SmartCtx<'a> {
                             .with_dict_info(dict_info)
                             .with_value_log(value_log)
                             .with_interest(interest)
-                            .with_stat_idx(idx),
+                            .with_stat_idx(idx)
+                            .with_hints(hints, title_variants),
                     );
                 },
                 Err(reason) => {
@@ -36132,6 +36477,37 @@ fn lorenz_diagonal_trace(axes: Option<(String, String)>) -> Box<dyn Trace> {
     d
 }
 
+/// The Hoover marker for a Lorenz panel: a muted dashed vertical segment spanning the curve's
+/// largest gap below the equality diagonal (see `LorenzGap`), from the curve up to the diagonal.
+/// `None` for a panel that isn't a Lorenz curve or has no gap (all values equal).
+fn lorenz_hoover_trace(panel: &Panel, axes: Option<(String, String)>) -> Option<Box<dyn Trace>> {
+    let PanelKind::Lorenz { hoover, .. } = &panel.kind else {
+        return None;
+    };
+    if hoover.index <= 0.0 || !hoover.index.is_finite() {
+        return None;
+    }
+    let hover = t!(
+        "viz.hover.lorenz_hoover",
+        q_hoover = format!("{:.2}", hoover.index),
+        q_pct = format!("{:.0}", hoover.index * 100.0)
+    )
+    .into_owned();
+    let mut h = Scatter::new(vec![hoover.pop, hoover.pop], vec![hoover.share, hoover.pop])
+        .mode(Mode::Lines)
+        .name("Hoover")
+        .line(
+            Line::new()
+                .color(MUTED_COLOR)
+                .dash(plotly::common::DashType::Dash),
+        )
+        .hover_template(hover);
+    if let Some((x, y)) = &axes {
+        h = h.x_axis(x.clone()).y_axis(y.clone());
+    }
+    Some(h)
+}
+
 /// Build the plotly trace for one smart-Data Schematic panel. `axes` carries the subplot axis refs
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
@@ -36668,6 +37044,7 @@ fn panel_trace_lorenz(
         share,
         gini,
         label,
+        ..
     } = &panel.kind
     else {
         unreachable!("panel_trace dispatches on panel.kind")
@@ -37621,6 +37998,9 @@ fn smart_grid_parts(
         // this cell's axes.
         if matches!(panel.kind, PanelKind::Lorenz { .. }) {
             traces.push(lorenz_diagonal_trace(Some((xref.clone(), yref.clone()))));
+            if let Some(h) = lorenz_hoover_trace(panel, Some((xref.clone(), yref.clone()))) {
+                traces.push(h);
+            }
         }
 
         // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
@@ -37776,6 +38156,7 @@ fn render_smart_grid(
         metadata,
         data_chrome,
         tour_chrome,
+        title_fit: title_fit_chrome(panels),
     })
 }
 
@@ -37787,6 +38168,7 @@ fn render_smart_grid_page(
     meta_table: Option<&str>,
     data_chrome: Option<&str>,
     tour_chrome: Option<&str>,
+    title_fit: &str,
 ) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
@@ -37800,7 +38182,7 @@ fn render_smart_grid_page(
       <div class="qsv-viz-plot">
 {inner}
       </div>
-</div>"#
+</div>{title_fit}"#
     );
     // the typed plot already carries the Data Schematic title in its layout, so suppress the page
     // <h1>.
@@ -37954,7 +38336,10 @@ fn inline_panel_title_shifted(
     // inline panel (not just dict-info ones) so the hover chrome is uniform.
     let layout = layout.mode_bar(ModeBar::new().orientation(Orientation::Vertical));
     let mut anns = extra;
-    let layout = if panel.dict_info.is_some() {
+    // an annotation (not a plain layout title) whenever the title needs a hover: a dictionary
+    // description, or shape hints `TITLE_FIT_JS` may hide behind an ellipsis (it only rewrites
+    // annotations)
+    let layout = if panel.dict_info.is_some() || panel.has_title_variants() {
         // family-only font (no explicit color) so the annotation inherits the layout font color
         // and the dark/light toggle's `font.color` relayout keeps flipping it (see `ann_font`).
         let font = {
@@ -39175,6 +39560,9 @@ fn inline_panel_plot_cartesian(
     // a Lorenz panel needs its equality-diagonal reference line as a second trace (default axes).
     if matches!(panel.kind, PanelKind::Lorenz { .. }) {
         plot.add_trace(lorenz_diagonal_trace(None));
+        if let Some(h) = lorenz_hoover_trace(panel, None) {
+            plot.add_trace(h);
+        }
     }
 
     // correlation cells need extra left room for tick labels and right room for the colorbar;
@@ -39477,9 +39865,10 @@ fn render_smart_inline(
   .qsv-viz-cell.full-width {{ grid-column: 1 / -1; }}
   .qsv-viz-plot {{ width: 100%; }}"
     );
+    let title_fit = title_fit_chrome(panels);
     let body = format!(
         r#"<div class="qsv-viz-grid">
-{cells}</div>"#
+{cells}</div>{title_fit}"#
     );
     // Inject the lightbox chrome only when a map panel actually embedded per-point image URLs —
     // not merely because `--photos` was passed. A dataset with no image column (or no lat/lon)
@@ -43124,7 +43513,9 @@ mod tests {
     #[test]
     fn lorenz_curve_all_equal_is_diagonal() {
         // a perfectly equal distribution traces the equality diagonal: share == pop at every point
-        let (pop, share) = lorenz_curve(vec![5.0; 4]).unwrap();
+        let (pop, share, gap) = lorenz_curve(vec![5.0; 4]).unwrap();
+        // no gap below the diagonal -> Hoover 0, and no marker to draw
+        assert_eq!(gap, LorenzGap::default());
         assert_eq!(pop.len(), share.len());
         for (p, s) in pop.iter().zip(&share) {
             assert!(
@@ -43141,11 +43532,62 @@ mod tests {
     fn lorenz_curve_max_inequality_hugs_axis() {
         // one entity holds everything: the bottom (n-1)/n of records hold 0% of the total, so the
         // curve hugs the x-axis then jumps to (1,1) — maximal inequality. Zeros are legitimate.
-        let (pop, share) = lorenz_curve(vec![0.0, 0.0, 0.0, 100.0]).unwrap();
+        let (pop, share, gap) = lorenz_curve(vec![0.0, 0.0, 0.0, 100.0]).unwrap();
+        // Hoover = 1 - 1/n: everything but one row's equal share would have to move
+        assert!((gap.index - 0.75).abs() < 1e-12);
+        assert_eq!((gap.pop, gap.share), (0.75, 0.0));
         let last = share.len() - 1;
         assert_eq!(share[last - 1], 0.0);
         assert!((share[last] - 1.0).abs() < 1e-12);
         assert!((pop[last] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lorenz_curve_hoover_matches_moarstats_closed_form() {
+        // [1, 2, 3, 10]: mean 4, mean absolute deviation (3+2+1+6)/4 = 3, so moarstats'
+        // hoover_index = 3 / (2*4) = 0.375. On the curve (total 16) the gaps are 0.1875, 0.3125,
+        // 0.375, 0 — the largest where the sorted values cross the mean (after 3 of 4 rows).
+        let (_, _, gap) = lorenz_curve(vec![10.0, 1.0, 3.0, 2.0]).unwrap();
+        assert!((gap.index - 0.375).abs() < 1e-12, "{gap:?}");
+        assert!((gap.pop - 0.75).abs() < 1e-12);
+        assert!((gap.share - 0.375).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lorenz_hoover_trace_spans_the_gap_and_skips_equality() {
+        let lorenz = |hoover| {
+            Panel::new(
+                "x".to_string(),
+                PanelKind::Lorenz {
+                    pop: vec![0.0, 1.0],
+                    share: vec![0.0, 1.0],
+                    gini: 0.5,
+                    label: "x".to_string(),
+                    hoover,
+                },
+            )
+        };
+        let gap = LorenzGap {
+            index: 0.375,
+            pop:   0.75,
+            share: 0.375,
+        };
+        let trace = lorenz_hoover_trace(&lorenz(gap), None).expect("a gap draws a marker");
+        let json = serde_json::to_value(&trace).unwrap();
+        assert_eq!(json["x"], serde_json::json!([0.75, 0.75]));
+        // from the curve up to the equality diagonal
+        assert_eq!(json["y"], serde_json::json!([0.375, 0.75]));
+        let hover = json["hovertemplate"].as_str().unwrap();
+        assert!(hover.contains("0.38") && hover.contains("38%"), "{hover}");
+        assert!(lorenz_hoover_trace(&lorenz(LorenzGap::default()), None).is_none());
+        let not_lorenz = Panel::new(
+            "m".to_string(),
+            PanelKind::MeasureByDim {
+                labels: Vec::new(),
+                values: Vec::new(),
+            },
+        );
+        assert!(lorenz_hoover_trace(&not_lorenz, None).is_none());
     }
 
     #[test]
@@ -43161,8 +43603,15 @@ mod tests {
         let values: Vec<f64> = (1..=(LORENZ_CURVE_MAX_POINTS as u32 * 3))
             .map(f64::from)
             .collect();
-        let (pop, share) = lorenz_curve(values).unwrap();
+        let (pop, share, gap) = lorenz_curve(values.clone()).unwrap();
         assert!(pop.len() <= LORENZ_CURVE_MAX_POINTS);
+        // the gap is measured on the EXACT curve, before thinning: it matches moarstats'
+        // closed form `mean_ad / (2 * mean)` even though most vertices were dropped
+        #[allow(clippy::cast_precision_loss)]
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        #[allow(clippy::cast_precision_loss)]
+        let mean_ad = values.iter().map(|v| (v - mean).abs()).sum::<f64>() / values.len() as f64;
+        assert!((gap.index - mean_ad / (2.0 * mean)).abs() < 1e-9);
         assert_eq!((pop[0], share[0]), (0.0, 0.0));
         assert!((pop.last().unwrap() - 1.0).abs() < 1e-12);
         assert!((share.last().unwrap() - 1.0).abs() < 1e-12);
@@ -47448,6 +47897,13 @@ mod tests {
         assert_eq!(keys.len(), out.len());
     }
 
+    /// Test shorthand: every hint `box_shape_hints` finds on a LINEAR axis, uncapped, rendered
+    /// like a title parenthetical.
+    fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
+        let hints = box_shape_hints(s, false);
+        (!hints.is_empty()).then(|| format!("({})", hints.join(", ")))
+    }
+
     #[test]
     fn box_shape_hint_reports_skew_and_outliers() {
         // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
@@ -47457,7 +47913,7 @@ mod tests {
         s.outliers_percentage = Some(4.2);
         assert_eq!(
             box_shape_hint(&s).as_deref(),
-            Some("(right-skewed, 4.2% outliers)")
+            Some("(4.2% outliers, right-skewed)")
         );
 
         // symmetric, no notable outliers => no hint
@@ -47468,6 +47924,50 @@ mod tests {
 
         // no moarstats stats at all => no hint
         assert_eq!(box_shape_hint(&stat("Float", 100, Some(0.8))), None);
+    }
+
+    #[test]
+    fn skew_strength_prefers_moment_skewness_over_saturating_pearson() {
+        // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
+        // a heavy-tailed money column: Pearson's second coefficient SATURATES (a lognormal with
+        // sigma=2 scores ~0.35, under its 0.5 cut) while moment skewness G1 sees the tail.
+        let mut heavy = stat("Float", 100, Some(0.8));
+        heavy.pearson_skewness = Some(0.35);
+        assert_eq!(
+            box_shape_hint(&heavy),
+            None,
+            "Pearson alone misses the tail"
+        );
+        assert!(!is_right_skewed(&heavy));
+        heavy.moment_skewness = Some(5.0);
+        assert_eq!(box_shape_hint(&heavy).as_deref(), Some("(right-skewed)"));
+        assert!(is_right_skewed(&heavy));
+        heavy.moment_skewness = Some(-5.0);
+        assert_eq!(box_shape_hint(&heavy).as_deref(), Some("(left-skewed)"));
+        assert!(!is_right_skewed(&heavy));
+
+        // G1 WINS when present, in the other direction too: a G1 under its cut is NOT skewed even
+        // though Pearson (0.6) clears its own.
+        let mut mild = stat("Float", 100, Some(0.8));
+        mild.pearson_skewness = Some(0.6);
+        assert!(is_right_skewed(&mild), "Pearson fallback when G1 is absent");
+        // the moderate band (G1 0.5–1) IS skewed: the gallery's stock open/low/close (G1 ~0.84)
+        mild.pearson_skewness = Some(0.45);
+        mild.moment_skewness = Some(0.84);
+        assert_eq!(box_shape_hint(&mild).as_deref(), Some("(right-skewed)"));
+        assert!(is_right_skewed(&mild));
+        mild.pearson_skewness = Some(0.6);
+        mild.moment_skewness = Some(0.3);
+        assert_eq!(box_shape_hint(&mild), None);
+        assert!(!is_right_skewed(&mild));
+        // exactly on the cut counts
+        mild.moment_skewness = Some(RIGHT_SKEW_MIN_G1);
+        assert!(is_right_skewed(&mild));
+
+        // a non-finite G1 is ignored, not trusted
+        mild.moment_skewness = Some(f64::NAN);
+        assert_eq!(skew_strength(&mild), Some(0.6 / RIGHT_SKEW_MIN));
     }
 
     #[test]
@@ -47498,10 +47998,11 @@ mod tests {
     }
 
     #[test]
-    fn box_shape_hint_puts_data_quality_first_and_caps_parts() {
+    fn box_shape_hints_rank_what_the_chart_cannot_show_first() {
         // asserts English output from a `t!`-backed helper -- pin the locale (see `english_locale`)
         let _locale = english_locale();
-        // nulls + zeros outrank (and, at the 2-part cap, crowd out) the shape parts
+        // nulls, zeros, mean impact and outlier share are invisible in a box; skew is drawn by the
+        // box itself, so it ranks after them (then Gini)
         let mut s = stat("Integer", 500, Some(0.5));
         s.sparsity = Some(0.40);
         s.n_negative = Some(0);
@@ -47509,16 +48010,183 @@ mod tests {
         s.n_positive = Some(50); // zero share 50%
         s.pearson_skewness = Some(1.2);
         s.outliers_percentage = Some(4.2);
-        assert_eq!(box_shape_hint(&s).as_deref(), Some("(40% null, 50% zeros)"));
+        s.outlier_impact_ratio = Some(0.3);
+        s.gini_coefficient = Some(0.7);
+        let linear = [
+            "40% null",
+            "50% zeros",
+            "mean +30% from outliers",
+            "4.2% outliers",
+            "right-skewed",
+            "Gini 0.70",
+        ];
+        assert_eq!(box_shape_hints(&s, false), linear);
+        // a LOG value axis straightens the shape, so skew moves up right behind the data-quality
+        // parts there
+        assert_eq!(
+            box_shape_hints(&s, true),
+            [
+                "40% null",
+                "50% zeros",
+                "right-skewed",
+                "mean +30% from outliers",
+                "4.2% outliers",
+                "Gini 0.70",
+            ]
+        );
 
-        // below the thresholds neither fires and the shape parts show through
+        // below the thresholds neither data-quality part fires
         s.sparsity = Some(0.05);
         s.n_zero = Some(10);
         s.n_positive = Some(90);
+        assert_eq!(box_shape_hints(&s, false), linear[2..]);
+    }
+
+    #[test]
+    fn fit_title_hints_fills_a_static_budget() {
+        let hints: Vec<String> = ["60% zeros", "18.5% outliers", "right-skewed", "Gini 0.96"]
+            .map(String::from)
+            .into();
+        // a 500 px static cell holds ~63 columns of 13 px title
+        let budget = static_title_hint_budget(500);
+        assert_eq!(budget, 63);
+        // "commit_total (60% zeros, 18.5% outliers, right-skewed)" = 55 fits; + Gini = 66 doesn't
+        assert_eq!(fit_title_hints("commit_total", &hints, budget), 3);
+        // static titles never carry an ellipsis: there is no hover to reveal the rest
         assert_eq!(
-            box_shape_hint(&s).as_deref(),
-            Some("(right-skewed, 4.2% outliers)")
+            title_hint_suffix(&hints, 3, false),
+            "(60% zeros, 18.5% outliers, right-skewed)"
         );
+        assert_eq!(
+            title_hint_suffix(&hints, 2, true),
+            "(60% zeros, 18.5% outliers, \u{2026})"
+        );
+        // everything fits -> no ellipsis even when interactive
+        assert_eq!(
+            title_hint_suffix(&hints, 4, true),
+            "(60% zeros, 18.5% outliers, right-skewed, Gini 0.96)"
+        );
+        // a name already over budget still gets its top hint
+        let long = "a_really_long_column_name_that_fills_the_whole_title_cell_by_itself";
+        assert_eq!(fit_title_hints(long, &hints, budget), 1);
+        assert_eq!(fit_title_hints("x", &[], budget), 0);
+        // the last-resort HTML variant keeps only the marker; nothing to mark -> nothing at all
+        assert_eq!(title_hint_suffix(&hints, 0, true), "(\u{2026})");
+        assert_eq!(title_hint_suffix(&hints, 0, false), "");
+        assert_eq!(title_hint_suffix(&[], 0, true), "");
+    }
+
+    #[test]
+    fn display_width_counts_east_asian_wide_characters_twice() {
+        assert_eq!(display_width("right-skewed"), 12);
+        assert_eq!(display_width("右偏"), 4);
+        assert_eq!(display_width("外れ値 4.2%"), 11);
+        // the same hints fit fewer parts when they are wide on screen
+        let ja: Vec<String> = ["ゼロが60%", "外れ値18.5%", "右に歪んだ分布", "ジニ係数0.96"]
+            .map(String::from)
+            .into();
+        let ascii: Vec<String> = ["zero 60%", "out 18.5%", "right-skew", "Gini 0.96"]
+            .map(String::from)
+            .into();
+        // "列名 (zero 60%, out 18.5%)" is 26 columns; "列名 (ゼロが60%, 外れ値18.5%)" is 29
+        assert_eq!(fit_title_hints("列名", &ascii, 26), 2);
+        assert_eq!(fit_title_hints("列名", &ja, 26), 1);
+    }
+
+    #[test]
+    fn title_fit_payload_carries_every_variant_with_its_hover() {
+        // asserts English output from `t!`-backed helpers -- pin the locale (see `english_locale`)
+        let _locale = english_locale();
+        let hints: Vec<String> = ["60% zeros", "18.5% outliers", "right-skewed"]
+            .map(String::from)
+            .into();
+        let variants: Vec<String> = [
+            "c<x> (60% zeros, 18.5% outliers, right-skewed)",
+            "c<x> (60% zeros, 18.5% outliers, \u{2026})",
+            "c<x> (60% zeros, \u{2026})",
+        ]
+        .map(String::from)
+        .into();
+        let panel = |dict: Option<(String, String)>| {
+            Panel::new(
+                variants[0].clone(),
+                PanelKind::BoxStats {
+                    q1:     1.0,
+                    median: 2.0,
+                    q3:     3.0,
+                    lower:  None,
+                    upper:  None,
+                    mean:   None,
+                },
+            )
+            .with_hints(hints.clone(), variants.clone())
+            .with_dict_info(dict)
+        };
+        let payload = |p: &Panel| -> serde_json::Value {
+            let chrome = title_fit_chrome(std::slice::from_ref(p));
+            // nothing in the payload can close its <script> element
+            let json = chrome
+                .split(r#"id="qsv-title-fit">"#)
+                .nth(1)
+                .unwrap()
+                .split("</script>")
+                .next()
+                .unwrap();
+            assert!(!json.contains('<'), "{json}");
+            serde_json::from_str(json).unwrap()
+        };
+
+        let v = payload(&panel(None));
+        let v = v[0].as_array().unwrap();
+        assert_eq!(v.len(), 3);
+        // measured text is the plain title line; markup is escaped for plotly
+        assert_eq!(v[1]["m"], "c<x> (60% zeros, 18.5% outliers, \u{2026})");
+        assert_eq!(
+            v[0]["t"],
+            "c&lt;x&gt; (60% zeros, 18.5% outliers, right-skewed)"
+        );
+        assert!(v[0]["h"].is_null(), "the full title hides nothing");
+        assert_eq!(v[1]["h"], "also: right-skewed");
+        assert_eq!(v[2]["h"], "also: 18.5% outliers, right-skewed");
+
+        // a dictionary panel: the description rides under the hidden hints, and is the WHOLE
+        // hover while nothing is hidden; the measured line counts the info icon
+        let v = payload(&panel(Some((
+            "qsvdict-c".to_string(),
+            "Committed".to_string(),
+        ))));
+        let v = v[0].as_array().unwrap();
+        assert_eq!(v[0]["h"], "Committed");
+        assert_eq!(
+            v[2]["h"],
+            "also: 18.5% outliers, right-skewed<br><br>Committed"
+        );
+        assert!(v[0]["m"].as_str().unwrap().ends_with(" \u{24D8}"));
+
+        // a title decorated after classification no longer matches its variants: left out
+        let mut renamed = panel(None);
+        renamed.name.push_str(" (dominated by X)");
+        assert_eq!(title_fit_chrome(&[renamed]), "");
+        // no variants -> no chrome at all (the page stays byte-identical)
+        let plain = Panel::new("x".to_string(), PanelKind::FreqBar { idx: 0 });
+        assert_eq!(title_fit_chrome(&[plain]), "");
+
+        // the rendered (full) title needs no "also:" hover; only a dictionary title captures clicks
+        let ann = serde_json::to_value(panel_title_annotation(&panel(None), 0.5, 1.0, Font::new()))
+            .unwrap();
+        assert!(ann.get("hovertext").is_none() && ann.get("captureevents").is_none());
+
+        // the tour spells out EVERY hint whenever the title may be shortened...
+        let stats = [stat("Float", 100, Some(0.8))];
+        let got = tour_panel_explanation(&panel(None), &stats, &FreqMap::new(), LogScale::Off);
+        assert!(
+            got.ends_with("Notable: 60% zeros, 18.5% outliers, right-skewed."),
+            "{got}"
+        );
+        // ...and adds nothing to a title that can't be
+        let fixed = panel(None).with_hints(hints.clone(), Vec::new());
+        let got = tour_panel_explanation(&fixed, &stats, &FreqMap::new(), LogScale::Off);
+        assert!(!got.contains("Notable"), "{got}");
     }
 
     #[test]
@@ -47668,6 +48336,30 @@ mod tests {
         assert!(!box_panel_logs(
             LogScale::Auto,
             &mild,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+
+        // a saturated Pearson (heavy tail) is rescued by moment skewness G1; a mild G1 vetoes a
+        // Pearson that would otherwise have cleared its own cut
+        let saturated = crate::cmd::stats::StatsData {
+            pearson_skewness: Some(0.35),
+            moment_skewness: Some(40.0),
+            ..skewed.clone()
+        };
+        assert!(box_panel_logs(
+            LogScale::Auto,
+            &saturated,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+        let mild_g1 = crate::cmd::stats::StatsData {
+            moment_skewness: Some(0.3),
+            ..skewed.clone()
+        };
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &mild_g1,
             Some(0.0),
             Some(76_000_000.0)
         ));
@@ -49450,10 +50142,11 @@ mod tests {
             Panel::new(
                 "lorenz".to_string(),
                 PanelKind::Lorenz {
-                    pop:   Vec::new(),
-                    share: Vec::new(),
-                    gini:  0.5,
-                    label: "x".to_string(),
+                    pop:    Vec::new(),
+                    share:  Vec::new(),
+                    gini:   0.5,
+                    label:  "x".to_string(),
+                    hoover: LorenzGap::default(),
                 },
             ),
             Panel::new(

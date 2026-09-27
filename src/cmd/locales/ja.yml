@@ -301,6 +301,10 @@ viz:
     # `%{x:.0%}` (see the ORDERING RULE in this file's header).
     contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} 行<extra></extra>"
     lorenz: "%{q_label}(Gini %{q_gini})<br>下位 %{x:.0%} のレコードが %{y:.0%} を保有<extra></extra>"
+    # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
+    lorenz_hoover: "Hoover %{q_hoover}:完全な平等に達するには合計の %{q_pct}% を再分配する必要があります<extra></extra>"
+    # Title hover listing the shape hints hidden behind a panel title's ellipsis.
+    more_hints: "その他:%{q_hints}"
     ohlc: "始値: %{open}<br>高値: %{high}<br>安値: %{low}<br>終値: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>件数: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>件数: %{y:,}<extra></extra>"
@@ -386,6 +390,8 @@ viz:
       log_axis: "値が数桁にわたるため、値軸は対数です。"
       log_axis_count: "カテゴリの件数が数桁にわたるため、件数軸は対数です。"
       sampled: "応答性を保つため、行の決定的なサンプルから描いています。"
+      # Tour backstop: every shape hint, when the panel title could only show some of them.
+      hints: "注目点:%{q_hints}。"
     meta_heading: "ツアーのナレーション"
     meta_audience: "対象読者:"
     meta_language: "言語:"

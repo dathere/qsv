@@ -479,7 +479,7 @@ use simdutf8::basic::from_utf8;
 use stats::{atkinson, gini};
 use threadpool::ThreadPool;
 
-use crate::{CliError, CliResult, config::Config, regex_oncelock, select::SelectColumns, util};
+use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
 
 /// Minimum record count before parallel processing is worthwhile for outliers and
 /// bivariate stats. Below this, the scheduling overhead outweighs the speedup, so
@@ -3391,111 +3391,6 @@ where
     })
 }
 
-/// The column selection `--stats-options` hands to `qsv stats` (`--select <arg>`,
-/// `--select=<arg>`, `-s <arg>`, `-s<arg>`, or `s` ending a docopt cluster of no-argument short
-/// flags such as `-Es <arg>`), if any. The last one wins. Mirrors
-/// `stats_options_redirect_output`'s cluster rules: scanning stops at the first argument-taking
-/// short option, whose value is the rest of the token.
-fn stats_options_select(stats_options: &str) -> Option<String> {
-    // no-argument short flags accepted by `qsv stats`
-    const STATS_SHORT_FLAGS: [char; 3] = ['E', 'h', 'n'];
-
-    let tokens: Vec<&str> = stats_options.split_whitespace().collect();
-    let mut found = None;
-    for (i, token) in tokens.iter().enumerate() {
-        if let Some(long) = token.strip_prefix("--") {
-            if long == "select" {
-                found = tokens.get(i + 1).map(ToString::to_string);
-            } else if let Some(v) = long.strip_prefix("select=") {
-                found = Some(v.to_string());
-            }
-        } else if let Some(short) = token.strip_prefix('-') {
-            for (pos, ch) in short.char_indices() {
-                if ch == 's' {
-                    let rest = &short[pos + ch.len_utf8()..];
-                    found = if rest.is_empty() {
-                        tokens.get(i + 1).map(ToString::to_string)
-                    } else {
-                        Some(rest.to_string())
-                    };
-                    break;
-                }
-                if !STATS_SHORT_FLAGS.contains(&ch) {
-                    break;
-                }
-            }
-        }
-    }
-    found
-}
-
-/// Map each stats row (`names`: the stats CSV's `field` column, in row order) to the CSV column
-/// it describes. A plain name lookup is wrong whenever a header repeats: first-match sent every
-/// duplicate to the first column (#4663).
-///
-/// - `selection`: the exact column of every row, when the baseline `stats` ran in THIS invocation
-///   (its `--select`, resolved against the header, or every column in order). It is used only if it
-///   lines up with `names` row for row.
-/// - Otherwise the stats cache was reused, and which columns it covers is not recorded reliably. A
-///   name that occurs once in the header maps to that column, however many rows carry it (`--select
-///   1,1`). A repeated name maps by occurrence - the k-th row named N to the k-th column named N -
-///   only when the cache has exactly as many rows named N as the header has columns. Any other
-///   count means a selection that skipped or repeated a twin, which cannot be told apart without
-///   the selection, so those rows map to `None` and their names are returned for a warning. An
-///   empty result beats another column's statistics.
-///
-/// Known limit: equal counts do not prove the order. A reused cache built with a selection that
-/// reorders or repeats twins while keeping the count (on `a,b,a`: `--select 3,1` or `3,3`) is
-/// mapped by occurrence, so a twin can get the other twin's appended statistics. Neither the stats
-/// CSV nor its sidecar records a `--select`, so this cannot be detected without re-scanning the
-/// data. Running with `--force` recomputes the baseline and takes the exact `selection` path.
-fn resolve_stats_columns(
-    names: &[&str],
-    csv_headers: &StringRecord,
-    selection: Option<&[usize]>,
-) -> (Vec<Option<usize>>, Vec<String>) {
-    if let Some(sel) = selection
-        && sel.len() == names.len()
-        && sel
-            .iter()
-            .zip(names)
-            .all(|(&col, name)| csv_headers.get(col) == Some(*name))
-    {
-        return (sel.iter().map(|&col| Some(col)).collect(), Vec::new());
-    }
-
-    let mut positions: HashMap<&str, Vec<usize>> = HashMap::new();
-    for (idx, h) in csv_headers.iter().enumerate() {
-        positions.entry(h).or_default().push(idx);
-    }
-    let mut rows_named: HashMap<&str, usize> = HashMap::new();
-    for name in names {
-        *rows_named.entry(name).or_insert(0) += 1;
-    }
-    let mut seen: HashMap<&str, usize> = HashMap::new();
-    let mut ambiguous: Vec<String> = Vec::new();
-    let cols = names
-        .iter()
-        .map(|&name| {
-            let k = seen.entry(name).or_insert(0);
-            let occurrence = *k;
-            *k += 1;
-            match positions.get(name) {
-                None => None,
-                Some(p) if p.len() == 1 => Some(p[0]),
-                Some(p) if rows_named.get(name) == Some(&p.len()) => Some(p[occurrence]),
-                Some(_) => {
-                    if !ambiguous.iter().any(|a| a == name) {
-                        ambiguous.push(name.to_string());
-                    }
-                    None
-                },
-            }
-        })
-        .collect();
-    (cols, ambiguous)
-}
-
 /// Fused replacement for the former `count_all_outliers` + `compute_all_kga`:
 /// computes outlier statistics AND Kurtosis/Gini/Atkinson in a SINGLE scan of the
 /// original CSV (chunked & parallel when an index exists and the file is large
@@ -5154,7 +5049,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // short) further below.
     let mut prevalidated_stats_content: Option<String> = None;
     // whether the baseline `stats` ran in THIS invocation (with `--stats-options`), which is what
-    // lets its rows be mapped to columns exactly (see `resolve_stats_columns`)
+    // lets its rows be mapped to columns exactly (see `util::resolve_stats_columns`)
     let mut baseline_computed_here = false;
     let stats_csv_path = if temp_joined_path.is_some() {
         // Joined datasets: compute stats on the joined CSV. Run `qsv stats`
@@ -6121,20 +6016,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // The exact column of every stats row when the baseline ran here: its `--select` resolved
     // against the header, or every column in order. `None` for a reused cache.
     let baseline_selection: Option<Vec<usize>> = baseline_computed_here
-        .then(|| match stats_options_select(&args.flag_stats_options) {
-            None => Some((0..csv_headers.len()).collect()),
-            Some(spec) => SelectColumns::parse(&spec)
-                .and_then(|sc| sc.selection(csv_headers.as_byte_record(), true))
-                .ok()
-                .map(|sel| sel.to_vec()),
+        .then(|| {
+            util::stats_options_selection(
+                &args.flag_stats_options,
+                csv_headers.as_byte_record(),
+                true,
+            )
         })
         .flatten();
     let stats_row_names: Vec<&str> = records
         .iter()
         .map(|r| field_idx.and_then(|idx| r.get(idx)).unwrap_or(""))
         .collect();
-    // stats row -> CSV column (#4663); see `resolve_stats_columns`
-    let (record_cols, ambiguous_names) = resolve_stats_columns(
+    // stats row -> CSV column (#4663); see `util::resolve_stats_columns`
+    let (record_cols, ambiguous_names) = util::resolve_stats_columns(
         &stats_row_names,
         &csv_headers,
         baseline_selection.as_deref(),
@@ -6293,7 +6188,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             util::disambiguate_names(&csv_headers.iter().collect::<Vec<_>>());
         bivariate_field_names = Some(field_names.clone());
         // stats row -> CSV column, duplicate header names matched by occurrence (#4663)
-        let (stats_cols, _) = resolve_stats_columns(
+        let (stats_cols, _) = util::resolve_stats_columns(
             &stats_field_names
                 .iter()
                 .map(String::as_str)
@@ -7913,70 +7808,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolve_stats_columns_exact_selection_wins() {
-        let headers = StringRecord::from(vec!["a", "b", "a"]);
-        // the baseline ran here with --select 3,3: exact, and names line up
-        assert_eq!(
-            resolve_stats_columns(&["a", "a"], &headers, Some(&[2, 2])),
-            (vec![Some(2), Some(2)], vec![])
-        );
-        // a selection that doesn't line up with the rows is ignored (falls back below)
-        assert_eq!(
-            resolve_stats_columns(&["a", "b", "a"], &headers, Some(&[0, 1])).0,
-            [Some(0), Some(1), Some(2)]
-        );
-    }
-
-    #[test]
-    fn resolve_stats_columns_reused_cache_rules() {
-        let headers = StringRecord::from(vec!["a", "b", "a", "c", "a"]);
-        // full coverage of the `a` twins: by occurrence; unknown names -> None
-        assert_eq!(
-            resolve_stats_columns(&["a", "b", "a", "c", "a", "zz"], &headers, None),
-            (
-                vec![Some(0), Some(1), Some(2), Some(3), Some(4), None],
-                vec![]
-            )
-        );
-        // a unique name maps to its column however many rows carry it (`--select 1,1`)
-        assert_eq!(
-            resolve_stats_columns(&["b", "b", "c"], &headers, None),
-            (vec![Some(1), Some(1), Some(3)], vec![])
-        );
-        // a partial (or repeated) cover of the twins can't be told apart: None + reported
-        assert_eq!(
-            resolve_stats_columns(&["b", "a"], &headers, None),
-            (vec![Some(1), None], vec!["a".to_string()])
-        );
-        assert_eq!(
-            resolve_stats_columns(&["a", "a", "a", "a"], &headers, None).1,
-            ["a"]
-        );
-    }
-
-    #[test]
-    fn stats_options_select_finds_every_spelling() {
-        assert_eq!(stats_options_select(""), None);
-        assert_eq!(stats_options_select("--everything"), None);
-        assert_eq!(stats_options_select("--select 2,3").as_deref(), Some("2,3"));
-        assert_eq!(stats_options_select("--select=a,b").as_deref(), Some("a,b"));
-        assert_eq!(stats_options_select("-E -s 1,1").as_deref(), Some("1,1"));
-        assert_eq!(stats_options_select("-Es 4").as_deref(), Some("4"));
-        assert_eq!(stats_options_select("-Es4-6").as_deref(), Some("4-6"));
-        assert_eq!(
-            stats_options_select("-s1 --everything").as_deref(),
-            Some("1")
-        );
-        // `-c` takes an argument, so the `s` after it is part of that value, not --select
-        assert_eq!(stats_options_select("-cs 5"), None);
-        // the last one wins
-        assert_eq!(
-            stats_options_select("-s 1 --select 2").as_deref(),
-            Some("2")
-        );
-    }
 
     #[test]
     fn entropy_from_counts_handles_all_unique_and_empty() {

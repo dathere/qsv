@@ -28,7 +28,9 @@ does not exist, it will first run the `stats` command with configurable options 
 the baseline stats, to which it will add more stats columns.
 
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
-stats columns.
+stats columns. However, if its `.stats.csv.json` metadata records a different qsv version,
+the baseline stats are recomputed and the additional stats columns are added afresh, so
+a stats file extended by an older qsv release never keeps its outdated values.
 
 Currently computes the following 40 additional univariate statistics:  
 1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
@@ -250,8 +252,8 @@ where the required base univariate statistics (mean, median, stddev, etc.) are a
 Univariate outlier statistics additionally require that quartiles (and thus fences) were
 computed when generating the stats CSV.
 Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
-Kurtosis, Gini & Atkinson Index require reading the original CSV file to collect
-all values for computation.
+The --advanced statistics (Moment Skewness, Kurtosis, Gini, Atkinson, L-moments, etc.)
+require reading the original CSV file to collect all values for computation.
 
 BIVARIATE STATISTICS:  
 
@@ -304,6 +306,17 @@ same streaming state as Pearson's correlation. Selected with `regression` in --b
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
 Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
+The file is always rewritten - with just a header row if no field pair produced a statistic -
+so it never holds stale results from an earlier run.
+
+The correlation statistics (pearson, spearman, kendall, covariance & regression) only use
+numeric, date and boolean fields. String fields only feed the frequency-based statistics
+(mi, nmi, u & cramersv).
+All-unique fields (cardinality >= row count, e.g. continuous measurements and IDs) keep
+their correlation statistics, but their frequency-based statistics are left empty, as
+mutual information against an all-unique field just saturates at log(n). Read ID column
+correlations with care: a sequential ID correlates with a creation date simply because
+IDs are issued in order.
 
 Bivariate statistics require reading the entire CSV file and are computationally VERY expensive.
 For large files (>= 10k records), parallel chunked processing is used when an index is available.
@@ -398,9 +411,9 @@ qsv moarstats --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑B,`<br>`‑‑bivariate`&nbsp; | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes pairwise correlations, covariances, mutual information, and normalized mutual information between columns. The bivariate statistics |  |
+| &nbsp;`‑B,`<br>`‑‑bivariate`&nbsp; | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes the pairwise statistics selected with --bivariate-stats between columns (pearson & covariance by default). The bivariate |  |
 | &nbsp;`‑S,`<br>`‑‑bivariate‑stats`&nbsp; | string | Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information), u (Theil's directed uncertainty coefficient; emits u_field2_given_field1 and u_field1_given_field2), cramersv (Cramér's V) and regression (slope, intercept & r_squared). Use "all" to compute all statistics or "fast" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms. | `fast` |
-| &nbsp;`‑C,`<br>`‑‑cardinality‑threshold`&nbsp; | integer | Skip mutual information (mi/nmi/u) and cramersv for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed. |  |
+| &nbsp;`‑C,`<br>`‑‑cardinality‑threshold`&nbsp; | integer | Skip mutual information (mi/nmi/u) and cramersv for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed. All-unique fields always skip these statistics, regardless of this threshold. |  |
 | &nbsp;`‑‑bivariate‑batch`&nbsp; | integer | Process at most <n> field pairs per pass over the input, bounding peak memory at the cost of extra passes. Peak memory is otherwise O(columns^2) regardless of row count - a 160-column, 100k-row (60 MB) input needs ~21 GiB with mi/nmi/u enabled. Extra passes are cheap, so prefer the largest <n> that fits. Only applies to indexed input with >= 10,000 rows. Set to 0 to process all pairs in one pass. | `0` |
 | &nbsp;`‑J,`<br>`‑‑join‑inputs`&nbsp; | string | Additional datasets to join. Comma-separated list of CSV files to join with the primary input. e.g.: --join-inputs customers.csv,products.csv |  |
 | &nbsp;`‑K,`<br>`‑‑join‑keys`&nbsp; | string | Join keys for each dataset. Comma-separated list of join key column names, one per dataset. Must specify same number of keys as datasets (primary + addl). e.g.: --join-keys customer_id,customer_id,product_id |  |

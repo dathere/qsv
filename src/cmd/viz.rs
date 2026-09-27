@@ -25550,16 +25550,31 @@ const TITLE_FIT_JS: &str = r#"<script>
 (function () {
   var el = document.getElementById("qsv-title-fit");
   if (!el) return;
-  var entries = JSON.parse(el.textContent), byText = {};
-  entries.forEach(function (e) { e.forEach(function (v) { byText[v.t] = e; }); });
+  // A title's shortened forms are NOT unique across panels (duplicate headers both shorten to
+  // "amount (…)"), so each annotation is bound to its own variant list, per plot and annotation
+  // index, the first time it is seen with its (build-time) full title. Only a full title, or a
+  // shortened one no other panel shares, can establish that binding.
+  var entries = JSON.parse(el.textContent), byFull = {}, byAny = {};
+  entries.forEach(function (e) {
+    byFull[e[0].t] = e;
+    e.forEach(function (v) { byAny[v.t] = (byAny[v.t] === undefined || byAny[v.t] === e) ? e : null; });
+  });
+  function variants(gd, i, text) {
+    var bound = (gd.__qsvTitleFit = gd.__qsvTitleFit || {})[i];
+    if (bound && bound.some(function (v) { return v.t === text; })) return bound;
+    var e = byFull[text] || byAny[text];
+    if (e) gd.__qsvTitleFit[i] = e;
+    return e;
+  }
   var ctx = document.createElement("canvas").getContext("2d");
-  // the room a centred title has: the whole panel div on the inline layout. On the typed grid,
-  // twice the distance from its centre to the nearer limit: the middle of the gap to the
-  // neighbouring column (whose title needs the other half), or the page margin at an outer edge.
-  // Columns come from the partial-width x-axis domains, which every grid row shares.
+  // the room a centred title has: twice the distance from its centre to the nearer limit. A
+  // title is centred on the PLOT AREA, not its div, and the side margins differ (y-axis labels
+  // on the left), so an outer limit is the div edge: the margin beyond the plot area. On the
+  // typed grid a neighbouring column's limit is the middle of the gap between the two cells
+  // (its title needs the other half); columns come from the partial-width x-axis domains, which
+  // every grid row shares. An inline panel's single full-width axis leaves just the div edges.
   function room(gd, a) {
     var fl = gd._fullLayout, s = fl._size, px = function (x) { return x * s.w; };
-    if (gd.id !== "qsv-viz-smart-grid") return fl.width - 16;
     var lo = -s.l, hi = s.w + s.r, c = px(a.x), own = null;
     Object.keys(fl).forEach(function (k) {
       var d = /^xaxis\d*$/.test(k) && fl[k].domain;
@@ -25580,7 +25595,7 @@ const TITLE_FIT_JS: &str = r#"<script>
     if (!fl || !anns || !window.Plotly || !Plotly.relayout) return;
     var upd = {}, n = 0;
     anns.forEach(function (a, i) {
-      var e = byText[a.text];
+      var e = variants(gd, i, a.text);
       if (!e) return;
       var f = (fl.annotations && fl.annotations[i] && fl.annotations[i].font) || {};
       ctx.font = (f.size || 13) + "px " + (f.family || "sans-serif");

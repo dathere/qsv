@@ -501,7 +501,7 @@ THIRD_PARTY_FOOTER = (
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart Data Schematic (--smarter, geospatial)",
-     "One command, 13 auto-chosen panels — nearly every "
+     "One command, well over a dozen auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the Data Schematic makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
@@ -519,7 +519,7 @@ FIGURES = [
      "magnitude-over-time trend spikes during a September aftershock sequence. "
      "<code>--bivariate</code> adds an <b>NMI association heatmap</b> spanning every column type, "
      "not just the continuous-numeric ones the Pearson heatmap covers — it surfaces "
-     "depth_km and felt_reports as strongly associated with occurrence_date (NMI=0.93 and 0.89), "
+     "depth_km and felt_reports as strongly associated with the <code>timestamp</code> column (NMI=0.93 and 0.89), "
      "a temporal-clustering signal (the same September aftershock sequence) a Pearson matrix "
      "restricted to numeric pairs alone cannot express against a date column. Coordinate columns "
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
@@ -545,7 +545,7 @@ FIGURES = [
      "(packages vs weight_kg) and a delivered-over-time trend — all without <code>--smarter</code>.",
      True, ["smart", "delivery_stops.csv"]),
     ("smart Data Schematic",
-     "Auto-profiled overview: correlation heatmap + box plots + frequency bars, led by a "
+     "Auto-profiled overview: correlation heatmap + strongest-pair scatter + box/violin plots, led by a "
      "drill-down sunburst. `viz smart` now SKIPS an auto hierarchy when the candidate dimensions "
      "are statistically independent (nesting them would just replicate each level's marginal); "
      "sales_sample's region/payment_method/product_category are independent, so "
@@ -809,17 +809,18 @@ FIGURES = [
              "--location-mode", "geojson-id", "--geojson", "auto",
              "--title", "Allegheny County dog licenses by owner ZIP"]),
     ("smart Data Schematic (time-series)",
-     "Auto Data Schematic for stock_prices: a time-series trend panel (the first numeric column over the "
-     "date) leads; the strongest-correlated pair drill-down (open vs close) is shown as a <b>static "
+     "Auto Data Schematic for stock_prices: a monthly-seasonality polar profile and a time-series trend "
+     "panel (the first numeric column over the date) lead; the strongest-correlated pair drill-down "
+     "(open vs low) is shown as a <b>static "
      "scatter</b> — that relationship is a near-perfect line whose 2-D shape doesn't evolve, so "
      "the judicious animation gate withholds the (uninformative) animated version — alongside "
-     "box-plot summaries of the OHLC columns.",
+     "violin-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
     ("smart Data Schematic (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "
      "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "
-     "beside the point map, alongside the usual box plots, frequency bars and the strongest-pair "
-     "scatter. (The point map's <i>spatial extent</i> caption counts the data's bounding-box corners, "
+     "beside the point map, alongside the usual box/violin plots, a frequency bar and a correlation "
+     "heatmap. (The point map's <i>spatial extent</i> caption counts the data's bounding-box corners, "
      "which spill into neighboring countries and ocean — the choropleth instead resolves each city to "
      "its own state.) No flags, no LLM — the state fill is derived purely from the lat/lon columns.",
      True, ["smart", "us_cities.csv"]),
@@ -844,7 +845,7 @@ FIGURES = [
      "the regions are never clipped at the viewport edge — beside the dense natural-earth point map "
      "(crimson markers so coastal/island points read against the ocean), plus a six-continent "
      "breakdown. A describegpt-inferred Data Dictionary supplies the friendly field labels (e.g. "
-     "<i>Metro Population</i>, <i>Avg Annual Temp</i>). The <code>continent</code> column follows "
+     "<i>Metropolitan Population (Millions)</i>, <i>Average Annual Temperature</i>). The <code>continent</code> column follows "
      "the <a href=\"https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope\">plotly.js "
      "geo <code>scope</code></a> continent vocabulary (<i>Oceania</i>, <i>North America</i>, …). "
      "<b>Note:</b> <code>elevation_m</code> is real (GeoNames), while <code>avg_annual_temp_c</code> "
@@ -873,8 +874,8 @@ FIGURES = [
      "measure column (e.g. a sale price) additionally gets a per-zip <b>median-of-measure</b> "
      "choropleth beside it. Alongside the map the profiler fills the Data Schematic with "
      "<code>LicenseType</code>/<code>Breed</code>/<code>Color</code> frequency bars and, via "
-     "<code>--bivariate</code>, an <b>NMI association heatmap</b> (Breed ↔ Color) plus a ranked "
-     "Top&nbsp;Relationships panel. <code>--dict-info</code> adds a per-panel info icon and a "
+     "<code>--bivariate</code>, an <b>NMI association heatmap</b> (LicenseType, Breed &amp; Color; the ranked "
+     "Top&nbsp;Relationships panel only joins it past 8 associated columns). <code>--dict-info</code> adds a per-panel info icon and a "
      "slide-over <b>Data Schematic</b> drawer sourced from the same curated schema, topped by a "
      "<b>download row</b> bundling the dictionary, the charted frequency counts and the stats &amp; "
      "bivariate sidecars into the HTML itself. Fully "
@@ -1032,7 +1033,9 @@ SCREENSHOTS = [
             '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
             "Regional Data Center (WPRDC)</a>. The Data Schematic bins each request's lat/lon by "
             "point-in-polygon into Pittsburgh's neighborhood polygons "
-            "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
+            "(<code>--geojson pittsburgh-neighborhoods</code>, a <code>QSV_GEOJSON_SHORTCUTS</code> alias "
+            "for <code>--geojson pittsburgh_neighborhoods.geojson --feature-id-key properties.hood</code>; "
+            "no geocoding); a curated "
             "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
             "columns and supplies friendly field labels, and <code>--dict-info</code> renders that "
             "dictionary as its own in-page <b>Data Schematic</b> tab (with a hover/click info icon "
@@ -1040,7 +1043,7 @@ SCREENSHOTS = [
             "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
             "association heatmap plus the ranked top-relationships panel, while "
             "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
-            "The standalone page is a ~10.4&nbsp;MB self-contained Data Schematic &mdash; too large to embed "
+            "The standalone page is a ~10.7&nbsp;MB self-contained Data Schematic &mdash; too large to embed "
             "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
             "Data Schematic in a new window</b>."),
         "image": "pitt311data-visual-datadic.webp",
@@ -1088,28 +1091,25 @@ SCREENSHOTS = [
             "auto-profiler fills the Data Schematic with frequency bars, an <b>hour-of-day</b> seasonality "
             "profile, a time trend, a <b>parallel-categories (parcats) flow</b> over 3-4 associated "
             "categorical columns (co-occurrence ribbons, auto-chosen over a nested treemap/sunburst for "
-            "this many-to-many set) and a mean-by-borough panel. New here is an "
-            "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Submission Channel</i>): it "
+            "this many-to-many set). New here is an "
+            "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Source Channel Type</i>): it "
             "traces how each city agency's complaints arrive by channel, the thickest ribbons being "
             "<i>HPD → PHONE</i> (1,426) and <i>NYPD → PHONE</i> (1,348). "
-            "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across the <b>36 charted "
+            "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across <b>29 of the charted "
             "columns</b> plus a ranked "
             "<b>Top Relationships</b> panel — a horizontal <b>multivariate lollipop</b> where each dot's "
             "position is the pair's NMI on a value axis <b>zoomed</b> to the shown band (so near-ceiling "
             "associations separate instead of crushing together at 1.0), its <b>size</b> encodes "
             "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. The top pair is a "
             "purely categorical one a Pearson-only heatmap could never surface, since neither column is "
-            "numeric: <i>Borough</i> × <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000). It also flags a "
-            "genuine <b>nonlinear</b> pair in amber — <i>Closed Date</i> × <i>Due Date</i> (NMI=0.9994): a "
-            "complaint's actual close date is almost perfectly rank-associated with its deadline, yet how "
-            "far the two land apart varies by complaint type, curving the relationship in a way a linear "
-            "correlation alone would understate. The ranking is <b>support-weighted</b>: a pair only "
-            "qualifies "
-            "when its co-occurring row count is at least 10% of the best-supported pair's, so a "
-            "technically-perfect NMI from two sparsely-populated columns can't crowd out a more broadly "
-            "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
-            "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
-            "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
+            "numeric: <i>Borough</i> × <i>Park Borough</i> (NMI=1.0). The ranking is <b>support-weighted</b>: a "
+            "pair only qualifies when its co-occurring row count is at least 10% of the best-supported "
+            "pair's, so a technically-perfect NMI from two sparsely-populated columns can't crowd out a "
+            "more broadly meaningful one. Below the top pair, the ranking surfaces the dataset's "
+            "<b>redundant columns</b> — the same street recorded twice (<i>Cross Street 1/2</i> × "
+            "<i>Intersection Street 1/2</i>) and a code/name lookup (<i>Agency</i> × <i>Agency Name</i>) "
+            "— exactly the columns a curated dictionary or a <code>select</code> would fold together. "
+            "No pair here is nonlinear, so every dot keeps the default color. "
             "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Schematic</b> "
             "drawer sourced from the same committed schema, topped by a <b>download row</b> that bundles "
             "the dictionary as JSON Schema, the frequency counts the panels actually charted, and the "
@@ -1117,7 +1117,7 @@ SCREENSHOTS = [
             "HTML, so anyone you send the Data Schematic to can save them. The run stays fully "
             "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
             "never triggers a live <code>--dictionary infer</code> pass. "
-            "The standalone page is a ~3.6&nbsp;MB Data Schematic, shown here as a screenshot so the "
+            "The standalone page is a ~4&nbsp;MB Data Schematic, shown here as a screenshot so the "
             "gallery page stays light: <b>click it to open the fully interactive Data Schematic in a "
             "new window</b>."),
         "image": "nyc311data-visual-datadic.webp",
@@ -1137,7 +1137,7 @@ SCREENSHOTS = [
             "<b>Boston 311</b> service requests (2025): <b>267,187 rows x 31 columns</b>, 92.6% "
             "complete, from the "
             '<a href="https://data.boston.gov/dataset/311-service-requests">City of Boston open '
-            "data portal</a>, profiled into <b>28 auto-chosen panels</b>. A dense point map leads, "
+            "data portal</a>, profiled into <b>some 30 auto-chosen panels</b>. A dense point map leads, "
             "followed by a <b>25-neighborhood choropleth</b>: each request's coordinates are binned "
             "point-in-polygon into Boston's neighborhood boundaries (<code>--geojson</code> with "
             "<code>--feature-id-key properties.name</code>, no geocoding) &mdash; Dorchester tops it "
@@ -1147,7 +1147,9 @@ SCREENSHOTS = [
             "coarse projection basemap used for country/continental choropleths. Beyond the maps the "
             "auto-profiler adds an <b>hour-of-day</b> seasonality profile, a case-volume time trend, "
             "a <b>parallel-categories flow</b> (<i>Data Source &rarr; Subject Area &rarr; Fire "
-            "District &rarr; City Council District</i>) and 23 frequency bars &mdash; among them the "
+            "District &rarr; City Council District</i>), a <i>Fire District &rarr; City Council "
+            "District</i> Sankey, the <code>--bivariate</code> NMI association heatmap with its ranked "
+            "Top Relationships panel, and 23 frequency bars &mdash; among them the "
             "SLA split (<b>ONTIME 182,145</b> vs <b>OVERDUE 85,042</b>). <code>--smarter</code> "
             "enriches the stats cache (<code>moarstats --advanced</code>), and a committed "
             "<code>--dictionary</code> (<code>boston311.schema.json</code>, generated with "
@@ -1163,7 +1165,7 @@ SCREENSHOTS = [
             "third-party host). Embedding every one of the 264,951 mapped points (all 267,187 "
             "records, via <code>QSV_VIZ_MAX_POINTS=300000</code>), plus the first 50,000 rows for "
             "the <b>data viewer</b> drawer that the row count's <b>(Preview)</b> link opens, makes "
-            "this a ~21.5&nbsp;MB "
+            "this a ~21.9&nbsp;MB "
             "self-contained Data Schematic "
             "&mdash; too large to embed inline &mdash; so this is a screenshot: <b>click it to open "
             "the fully interactive Data Schematic in a new window</b>."),
@@ -1204,7 +1206,7 @@ SCREENSHOTS = [
             "supplies the friendly Portuguese field labels that <code>--dict-info</code> renders "
             "as the in-page <b>Data Schematic</b> tab. Neither the <code>.ssv</code> export "
             "nor <code>brazil_geo.json</code> is committed here, so this page is reused as-is. "
-            "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large to "
+            "The standalone Data Schematic is a ~18&nbsp;MB self-contained page &mdash; too large to "
             "embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
             "interactive Data Schematic in a new window</b>."),
         "image": "brazil-lpg-visual-datadic.webp",
@@ -1243,7 +1245,7 @@ SCREENSHOTS = [
             "NMI association panels (and implicitly forces <code>--smarter</code>), and "
             "<code>--dict-info</code> renders the dictionary as the in-page "
             "<b>Data Schematic</b> tab. Regenerate with the committed dictionary, <b>not</b> "
-            "<code>--dictionary infer</code>. The standalone Data Schematic is a ~5.1&nbsp;MB "
+            "<code>--dictionary infer</code>. The standalone Data Schematic is a ~5.4&nbsp;MB "
             "self-contained page, shown here as a screenshot so the gallery page stays light: "
             "<b>click it to open the fully interactive Data Schematic in a new window</b>."),
         "image": "colombia-calidad-aire-visual-datadic.webp",
@@ -1281,7 +1283,7 @@ SCREENSHOTS = [
             "counties carrying I-80 and I-70 come out on top. The ACS vintage is <b>pinned</b> "
             "(<code>census@2024</code>): unpinned, qsv probes the newest published release against "
             "today, so a rebuild next year would silently re-vintage every number on this page. "
-            "The standalone Data Schematic is a ~17&nbsp;MB self-contained page &mdash; too large "
+            "The standalone Data Schematic is a ~18&nbsp;MB self-contained page &mdash; too large "
             "to embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
             "interactive Data Schematic in a new window</b>."),
         "image": "pa-crashes-visual-datadic.webp",

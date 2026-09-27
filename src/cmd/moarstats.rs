@@ -3443,6 +3443,12 @@ fn stats_options_select(stats_options: &str) -> Option<String> {
 ///   count means a selection that skipped or repeated a twin, which cannot be told apart without
 ///   the selection, so those rows map to `None` and their names are returned for a warning. An
 ///   empty result beats another column's statistics.
+///
+/// Known limit: equal counts do not prove the order. A reused cache built with a selection that
+/// reorders or repeats twins while keeping the count (on `a,b,a`: `--select 3,1` or `3,3`) is
+/// mapped by occurrence, so a twin can get the other twin's appended statistics. Neither the stats
+/// CSV nor its sidecar records a `--select`, so this cannot be detected without re-scanning the
+/// data. Running with `--force` recomputes the baseline and takes the exact `selection` path.
 fn resolve_stats_columns(
     names: &[&str],
     csv_headers: &StringRecord,

@@ -2225,9 +2225,11 @@ pub fn stats_options_selection(
 ///
 /// Known limit: equal counts do not prove the order. A reused cache built with a selection that
 /// reorders or repeats twins while keeping the count (on `a,b,a`: `--select 3,1` or `3,3`) is
-/// mapped by occurrence, so a twin can get the other twin's appended statistics. Neither the stats
-/// CSV nor its sidecar records a `--select`, so this cannot be detected without re-scanning the
-/// data. Recomputing the baseline in the same invocation takes the exact `selection` path.
+/// mapped by occurrence, so a twin can get the other twin's appended statistics. The stats CSV
+/// does not record the selection. The `.stats.csv.json` sidecar, written only by `--stats-jsonl`
+/// runs, keeps it as `flag_select`, but as the selectors' `Debug` text (`Index(3), Index(1)`), not
+/// resolved columns, and that format is not a contract, so it is not parsed here. Recomputing the
+/// baseline in the same invocation takes the exact `selection` path.
 pub fn resolve_stats_columns(
     names: &[&str],
     csv_headers: &csv::StringRecord,

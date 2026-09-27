@@ -491,8 +491,7 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         .collect();
 
     // Stats rows are matched to results by CSV column, never by name: a name lookup gave every
-    // column sharing a header name the last one's results. `qsv stats --no-headers` names its
-    // rows by 0-based column index, so those are the names to resolve against.
+    // column sharing a header name the last one's results.
     let csv_headers: csv::StringRecord = {
         let raw = Config::new(args.arg_input.as_ref())
             .delimiter(args.flag_delimiter)
@@ -519,11 +518,31 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         .iter()
         .map(|r| r.get(field_idx).unwrap_or(""))
         .collect();
-    let (record_cols, ambiguous_names) = util::resolve_stats_columns(
-        &stats_row_names,
-        &csv_headers,
-        baseline_selection.as_deref(),
-    );
+    let (record_cols, ambiguous_names) = if args.flag_no_headers {
+        // `stats --no-headers` names its rows by OUTPUT position (0, 1, ...), not by column, so
+        // a row name says nothing about which column the row describes. Only the selection of a
+        // baseline computed here, or a cache with one row per column, maps rows to columns.
+        let n_rows = records.len();
+        match baseline_selection.filter(|sel| sel.len() == n_rows) {
+            Some(sel) => (sel.into_iter().map(Some).collect(), Vec::new()),
+            None if n_rows == csv_headers.len() => ((0..n_rows).map(Some).collect(), Vec::new()),
+            None => {
+                wwarn!(
+                    "Warning: the stats cache {} does not have one row per column, and without \
+                     headers its rows can't be matched to columns; the ps_* columns are left \
+                     empty. Delete it (pragmastat then regenerates the baseline) and re-run.",
+                    stats_csv_path.display()
+                );
+                (vec![None; n_rows], Vec::new())
+            },
+        }
+    } else {
+        util::resolve_stats_columns(
+            &stats_row_names,
+            &csv_headers,
+            baseline_selection.as_deref(),
+        )
+    };
     if !ambiguous_names.is_empty() {
         wwarn!(
             "Warning: the stats cache {} does not cover every column named {ambiguous_names:?} \

@@ -1932,3 +1932,77 @@ fn pragmastat_cache_append_baseline_selection_is_exact() {
     assert_eq!(rows[0][1..], renamed[2][1..], "row 0 is column 3");
     assert_eq!(rows[1][1..], renamed[0][1..], "row 1 is column 1");
 }
+
+fn no_headers_standalone(wrk: &Workdir) -> Vec<Vec<String>> {
+    let mut standalone = wrk.command("pragmastat");
+    standalone.args(["--standalone", "--no-headers", "data.csv"]);
+    wrk.read_stdout(&mut standalone)
+}
+
+fn no_headers_data(wrk: &Workdir) {
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["1.0", "20.0"],
+            svec!["4.0", "50.0"],
+            svec!["7.0", "80.0"],
+        ],
+    );
+}
+
+#[test]
+fn pragmastat_cache_append_no_headers_baseline_selection() {
+    // without headers `stats` names rows by output position, so `--select 2,1` writes rows `0`
+    // (column 2) and `1` (column 1); each must get its own column's results
+    for (select, want_cols) in [("2", vec![2]), ("2,1", vec![2, 1])] {
+        let wrk = Workdir::new(&format!(
+            "pragmastat_cache_append_no_headers_sel_{}",
+            select.replace(',', "_")
+        ));
+        no_headers_data(&wrk);
+        let standalone = no_headers_standalone(&wrk);
+
+        let mut cmd = wrk.command("pragmastat");
+        cmd.args([
+            "--no-headers",
+            "--stats-options",
+            &format!("--select {select} --stats-jsonl"),
+            "data.csv",
+        ]);
+        wrk.assert_success(&mut cmd);
+        let rows = ps_rows(&wrk.path("data.stats.csv"));
+        assert_eq!(rows.len(), want_cols.len());
+        for (row, col) in rows.iter().zip(want_cols) {
+            assert_eq!(
+                row[1..],
+                standalone[col][1..8],
+                "--select {select}: {rows:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pragmastat_cache_append_no_headers_partial_cache_left_empty() {
+    // a reused headerless cache that doesn't have one row per column can't say which column a
+    // row is: its ps_* columns stay empty rather than holding another column's results
+    let wrk = Workdir::new("pragmastat_cache_append_no_headers_partial_cache");
+    no_headers_data(&wrk);
+    let mut stats = wrk.command("stats");
+    stats.args([
+        "--no-headers",
+        "data.csv",
+        "--select",
+        "2",
+        "--output",
+        "data.stats.csv",
+    ]);
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--no-headers", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("data.stats.csv"));
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0][1..].iter().all(String::is_empty), "{rows:?}");
+}

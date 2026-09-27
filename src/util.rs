@@ -2152,6 +2152,36 @@ fn send_hwsurvey(
     }
 }
 
+/// Unique display labels for a list of column names that may repeat: the first occurrence keeps
+/// its name, later ones get `safenames`' duplicate suffix - `a`, `a_2`, `a_3` - skipping any
+/// suffix that is already a real name in the list (so `a,a,a_2` labels as `a`, `a_3`, `a_2`).
+///
+/// This is the ONE place duplicate labels are minted: `moarstats --bivariate` writes them into
+/// its sidecar and `viz smart` rebuilds them from the same stats `field` list to map the sidecar
+/// back to columns, so both sides must call this (#4663).
+pub fn disambiguate_names<S: AsRef<str>>(names: &[S]) -> Vec<String> {
+    let taken: std::collections::HashSet<&str> = names.iter().map(AsRef::as_ref).collect();
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut next_suffix: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    names
+        .iter()
+        .map(|n| {
+            let name = n.as_ref();
+            if used.insert(name.to_string()) {
+                return name.to_string();
+            }
+            let k = next_suffix.entry(name).or_insert(2);
+            loop {
+                let label = format!("{name}_{k}");
+                *k += 1;
+                if !taken.contains(label.as_str()) && used.insert(label.clone()) {
+                    return label;
+                }
+            }
+        })
+        .collect()
+}
+
 pub fn safe_header_names(
     headers: &csv::StringRecord,
     check_first_char: bool,
@@ -6440,6 +6470,22 @@ mod tests {
         // behind. This is the case that silently poisoned consumers.
         filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
         assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+    }
+
+    #[test]
+    fn disambiguate_names_follows_safenames_and_never_collides() {
+        let got = |names: &[&str]| disambiguate_names(names);
+        // unique names pass through untouched
+        assert_eq!(got(&["a", "b"]), ["a", "b"]);
+        // later duplicates get the safenames suffix
+        assert_eq!(got(&["a", "a", "b", "a"]), ["a", "a_2", "b", "a_3"]);
+        // a suffix that is already a real name is skipped, whichever side of it the name sits
+        assert_eq!(got(&["a", "a", "a_2"]), ["a", "a_3", "a_2"]);
+        assert_eq!(got(&["a_2", "a", "a"]), ["a_2", "a", "a_3"]);
+        // every label is unique
+        let labels = got(&["x", "x", "x_2", "x", "x_3"]);
+        let set: std::collections::HashSet<&String> = labels.iter().collect();
+        assert_eq!(set.len(), labels.len(), "{labels:?}");
     }
 
     #[test]

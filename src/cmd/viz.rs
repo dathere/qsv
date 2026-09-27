@@ -19463,6 +19463,19 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
     Ok(rows)
 }
 
+/// Sidecar label -> stats row for the `moarstats --bivariate` output. A repeated header name is
+/// written there as `amount`, `amount_2`, … (`util::disambiguate_names`), so the labels are
+/// rebuilt from the stats `field` list with the SAME helper rather than matched by raw name, which
+/// sent every duplicate's pairs to one column (#4663).
+fn bivariate_label_index(stats: &[crate::cmd::stats::StatsData]) -> HashMap<String, usize> {
+    let names: Vec<&str> = stats.iter().map(|s| s.field.as_str()).collect();
+    util::disambiguate_names(&names)
+        .into_iter()
+        .enumerate()
+        .map(|(i, label)| (label, i))
+        .collect()
+}
+
 /// Build the `viz smart --bivariate` overview panels — a normalized mutual information (NMI)
 /// association heatmap and, for wider datasets, a ranked "top relationships" bar — from moarstats'
 /// `--bivariate` sidecar CSV (written by the `--smarter` moarstats subprocess above when
@@ -19497,12 +19510,8 @@ fn bivariate_panels(
         return (None, None);
     }
 
-    // resolve field name -> column index once
-    let field_idx: HashMap<&str, usize> = stats
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.field.as_str(), i))
-        .collect();
+    // resolve sidecar label -> column index once
+    let field_idx = bivariate_label_index(stats);
 
     struct Survivor {
         i:       usize,
@@ -19872,11 +19881,7 @@ fn sankey_panel(
         return Ok(None);
     }
 
-    let field_idx: HashMap<&str, usize> = stats
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.field.as_str(), i))
-        .collect();
+    let field_idx = bivariate_label_index(stats);
 
     let label_of = |idx: usize| -> String {
         let sem = &col_sems[idx];
@@ -41767,6 +41772,22 @@ mod tests {
             uniqueness_ratio: uniqueness,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn bivariate_label_index_maps_duplicate_labels_to_their_own_rows() {
+        // moarstats --bivariate writes a repeated header as `amount`, `amount_2` (#4663); each
+        // label must land on its own stats row, not the last row sharing the raw name
+        let named = |f: &str| crate::cmd::stats::StatsData {
+            field: f.to_string(),
+            ..stat("Float", 50, Some(0.5))
+        };
+        let stats = [named("amount"), named("region"), named("amount")];
+        let idx = bivariate_label_index(&stats);
+        assert_eq!(idx.get("amount"), Some(&0));
+        assert_eq!(idx.get("region"), Some(&1));
+        assert_eq!(idx.get("amount_2"), Some(&2));
+        assert_eq!(idx.len(), 3);
     }
 
     // map / choropleth basemap framing must honor --width/--height for static image exports but use

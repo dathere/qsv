@@ -292,7 +292,9 @@ These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
 Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
 The file is always rewritten - with just a header row if no field pair produced a statistic -
-so it never holds stale results from an earlier run.
+so it never holds stale results from an earlier run. A header name that repeats in the input is
+written as name, name_2, name_3, ... (the `safenames` convention), so each column's pairs stay
+distinguishable.
 
 The correlation statistics (pearson, spearman, kendall, covariance & regression) only use
 numeric, date and boolean fields. String fields only feed the frequency-based statistics
@@ -477,7 +479,7 @@ use simdutf8::basic::from_utf8;
 use stats::{atkinson, gini};
 use threadpool::ThreadPool;
 
-use crate::{CliError, CliResult, config::Config, regex_oncelock, util};
+use crate::{CliError, CliResult, config::Config, regex_oncelock, select::SelectColumns, util};
 
 /// Minimum record count before parallel processing is worthwhile for outliers and
 /// bivariate stats. Below this, the scheduling overhead outweighs the speedup, so
@@ -3389,6 +3391,111 @@ where
     })
 }
 
+/// The column selection `--stats-options` hands to `qsv stats` (`--select <arg>`,
+/// `--select=<arg>`, `-s <arg>`, `-s<arg>`, or `s` ending a docopt cluster of no-argument short
+/// flags such as `-Es <arg>`), if any. The last one wins. Mirrors
+/// `stats_options_redirect_output`'s cluster rules: scanning stops at the first argument-taking
+/// short option, whose value is the rest of the token.
+fn stats_options_select(stats_options: &str) -> Option<String> {
+    // no-argument short flags accepted by `qsv stats`
+    const STATS_SHORT_FLAGS: [char; 3] = ['E', 'h', 'n'];
+
+    let tokens: Vec<&str> = stats_options.split_whitespace().collect();
+    let mut found = None;
+    for (i, token) in tokens.iter().enumerate() {
+        if let Some(long) = token.strip_prefix("--") {
+            if long == "select" {
+                found = tokens.get(i + 1).map(ToString::to_string);
+            } else if let Some(v) = long.strip_prefix("select=") {
+                found = Some(v.to_string());
+            }
+        } else if let Some(short) = token.strip_prefix('-') {
+            for (pos, ch) in short.char_indices() {
+                if ch == 's' {
+                    let rest = &short[pos + ch.len_utf8()..];
+                    found = if rest.is_empty() {
+                        tokens.get(i + 1).map(ToString::to_string)
+                    } else {
+                        Some(rest.to_string())
+                    };
+                    break;
+                }
+                if !STATS_SHORT_FLAGS.contains(&ch) {
+                    break;
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Map each stats row (`names`: the stats CSV's `field` column, in row order) to the CSV column
+/// it describes. A plain name lookup is wrong whenever a header repeats: first-match sent every
+/// duplicate to the first column (#4663).
+///
+/// - `selection`: the exact column of every row, when the baseline `stats` ran in THIS invocation
+///   (its `--select`, resolved against the header, or every column in order). It is used only if it
+///   lines up with `names` row for row.
+/// - Otherwise the stats cache was reused, and which columns it covers is not recorded reliably. A
+///   name that occurs once in the header maps to that column, however many rows carry it (`--select
+///   1,1`). A repeated name maps by occurrence - the k-th row named N to the k-th column named N -
+///   only when the cache has exactly as many rows named N as the header has columns. Any other
+///   count means a selection that skipped or repeated a twin, which cannot be told apart without
+///   the selection, so those rows map to `None` and their names are returned for a warning. An
+///   empty result beats another column's statistics.
+///
+/// Known limit: equal counts do not prove the order. A reused cache built with a selection that
+/// reorders or repeats twins while keeping the count (on `a,b,a`: `--select 3,1` or `3,3`) is
+/// mapped by occurrence, so a twin can get the other twin's appended statistics. Neither the stats
+/// CSV nor its sidecar records a `--select`, so this cannot be detected without re-scanning the
+/// data. Running with `--force` recomputes the baseline and takes the exact `selection` path.
+fn resolve_stats_columns(
+    names: &[&str],
+    csv_headers: &StringRecord,
+    selection: Option<&[usize]>,
+) -> (Vec<Option<usize>>, Vec<String>) {
+    if let Some(sel) = selection
+        && sel.len() == names.len()
+        && sel
+            .iter()
+            .zip(names)
+            .all(|(&col, name)| csv_headers.get(col) == Some(*name))
+    {
+        return (sel.iter().map(|&col| Some(col)).collect(), Vec::new());
+    }
+
+    let mut positions: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (idx, h) in csv_headers.iter().enumerate() {
+        positions.entry(h).or_default().push(idx);
+    }
+    let mut rows_named: HashMap<&str, usize> = HashMap::new();
+    for name in names {
+        *rows_named.entry(name).or_insert(0) += 1;
+    }
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    let mut ambiguous: Vec<String> = Vec::new();
+    let cols = names
+        .iter()
+        .map(|&name| {
+            let k = seen.entry(name).or_insert(0);
+            let occurrence = *k;
+            *k += 1;
+            match positions.get(name) {
+                None => None,
+                Some(p) if p.len() == 1 => Some(p[0]),
+                Some(p) if rows_named.get(name) == Some(&p.len()) => Some(p[occurrence]),
+                Some(_) => {
+                    if !ambiguous.iter().any(|a| a == name) {
+                        ambiguous.push(name.to_string());
+                    }
+                    None
+                },
+            }
+        })
+        .collect();
+    (cols, ambiguous)
+}
+
 /// Fused replacement for the former `count_all_outliers` + `compute_all_kga`:
 /// computes outlier statistics AND Kurtosis/Gini/Atkinson in a SINGLE scan of the
 /// original CSV (chunked & parallel when an index exists and the file is large
@@ -3396,18 +3503,19 @@ where
 /// value vectors are concatenated in strict chunk-index (file) order so results
 /// are bit-identical to a sequential read.
 ///
-/// `outlier_names`/`kga_names` are parallel to `outlier_fields`/`kga_fields` (slot
-/// i <-> field name i) and map the slot-indexed results back to name-keyed maps.
+/// `outlier_rows`/`kga_rows` are parallel to `outlier_fields`/`kga_fields` (slot
+/// i <-> stats row i) and map the slot-indexed results back to maps keyed by STATS-ROW
+/// index. Never by field name: duplicate header names would collide (#4663).
 #[allow(clippy::type_complexity)]
 fn compute_outliers_and_kga(
     outlier_fields: Vec<OutlierFieldInfo>,
-    outlier_names: Vec<String>,
+    outlier_rows: Vec<usize>,
     kga_fields: Vec<KGAFieldInfo>,
-    kga_names: Vec<String>,
+    kga_rows: Vec<usize>,
     input_path: &Path,
     flag_jobs: Option<usize>,
     atkinson_epsilon: f64,
-) -> CliResult<(HashMap<String, OutlierStats>, HashMap<String, KGAStats>)> {
+) -> CliResult<(HashMap<usize, OutlierStats>, HashMap<usize, KGAStats>)> {
     if outlier_fields.is_empty() && kga_fields.is_empty() {
         return Ok((HashMap::new(), HashMap::new()));
     }
@@ -3558,21 +3666,21 @@ fn compute_outliers_and_kga(
         (fused.outlier_stats, fused.kga_values)
     };
 
-    // Build the outlier map (slot -> name). For the empty-CSV case merged_outliers
+    // Build the outlier map (slot -> stats row). For the empty-CSV case merged_outliers
     // is empty and this yields an empty map (matching the former behavior).
-    let outlier_counts: HashMap<String, OutlierStats> =
-        outlier_names.into_iter().zip(merged_outliers).collect();
+    let outlier_counts: HashMap<usize, OutlierStats> =
+        outlier_rows.into_iter().zip(merged_outliers).collect();
 
-    // Finalize KGA per field (slot -> name) over its file-ordered value vector.
+    // Finalize KGA per field (slot -> stats row) over its file-ordered value vector.
     // Each field's finalize is independent and dominated by a per-column sort
     // (Gini) plus moments/Theil, so fan out across fields with rayon.
-    // Results are keyed by name and each field's math is order-independent of the
+    // Results are keyed by stats row and each field's math is order-independent of the
     // others, so this stays bit-identical to a sequential finalize.
-    let kga_stats: HashMap<String, KGAStats> = kga_concat
+    let kga_stats: HashMap<usize, KGAStats> = kga_concat
         .into_par_iter()
         .zip(kga_is_date)
-        .zip(kga_names)
-        .map(|((values, is_date), name)| (name, finalize_kga(values, is_date, atkinson_epsilon)))
+        .zip(kga_rows)
+        .map(|((values, is_date), row)| (row, finalize_kga(values, is_date, atkinson_epsilon)))
         .collect();
 
     Ok((outlier_counts, kga_stats))
@@ -4653,136 +4761,165 @@ fn compute_all_bivariatestats_sequential(
         .collect()
 }
 
-/// Compute Shannon Entropy for all fields by calling the frequency command.
-/// Uses `run_qsv_cmd` to call frequency command with --limit 0 to get all frequencies,
-/// then parses the CSV output and computes entropy for each field.
-/// Returns a `HashMap` mapping field names to their entropy statistics
-fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropyStats>> {
+/// Compute Shannon Entropy and Simpson's Diversity for every CSV column by calling the frequency
+/// command (`--limit 0`, so every value is counted). Returns one entry per CSV column, by
+/// POSITION: `None` where no distribution could be matched to that column.
+///
+/// frequency's CSV output identifies a column only by its `field` name. That is exact while
+/// header names are unique, and it is the cheap path, so it is kept for them. When a name repeats
+/// (#4663) the CSV rows of the twins cannot be told apart - adjacent duplicates not even by
+/// order - so frequency's JSON output, one object per column in column order, is read instead.
+/// It is several times larger, so it is only paid for when needed, and it is deserialized into
+/// borrowed typed rows rather than a `serde_json::Value` tree.
+fn compute_all_entropy(
+    input_path: &Path,
+    csv_headers: &StringRecord,
+) -> CliResult<Vec<Option<EntropyStats>>> {
     let input_path_str = input_path
         .to_str()
         .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
-
-    // Call frequency command with --limit 0 to get all frequencies for all fields
-    let (freq_output, _) = util::run_qsv_cmd(
-        "frequency",
-        &["--limit", "0"],
-        input_path_str,
-        "Computing frequency distributions for entropy...",
-    )?;
-
-    // Parse the frequency CSV output
-    // Format: field,value,count,percentage,rank
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(freq_output.as_bytes());
-
-    let headers = rdr.headers()?.clone();
-    let field_idx = headers
+    let mut name_to_col: HashMap<&str, usize> = HashMap::with_capacity(csv_headers.len());
+    let unique_names = csv_headers
         .iter()
-        .position(|h| h == "field")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'field' column".to_string()))?;
-    let value_idx = headers
-        .iter()
-        .position(|h| h == "value")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'value' column".to_string()))?;
-    let count_idx = headers
-        .iter()
-        .position(|h| h == "count")
-        .ok_or_else(|| CliError::Other("Frequency CSV missing 'count' column".to_string()))?;
+        .enumerate()
+        .all(|(col, h)| name_to_col.insert(h, col).is_none());
 
-    // Group frequencies by field name
-    let mut field_frequencies: HashMap<String, HashMap<String, u64>> = HashMap::new();
-    let mut field_totals: HashMap<String, u64> = HashMap::new();
+    // per column: every value's count, and whether frequency collapsed it to "<ALL_UNIQUE>"
+    let mut counts: Vec<Vec<u64>> = vec![Vec::new(); csv_headers.len()];
+    let mut all_unique_value: Vec<bool> = vec![false; csv_headers.len()];
+    let mut matched: Vec<bool> = vec![false; csv_headers.len()];
+    let mut add = |col: usize, value: &str, count: u64| {
+        matched[col] = true;
+        counts[col].push(count);
+        all_unique_value[col] = is_all_unique_text(value);
+    };
 
-    for result in rdr.records() {
-        let record = result?;
-        let field_name = record.get(field_idx).unwrap_or("").to_string();
-        let value = record.get(value_idx).unwrap_or("").to_string();
-        let count: u64 = record
-            .get(count_idx)
-            .ok_or_else(|| CliError::Other("Missing count in frequency CSV".to_string()))?
-            .parse()
-            .map_err(|e| CliError::Other(format!("Failed to parse count: {e}")))?;
-
-        // Skip empty field names (shouldn't happen, but be safe)
-        if field_name.is_empty() {
-            continue;
-        }
-
-        // Initialize field entry if needed
-        field_frequencies
-            .entry(field_name.clone())
-            .or_default()
-            .insert(value, count);
-
-        // Accumulate total count for this field
-        *field_totals.entry(field_name).or_insert(0) += count;
-    }
-
-    // Compute entropy for each field
-    let mut entropy_stats: HashMap<String, EntropyStats> = HashMap::new();
-
-    #[allow(clippy::cast_precision_loss)]
-    for (field_name, frequencies) in field_frequencies {
-        let total_count = field_totals.get(&field_name).copied().unwrap_or(0);
-
-        if total_count == 0 {
-            entropy_stats.insert(
-                field_name,
-                EntropyStats {
-                    entropy:            None,
-                    simpsons_diversity: None,
-                },
-            );
-            continue;
-        }
-
-        // Check if this is an all-unique field (frequency command outputs <ALL_UNIQUE> for these)
-        // The default text is "<ALL_UNIQUE>" but it can be customized with --all-unique-text
-        // We check for both the default and common variations
-        let is_all_unique = frequencies.len() == 1
-            && frequencies.keys().any(|v| {
-                v == "<ALL_UNIQUE>"
-                    || v == "<ALL UNIQUE>"
-                    || (v.starts_with("<ALL") && v.contains("UNIQUE"))
-            });
-
-        let (entropy, simpsons) = if is_all_unique {
-            // For all-unique fields, each value appears exactly once
-            // Entropy = log2(n) where n is the number of unique values (which equals total_count)
-            // Formula: -Σ p_i * log2(p_i) where p_i = 1/n for each of n values
-            // = -n * (1/n) * log2(1/n) = -log2(1/n) = log2(n)
-            let entropy = (total_count as f64).log2();
-            // Simpson's: 1 - Σ(p_i²) = 1 - n*(1/n)² = 1 - 1/n
-            let simpsons = 1.0 - 1.0 / total_count as f64;
-            (entropy, simpsons)
-        } else {
-            // Compute Shannon Entropy: H(X) = -Σ p_i * log2(p_i)
-            // and Simpson's Diversity: 1 - Σ(p_i²)
-            let mut entropy = 0.0;
-            let mut sum_p_squared = 0.0;
-            let total = total_count as f64;
-
-            for count in frequencies.values() {
-                if *count > 0 {
-                    let p = *count as f64 / total;
-                    entropy -= p * p.log2();
-                    sum_p_squared += p * p;
-                }
-            }
-            (entropy, 1.0 - sum_p_squared)
+    if unique_names {
+        let (freq_output, _) = util::run_qsv_cmd(
+            "frequency",
+            &["--limit", "0"],
+            input_path_str,
+            "Computing frequency distributions for entropy...",
+        )?;
+        // Format: field,value,count,percentage,rank
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(freq_output.as_bytes());
+        let headers = rdr.headers()?.clone();
+        let col_of = |name: &str| {
+            headers
+                .iter()
+                .position(|h| h == name)
+                .ok_or_else(|| CliError::Other(format!("Frequency CSV missing '{name}' column")))
         };
-
-        entropy_stats.insert(
-            field_name,
-            EntropyStats {
-                entropy:            Some(entropy),
-                simpsons_diversity: Some(simpsons),
-            },
-        );
+        let (field_idx, value_idx, count_idx) =
+            (col_of("field")?, col_of("value")?, col_of("count")?);
+        for result in rdr.records() {
+            let record = result?;
+            let count: u64 = record
+                .get(count_idx)
+                .ok_or_else(|| CliError::Other("Missing count in frequency CSV".to_string()))?
+                .parse()
+                .map_err(|e| CliError::Other(format!("Failed to parse count: {e}")))?;
+            if let Some(&col) = record.get(field_idx).and_then(|f| name_to_col.get(f)) {
+                add(col, record.get(value_idx).unwrap_or(""), count);
+            }
+        }
+    } else {
+        // --no-stats: the JSON mode otherwise embeds each column's summary stats
+        let (freq_output, _) = util::run_qsv_cmd(
+            "frequency",
+            &["--limit", "0", "--json", "--no-stats"],
+            input_path_str,
+            "Computing frequency distributions for entropy...",
+        )?;
+        let parsed: FreqJson = serde_json::from_str(&freq_output)
+            .map_err(|e| CliError::Other(format!("Failed to parse frequency JSON: {e}")))?;
+        for (col, field) in parsed.fields.iter().enumerate() {
+            if csv_headers.get(col) != Some(field.field.as_ref()) {
+                log::warn!(
+                    "moarstats entropy: frequency field {col} is {:?}, expected header {:?}; \
+                     leaving it without entropy",
+                    field.field,
+                    csv_headers.get(col)
+                );
+                continue;
+            }
+            for f in &field.frequencies {
+                add(col, &f.value, f.count);
+            }
+        }
     }
 
-    Ok(entropy_stats)
+    Ok(counts
+        .iter()
+        .zip(&all_unique_value)
+        .zip(&matched)
+        .map(|((c, &u), &m)| m.then(|| entropy_from_counts(c, u && c.len() == 1)))
+        .collect())
+}
+
+/// `frequency --json` output, deserialized only as far as entropy needs it (borrowing where it
+/// can; every other key is skipped).
+#[derive(serde::Deserialize)]
+struct FreqJson<'a> {
+    #[serde(borrow)]
+    fields: Vec<FreqJsonField<'a>>,
+}
+
+#[derive(serde::Deserialize)]
+struct FreqJsonField<'a> {
+    #[serde(borrow)]
+    field:       std::borrow::Cow<'a, str>,
+    #[serde(borrow)]
+    frequencies: Vec<FreqJsonEntry<'a>>,
+}
+
+#[derive(serde::Deserialize)]
+struct FreqJsonEntry<'a> {
+    #[serde(borrow)]
+    value: std::borrow::Cow<'a, str>,
+    count: u64,
+}
+
+/// Whether a frequency `value` is the bucket an all-unique column collapses to. The default is
+/// `<ALL_UNIQUE>` but it can be customized with `--all-unique-text`, so common variations match.
+fn is_all_unique_text(v: &str) -> bool {
+    v == "<ALL_UNIQUE>" || v == "<ALL UNIQUE>" || (v.starts_with("<ALL") && v.contains("UNIQUE"))
+}
+
+/// Shannon entropy (bits) and Simpson's diversity of one column's value counts. An all-unique
+/// column arrives as a single bucket whose count is the number of (distinct) values.
+#[allow(clippy::cast_precision_loss)]
+fn entropy_from_counts(counts: &[u64], all_unique: bool) -> EntropyStats {
+    let total_count: u64 = counts.iter().sum();
+    if total_count == 0 {
+        return EntropyStats {
+            entropy:            None,
+            simpsons_diversity: None,
+        };
+    }
+    let (entropy, simpsons) = if all_unique {
+        // each value appears exactly once: H = log2(n), Simpson's = 1 - 1/n
+        ((total_count as f64).log2(), 1.0 - 1.0 / total_count as f64)
+    } else {
+        // H(X) = -Σ p_i * log2(p_i); Simpson's Diversity = 1 - Σ(p_i²)
+        let total = total_count as f64;
+        let mut entropy = 0.0;
+        let mut sum_p_squared = 0.0;
+        for &count in counts {
+            if count > 0 {
+                let p = count as f64 / total;
+                entropy -= p * p.log2();
+                sum_p_squared += p * p;
+            }
+        }
+        (entropy, 1.0 - sum_p_squared)
+    };
+    EntropyStats {
+        entropy:            Some(entropy),
+        simpsons_diversity: Some(simpsons),
+    }
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -5016,6 +5153,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // captured here so it does NOT have to be re-read (and possibly observed
     // short) further below.
     let mut prevalidated_stats_content: Option<String> = None;
+    // whether the baseline `stats` ran in THIS invocation (with `--stats-options`), which is what
+    // lets its rows be mapped to columns exactly (see `resolve_stats_columns`)
+    let mut baseline_computed_here = false;
     let stats_csv_path = if temp_joined_path.is_some() {
         // Joined datasets: compute stats on the joined CSV. Run `qsv stats`
         // and capture its CSV output straight from the child's stdout pipe
@@ -5046,6 +5186,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         cmd.arg("stats")
             .args(&stats_args_vec)
             .arg(&actual_input_path_str);
+        baseline_computed_here = true;
         let output = cmd
             .output()
             .map_err(|e| CliError::Other(format!("Error while executing stats command: {e:?}")))?;
@@ -5212,6 +5353,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 &input_path_str,
                 "Ran stats command to generate baseline stats...",
             )?;
+            baseline_computed_here = true;
             if !path.exists() {
                 return fail_clierror!("Stats CSV file was not created: {}", path.display());
             }
@@ -5765,7 +5907,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Collect fields that need outlier counting and/or winsorized/trimmed means
-    let mut fields_to_count: HashMap<String, OutlierFieldInfo> = HashMap::new();
+    // Keyed by STATS-ROW INDEX, never by field name: a CSV may repeat a header name (a self-join
+    // keeps the join key on both sides), and a name key collapses those columns into one (#4663).
+    let mut fields_to_count: HashMap<usize, OutlierFieldInfo> = HashMap::new();
     let needs_outlier_counting = new_column_indices.contains_key("outliers_extreme_lower_cnt");
     let needs_winsorized_trimmed = new_column_indices.contains_key(winsorized_col_name.as_str())
         || new_column_indices.contains_key(trimmed_col_name.as_str());
@@ -5786,7 +5930,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // First pass: collect field information from stats records
     if needs_outlier_counting || needs_winsorized_trimmed {
-        for record in &records {
+        for (row, record) in records.iter().enumerate() {
             let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
             let field_type_str = record.get(type_idx).unwrap_or("");
 
@@ -5919,7 +6063,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                 // We'll find the column index when we read the CSV
                 fields_to_count.insert(
-                    field_name.to_string(),
+                    row,
                     OutlierFieldInfo {
                         col_idx: 0, // Will be set when we read CSV headers
                         field_type, // Store enum directly
@@ -5936,9 +6080,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Collect fields for Kurtosis, Gini & Atkinson Index computation with their precalculated stats
-    let mut fields_for_kga: HashMap<String, KGAFieldInfo> = HashMap::new();
+    let mut fields_for_kga: HashMap<usize, KGAFieldInfo> = HashMap::new();
     if needs_kga {
-        for record in &records {
+        for (row, record) in records.iter().enumerate() {
             let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
             let field_type_str = record.get(type_idx).unwrap_or("");
 
@@ -5953,7 +6097,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // We'll find the column index when we read the CSV
             fields_for_kga.insert(
-                field_name.to_string(),
+                row,
                 KGAFieldInfo {
                     col_idx: 0, // Will be set when we read CSV headers
                     field_type,
@@ -5966,44 +6110,65 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // outliers and KGA scan the same original CSV over the same numeric/date
     // columns, so they are computed together in a SINGLE (chunked, parallel) pass
     // instead of two independent full-file reads. A single header read maps each
-    // field name to its column index (dropping fields not present in the CSV).
-    let (outlier_fields, outlier_names, kga_fields, kga_names) = {
-        // through `read_conf`, NOT a bare `ReaderBuilder`: a raw builder defaults to a COMMA
-        // delimiter, so a tab/semicolon-delimited input (including a `.tsv` extracted from a
-        // `.zip`) parses its whole header as ONE field. No field name then matches, and every
-        // outlier/KGA field is SILENTLY dropped - empty gini/atkinson/outlier columns with no
-        // error. `read_conf` carries the resolved temp's real delimiter.
-        let mut csv_rdr = read_conf.reader()?;
-        let csv_headers = csv_rdr.headers()?.clone();
-        // First occurrence wins for duplicate header names, matching the prior
-        // `csv_headers.iter().position(|h| h == field_name)` (first-match) semantics
-        // — a plain `.collect()` would keep the LAST duplicate instead.
-        let mut header_pos: HashMap<&str, usize> = HashMap::with_capacity(csv_headers.len());
-        for (idx, h) in csv_headers.iter().enumerate() {
-            header_pos.entry(h).or_insert(idx);
-        }
-
+    // stats row to its column index (dropping fields not present in the CSV).
+    //
+    // through `read_conf`, NOT a bare `ReaderBuilder`: a raw builder defaults to a COMMA
+    // delimiter, so a tab/semicolon-delimited input (including a `.tsv` extracted from a
+    // `.zip`) parses its whole header as ONE field. No field name then matches, and every
+    // outlier/KGA field is SILENTLY dropped - empty gini/atkinson/outlier columns with no
+    // error. `read_conf` carries the resolved temp's real delimiter.
+    let csv_headers = read_conf.reader()?.headers()?.clone();
+    // The exact column of every stats row when the baseline ran here: its `--select` resolved
+    // against the header, or every column in order. `None` for a reused cache.
+    let baseline_selection: Option<Vec<usize>> = baseline_computed_here
+        .then(|| match stats_options_select(&args.flag_stats_options) {
+            None => Some((0..csv_headers.len()).collect()),
+            Some(spec) => SelectColumns::parse(&spec)
+                .and_then(|sc| sc.selection(csv_headers.as_byte_record(), true))
+                .ok()
+                .map(|sel| sel.to_vec()),
+        })
+        .flatten();
+    let stats_row_names: Vec<&str> = records
+        .iter()
+        .map(|r| field_idx.and_then(|idx| r.get(idx)).unwrap_or(""))
+        .collect();
+    // stats row -> CSV column (#4663); see `resolve_stats_columns`
+    let (record_cols, ambiguous_names) = resolve_stats_columns(
+        &stats_row_names,
+        &csv_headers,
+        baseline_selection.as_deref(),
+    );
+    if !ambiguous_names.is_empty() {
+        wwarn!(
+            "Warning: the stats cache {} does not cover every column named {ambiguous_names:?} \
+             once each, so its rows for them can't be matched to columns; their additional \
+             statistics are left empty. Re-run with --force to recompute the baseline.",
+            stats_csv_path.display()
+        );
+    }
+    let (outlier_fields, outlier_rows, kga_fields, kga_rows) = {
         let mut o_fields = Vec::with_capacity(fields_to_count.len());
-        let mut o_names = Vec::with_capacity(fields_to_count.len());
-        for (name, mut info) in fields_to_count {
-            if let Some(&col_idx) = header_pos.get(name.as_str()) {
+        let mut o_rows = Vec::with_capacity(fields_to_count.len());
+        for (row, mut info) in fields_to_count {
+            if let Some(col_idx) = record_cols[row] {
                 info.col_idx = col_idx;
                 o_fields.push(info);
-                o_names.push(name);
+                o_rows.push(row);
             }
         }
 
         let mut k_fields = Vec::with_capacity(fields_for_kga.len());
-        let mut k_names = Vec::with_capacity(fields_for_kga.len());
-        for (name, mut info) in fields_for_kga {
-            if let Some(&col_idx) = header_pos.get(name.as_str()) {
+        let mut k_rows = Vec::with_capacity(fields_for_kga.len());
+        for (row, mut info) in fields_for_kga {
+            if let Some(col_idx) = record_cols[row] {
                 info.col_idx = col_idx;
                 k_fields.push(info);
-                k_names.push(name);
+                k_rows.push(row);
             }
         }
 
-        (o_fields, o_names, k_fields, k_names)
+        (o_fields, o_rows, k_fields, k_rows)
     };
 
     // Single fused pass: outlier counting + Kurtosis/Gini/Atkinson in one scan
@@ -6013,9 +6178,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         compute_outliers_and_kga(
             outlier_fields,
-            outlier_names,
+            outlier_rows,
             kga_fields,
-            kga_names,
+            kga_rows,
             read_input_path,
             args.flag_jobs,
             args.flag_epsilon,
@@ -6023,10 +6188,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Compute Shannon Entropy for all fields
-    let entropy_stats = if new_column_indices.contains_key("shannon_entropy") {
-        compute_all_entropy(read_input_path)?
+    // one entry per CSV column (by position)
+    let entropy_by_col = if new_column_indices.contains_key("shannon_entropy") {
+        compute_all_entropy(read_input_path, &csv_headers)?
     } else {
-        HashMap::new()
+        Vec::new()
     };
 
     let mut stats_config = BivariateStatsConfig::default();
@@ -6120,12 +6286,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             read_csv_headers()?
         };
 
-        // Store field names for index-to-name lookups (used for output and frequency cache)
-        let field_names: Vec<String> = csv_headers
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        // Output labels by column index. A repeated header name gets `safenames`' duplicate
+        // suffix (`amount`, `amount_2`) so the sidecar can tell the columns apart; `viz smart`
+        // rebuilds the same labels via the same helper (#4663).
+        let field_names: Vec<String> =
+            util::disambiguate_names(&csv_headers.iter().collect::<Vec<_>>());
         bivariate_field_names = Some(field_names.clone());
+        // stats row -> CSV column, duplicate header names matched by occurrence (#4663)
+        let (stats_cols, _) = resolve_stats_columns(
+            &stats_field_names
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            &csv_headers,
+            baseline_selection.as_deref(),
+        );
 
         // Collect all field pairs for bivariate computation using column indices as keys
         // Using u16 for keys (2 bytes) instead of usize (8 bytes) for better memory efficiency
@@ -6171,7 +6346,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             };
 
             // Get column index for field1
-            let Some(field1_col_idx) = csv_headers.iter().position(|h| h == field1_name) else {
+            let Some(field1_col_idx) = stats_cols.get(i).copied().flatten() else {
                 skipped_field1_missing_in_csv += 1;
                 log::warn!(
                     "bivariate field_pairs: skipping field1={field1_name:?} (i={i}): name not \
@@ -6206,7 +6381,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 };
 
                 // Get column index for field2
-                let Some(field2_col_idx) = csv_headers.iter().position(|h| h == field2_name) else {
+                let Some(field2_col_idx) = stats_cols.get(j).copied().flatten() else {
                     skipped_field2_missing_in_csv += 1;
                     log::warn!(
                         "bivariate field_pairs: skipping field2={field2_name:?} (i={i}, j={j}) \
@@ -6891,11 +7066,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let new_columns_len = new_columns.len();
     let mut new_values: Vec<String> = vec![String::new(); new_columns_len];
 
-    // Process each record
+    // Process each record. Pre-computed results are looked up by STATS-ROW index (and entropy by
+    // the row's CSV column), never by field name: duplicate header names would collide (#4663).
     #[allow(clippy::cast_precision_loss)]
-    for record in &records {
+    for (row, record) in records.iter().enumerate() {
         // Get field name and type (skip dataset stats rows that might not have proper type)
         let field_name = field_idx.and_then(|idx| record.get(idx)).unwrap_or("");
+        let row_entropy = record_cols
+            .get(row)
+            .copied()
+            .flatten()
+            .and_then(|col| entropy_by_col.get(col))
+            .and_then(Option::as_ref);
         let field_type_str = record.get(type_idx).unwrap_or("");
 
         // Convert string to enum for efficient comparisons
@@ -6999,7 +7181,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Write Shannon Entropy from pre-computed results (works for all field types)
         if new_column_indices.contains_key("shannon_entropy")
             && !field_name.is_empty()
-            && let Some(stats) = entropy_stats.get(field_name)
+            && let Some(stats) = row_entropy
             && let Some(entropy_val) = stats.entropy
             && let Some(idx) = new_column_indices.get("shannon_entropy")
         {
@@ -7009,7 +7191,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Write Normalized Entropy from pre-computed results (works for all field types)
         if let Some(idx) = new_column_indices.get("normalized_entropy")
             && !field_name.is_empty()
-            && let Some(entropy_stats) = entropy_stats.get(field_name)
+            && let Some(entropy_stats) = row_entropy
             && let Some(entropy_val) = entropy_stats.entropy
         {
             let cardinality_val = cardinality_idx
@@ -7023,7 +7205,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Write Simpson's Diversity Index from pre-computed results (works for all field types)
         if let Some(idx) = new_column_indices.get("simpsons_diversity_index")
             && !field_name.is_empty()
-            && let Some(entropy_stats_val) = entropy_stats.get(field_name)
+            && let Some(entropy_stats_val) = row_entropy
             && let Some(simpsons_val) = entropy_stats_val.simpsons_diversity
         {
             new_values[*idx] = util::round_num(simpsons_val, args.flag_round);
@@ -7245,7 +7427,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Get outlier statistics from pre-computed results
             if new_column_indices.contains_key("outliers_extreme_lower_cnt")
                 && !field_name.is_empty()
-                && let Some(stats) = outlier_counts.get(field_name)
+                && let Some(stats) = outlier_counts.get(&row)
             {
                 // Write counts (with _cnt suffix)
                 if let Some(idx) = new_column_indices.get("outliers_extreme_lower_cnt") {
@@ -7467,7 +7649,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             if (new_column_indices.contains_key(winsorized_col_name.as_str())
                 || new_column_indices.contains_key(trimmed_col_name.as_str()))
                 && !field_name.is_empty()
-                && let Some(stats) = outlier_counts.get(field_name)
+                && let Some(stats) = outlier_counts.get(&row)
             {
                 // Compute means
                 let winsorized_mean = if stats.winsorized_count > 0 {
@@ -7594,7 +7776,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Write --advanced value-vector statistics from pre-computed results
             if needs_kga
                 && !field_name.is_empty()
-                && let Some(stats) = kga_stats.get(field_name)
+                && let Some(stats) = kga_stats.get(&row)
             {
                 if let Some(val) = stats.moment_skewness
                     && let Some(idx) = new_column_indices.get("moment_skewness")
@@ -7731,6 +7913,82 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_stats_columns_exact_selection_wins() {
+        let headers = StringRecord::from(vec!["a", "b", "a"]);
+        // the baseline ran here with --select 3,3: exact, and names line up
+        assert_eq!(
+            resolve_stats_columns(&["a", "a"], &headers, Some(&[2, 2])),
+            (vec![Some(2), Some(2)], vec![])
+        );
+        // a selection that doesn't line up with the rows is ignored (falls back below)
+        assert_eq!(
+            resolve_stats_columns(&["a", "b", "a"], &headers, Some(&[0, 1])).0,
+            [Some(0), Some(1), Some(2)]
+        );
+    }
+
+    #[test]
+    fn resolve_stats_columns_reused_cache_rules() {
+        let headers = StringRecord::from(vec!["a", "b", "a", "c", "a"]);
+        // full coverage of the `a` twins: by occurrence; unknown names -> None
+        assert_eq!(
+            resolve_stats_columns(&["a", "b", "a", "c", "a", "zz"], &headers, None),
+            (
+                vec![Some(0), Some(1), Some(2), Some(3), Some(4), None],
+                vec![]
+            )
+        );
+        // a unique name maps to its column however many rows carry it (`--select 1,1`)
+        assert_eq!(
+            resolve_stats_columns(&["b", "b", "c"], &headers, None),
+            (vec![Some(1), Some(1), Some(3)], vec![])
+        );
+        // a partial (or repeated) cover of the twins can't be told apart: None + reported
+        assert_eq!(
+            resolve_stats_columns(&["b", "a"], &headers, None),
+            (vec![Some(1), None], vec!["a".to_string()])
+        );
+        assert_eq!(
+            resolve_stats_columns(&["a", "a", "a", "a"], &headers, None).1,
+            ["a"]
+        );
+    }
+
+    #[test]
+    fn stats_options_select_finds_every_spelling() {
+        assert_eq!(stats_options_select(""), None);
+        assert_eq!(stats_options_select("--everything"), None);
+        assert_eq!(stats_options_select("--select 2,3").as_deref(), Some("2,3"));
+        assert_eq!(stats_options_select("--select=a,b").as_deref(), Some("a,b"));
+        assert_eq!(stats_options_select("-E -s 1,1").as_deref(), Some("1,1"));
+        assert_eq!(stats_options_select("-Es 4").as_deref(), Some("4"));
+        assert_eq!(stats_options_select("-Es4-6").as_deref(), Some("4-6"));
+        assert_eq!(
+            stats_options_select("-s1 --everything").as_deref(),
+            Some("1")
+        );
+        // `-c` takes an argument, so the `s` after it is part of that value, not --select
+        assert_eq!(stats_options_select("-cs 5"), None);
+        // the last one wins
+        assert_eq!(
+            stats_options_select("-s 1 --select 2").as_deref(),
+            Some("2")
+        );
+    }
+
+    #[test]
+    fn entropy_from_counts_handles_all_unique_and_empty() {
+        let e = entropy_from_counts(&[2, 1, 1], false);
+        assert!((e.entropy.unwrap() - 1.5).abs() < 1e-12);
+        assert!((e.simpsons_diversity.unwrap() - 0.625).abs() < 1e-12);
+        // an all-unique column is one bucket counting its n distinct values
+        let u = entropy_from_counts(&[8], true);
+        assert!((u.entropy.unwrap() - 3.0).abs() < 1e-12);
+        assert!((u.simpsons_diversity.unwrap() - 0.875).abs() < 1e-12);
+        assert!(entropy_from_counts(&[], false).entropy.is_none());
+    }
 
     #[test]
     fn parse_float_opt_filters_nan_and_infinity() {

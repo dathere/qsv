@@ -307,7 +307,9 @@ These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
 Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
 The file is always rewritten - with just a header row if no field pair produced a statistic -
-so it never holds stale results from an earlier run.
+so it never holds stale results from an earlier run. A header name that repeats in the input is
+written as name, name_2, name_3, ... (the `safenames` convention), so each column's pairs stay
+distinguishable.
 
 The correlation statistics (pearson, spearman, kendall, covariance & regression) only use
 numeric, date and boolean fields. String fields only feed the frequency-based statistics

@@ -16,7 +16,9 @@ does not exist, it will first run the `stats` command with configurable options 
 the baseline stats, to which it will add more stats columns.
 
 If the `.stats.csv` file is found, it will skip running stats and just append the additional
-stats columns.
+stats columns. However, if its `.stats.csv.json` metadata records a different qsv version,
+the baseline stats are recomputed and the additional stats columns are added afresh, so
+a stats file extended by an older qsv release never keeps its outdated values.
 
 Currently computes the following 40 additional univariate statistics:
  1. Pearson's Second Skewness Coefficient: 3 * (mean - median) / stddev
@@ -235,8 +237,8 @@ where the required base univariate statistics (mean, median, stddev, etc.) are a
 Univariate outlier statistics additionally require that quartiles (and thus fences) were
 computed when generating the stats CSV.
 Winsorized/trimmed means require either Q1/Q3 or percentiles to be available.
-Kurtosis, Gini & Atkinson Index require reading the original CSV file to collect
-all values for computation.
+The --advanced statistics (Moment Skewness, Kurtosis, Gini, Atkinson, L-moments, etc.)
+require reading the original CSV file to collect all values for computation.
 
 BIVARIATE STATISTICS:
 
@@ -289,6 +291,17 @@ The `moarstats` command also computes the following 9 bivariate statistics:
 These bivariate statistics are computed when the `--bivariate` flag is used
 and require an indexed CSV file (index will be auto-created if missing).
 Bivariate statistics are output to a separate file: `<FILESTEM>.stats.bivariate.csv`.
+The file is always rewritten - with just a header row if no field pair produced a statistic -
+so it never holds stale results from an earlier run.
+
+The correlation statistics (pearson, spearman, kendall, covariance & regression) only use
+numeric, date and boolean fields. String fields only feed the frequency-based statistics
+(mi, nmi, u & cramersv).
+All-unique fields (cardinality >= row count, e.g. continuous measurements and IDs) keep
+their correlation statistics, but their frequency-based statistics are left empty, as
+mutual information against an all-unique field just saturates at log(n). Read ID column
+correlations with care: a sequential ID correlates with a creation date simply because
+IDs are issued in order.
 
 Bivariate statistics require reading the entire CSV file and are computationally VERY expensive.
 For large files (>= 10k records), parallel chunked processing is used when an index is available.
@@ -383,9 +396,9 @@ moarstats options:
                            BIVARIATE STATISTICS OPTIONS:
     -B, --bivariate        Enable bivariate statistics computation.
                            Requires indexed CSV file (index will be auto-created if missing).
-                           Computes pairwise correlations, covariances, mutual information, and
-                           normalized mutual information between columns. The bivariate statistics
-                           are saved to a separate file in the same directory as the input:
+                           Computes the pairwise statistics selected with --bivariate-stats
+                           between columns (pearson & covariance by default). The bivariate
+                           statistics are saved to a separate file in the same directory as the input:
                            <FILESTEM>.stats.bivariate.csv.
     -S, --bivariate-stats <stats>
                            Comma-separated list of bivariate statistics to compute.
@@ -406,6 +419,8 @@ moarstats options:
                            on small inputs and scales with large ones. Mutual information
                            between near-unique columns saturates at log(n) and is noise
                            regardless of how efficiently it is computed.
+                           All-unique fields always skip these statistics,
+                           regardless of this threshold.
     --bivariate-batch <n>  Process at most <n> field pairs per pass over the input,
                            bounding peak memory at the cost of extra passes.
                            Peak memory is otherwise O(columns^2) regardless of row

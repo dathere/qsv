@@ -2152,6 +2152,130 @@ fn send_hwsurvey(
     }
 }
 
+/// The column selection a `--stats-options` string (moarstats, pragmastat) hands to `qsv stats`
+/// (`--select <arg>`, `--select=<arg>`, `-s <arg>`, `-s<arg>`, or `s` ending a docopt cluster of
+/// no-argument short flags such as `-Es <arg>`), if any. The last one wins. Mirrors
+/// moarstats' `stats_options_redirect_output` cluster rules: scanning stops at the first
+/// argument-taking short option, whose value is the rest of the token.
+pub fn stats_options_select(stats_options: &str) -> Option<String> {
+    // no-argument short flags accepted by `qsv stats`
+    const STATS_SHORT_FLAGS: [char; 3] = ['E', 'h', 'n'];
+
+    let tokens: Vec<&str> = stats_options.split_whitespace().collect();
+    let mut found = None;
+    for (i, token) in tokens.iter().enumerate() {
+        if let Some(long) = token.strip_prefix("--") {
+            if long == "select" {
+                found = tokens.get(i + 1).map(ToString::to_string);
+            } else if let Some(v) = long.strip_prefix("select=") {
+                found = Some(v.to_string());
+            }
+        } else if let Some(short) = token.strip_prefix('-') {
+            for (pos, ch) in short.char_indices() {
+                if ch == 's' {
+                    let rest = &short[pos + ch.len_utf8()..];
+                    found = if rest.is_empty() {
+                        tokens.get(i + 1).map(ToString::to_string)
+                    } else {
+                        Some(rest.to_string())
+                    };
+                    break;
+                }
+                if !STATS_SHORT_FLAGS.contains(&ch) {
+                    break;
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The exact column of every row that `qsv stats` writes when run with `stats_options`: its
+/// `--select` resolved against `headers`, or every column in order. `None` if that selection
+/// doesn't resolve. For `resolve_stats_columns`' `selection`.
+pub fn stats_options_selection(
+    stats_options: &str,
+    headers: &csv::ByteRecord,
+    use_names: bool,
+) -> Option<Vec<usize>> {
+    match stats_options_select(stats_options) {
+        None => Some((0..headers.len()).collect()),
+        Some(spec) => SelectColumns::parse(&spec)
+            .and_then(|sc| sc.selection(headers, use_names))
+            .ok()
+            .map(|sel| sel.to_vec()),
+    }
+}
+
+/// Map each stats row (`names`: the stats CSV's `field` column, in row order) to the CSV column
+/// it describes. A plain name lookup is wrong whenever a header repeats: first-match sent every
+/// duplicate to the first column (#4663), last-match to the last. Shared by moarstats and
+/// pragmastat, which append columns to a stats cache.
+///
+/// - `selection`: the exact column of every row, when the baseline `stats` ran in THIS invocation
+///   (its `--select`, resolved against the header, or every column in order). It is used only if it
+///   lines up with `names` row for row.
+/// - Otherwise the stats cache was reused, and which columns it covers is not recorded reliably. A
+///   name that occurs once in the header maps to that column, however many rows carry it (`--select
+///   1,1`). A repeated name maps by occurrence - the k-th row named N to the k-th column named N -
+///   only when the cache has exactly as many rows named N as the header has columns. Any other
+///   count means a selection that skipped or repeated a twin, which cannot be told apart without
+///   the selection, so those rows map to `None` and their names are returned for a warning. An
+///   empty result beats another column's statistics.
+///
+/// Known limit: equal counts do not prove the order. A reused cache built with a selection that
+/// reorders or repeats twins while keeping the count (on `a,b,a`: `--select 3,1` or `3,3`) is
+/// mapped by occurrence, so a twin can get the other twin's appended statistics. Neither the stats
+/// CSV nor its sidecar records a `--select`, so this cannot be detected without re-scanning the
+/// data. Recomputing the baseline in the same invocation takes the exact `selection` path.
+pub fn resolve_stats_columns(
+    names: &[&str],
+    csv_headers: &csv::StringRecord,
+    selection: Option<&[usize]>,
+) -> (Vec<Option<usize>>, Vec<String>) {
+    if let Some(sel) = selection
+        && sel.len() == names.len()
+        && sel
+            .iter()
+            .zip(names)
+            .all(|(&col, name)| csv_headers.get(col) == Some(*name))
+    {
+        return (sel.iter().map(|&col| Some(col)).collect(), Vec::new());
+    }
+
+    let mut positions: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::new();
+    for (idx, h) in csv_headers.iter().enumerate() {
+        positions.entry(h).or_default().push(idx);
+    }
+    let mut rows_named: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for name in names {
+        *rows_named.entry(name).or_insert(0) += 1;
+    }
+    let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    let mut ambiguous: Vec<String> = Vec::new();
+    let cols = names
+        .iter()
+        .map(|&name| {
+            let k = seen.entry(name).or_insert(0);
+            let occurrence = *k;
+            *k += 1;
+            match positions.get(name) {
+                None => None,
+                Some(p) if p.len() == 1 => Some(p[0]),
+                Some(p) if rows_named.get(name) == Some(&p.len()) => Some(p[occurrence]),
+                Some(_) => {
+                    if !ambiguous.iter().any(|a| a == name) {
+                        ambiguous.push(name.to_string());
+                    }
+                    None
+                },
+            }
+        })
+        .collect();
+    (cols, ambiguous)
+}
+
 /// Unique display labels for a list of column names that may repeat: the first occurrence keeps
 /// its name, later ones get `safenames`' duplicate suffix - `a`, `a_2`, `a_3` - skipping any
 /// suffix that is already a real name in the list (so `a,a,a_2` labels as `a`, `a_3`, `a_2`).
@@ -6470,6 +6594,70 @@ mod tests {
         // behind. This is the case that silently poisoned consumers.
         filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
         assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
+    }
+
+    #[test]
+    fn resolve_stats_columns_exact_selection_wins() {
+        let headers = csv::StringRecord::from(vec!["a", "b", "a"]);
+        // the baseline ran here with --select 3,3: exact, and names line up
+        assert_eq!(
+            resolve_stats_columns(&["a", "a"], &headers, Some(&[2, 2])),
+            (vec![Some(2), Some(2)], vec![])
+        );
+        // a selection that doesn't line up with the rows is ignored (falls back below)
+        assert_eq!(
+            resolve_stats_columns(&["a", "b", "a"], &headers, Some(&[0, 1])).0,
+            [Some(0), Some(1), Some(2)]
+        );
+    }
+
+    #[test]
+    fn resolve_stats_columns_reused_cache_rules() {
+        let headers = csv::StringRecord::from(vec!["a", "b", "a", "c", "a"]);
+        // full coverage of the `a` twins: by occurrence; unknown names -> None
+        assert_eq!(
+            resolve_stats_columns(&["a", "b", "a", "c", "a", "zz"], &headers, None),
+            (
+                vec![Some(0), Some(1), Some(2), Some(3), Some(4), None],
+                vec![]
+            )
+        );
+        // a unique name maps to its column however many rows carry it (`--select 1,1`)
+        assert_eq!(
+            resolve_stats_columns(&["b", "b", "c"], &headers, None),
+            (vec![Some(1), Some(1), Some(3)], vec![])
+        );
+        // a partial (or repeated) cover of the twins can't be told apart: None + reported
+        assert_eq!(
+            resolve_stats_columns(&["b", "a"], &headers, None),
+            (vec![Some(1), None], vec!["a".to_string()])
+        );
+        assert_eq!(
+            resolve_stats_columns(&["a", "a", "a", "a"], &headers, None).1,
+            ["a"]
+        );
+    }
+
+    #[test]
+    fn stats_options_select_finds_every_spelling() {
+        assert_eq!(stats_options_select(""), None);
+        assert_eq!(stats_options_select("--everything"), None);
+        assert_eq!(stats_options_select("--select 2,3").as_deref(), Some("2,3"));
+        assert_eq!(stats_options_select("--select=a,b").as_deref(), Some("a,b"));
+        assert_eq!(stats_options_select("-E -s 1,1").as_deref(), Some("1,1"));
+        assert_eq!(stats_options_select("-Es 4").as_deref(), Some("4"));
+        assert_eq!(stats_options_select("-Es4-6").as_deref(), Some("4-6"));
+        assert_eq!(
+            stats_options_select("-s1 --everything").as_deref(),
+            Some("1")
+        );
+        // `-c` takes an argument, so the `s` after it is part of that value, not --select
+        assert_eq!(stats_options_select("-cs 5"), None);
+        // the last one wins
+        assert_eq!(
+            stats_options_select("-s 1 --select 2").as_deref(),
+            Some("2")
+        );
     }
 
     #[test]

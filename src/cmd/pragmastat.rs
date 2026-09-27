@@ -522,6 +522,9 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
         // `stats --no-headers` names its rows by OUTPUT position (0, 1, ...), not by column, so
         // a row name says nothing about which column the row describes. Only the selection of a
         // baseline computed here, or a cache with one row per column, maps rows to columns.
+        // Known limit: a reused full-width cache is mapped in column order, so one built with a
+        // reordering or repeating selection (`--select 2,1`, `2,2`) gets its ps_* columns swapped
+        // or duplicated; the selection isn't reliably recorded (see `util::resolve_stats_columns`).
         let n_rows = records.len();
         match baseline_selection.filter(|sel| sel.len() == n_rows) {
             Some(sel) => (sel.into_iter().map(Some).collect(), Vec::new()),

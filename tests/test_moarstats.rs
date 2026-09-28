@@ -7591,3 +7591,289 @@ fn moarstats_bivariate_all_unique_numeric_pair_keeps_correlations() {
         "a frequency-only run should drop (x, y) and rewrite a header-only sidecar"
     );
 }
+
+/// Parse a stats CSV into (headers, rows).
+fn stats_rows(content: &str) -> (csv::StringRecord, Vec<csv::StringRecord>) {
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(content.as_bytes());
+    let headers = rdr.headers().unwrap().clone();
+    let rows = rdr.records().map(Result::unwrap).collect();
+    (headers, rows)
+}
+
+/// A CSV repeating header names: non-adjacent `a` twins (heavy-tailed vs narrow), and ADJACENT
+/// `c` twins whose first is constant - the layout frequency's CSV output could not split.
+fn duplicate_header_rows(n: u32) -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["a", "b", "a", "c", "c"]];
+    for i in 1..=n {
+        let u = (f64::from(i) - 0.5) / f64::from(n);
+        rows.push(vec![
+            format!("{:.3}", (1.0 - u).powf(-1.0 / 0.8)),
+            format!("{}", i % 13),
+            format!(
+                "{:.1}",
+                50.0 + f64::from(i % 37) * 1.3 + f64::from(u8::from(i % 7 == 0)) * 40.0
+            ),
+            "5".to_string(),
+            format!("{}", (i * 7) % 11),
+        ]);
+    }
+    rows
+}
+
+#[test]
+fn moarstats_duplicate_headers_each_column_gets_its_own_stats() {
+    // #4663: every appended stat was looked up by field NAME, so repeated header names collapsed
+    // to one column's results (read from the first column, with the last row's fences). Each
+    // duplicate's full stats row must equal what that column produces on its own.
+    let wrk = Workdir::new("moarstats_duplicate_headers_each_column_gets_its_own_stats");
+    let rows = duplicate_header_rows(120);
+    wrk.create("dup.csv", rows.clone());
+    for (col, file) in [(0, "a1"), (2, "a2"), (3, "c1"), (4, "c2")] {
+        wrk.create(
+            &format!("{file}.csv"),
+            rows.iter()
+                .map(|r| vec![r[col].clone()])
+                .collect::<Vec<Vec<String>>>(),
+        );
+    }
+    for file in ["dup", "a1", "a2", "c1", "c2"] {
+        let mut cmd = wrk.command("moarstats");
+        cmd.arg(format!("{file}.csv"))
+            .arg("--advanced")
+            .arg("--force");
+        wrk.assert_success(&mut cmd);
+    }
+
+    let (dup_headers, dup_rows) = stats_rows(&wrk.read_to_string("dup.stats.csv").unwrap());
+    for (row, file) in [(0, "a1"), (2, "a2"), (3, "c1"), (4, "c2")] {
+        let (headers, single) =
+            stats_rows(&wrk.read_to_string(&format!("{file}.stats.csv")).unwrap());
+        assert_eq!(headers, dup_headers, "{file}: same stats columns");
+        assert_eq!(
+            dup_rows[row], single[0],
+            "dup.csv row {row} should equal {file}.csv's own stats"
+        );
+    }
+    // and the twins really differ (so the equality above isn't vacuous)
+    assert_ne!(dup_rows[0], dup_rows[2]);
+    assert_ne!(dup_rows[3], dup_rows[4]);
+}
+
+#[test]
+fn moarstats_duplicate_headers_bivariate_labels_and_pairs() {
+    // #4663: bivariate resolved each field by first-match NAME, so a repeated header's pairs were
+    // computed from the first column. The sidecar now labels duplicates like `safenames` does
+    // (`v`, `v_2`) and computes each pair from its own column.
+    let wrk = Workdir::new("moarstats_duplicate_headers_bivariate_labels_and_pairs");
+    let mut rows = vec![svec!["v", "w", "v"]];
+    for i in 1..=40_i32 {
+        rows.push(vec![
+            i.to_string(),
+            (2 * i + 1).to_string(),
+            (-3 * i).to_string(),
+        ]);
+    }
+    wrk.create("dup.csv", rows);
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("dup.csv")
+        .arg("--bivariate")
+        .arg("--bivariate-stats")
+        .arg("pearson");
+    wrk.assert_success(&mut cmd);
+
+    let (headers, pairs) = stats_rows(&wrk.read_to_string("dup.stats.bivariate.csv").unwrap());
+    let col = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let (f1, f2, r) = (col("field1"), col("field2"), col("pearson_correlation"));
+    let got: Vec<(String, String, f64)> = pairs
+        .iter()
+        .map(|p| (p[f1].to_string(), p[f2].to_string(), p[r].parse().unwrap()))
+        .collect();
+    let expect = [("v", "w", 1.0), ("v", "v_2", -1.0), ("w", "v_2", -1.0)];
+    assert_eq!(got.len(), expect.len(), "{got:?}");
+    for (a, b, rho) in expect {
+        let (_, _, v) = got
+            .iter()
+            .find(|(x, y, _)| x == a && y == b)
+            .unwrap_or_else(|| panic!("missing pair ({a}, {b}) in {got:?}"));
+        assert!((v - rho).abs() < 1e-9, "({a}, {b}) pearson {v}, want {rho}");
+    }
+}
+
+#[test]
+fn moarstats_duplicate_headers_parallel_matches_sequential() {
+    // the chunked parallel pass (indexed, >= 10k rows) must resolve duplicates the same way
+    let wrk = Workdir::new("moarstats_duplicate_headers_parallel_matches_sequential");
+    wrk.create("dup.csv", duplicate_header_rows(12_000));
+    let mut idx = wrk.command("index");
+    idx.arg("dup.csv");
+    wrk.assert_success(&mut idx);
+
+    let mut seq = wrk.command("moarstats");
+    seq.arg("dup.csv")
+        .arg("--advanced")
+        .arg("--force")
+        .args(["--jobs", "1"])
+        .args(["--output", "seq.csv"]);
+    wrk.assert_success(&mut seq);
+    let mut par = wrk.command("moarstats");
+    par.arg("dup.csv")
+        .arg("--advanced")
+        .arg("--force")
+        .args(["--jobs", "4"])
+        .args(["--output", "par.csv"]);
+    wrk.assert_success(&mut par);
+
+    let (_, seq_rows) = stats_rows(&wrk.read_to_string("seq.csv").unwrap());
+    let (_, par_rows) = stats_rows(&wrk.read_to_string("par.csv").unwrap());
+    assert_eq!(seq_rows, par_rows);
+    assert_ne!(seq_rows[0], seq_rows[2], "the `a` twins must differ");
+}
+
+/// `a,b,a` with the two `a` twins clearly different (heavy-tailed vs narrow).
+fn twin_rows(n: u32) -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["a", "b", "a"]];
+    for i in 1..=n {
+        let u = (f64::from(i) - 0.5) / f64::from(n);
+        rows.push(vec![
+            format!("{:.3}", (1.0 - u).powf(-1.0 / 0.8)),
+            format!("{}", i % 13),
+            format!(
+                "{:.1}",
+                50.0 + f64::from(i % 37) * 1.3 + f64::from(u8::from(i % 7 == 0)) * 40.0
+            ),
+        ]);
+    }
+    rows
+}
+
+/// Stats for a single-column file holding column `col` of `rows`, with `stats_options`.
+fn single_column_stats(
+    wrk: &Workdir,
+    rows: &[Vec<String>],
+    col: usize,
+    stats_options: &str,
+) -> csv::StringRecord {
+    let file = format!("single{col}.csv");
+    wrk.create(
+        &file,
+        rows.iter()
+            .map(|r| vec![r[col].clone()])
+            .collect::<Vec<Vec<String>>>(),
+    );
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg(&file)
+        .arg("--force")
+        .args(["--stats-options", stats_options]);
+    wrk.assert_success(&mut cmd);
+    let (_, rows) = stats_rows(
+        &wrk.read_to_string(&format!("single{col}.stats.csv"))
+            .unwrap(),
+    );
+    rows.into_iter().next().unwrap()
+}
+
+#[test]
+fn moarstats_repeated_select_of_a_unique_column_keeps_its_stats() {
+    // roborev 4893: occurrence matching mapped the SECOND `--select 1,1` row of a unique header to
+    // no column, dropping its appended stats (a regression from name matching)
+    let wrk = Workdir::new("moarstats_repeated_select_of_a_unique_column_keeps_its_stats");
+    let rows = twin_rows(120);
+    wrk.create(
+        "u.csv",
+        rows.iter().map(|r| r[..2].to_vec()).collect::<Vec<_>>(),
+    );
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("u.csv")
+        .arg("--force")
+        .args(["--stats-options", "--everything --select 1,1"]);
+    wrk.assert_success(&mut cmd);
+    let (headers, got) = stats_rows(&wrk.read_to_string("u.stats.csv").unwrap());
+    assert_eq!(got.len(), 2);
+    assert_eq!(got[0], got[1], "both rows describe the same column");
+    let pct = headers
+        .iter()
+        .position(|h| h == "outliers_percentage")
+        .unwrap();
+    assert!(
+        !got[1][pct].is_empty(),
+        "the second row must keep its outlier stats"
+    );
+
+    // the same repeated selection from a REUSED cache (no exact selection known): a name that
+    // occurs once in the header maps to its column for every row carrying it
+    wrk.create(
+        "r.csv",
+        rows.iter().map(|r| r[..2].to_vec()).collect::<Vec<_>>(),
+    );
+    let mut stats = wrk.command("stats");
+    stats
+        .arg("r.csv")
+        .args(["--everything", "--select", "1,1"])
+        .args(["--output", "r.stats.csv"]);
+    wrk.assert_success(&mut stats);
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("r.csv");
+    wrk.assert_success(&mut cmd);
+    let (_, reused) = stats_rows(&wrk.read_to_string("r.stats.csv").unwrap());
+    assert_eq!(reused.len(), 2);
+    assert!(
+        !reused[0][pct].is_empty() && !reused[1][pct].is_empty(),
+        "both rows of a reused `--select 1,1` cache keep their outlier stats"
+    );
+}
+
+#[test]
+fn moarstats_select_of_a_later_duplicate_maps_exactly() {
+    // roborev 4893: `--select 2,3` on `a,b,a` covers only the SECOND `a`. Occurrence matching (and
+    // name matching before it) sent that row to column 1. When moarstats runs the baseline itself,
+    // its --select resolves every row to its exact column.
+    let wrk = Workdir::new("moarstats_select_of_a_later_duplicate_maps_exactly");
+    let rows = twin_rows(120);
+    wrk.create("d.csv", rows.clone());
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("d.csv")
+        .arg("--force")
+        .args(["--stats-options", "--everything --select 2,3"]);
+    wrk.assert_success(&mut cmd);
+    let (_, got) = stats_rows(&wrk.read_to_string("d.stats.csv").unwrap());
+    assert_eq!(got.len(), 2);
+    let truth = single_column_stats(&wrk, &rows, 2, "--everything");
+    assert_eq!(got[1], truth, "the selected `a` is column 3");
+}
+
+#[test]
+fn moarstats_reused_partial_cache_of_duplicates_leaves_them_empty() {
+    // A stats cache that covers only some of a repeated name's columns doesn't record WHICH, so
+    // its rows for that name can't be matched: rather than another column's numbers, their
+    // appended stats stay empty, with a warning. Other columns are unaffected.
+    let wrk = Workdir::new("moarstats_reused_partial_cache_of_duplicates_leaves_them_empty");
+    wrk.create("d.csv", twin_rows(120));
+    let mut stats = wrk.command("stats");
+    stats
+        .arg("d.csv")
+        .args(["--everything", "--select", "2,3"])
+        .args(["--output", "d.stats.csv"]);
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("d.csv");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("can't be matched to columns"),
+        "expected the ambiguity warning, got: {stderr}"
+    );
+    let (headers, got) = stats_rows(&wrk.read_to_string("d.stats.csv").unwrap());
+    let col = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let (field, pct) = (col("field"), col("outliers_percentage"));
+    assert_eq!(&got[0][field], "b");
+    assert!(
+        !got[0][pct].is_empty(),
+        "b is unambiguous and keeps its stats"
+    );
+    assert_eq!(&got[1][field], "a");
+    assert!(got[1][pct].is_empty(), "the ambiguous `a` row stays empty");
+}

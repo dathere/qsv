@@ -1803,3 +1803,206 @@ fn pragmastat_keeps_a_cache_from_the_same_qsv_version() {
         "unexpected version-mismatch warning; stderr: {stderr}"
     );
 }
+
+/// `field` plus every `ps_*` column of each row of a stats CSV.
+fn ps_rows(path: &std::path::Path) -> Vec<Vec<String>> {
+    let mut rdr = csv::Reader::from_path(path).unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let keep: Vec<usize> = headers
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| *h == "field" || h.starts_with("ps_"))
+        .map(|(i, _)| i)
+        .collect();
+    rdr.records()
+        .map(|r| {
+            let r = r.unwrap();
+            keep.iter().map(|&i| r[i].to_string()).collect()
+        })
+        .collect()
+}
+
+fn dup_header_rows(first_header: &'static str) -> Vec<Vec<String>> {
+    vec![
+        svec!["a", "b", first_header],
+        svec!["1", "10", "100"],
+        svec!["2", "20", "300"],
+        svec!["4", "30", "700"],
+        svec!["5", "40", "900"],
+        svec!["9", "50", "1100"],
+    ]
+}
+
+#[test]
+fn pragmastat_cache_append_duplicate_headers() {
+    // columns sharing a header name each get their own ps_* results, equal to the same file with
+    // the twin renamed - on the first run and on a --force rerun over the reused cache
+    let wrk = Workdir::new("pragmastat_cache_append_duplicate_headers");
+    wrk.create("dup.csv", dup_header_rows("a"));
+    wrk.create("renamed.csv", dup_header_rows("a_2"));
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("renamed.csv");
+    wrk.assert_success(&mut cmd);
+    let mut expected = ps_rows(&wrk.path("renamed.stats.csv"));
+    expected[2][0] = "a".to_string();
+    assert_ne!(expected[0][1..], expected[2][1..]);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("dup.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(ps_rows(&wrk.path("dup.stats.csv")), expected);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--force", "dup.csv"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(ps_rows(&wrk.path("dup.stats.csv")), expected);
+}
+
+#[test]
+fn pragmastat_cache_append_partial_duplicate_cover_left_empty() {
+    // a cache that covers only one of two same-named columns can't say which one: its ps_*
+    // columns stay empty (with a warning) rather than holding the other twin's results
+    let wrk = Workdir::new("pragmastat_cache_append_partial_duplicate_cover");
+    wrk.create("dup.csv", dup_header_rows("a"));
+    let mut stats = wrk.command("stats");
+    stats.args(["dup.csv", "--select", "3,2", "--output", "dup.stats.csv"]);
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("dup.csv");
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("dup.stats.csv"));
+    assert_eq!(rows[0][0], "a");
+    assert!(rows[0][1..].iter().all(String::is_empty), "{rows:?}");
+    assert_eq!(rows[1][0], "b");
+    assert_eq!(rows[1][1], "5");
+}
+
+#[test]
+fn pragmastat_cache_append_no_headers() {
+    // `stats --no-headers` names its rows by 0-based column index; each must get its own
+    // column's results (they used to land one row late)
+    let wrk = Workdir::new("pragmastat_cache_append_no_headers");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["1.0", "20.0"],
+            svec!["4.0", "50.0"],
+            svec!["7.0", "80.0"],
+        ],
+    );
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--no-headers", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("data.stats.csv"));
+
+    let mut standalone = wrk.command("pragmastat");
+    standalone.args(["--standalone", "--no-headers", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut standalone);
+
+    assert_eq!(rows.len(), 2);
+    for (row, want) in rows.iter().zip(&got[1..]) {
+        // ps_n..ps_spread_upper vs standalone n..spread_upper
+        assert_eq!(row[1..], want[1..8], "{rows:?} vs {got:?}");
+    }
+    assert_eq!(rows[0][2], "4");
+    assert_eq!(rows[1][2], "50");
+}
+
+#[test]
+fn pragmastat_cache_append_baseline_selection_is_exact() {
+    // a baseline computed in this run with `--select 3,1` maps its rows exactly (row 0 is column
+    // 3), where the reused-cache rules can only map the two `a` rows by occurrence
+    let wrk = Workdir::new("pragmastat_cache_append_baseline_selection_is_exact");
+    wrk.create("dup.csv", dup_header_rows("a"));
+    wrk.create("renamed.csv", dup_header_rows("a_2"));
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("renamed.csv");
+    wrk.assert_success(&mut cmd);
+    let renamed = ps_rows(&wrk.path("renamed.stats.csv"));
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--stats-options", "--select 3,1 --stats-jsonl", "dup.csv"]);
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("dup.stats.csv"));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0][1..], renamed[2][1..], "row 0 is column 3");
+    assert_eq!(rows[1][1..], renamed[0][1..], "row 1 is column 1");
+}
+
+fn no_headers_standalone(wrk: &Workdir) -> Vec<Vec<String>> {
+    let mut standalone = wrk.command("pragmastat");
+    standalone.args(["--standalone", "--no-headers", "data.csv"]);
+    wrk.read_stdout(&mut standalone)
+}
+
+fn no_headers_data(wrk: &Workdir) {
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["1.0", "20.0"],
+            svec!["4.0", "50.0"],
+            svec!["7.0", "80.0"],
+        ],
+    );
+}
+
+#[test]
+fn pragmastat_cache_append_no_headers_baseline_selection() {
+    // without headers `stats` names rows by output position, so `--select 2,1` writes rows `0`
+    // (column 2) and `1` (column 1); each must get its own column's results
+    for (select, want_cols) in [("2", vec![2]), ("2,1", vec![2, 1])] {
+        let wrk = Workdir::new(&format!(
+            "pragmastat_cache_append_no_headers_sel_{}",
+            select.replace(',', "_")
+        ));
+        no_headers_data(&wrk);
+        let standalone = no_headers_standalone(&wrk);
+
+        let mut cmd = wrk.command("pragmastat");
+        cmd.args([
+            "--no-headers",
+            "--stats-options",
+            &format!("--select {select} --stats-jsonl"),
+            "data.csv",
+        ]);
+        wrk.assert_success(&mut cmd);
+        let rows = ps_rows(&wrk.path("data.stats.csv"));
+        assert_eq!(rows.len(), want_cols.len());
+        for (row, col) in rows.iter().zip(want_cols) {
+            assert_eq!(
+                row[1..],
+                standalone[col][1..8],
+                "--select {select}: {rows:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pragmastat_cache_append_no_headers_partial_cache_left_empty() {
+    // a reused headerless cache that doesn't have one row per column can't say which column a
+    // row is: its ps_* columns stay empty rather than holding another column's results
+    let wrk = Workdir::new("pragmastat_cache_append_no_headers_partial_cache");
+    no_headers_data(&wrk);
+    let mut stats = wrk.command("stats");
+    stats.args([
+        "--no-headers",
+        "data.csv",
+        "--select",
+        "2",
+        "--output",
+        "data.stats.csv",
+    ]);
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--no-headers", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("data.stats.csv"));
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0][1..].iter().all(String::is_empty), "{rows:?}");
+}

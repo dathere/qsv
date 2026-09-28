@@ -6599,6 +6599,34 @@ mod tests {
     }
 
     #[test]
+    fn statsdata_moment_skewness_accepts_string_caches() {
+        // moarstats 23.0.0 wrote `moment_skewness` into `.data.jsonl` as a JSON STRING (it was not
+        // yet in STATSDATA_TYPES_MAP), and `get_stats_records` does not version-check the JSONL.
+        // A strict f64 would fail the WHOLE record on those files — i.e. break plain `viz smart`
+        // on any directory where moarstats ran before the upgrade.
+        let de = |v: &str| {
+            let line = format!(
+                r#"{{"field":"x","type":"Float","nullcount":0,"cardinality":9,"moment_skewness":{v}}}"#
+            );
+            serde_json::from_str::<crate::cmd::stats::StatsData>(&line)
+                .unwrap()
+                .moment_skewness
+        };
+        assert_eq!(de(r#""1.87""#), Some(1.87));
+        assert_eq!(de(r#"" -0.5 ""#), Some(-0.5));
+        assert_eq!(de("1.87"), Some(1.87));
+        assert_eq!(de("3"), Some(3.0));
+        assert_eq!(de(r#""""#), None);
+        assert_eq!(de(r#""abc""#), None);
+        assert_eq!(de(r#""NaN""#), None);
+        assert_eq!(de("null"), None);
+        let absent: crate::cmd::stats::StatsData =
+            serde_json::from_str(r#"{"field":"x","type":"Float","nullcount":0,"cardinality":9}"#)
+                .unwrap();
+        assert_eq!(absent.moment_skewness, None);
+    }
+
+    #[test]
     fn resolve_stats_columns_exact_selection_wins() {
         let headers = csv::StringRecord::from(vec!["a", "b", "a"]);
         // the baseline ran here with --select 3,3: exact, and names line up

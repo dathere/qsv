@@ -301,6 +301,10 @@ viz:
     # `%{x:.0%}` (see the ORDERING RULE in this file's header).
     contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} righe<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>il %{x:.0%} inferiore dei record detiene il %{y:.0%}<extra></extra>"
+    # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
+    lorenz_hoover: "Hoover %{q_hoover}: il %{q_pct}% del totale dovrebbe essere ridistribuito per raggiungere l'uguaglianza<extra></extra>"
+    # Title hover listing the shape hints hidden behind a panel title's ellipsis.
+    more_hints: "inoltre: %{q_hints}"
     ohlc: "Apertura: %{open}<br>Massimo: %{high}<br>Minimo: %{low}<br>Chiusura: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>conteggio: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>conteggio: %{y:,}<extra></extra>"
@@ -388,6 +392,8 @@ viz:
       log_axis: "Il suo asse dei valori è logaritmico, perché i valori coprono diversi ordini di grandezza."
       log_axis_count: "Il suo asse dei conteggi è logaritmico, perché i conteggi delle categorie coprono diversi ordini di grandezza."
       sampled: "Disegnato da un campione deterministico delle righe, per restare reattivo."
+      # Tour backstop: every shape hint, when the panel title could only show some of them.
+      hints: "Da notare: %{q_hints}."
     meta_heading: "Narrazione del tour"
     meta_audience: "Pubblico:"
     meta_language: "Lingua:"

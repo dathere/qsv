@@ -663,6 +663,61 @@ impl StatsArgs {
     }
 }
 
+/// Deserialize an optional float stat that some caches carry as a JSON number and others as a JSON
+/// string. `csv_to_jsonl` emits every column missing from `STATSDATA_TYPES_MAP` as a string, so a
+/// moarstats column added to the map later stays a string in every older `.data.jsonl` — and those
+/// files still pass mtime validation. A strict `f64` would fail the WHOLE record on them. A string
+/// that does not parse to a finite number (including the empty cell) reads as `None`.
+fn de_lenient_f64<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct LenientF64Visitor;
+
+    impl<'de> serde::de::Visitor<'de> for LenientF64Visitor {
+        type Value = Option<f64>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number, a numeric string, or null")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(v.trim().parse::<f64>().ok().filter(|f| f.is_finite()))
+        }
+
+        fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v).filter(|f| f.is_finite()))
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+
+        #[allow(clippy::cast_precision_loss)]
+        fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(LenientF64Visitor)
+        }
+    }
+
+    deserializer.deserialize_any(LenientF64Visitor)
+}
+
 /// Deserialize a stat cell that is a JSON number in some caches and a JSON string in others.
 ///
 /// `mean`, `q1`, `q2_median`, `q3` and the four fences are type-dependent RENDERINGS, exactly
@@ -925,6 +980,10 @@ pub struct StatsData {
     pub median_mean_ratio: Option<f64>,
     #[serde(default)]
     pub normalized_entropy: Option<f64>,
+    // moarstats `--advanced` moment skewness (adjusted Fisher-Pearson G1). Lenient: caches written
+    // before it joined `STATSDATA_TYPES_MAP` carry it as a JSON STRING.
+    #[serde(default, deserialize_with = "de_lenient_f64")]
+    pub moment_skewness: Option<f64>,
 }
 
 impl StatsData {
@@ -1099,6 +1158,7 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "mad_stddev_ratio" => JsonTypes::Float,
     "median_mean_ratio" => JsonTypes::Float,
     "normalized_entropy" => JsonTypes::Float,
+    "moment_skewness" => JsonTypes::Float,
 };
 
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();

@@ -308,6 +308,10 @@ viz:
     # `%{x:.0%}` (see the ORDERING RULE in this file's header).
     contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} 行<extra></extra>"
     lorenz: "%{q_label}(Gini %{q_gini})<br>后 %{x:.0%} 的记录占有 %{y:.0%}<extra></extra>"
+    # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
+    lorenz_hoover: "Hoover %{q_hoover}:需要重新分配总量的 %{q_pct}% 才能达到完全平等<extra></extra>"
+    # Title hover listing the shape hints hidden behind a panel title's ellipsis.
+    more_hints: "另有:%{q_hints}"
     ohlc: "开盘: %{open}<br>最高: %{high}<br>最低: %{low}<br>收盘: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>计数: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>计数: %{y:,}<extra></extra>"
@@ -393,6 +397,8 @@ viz:
       log_axis: "其数值轴为对数刻度,因为数值跨越多个数量级。"
       log_axis_count: "其计数轴为对数刻度,因为各类别的计数跨越多个数量级。"
       sampled: "为保持流畅,由行的确定性抽样绘制。"
+      # Tour backstop: every shape hint, when the panel title could only show some of them.
+      hints: "值得注意:%{q_hints}。"
     meta_heading: "导览解说"
     meta_audience: "目标读者:"
     meta_language: "语言:"

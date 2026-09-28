@@ -554,6 +554,10 @@ viz:
     # RULE above before moving `%{q_label}` or `%{q_gini}` in `lorenz`.
     contour: "%{q_x}: %{x:,.3~f}<br>%{q_y}: %{y:,.3~f}<br>%{z:,} rows<extra></extra>"
     lorenz: "%{q_label} (Gini %{q_gini})<br>bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"
+    # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
+    lorenz_hoover: "Hoover %{q_hoover}: %{q_pct}% of the total would have to move to reach equality<extra></extra>"
+    # Title hover listing the shape hints hidden behind a panel title's ellipsis.
+    more_hints: "also: %{q_hints}"
     ohlc: "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>count: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>count: %{y:,}<extra></extra>"
@@ -674,6 +678,8 @@ viz:
       log_axis: "Its value axis is logarithmic, because the values span several orders of magnitude."
       log_axis_count: "Its count axis is logarithmic, because the category counts span several orders of magnitude."
       sampled: "Drawn from a deterministic sample of the rows, to stay responsive."
+      # Tour backstop: every shape hint, when the panel title could only show some of them.
+      hints: "Notable: %{q_hints}."
     # The dictionary drawer's collapsed tour-metadata section (renders x-qsv.tour).
     meta_heading: "Tour narration"
     meta_audience: "Audience:"

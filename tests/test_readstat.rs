@@ -57,6 +57,71 @@ fn readstat_stata_dta() {
     assert_eq!(got, expected_rows());
 }
 
+// Stata extended missings (`.a`-`.z`) must render empty whatever the storage
+// type (#4627). Upstream returns them as NaN in `float`/`double` variables but
+// as null in integer ones, so without the fix `d`, `f` & `l` below print `NaN`
+// while `i` & `b` print empty.
+//   readstat_stata_extmiss.dta - written with pyreadstat 1.3.6: `id`, `d`, `f`,
+//     `l` are `double`, `i`, `b` are `long`, `s` is a string holding the text
+//     "NaN"; `.a`/`.b`/`.c`/`.z` scattered through; `l` labels 1 as "low".
+//   readstat_stata_float_missing.dta - missing_test.dta from polars_readstat
+//     (Apache-2.0): 9 `float` variables, var1-var6 `.a`-`.z`, var7-8 `.`.
+#[test]
+fn readstat_stata_extended_missing_is_empty() {
+    let wrk = Workdir::new("readstat_stata_extended_missing_is_empty");
+    let f = wrk.load_test_file("readstat_stata_extmiss.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "d", "f", "i", "b", "l", "s"],
+        svec!["1.0", "1.5", "0.5", "10", "1", "1.0", "x"],
+        svec!["2.0", "", "", "", "2", "", "NaN"],
+        svec!["3.0", "2.25", "", "30", "", "2.5", "y"],
+        svec!["4.0", "", "3.0", "", "4", "", "NaN"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// With `--value-labels` the labeled `double` `l` reaches us already turned into
+// strings, its `.a`/`.z` as the text "NaN". The string variable `s` genuinely
+// holds "NaN" and must keep it.
+#[test]
+fn readstat_stata_extended_missing_is_empty_value_labels() {
+    let wrk = Workdir::new("readstat_stata_extended_missing_is_empty_value_labels");
+    let f = wrk.load_test_file("readstat_stata_extmiss.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "d", "f", "i", "b", "l", "s"],
+        svec!["1.0", "1.5", "0.5", "10", "1", "low", "x"],
+        svec!["2.0", "", "", "", "2", "", "NaN"],
+        svec!["3.0", "2.25", "", "30", "", "2.5", "y"],
+        svec!["4.0", "", "3.0", "", "4", "", "NaN"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_stata_float_extended_missing_is_empty() {
+    let wrk = Workdir::new("readstat_stata_float_extended_missing_is_empty");
+    let f = wrk.load_test_file("readstat_stata_float_missing.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "var1", "var2", "var3", "var4", "var5", "var6", "var7", "var8", "var9"
+        ],
+        svec!["", "", "", "", "", "", "", "", "1.0"],
+    ];
+    assert_eq!(got, expected);
+}
+
 #[test]
 fn readstat_sas_xport() {
     let wrk = Workdir::new("readstat_sas_xport");

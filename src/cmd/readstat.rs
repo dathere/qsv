@@ -104,7 +104,10 @@ use std::{
     path::Path,
 };
 
-use polars::prelude::{CsvWriter, SerWriter};
+use polars::prelude::{
+    CsvWriter, DataFrame, DataType, Float32Chunked, Float64Chunked, IntoSeries, PlSmallStr,
+    PolarsResult, SerWriter, StringChunked,
+};
 use polars_readstat_rs::{
     InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat, ScanOptions,
     readstat_batch_iter, readstat_metadata_json, readstat_schema,
@@ -491,6 +494,64 @@ fn check_sentinel_columns(
     Ok(())
 }
 
+/// Upstream returns Stata `.a`-`.z` in `float`/`double` variables as a NaN
+/// *value* instead of a null (#4627), so they would print as `NaN` while the
+/// same missing in an integer variable prints empty. Stata has no NaN of its
+/// own - every bit pattern above the largest valid value is a missing - so
+/// nulling NaN here loses nothing.
+///
+/// Under `--value-labels` a labeled float variable arrives already stringified,
+/// its NaN rendered as the text `"NaN"`; `labeled_floats` names those columns.
+fn stata_nan_to_null(df: &mut DataFrame, labeled_floats: &[PlSmallStr]) -> PolarsResult<()> {
+    let names: Vec<PlSmallStr> = df
+        .columns()
+        .iter()
+        .filter(|c| c.dtype().is_float() || labeled_floats.contains(c.name()))
+        .map(|c| c.name().clone())
+        .collect();
+    for name in names {
+        let col = df.column(&name)?.as_materialized_series();
+        let fixed = match col.dtype() {
+            DataType::Float64 => {
+                let ca = col.f64()?;
+                if !ca.iter().any(|v| v.is_some_and(f64::is_nan)) {
+                    continue;
+                }
+                ca.iter()
+                    .map(|v| v.filter(|x| !x.is_nan()))
+                    .collect::<Float64Chunked>()
+                    .with_name(name.clone())
+                    .into_series()
+            },
+            DataType::Float32 => {
+                let ca = col.f32()?;
+                if !ca.iter().any(|v| v.is_some_and(f32::is_nan)) {
+                    continue;
+                }
+                ca.iter()
+                    .map(|v| v.filter(|x| !x.is_nan()))
+                    .collect::<Float32Chunked>()
+                    .with_name(name.clone())
+                    .into_series()
+            },
+            DataType::String => {
+                let ca = col.str()?;
+                if !ca.iter().any(|v| v == Some("NaN")) {
+                    continue;
+                }
+                ca.iter()
+                    .map(|v| v.filter(|s| *s != "NaN"))
+                    .collect::<StringChunked>()
+                    .with_name(name.clone())
+                    .into_series()
+            },
+            _ => continue,
+        };
+        df.replace(&name, fixed.into())?;
+    }
+    Ok(())
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
@@ -536,6 +597,25 @@ fn write_data<W: Write>(
         (df.schema().clone(), Some(df))
     };
 
+    // Labeled float variables that `--value-labels` turned into strings: their
+    // extended missings arrive as the text "NaN" (see `stata_nan_to_null`).
+    let stata_labeled_floats: Vec<PlSmallStr> = if format == Format::Stata && args.flag_value_labels
+    {
+        let raw = ScanOptions {
+            value_labels_as_strings: Some(false),
+            ..opts.clone()
+        };
+        let raw = readstat_schema(path, Some(raw), rs_format)?;
+        raw.iter()
+            .filter(|(name, dt)| {
+                dt.is_float() && schema.get(name.as_str()) == Some(&DataType::String)
+            })
+            .map(|(name, _)| name.clone())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let mut wtr = CsvWriter::new(w)
         .include_header(true)
         .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
@@ -556,6 +636,9 @@ fn write_data<W: Write>(
         for batch in batches {
             let mut df = batch?;
             rows += df.height() as u64;
+            if format == Format::Stata {
+                stata_nan_to_null(&mut df, &stata_labeled_floats)?;
+            }
             // write_batch panics on unaligned chunks
             df.align_chunks();
             wtr.write_batch(&df)?;

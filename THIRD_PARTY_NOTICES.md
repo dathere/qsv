@@ -32,6 +32,7 @@ run `cargo tree` or a tool such as `cargo-about` for that inventory.
 | [simplemaps](https://simplemaps.com/gis/country/jp) | free GIS Japan ADM1, 47 prefectures | CC-BY-4.0 | `examples/viz/japan_prefectures.geojson`; geometry inlined into the committed `examples/viz/smart_geospatial.html` dashboard |
 | [pandas](https://github.com/pandas-dev/pandas) SAS test data | `airline.sas7bdat` from `pandas/tests/io/sas/data` | BSD-3-Clause | committed as `resources/test/readstat_sample.sas7bdat`; test fixture only, not shipped in any binary |
 | [polars_readstat](https://github.com/jrothbaum/polars_readstat) SAS test data | `info_nulls_test_data.sas7bdat` from `crates/polars_readstat_rs/tests/sas/data`, commit `f62c90a` | Apache-2.0 | committed as `resources/test/readstat_sentinels.sas7bdat`; test fixture only, not shipped in any binary |
+| [polars_readstat](https://github.com/jrothbaum/polars_readstat) Stata test data | `missing_test.dta` from `crates/polars_readstat_rs/tests/stata/data`, commit `f62c90a` | Apache-2.0 | committed as `resources/test/readstat_stata_float_missing.dta`; test fixture only, not shipped in any binary |
 | OpenStreetMap / CARTO basemap tiles | n/a | ODbL 1.0 / CARTO terms | fetched at view time by MapLibre; not redistributed |
 
 ---

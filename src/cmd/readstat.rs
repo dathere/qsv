@@ -13,6 +13,10 @@ Supported input formats:
 Coded values are written as their underlying codes, not their labels, so the
 conversion is lossless. Use --value-labels to decode them instead.
 
+User-defined missing values ("sentinels") - SAS's .A to .Z & ._, SPSS's
+declared missing codes - become empty cells by default, like any other missing
+value. Use --sentinels-as to keep them.
+
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
 data with --metadata.
@@ -22,6 +26,16 @@ data with --metadata.
 
   Convert an SPSS file, decoding coded values to their labels:
     qsv readstat --value-labels survey.sav -o survey.csv
+
+  Keep the sentinel codes of a SAS dataset, in a <name>_null column after each
+  numeric variable:
+    qsv readstat --sentinels-as value data.sas7bdat
+
+  Keep them in the variables' own columns instead:
+    qsv readstat --sentinels-as value --sentinels-embedded data.sas7bdat
+
+  Keep the sentinels of two SPSS variables, as their labels:
+    qsv readstat --value-labels --sentinels-as label --sentinels-columns q1,q2 survey.sav
 
   Dump the variable dictionary of a Stata file:
     qsv readstat --metadata pretty-json panel.dta
@@ -44,6 +58,28 @@ readstat options:
                            underlying codes. Stata & SPSS only - SAS keeps its
                            value labels in a separate .sas7bcat catalog, which
                            this command does not read yet.
+    --sentinels-as <what>  Keep sentinels instead of writing them as empty
+                           cells. Each eligible variable gets a <name>_null
+                           column right after it, holding the sentinel of each
+                           row that has one & empty otherwise.
+                           Valid values: none, value, label. [default: none]
+                             value - the sentinel's code (e.g. .A or 99).
+                             label - the sentinel's value label if it has one,
+                                     else its code.
+                           SAS supports value only - its labels live in a
+                           .sas7bcat catalog. SPSS takes its sentinel labels
+                           from the value labels, so for SPSS, label requires
+                           the --value-labels option & value rules it out.
+                           Not supported yet for Stata files, nor for .xpt &
+                           .por files. Tracking sentinels makes SAS files read
+                           on a single thread, so --jobs has no effect on them.
+    --sentinels-embedded   Write each sentinel into its variable's own column
+                           instead of a <name>_null column. Those columns then
+                           mix numbers & sentinels. Requires --sentinels-as.
+    --sentinels-columns <list>  Comma-separated variables to keep sentinels
+                           for. Requires --sentinels-as. By default, every
+                           eligible variable: the numeric ones for SAS, those
+                           with declared missing values for SPSS.
     -j, --jobs <arg>       Number of reader threads. [default: 1]
                            Raising it speeds up large uncompressed files at the
                            cost of memory, as out-of-order chunks have to be
@@ -70,7 +106,8 @@ use std::{
 
 use polars::prelude::{CsvWriter, SerWriter};
 use polars_readstat_rs::{
-    ReadStatFormat, ScanOptions, readstat_batch_iter, readstat_metadata_json,
+    InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat, ScanOptions,
+    readstat_batch_iter, readstat_metadata_json, readstat_schema,
 };
 use serde::Deserialize;
 
@@ -78,13 +115,16 @@ use crate::{CliResult, cmd::joinp::tsvssv_delim, config::Delimiter, util};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:         Option<String>,
-    flag_metadata:     String,
-    flag_value_labels: bool,
-    flag_jobs:         Option<usize>,
-    flag_batch:        usize,
-    flag_output:       Option<String>,
-    flag_delimiter:    Option<Delimiter>,
+    arg_input:               Option<String>,
+    flag_metadata:           String,
+    flag_value_labels:       bool,
+    flag_sentinels_as:       String,
+    flag_sentinels_embedded: bool,
+    flag_sentinels_columns:  Option<String>,
+    flag_jobs:               Option<usize>,
+    flag_batch:              usize,
+    flag_output:             Option<String>,
+    flag_delimiter:          Option<Delimiter>,
 }
 
 /// The input formats this command accepts.
@@ -130,6 +170,33 @@ impl Format {
     /// True for the formats whose readers apply value labels while decoding.
     const fn honors_value_labels(self) -> bool {
         matches!(self, Self::Stata | Self::Spss | Self::SpssPor)
+    }
+
+    /// True for the formats whose readers report user-defined missing values.
+    /// The XPT & POR readers accept the option and silently ignore it; the
+    /// Stata reader drops some sentinels (see `sentinel_opts`).
+    const fn honors_sentinels(self) -> bool {
+        matches!(self, Self::Sas | Self::Spss)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SentinelsAs {
+    None,
+    Value,
+    Label,
+}
+
+impl SentinelsAs {
+    fn parse(s: &str) -> CliResult<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "value" => Ok(Self::Value),
+            "label" => Ok(Self::Label),
+            _ => fail_incorrectusage_clierror!(
+                "\"{s}\" is not a valid --sentinels-as value. Valid values: none, value, label."
+            ),
+        }
     }
 }
 
@@ -198,6 +265,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    let sentinels_as = SentinelsAs::parse(&args.flag_sentinels_as)?;
+    if sentinels_as != SentinelsAs::None && metadata_mode != MetadataMode::None {
+        return fail_incorrectusage_clierror!(
+            "--sentinels-as applies to the data, not to --metadata. The metadata already lists \
+             each variable's missing-value codes."
+        );
+    }
+    // before --output is created, so a rejected request leaves it untouched
+    let sentinels = sentinel_opts(&args, input, path, format, sentinels_as)?;
+
     let mut delim = if let Some(delimiter) = args.flag_delimiter {
         delimiter.as_byte()
     } else if let Ok(delim) = std::env::var("QSV_DEFAULT_DELIMITER") {
@@ -216,7 +293,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut w = io::BufWriter::with_capacity(crate::config::DEFAULT_WTR_BUFFER_CAPACITY, w);
 
     if metadata_mode == MetadataMode::None {
-        let rows = write_data(&args, path, format, delim, &mut w)?;
+        let rows = write_data(&args, path, format, sentinels, delim, &mut w)?;
         w.flush()?;
         winfo!("{rows} row{} exported.", if rows == 1 { "" } else { "s" });
     } else {
@@ -227,11 +304,199 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
+/// A suffix no variable name can carry, so probing with it never collides.
+const PROBE_SUFFIX: &str = "\u{0}qsv-sentinel-probe";
+
+/// Validate the --sentinels-* options & turn them into the reader's options.
+///
+/// Every check runs here, against the file's metadata only, because the
+/// reader itself accepts a bad request silently: the XPT & POR readers ignore
+/// the option outright, and unknown or ineligible --sentinels-columns names are
+/// dropped without a word.
+fn sentinel_opts(
+    args: &Args,
+    input: &str,
+    path: &Path,
+    format: Format,
+    sentinels_as: SentinelsAs,
+) -> CliResult<Option<InformativeNullOpts>> {
+    if sentinels_as == SentinelsAs::None {
+        if args.flag_sentinels_embedded || args.flag_sentinels_columns.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--sentinels-embedded & --sentinels-columns require --sentinels-as value or \
+                 --sentinels-as label."
+            );
+        }
+        return Ok(None);
+    }
+
+    // The Stata reader drops the sentinels of float & double variables (its
+    // extended-missing offsets use the wrong bit step) and the labels of .a-.z,
+    // so it would exit 0 having silently lost most of them.
+    if format == Format::Stata {
+        return fail_incorrectusage_clierror!(
+            "--sentinels-as is not supported for Stata files yet: the reader loses the sentinels \
+             of float & double variables."
+        );
+    }
+    let rs_format = match format.readstat_format() {
+        Some(rs_format) if format.honors_sentinels() => rs_format,
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "--sentinels-as is not supported for SAS transport (.xpt) or SPSS portable (.por) \
+                 files. Their readers do not report user-defined missing values."
+            );
+        },
+    };
+    match (format, sentinels_as) {
+        (Format::Sas, SentinelsAs::Label) => {
+            return fail_incorrectusage_clierror!(
+                "--sentinels-as label is not supported for SAS files. SAS keeps value labels in a \
+                 separate .sas7bcat catalog, which this command does not read yet. Use \
+                 --sentinels-as value to keep the sentinel codes."
+            );
+        },
+        // The SPSS reader labels sentinels exactly when it decodes value labels,
+        // whatever --sentinels-as asks for.
+        (Format::Spss, SentinelsAs::Label) if !args.flag_value_labels => {
+            return fail_incorrectusage_clierror!(
+                "--sentinels-as label needs --value-labels on SPSS files: the sentinels' labels \
+                 come from the variables' value labels."
+            );
+        },
+        (Format::Spss, SentinelsAs::Value) if args.flag_value_labels => {
+            return fail_incorrectusage_clierror!(
+                "--sentinels-as value cannot be combined with --value-labels on SPSS files, as \
+                 that writes the sentinels' labels. Use --sentinels-as label instead."
+            );
+        },
+        _ => {},
+    }
+
+    let columns = match args.flag_sentinels_columns.as_deref() {
+        None => InformativeNullColumns::All,
+        Some(list) => {
+            let mut names: Vec<String> = Vec::new();
+            for name in list.split(',').map(str::trim) {
+                if name.is_empty() {
+                    return fail_incorrectusage_clierror!(
+                        "--sentinels-columns \"{list}\" has an empty variable name."
+                    );
+                }
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.to_string());
+                }
+            }
+            check_sentinel_columns(args, input, path, format, rs_format, &names)?;
+            InformativeNullColumns::Selected(names)
+        },
+    };
+
+    let null_opts = InformativeNullOpts {
+        columns,
+        mode: if args.flag_sentinels_embedded {
+            InformativeNullMode::MergedString
+        } else {
+            InformativeNullMode::SeparateColumn {
+                suffix: "_null".to_string(),
+            }
+        },
+        use_value_labels: sentinels_as == SentinelsAs::Label,
+    };
+
+    // Surface a <name>_null collision now, with advice the user can act on.
+    let check = ScanOptions {
+        value_labels_as_strings: Some(args.flag_value_labels),
+        informative_nulls: Some(null_opts.clone()),
+        ..ScanOptions::default()
+    };
+    if let Err(e) = readstat_schema(path, Some(check), Some(rs_format)) {
+        let msg = e.to_string();
+        if msg.contains("conflicts with an existing column") {
+            let taken = msg.split('\'').nth(1).unwrap_or("<name>_null");
+            return fail_incorrectusage_clierror!(
+                "Cannot keep sentinels: the file already has a variable named \"{taken}\", which \
+                 is where a sentinel column would go. Leave its variable out with \
+                 --sentinels-columns."
+            );
+        }
+        return Err(e.into());
+    }
+
+    if args.flag_jobs.unwrap_or(1) > 1 && format == Format::Sas {
+        wwarn!(
+            "--jobs has no effect with --sentinels-as on SAS files: tracking sentinels reads them \
+             on a single thread."
+        );
+    }
+
+    Ok(Some(null_opts))
+}
+
+/// Reject --sentinels-columns names the reader would silently drop: names not
+/// in the file, and variables that cannot hold a sentinel.
+///
+/// Eligibility differs by format, so rather than restating the reader's rules
+/// this asks the reader itself: a name is eligible iff selecting it adds an
+/// indicator column to the schema.
+fn check_sentinel_columns(
+    args: &Args,
+    input: &str,
+    path: &Path,
+    format: Format,
+    rs_format: ReadStatFormat,
+    names: &[String],
+) -> CliResult<()> {
+    let probe = ScanOptions {
+        value_labels_as_strings: Some(args.flag_value_labels),
+        informative_nulls: Some(InformativeNullOpts {
+            columns:          InformativeNullColumns::Selected(names.to_vec()),
+            mode:             InformativeNullMode::SeparateColumn {
+                suffix: PROBE_SUFFIX.to_string(),
+            },
+            use_value_labels: false,
+        }),
+        ..ScanOptions::default()
+    };
+    let schema = readstat_schema(path, Some(probe), Some(rs_format))?;
+
+    let quoted = |v: Vec<&String>| {
+        v.iter()
+            .map(|n| format!("\"{n}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let unknown: Vec<&String> = names.iter().filter(|n| !schema.contains(n)).collect();
+    if !unknown.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "--sentinels-columns: \"{input}\" has no variable named {}.",
+            quoted(unknown)
+        );
+    }
+    let ineligible: Vec<&String> = names
+        .iter()
+        .filter(|n| !schema.contains(&format!("{n}{PROBE_SUFFIX}")))
+        .collect();
+    if !ineligible.is_empty() {
+        let rule = if format == Format::Spss {
+            "Only variables with declared missing values"
+        } else {
+            "Only numeric variables"
+        };
+        return fail_incorrectusage_clierror!(
+            "--sentinels-columns: {} cannot hold sentinels. {rule} can.",
+            quoted(ineligible)
+        );
+    }
+    Ok(())
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
     path: &Path,
     format: Format,
+    sentinels: Option<InformativeNullOpts>,
     delim: u8,
     w: &mut W,
 ) -> CliResult<u64> {
@@ -252,6 +517,7 @@ fn write_data<W: Write>(
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
         value_labels_as_strings: Some(args.flag_value_labels),
         preserve_order: Some(true),
+        informative_nulls: sentinels,
         ..ScanOptions::default()
     };
 
@@ -262,7 +528,7 @@ fn write_data<W: Write>(
     let rs_format = format.readstat_format();
     let (schema, por_df) = if let Some(rs_format) = rs_format {
         (
-            polars_readstat_rs::readstat_schema(path, Some(opts.clone()), Some(rs_format))?,
+            readstat_schema(path, Some(opts.clone()), Some(rs_format))?,
             None,
         )
     } else {

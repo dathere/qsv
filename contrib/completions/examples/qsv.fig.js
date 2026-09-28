@@ -2746,6 +2746,14 @@ const completion: Fig.Spec = {
       name: "fetch",
       options: [
         {
+          name: "--default-encoding",
+          isRepeatable: true,
+          args: {
+            name: "default-encoding",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-d", "--delimiter"],
           isRepeatable: true,
           args: {
@@ -2909,6 +2917,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "content-type",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--default-encoding",
+          isRepeatable: true,
+          args: {
+            name: "default-encoding",
             isOptional: true,
           },
         },
@@ -3532,6 +3548,9 @@ const completion: Fig.Spec = {
         },
         {
           name: ["-a", "--asc"],
+        },
+        {
+          name: "--flexible",
         },
         {
           name: "--force",
@@ -10061,6 +10080,25 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--sentinels-as",
+          isRepeatable: true,
+          args: {
+            name: "sentinels-as",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sentinels-columns",
+          isRepeatable: true,
+          args: {
+            name: "sentinels-columns",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sentinels-embedded",
+        },
+        {
           name: "--value-labels",
         },
         {
@@ -11723,6 +11761,9 @@ const completion: Fig.Spec = {
         },
         {
           name: ["-E", "--everything"],
+        },
+        {
+          name: "--flexible",
         },
         {
           name: "--force",

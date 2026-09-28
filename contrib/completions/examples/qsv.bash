@@ -3400,12 +3400,16 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__fetch)
-            opts="-d -H -c -n -o -p -h --cache-error --cookies --delimiter --disk-cache --disk-cache-dir --flush-cache --http-header --jaq --jaqfile --max-errors --max-retries --mem-cache-size --new-column --no-cache --no-headers --output --pretty --progressbar --rate-limit --redis-cache --report --store-error --timeout --url-template --user-agent --help"
+            opts="-d -H -c -n -o -p -h --cache-error --cookies --default-encoding --delimiter --disk-cache --disk-cache-dir --flush-cache --http-header --jaq --jaqfile --max-errors --max-retries --mem-cache-size --new-column --no-cache --no-headers --output --pretty --progressbar --rate-limit --redis-cache --report --store-error --timeout --url-template --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --default-encoding)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --delimiter)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -3490,13 +3494,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__fetchpost)
-            opts="-d -j -H -c -n -o -t -p -h --cache-error --compress --content-type --cookies --delimiter --disk-cache --disk-cache-dir --flush-cache --globals-json --http-header --jaq --jaqfile --max-errors --max-retries --mem-cache-size --new-column --no-cache --no-headers --output --payload-tpl --pretty --progressbar --rate-limit --redis-cache --report --store-error --timeout --user-agent --help"
+            opts="-d -j -H -c -n -o -t -p -h --cache-error --compress --content-type --cookies --default-encoding --delimiter --disk-cache --disk-cache-dir --flush-cache --globals-json --http-header --jaq --jaqfile --max-errors --max-retries --mem-cache-size --new-column --no-cache --no-headers --output --payload-tpl --pretty --progressbar --rate-limit --redis-cache --report --store-error --timeout --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --content-type)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --default-encoding)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3852,7 +3860,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__frequency)
-            opts="-a -d -i -j -l -n -o -r -s -u -h --all-unique-text --asc --delimiter --force --frequency-jsonl --high-card-pct --high-card-threshold --ignore-case --jobs --json --limit --lmt-threshold --memcheck --no-float --no-headers --no-nulls --no-other --no-stats --no-trim --null-sorted --null-text --other-sorted --other-text --output --pct-dec-places --pct-nulls --pretty-json --rank-strategy --select --sketch-map-size --sketch-method --stats-filter --toon --unq-limit --vis-whitespace --weight --help"
+            opts="-a -d -i -j -l -n -o -r -s -u -h --all-unique-text --asc --delimiter --flexible --force --frequency-jsonl --high-card-pct --high-card-threshold --ignore-case --jobs --json --limit --lmt-threshold --memcheck --no-float --no-headers --no-nulls --no-other --no-stats --no-trim --null-sorted --null-text --other-sorted --other-text --output --pct-dec-places --pct-nulls --pretty-json --rank-strategy --select --sketch-map-size --sketch-method --stats-filter --toon --unq-limit --vis-whitespace --weight --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -10976,7 +10984,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__readstat)
-            opts="-b -d -j -o -h --batch --delimiter --jobs --metadata --output --value-labels --help"
+            opts="-b -d -j -o -h --batch --delimiter --jobs --metadata --output --sentinels-as --sentinels-columns --sentinels-embedded --value-labels --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -11015,6 +11023,14 @@ _qsv() {
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sentinels-as)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sentinels-columns)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -12128,7 +12144,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__stats)
-            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --cardinality-method --dates-whitelist --delimiter --everything --force --infer-boolean --infer-dates --jobs --jsonl --mad --median --memcheck --mode --mode-cardinality-cap --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --pretty-json --quantile-method --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --zero-padded-numeric --help"
+            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --cardinality-method --dates-whitelist --delimiter --everything --flexible --force --infer-boolean --infer-dates --jobs --jsonl --mad --median --memcheck --mode --mode-cardinality-cap --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --pretty-json --quantile-method --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --zero-padded-numeric --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

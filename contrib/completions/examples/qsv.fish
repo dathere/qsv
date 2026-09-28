@@ -548,6 +548,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand extsort" -l tmp-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand extsort" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand extsort" -s R -l reverse
 complete -c qsv -n "__fish_qsv_using_subcommand extsort" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand fetch" -l default-encoding -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetch" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetch" -l disk-cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetch" -s H -l http-header -r
@@ -575,6 +576,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand fetch" -l redis-cache
 complete -c qsv -n "__fish_qsv_using_subcommand fetch" -l store-error
 complete -c qsv -n "__fish_qsv_using_subcommand fetch" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand fetchpost" -l content-type -r
+complete -c qsv -n "__fish_qsv_using_subcommand fetchpost" -l default-encoding -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetchpost" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetchpost" -l disk-cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand fetchpost" -s j -l globals-json -r
@@ -668,6 +670,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l stats-filter -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s u -l unq-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l weight -r
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s a -l asc
+complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l flexible
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l frequency-jsonl
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s i -l ignore-case
@@ -1689,6 +1692,9 @@ complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l metadata -r
 complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l sentinels-as -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l sentinels-columns -r
+complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l sentinels-embedded
 complete -c qsv -n "__fish_qsv_using_subcommand readstat" -l value-labels
 complete -c qsv -n "__fish_qsv_using_subcommand readstat" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand rename" -s d -l delimiter -r
@@ -1975,6 +1981,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand stats" -s s -l select -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l weight -r
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l cardinality
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -s E -l everything
+complete -c qsv -n "__fish_qsv_using_subcommand stats" -l flexible
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l infer-boolean
 complete -c qsv -n "__fish_qsv_using_subcommand stats" -l infer-dates

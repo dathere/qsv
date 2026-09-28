@@ -260,3 +260,303 @@ fn readstat_rejects_bad_metadata_format() {
         "{stderr}"
     );
 }
+
+// Sentinel (user-defined missing value) fixtures, cross-checked against
+// pyreadstat 1.3.6 with `user_missing=True`:
+//   readstat_sentinels.sav - written with pyreadstat: `income` declares 99 plus
+//     the range 900-999, `rating` declares 8 & 9 (8 labeled "Refused"), `name`
+//     declares "NA", and `plain` declares nothing.
+//   readstat_sentinels_collide.sav - `income` declares 99, and the file already
+//     has an `income_null` variable.
+//   readstat_sentinels.sas7bdat - info_nulls_test_data.sas7bdat from
+//     polars_readstat (Apache-2.0): 2000 rows of x, y, z with .A-.Z & ._ in y & z.
+
+fn sentinels(wrk: &Workdir, ext: &str) -> String {
+    wrk.load_test_file(&format!("readstat_sentinels.{ext}"))
+}
+
+#[test]
+fn readstat_sentinels_off_by_default() {
+    let wrk = Workdir::new("readstat_sentinels_off_by_default");
+    let f = sentinels(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "income", "rating", "name", "plain"],
+        svec!["1.0", "1500.5", "3.0", "Ana", "1.0"],
+        svec!["2.0", "", "", "", "2.0"],
+        svec!["3.0", "", "4.0", "Cy", "3.0"],
+        svec!["4.0", "", "", "", "4.0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_sentinels_spss_value() {
+    let wrk = Workdir::new("readstat_sentinels_spss_value");
+    let f = sentinels(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value"]).arg(f);
+
+    // discrete (99, 8, 9, "NA") & range (950) sentinels alike; `plain`
+    // declares no missing values, so it gets no sentinel column
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "id",
+            "income",
+            "income_null",
+            "rating",
+            "rating_null",
+            "name",
+            "name_null",
+            "plain"
+        ],
+        svec!["1.0", "1500.5", "", "3.0", "", "Ana", "", "1.0"],
+        svec!["2.0", "", "99", "", "8", "", "NA", "2.0"],
+        svec!["3.0", "", "950", "4.0", "", "Cy", "", "3.0"],
+        svec!["4.0", "", "", "", "9", "", "", "4.0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_sentinels_spss_label() {
+    let wrk = Workdir::new("readstat_sentinels_spss_label");
+    let f = sentinels(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--sentinels-as", "label"])
+        .arg(f);
+
+    // 8 is labeled, 9 is not
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0][3..5], svec!["rating", "rating_null"]);
+    assert_eq!(
+        got.iter()
+            .skip(1)
+            .map(|r| r[3..5].to_vec())
+            .collect::<Vec<_>>(),
+        vec![
+            svec!["Good", ""],
+            svec!["", "Refused"],
+            svec!["Great", ""],
+            svec!["", "9"],
+        ]
+    );
+}
+
+#[test]
+fn readstat_sentinels_spss_embedded() {
+    let wrk = Workdir::new("readstat_sentinels_spss_embedded");
+    let f = sentinels(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--sentinels-embedded"])
+        .arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "income", "rating", "name", "plain"],
+        svec!["1.0", "1500.5", "3.0", "Ana", "1.0"],
+        svec!["2.0", "99", "8", "NA", "2.0"],
+        svec!["3.0", "950", "4.0", "Cy", "3.0"],
+        svec!["4.0", "", "9", "", "4.0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_sentinels_columns_subset() {
+    let wrk = Workdir::new("readstat_sentinels_columns_subset");
+    let f = sentinels(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    // whitespace is trimmed & duplicates are ignored
+    cmd.args([
+        "--sentinels-as",
+        "value",
+        "--sentinels-columns",
+        " name , income,name",
+    ])
+    .arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got[0],
+        svec![
+            "id",
+            "income",
+            "income_null",
+            "rating",
+            "name",
+            "name_null",
+            "plain"
+        ]
+    );
+    assert_eq!(got[2], svec!["2.0", "", "99", "", "", "NA", "2.0"]);
+}
+
+#[test]
+fn readstat_sentinels_sas() {
+    let wrk = Workdir::new("readstat_sentinels_sas");
+    let f = sentinels(&wrk, "sas7bdat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value"]).arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 2001);
+    assert_eq!(got[0], svec!["x", "x_null", "y", "y_null", "z", "z_null"]);
+    assert_eq!(got[1], svec!["1.0", "", "", ".C", "", ".B"]);
+    assert_eq!(got[4], svec!["4.0", "", "", ".C", "", ".Q"]);
+    // per-column sentinel counts, as pyreadstat reports them
+    let count = |col: usize| got.iter().skip(1).filter(|r| !r[col].is_empty()).count();
+    assert_eq!((count(1), count(3), count(5)), (0, 934, 958));
+}
+
+#[test]
+fn readstat_sentinels_sas_embedded_subset() {
+    let wrk = Workdir::new("readstat_sentinels_sas_embedded_subset");
+    let f = sentinels(&wrk, "sas7bdat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+        "--sentinels-columns",
+        "y",
+    ])
+    .arg(f);
+
+    // z is left alone, so its sentinels stay empty
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["x", "y", "z"]);
+    assert_eq!(got[1], svec!["1.0", ".C", ""]);
+    assert_eq!(got[4], svec!["4.0", ".C", ""]);
+}
+
+#[test]
+fn readstat_sentinels_sas_jobs_warns() {
+    let wrk = Workdir::new("readstat_sentinels_sas_jobs_warns");
+    let f = sentinels(&wrk, "sas7bdat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--jobs", "4"]).arg(f);
+
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("--jobs has no effect"), "{stderr}");
+}
+
+/// Every request the readers would silently get wrong is refused up front.
+#[test]
+fn readstat_sentinels_rejections() {
+    let wrk = Workdir::new("readstat_sentinels_rejections");
+    let sav = sentinels(&wrk, "sav");
+    let sas = sentinels(&wrk, "sas7bdat");
+    let collide = wrk.load_test_file("readstat_sentinels_collide.sav");
+    let dta = sample(&wrk, "dta");
+    let xpt = sample(&wrk, "xpt");
+    let por = sample(&wrk, "por");
+
+    let cases: Vec<(Vec<&str>, &str, &str)> = vec![
+        (vec!["--sentinels-embedded"], &sav, "require --sentinels-as"),
+        (
+            vec!["--sentinels-columns", "income"],
+            &sav,
+            "require --sentinels-as",
+        ),
+        (
+            vec!["--sentinels-as", "bogus"],
+            &sav,
+            "not a valid --sentinels-as value",
+        ),
+        (
+            vec!["--sentinels-as", "value"],
+            &dta,
+            "not supported for Stata files",
+        ),
+        (
+            vec!["--sentinels-as", "value"],
+            &xpt,
+            "SAS transport (.xpt)",
+        ),
+        (
+            vec!["--sentinels-as", "value"],
+            &por,
+            "SPSS portable (.por)",
+        ),
+        (
+            vec!["--sentinels-as", "label"],
+            &sas,
+            "--sentinels-as label is not supported for SAS",
+        ),
+        (
+            vec!["--sentinels-as", "label"],
+            &sav,
+            "needs --value-labels on SPSS",
+        ),
+        (
+            vec!["--value-labels", "--sentinels-as", "value"],
+            &sav,
+            "cannot be combined with --value-labels",
+        ),
+        (
+            vec!["--sentinels-as", "value", "--metadata", "json"],
+            &sav,
+            "not to --metadata",
+        ),
+        (
+            vec![
+                "--sentinels-as",
+                "value",
+                "--sentinels-columns",
+                "nope,income",
+            ],
+            &sav,
+            "has no variable named \"nope\"",
+        ),
+        (
+            vec![
+                "--sentinels-as",
+                "value",
+                "--sentinels-columns",
+                "plain,income",
+            ],
+            &sav,
+            "\"plain\" cannot hold sentinels",
+        ),
+        (
+            vec![
+                "--sentinels-as",
+                "value",
+                "--sentinels-columns",
+                "income,,name",
+            ],
+            &sav,
+            "has an empty variable name",
+        ),
+        (
+            vec!["--sentinels-as", "value"],
+            &collide,
+            "already has a variable named \"income_null\"",
+        ),
+    ];
+    for (flags, file, expected) in cases {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(&flags).arg(file);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains(expected), "{flags:?}: {stderr}");
+    }
+}
+
+#[test]
+fn readstat_sentinels_rejection_leaves_output_untouched() {
+    let wrk = Workdir::new("readstat_sentinels_rejection_leaves_output_untouched");
+    let f = sentinels(&wrk, "sav");
+    wrk.create_from_string("out.csv", "keep me\n");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--sentinels-columns", "nope"])
+        .args(["--output", "out.csv"])
+        .arg(f);
+
+    wrk.assert_err(&mut cmd);
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "keep me\n");
+}

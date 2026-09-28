@@ -99,6 +99,7 @@ Common options:
 "#;
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, Write},
     path::Path,
@@ -501,12 +502,19 @@ fn check_sentinel_columns(
 /// nulling NaN here loses nothing.
 ///
 /// Under `--value-labels` a labeled float variable arrives already stringified,
-/// its NaN rendered as the text `"NaN"`; `labeled_floats` names those columns.
-fn stata_nan_to_null(df: &mut DataFrame, labeled_floats: &[PlSmallStr]) -> PolarsResult<()> {
+/// its NaN rendered as the text `"NaN"`; `labeled.cols` names those columns.
+/// Where a value label is itself spelled "NaN" that text is ambiguous, so
+/// those columns null exactly the rows in `labeled.raw_nan_rows` instead.
+/// `offset` is the row number of the batch's first row.
+fn stata_nan_to_null(
+    df: &mut DataFrame,
+    labeled: &StataLabeledFloats,
+    offset: u64,
+) -> PolarsResult<()> {
     let names: Vec<PlSmallStr> = df
         .columns()
         .iter()
-        .filter(|c| c.dtype().is_float() || labeled_floats.contains(c.name()))
+        .filter(|c| c.dtype().is_float() || labeled.cols.contains(c.name()))
         .map(|c| c.name().clone())
         .collect();
     for name in names {
@@ -536,20 +544,116 @@ fn stata_nan_to_null(df: &mut DataFrame, labeled_floats: &[PlSmallStr]) -> Polar
             },
             DataType::String => {
                 let ca = col.str()?;
-                if !ca.iter().any(|v| v == Some("NaN")) {
-                    continue;
-                }
-                ca.iter()
-                    .map(|v| v.filter(|s| *s != "NaN"))
-                    .collect::<StringChunked>()
-                    .with_name(name.clone())
-                    .into_series()
+                let fixed: StringChunked = if let Some(nan_rows) = labeled.raw_nan_rows.get(&name) {
+                    let end = offset + ca.len() as u64;
+                    let nan_rows = &nan_rows[nan_rows.partition_point(|&r| r < offset)
+                        ..nan_rows.partition_point(|&r| r < end)];
+                    if nan_rows.is_empty() {
+                        continue;
+                    }
+                    ca.iter()
+                        .zip(offset..)
+                        .map(|(v, row)| v.filter(|_| nan_rows.binary_search(&row).is_err()))
+                        .collect()
+                } else {
+                    if !ca.iter().any(|v| v == Some("NaN")) {
+                        continue;
+                    }
+                    ca.iter().map(|v| v.filter(|s| *s != "NaN")).collect()
+                };
+                fixed.with_name(name.clone()).into_series()
             },
             _ => continue,
         };
         df.replace(&name, fixed.into())?;
     }
     Ok(())
+}
+
+/// Stata float variables that `--value-labels` turned into strings.
+#[derive(Default)]
+struct StataLabeledFloats {
+    cols:         Vec<PlSmallStr>,
+    /// Sorted row numbers holding a raw NaN, for the columns that have a value
+    /// label spelled "NaN".
+    raw_nan_rows: HashMap<PlSmallStr, Vec<u64>>,
+}
+
+impl StataLabeledFloats {
+    fn new(
+        path: &Path,
+        opts: &ScanOptions,
+        rs_format: ReadStatFormat,
+        labeled_schema: &polars::prelude::Schema,
+        batch_size: Option<usize>,
+    ) -> CliResult<Self> {
+        let raw_opts = ScanOptions {
+            value_labels_as_strings: Some(false),
+            ..opts.clone()
+        };
+        let cols: Vec<PlSmallStr> = readstat_schema(path, Some(raw_opts.clone()), Some(rs_format))?
+            .iter()
+            .filter(|(name, dt)| {
+                dt.is_float() && labeled_schema.get(name.as_str()) == Some(&DataType::String)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        if cols.is_empty() {
+            return Ok(Self::default());
+        }
+
+        let meta = readstat_metadata_json(path, Some(rs_format)).map_err(|e| {
+            crate::CliError::Other(format!(
+                "Could not read the metadata of \"{}\": {e}",
+                path.display()
+            ))
+        })?;
+        let meta: serde_json::Value = serde_json::from_str(&meta)?;
+        let ambiguous: Vec<PlSmallStr> = meta["variables"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|v| {
+                v["value_labels"]
+                    .as_object()
+                    .is_some_and(|labels| labels.values().any(|l| l == "NaN"))
+            })
+            .filter_map(|v| v["name"].as_str())
+            .filter_map(|name| cols.iter().find(|c| c.as_str() == name).cloned())
+            .collect();
+
+        let mut raw_nan_rows: HashMap<PlSmallStr, Vec<u64>> =
+            ambiguous.iter().map(|c| (c.clone(), Vec::new())).collect();
+        if !ambiguous.is_empty() {
+            let batches = readstat_batch_iter(
+                path,
+                Some(raw_opts),
+                Some(rs_format),
+                Some(ambiguous.iter().map(ToString::to_string).collect()),
+                None,
+                batch_size,
+            )?;
+            let mut offset = 0_u64;
+            for batch in batches {
+                let df = batch?;
+                for (name, rows) in &mut raw_nan_rows {
+                    let col = df
+                        .column(name)?
+                        .as_materialized_series()
+                        .cast(&DataType::Float64)?;
+                    rows.extend(
+                        col.f64()?
+                            .iter()
+                            .zip(offset..)
+                            .filter(|(v, _)| v.is_some_and(f64::is_nan))
+                            .map(|(_, row)| row),
+                    );
+                }
+                offset += df.height() as u64;
+            }
+        }
+        Ok(Self { cols, raw_nan_rows })
+    }
 }
 
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
@@ -599,21 +703,17 @@ fn write_data<W: Write>(
 
     // Labeled float variables that `--value-labels` turned into strings: their
     // extended missings arrive as the text "NaN" (see `stata_nan_to_null`).
-    let stata_labeled_floats: Vec<PlSmallStr> = if format == Format::Stata && args.flag_value_labels
-    {
-        let raw = ScanOptions {
-            value_labels_as_strings: Some(false),
-            ..opts.clone()
-        };
-        let raw = readstat_schema(path, Some(raw), rs_format)?;
-        raw.iter()
-            .filter(|(name, dt)| {
-                dt.is_float() && schema.get(name.as_str()) == Some(&DataType::String)
-            })
-            .map(|(name, _)| name.clone())
-            .collect()
-    } else {
-        Vec::new()
+    let stata_labeled_floats = match rs_format {
+        Some(rs_format) if format == Format::Stata && args.flag_value_labels => {
+            StataLabeledFloats::new(
+                path,
+                &opts,
+                rs_format,
+                &schema,
+                (args.flag_batch > 0).then_some(args.flag_batch),
+            )?
+        },
+        _ => StataLabeledFloats::default(),
     };
 
     let mut wtr = CsvWriter::new(w)
@@ -635,10 +735,10 @@ fn write_data<W: Write>(
         )?;
         for batch in batches {
             let mut df = batch?;
-            rows += df.height() as u64;
             if format == Format::Stata {
-                stata_nan_to_null(&mut df, &stata_labeled_floats)?;
+                stata_nan_to_null(&mut df, &stata_labeled_floats, rows)?;
             }
+            rows += df.height() as u64;
             // write_batch panics on unaligned chunks
             df.align_chunks();
             wtr.write_batch(&df)?;

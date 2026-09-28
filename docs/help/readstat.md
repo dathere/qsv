@@ -28,6 +28,10 @@ SPSS    .sav, .zsav, .por
 Coded values are written as their underlying codes, not their labels, so the
 conversion is lossless. Use --value-labels to decode them instead.
 
+User-defined missing values ("sentinels") - SAS's .A to .Z & ._, SPSS's
+declared missing codes - become empty cells by default, like any other missing
+value. Use --sentinels-as to keep them.
+
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
 data with --metadata.
@@ -41,6 +45,25 @@ qsv readstat data.sas7bdat > data.csv
 Convert an SPSS file, decoding coded values to their labels:  
 ```console
 qsv readstat --value-labels survey.sav -o survey.csv
+```
+
+
+Keep the sentinel codes of a SAS dataset, in a <name>_null column after each
+numeric variable:  
+```console
+qsv readstat --sentinels-as value data.sas7bdat
+```
+
+
+Keep them in the variables' own columns instead:  
+```console
+qsv readstat --sentinels-as value --sentinels-embedded data.sas7bdat
+```
+
+
+Keep the sentinels of two SPSS variables, as their labels:  
+```console
+qsv readstat --value-labels --sentinels-as label --sentinels-columns q1,q2 survey.sav
 ```
 
 
@@ -72,10 +95,13 @@ qsv readstat --help
 
 ## Readstat Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑metadata`&nbsp; | string | Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json. | `none` |
 | &nbsp;`‑‑value‑labels`&nbsp; | flag | Decode coded values to their label strings (e.g. 1 becomes "Male") instead of writing the underlying codes. Stata & SPSS only - SAS keeps its value labels in a separate .sas7bcat catalog, which this command does not read yet. |  |
+| &nbsp;`‑‑sentinels‑as`&nbsp; | string | Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. SAS supports value only - its labels live in a .sas7bcat catalog. SPSS takes its sentinel labels from the value labels, so for SPSS, label requires the --value-labels option & value rules it out. Not supported yet for Stata files, nor for .xpt & .por files. Tracking sentinels makes SAS files read on a single thread, so --jobs has no effect on them. | `none` |
+| &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a <name>_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |
+| &nbsp;`‑‑sentinels‑columns`&nbsp; | string | Comma-separated variables to keep sentinels for. Requires --sentinels-as. By default, every eligible variable: the numeric ones for SAS, those with declared missing values for SPSS. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of reader threads. Raising it speeds up large uncompressed files at the cost of memory, as out-of-order chunks have to be buffered to keep the rows in source order. Row order is preserved either way. | `1` |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. | `50000` |
 

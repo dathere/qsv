@@ -856,6 +856,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --help 'Print help'
         }
         &'qsv;fetch'= {
+            cand --default-encoding 'default-encoding'
             cand -d 'd'
             cand --delimiter 'delimiter'
             cand --disk-cache-dir 'disk-cache-dir'
@@ -892,6 +893,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;fetchpost'= {
             cand --content-type 'content-type'
+            cand --default-encoding 'default-encoding'
             cand -d 'd'
             cand --delimiter 'delimiter'
             cand --disk-cache-dir 'disk-cache-dir'
@@ -1049,6 +1051,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --weight 'weight'
             cand -a 'a'
             cand --asc 'asc'
+            cand --flexible 'flexible'
             cand --force 'force'
             cand --frequency-jsonl 'frequency-jsonl'
             cand -i 'i'
@@ -2639,6 +2642,9 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --metadata 'metadata'
             cand -o 'o'
             cand --output 'output'
+            cand --sentinels-as 'sentinels-as'
+            cand --sentinels-columns 'sentinels-columns'
+            cand --sentinels-embedded 'sentinels-embedded'
             cand --value-labels 'value-labels'
             cand -h 'Print help'
             cand --help 'Print help'
@@ -3123,6 +3129,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --cardinality 'cardinality'
             cand -E 'E'
             cand --everything 'everything'
+            cand --flexible 'flexible'
             cand --force 'force'
             cand --infer-boolean 'infer-boolean'
             cand --infer-dates 'infer-dates'

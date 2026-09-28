@@ -890,6 +890,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (fetch)
 _arguments "${_arguments_options[@]}" : \
+'--default-encoding=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
@@ -928,6 +929,7 @@ _arguments "${_arguments_options[@]}" : \
 (fetchpost)
 _arguments "${_arguments_options[@]}" : \
 '--content-type=[]: :_default' \
+'--default-encoding=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
@@ -1099,6 +1101,7 @@ _arguments "${_arguments_options[@]}" : \
 '--weight=[]: :_default' \
 '-a[]' \
 '--asc[]' \
+'--flexible[]' \
 '--force[]' \
 '--frequency-jsonl[]' \
 '-i[]' \
@@ -2927,6 +2930,9 @@ _arguments "${_arguments_options[@]}" : \
 '--metadata=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--sentinels-as=[]: :_default' \
+'--sentinels-columns=[]: :_default' \
+'--sentinels-embedded[]' \
 '--value-labels[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -3481,6 +3487,7 @@ _arguments "${_arguments_options[@]}" : \
 '--cardinality[]' \
 '-E[]' \
 '--everything[]' \
+'--flexible[]' \
 '--force[]' \
 '--infer-boolean[]' \
 '--infer-dates[]' \

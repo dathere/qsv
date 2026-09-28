@@ -554,6 +554,7 @@ module completions {
   export extern "qsv fetch" [
     --cache-error
     --cookies
+    --default-encoding: string
     --delimiter(-d): string
     --disk-cache
     --disk-cache-dir: string
@@ -585,6 +586,7 @@ module completions {
     --compress
     --content-type: string
     --cookies
+    --default-encoding: string
     --delimiter(-d): string
     --disk-cache
     --disk-cache-dir: string
@@ -679,6 +681,7 @@ module completions {
     --all-unique-text: string
     --asc(-a)
     --delimiter(-d): string
+    --flexible
     --force
     --frequency-jsonl
     --high-card-pct: string
@@ -1939,6 +1942,9 @@ module completions {
     --jobs(-j): string
     --metadata: string
     --output(-o): string
+    --sentinels-as: string
+    --sentinels-columns: string
+    --sentinels-embedded
     --value-labels
     --help(-h)                # Print help
   ]
@@ -2293,6 +2299,7 @@ module completions {
     --dates-whitelist: string
     --delimiter(-d): string
     --everything(-E)
+    --flexible
     --force
     --infer-boolean
     --infer-dates

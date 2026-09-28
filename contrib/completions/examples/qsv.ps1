@@ -900,6 +900,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             break
         }
         'qsv;fetch' {
+            [CompletionResult]::new('--default-encoding', '--default-encoding', [CompletionResultType]::ParameterName, 'default-encoding')
             [CompletionResult]::new('-d', '-d', [CompletionResultType]::ParameterName, 'd')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
             [CompletionResult]::new('--disk-cache-dir', '--disk-cache-dir', [CompletionResultType]::ParameterName, 'disk-cache-dir')
@@ -937,6 +938,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
         }
         'qsv;fetchpost' {
             [CompletionResult]::new('--content-type', '--content-type', [CompletionResultType]::ParameterName, 'content-type')
+            [CompletionResult]::new('--default-encoding', '--default-encoding', [CompletionResultType]::ParameterName, 'default-encoding')
             [CompletionResult]::new('-d', '-d', [CompletionResultType]::ParameterName, 'd')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
             [CompletionResult]::new('--disk-cache-dir', '--disk-cache-dir', [CompletionResultType]::ParameterName, 'disk-cache-dir')
@@ -1101,6 +1103,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--weight', '--weight', [CompletionResultType]::ParameterName, 'weight')
             [CompletionResult]::new('-a', '-a', [CompletionResultType]::ParameterName, 'a')
             [CompletionResult]::new('--asc', '--asc', [CompletionResultType]::ParameterName, 'asc')
+            [CompletionResult]::new('--flexible', '--flexible', [CompletionResultType]::ParameterName, 'flexible')
             [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'force')
             [CompletionResult]::new('--frequency-jsonl', '--frequency-jsonl', [CompletionResultType]::ParameterName, 'frequency-jsonl')
             [CompletionResult]::new('-i', '-i', [CompletionResultType]::ParameterName, 'i')
@@ -2785,6 +2788,9 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--metadata', '--metadata', [CompletionResultType]::ParameterName, 'metadata')
             [CompletionResult]::new('-o', '-o', [CompletionResultType]::ParameterName, 'o')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
+            [CompletionResult]::new('--sentinels-as', '--sentinels-as', [CompletionResultType]::ParameterName, 'sentinels-as')
+            [CompletionResult]::new('--sentinels-columns', '--sentinels-columns', [CompletionResultType]::ParameterName, 'sentinels-columns')
+            [CompletionResult]::new('--sentinels-embedded', '--sentinels-embedded', [CompletionResultType]::ParameterName, 'sentinels-embedded')
             [CompletionResult]::new('--value-labels', '--value-labels', [CompletionResultType]::ParameterName, 'value-labels')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
             [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
@@ -3297,6 +3303,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--cardinality', '--cardinality', [CompletionResultType]::ParameterName, 'cardinality')
             [CompletionResult]::new('-E', '-E ', [CompletionResultType]::ParameterName, 'E')
             [CompletionResult]::new('--everything', '--everything', [CompletionResultType]::ParameterName, 'everything')
+            [CompletionResult]::new('--flexible', '--flexible', [CompletionResultType]::ParameterName, 'flexible')
             [CompletionResult]::new('--force', '--force', [CompletionResultType]::ParameterName, 'force')
             [CompletionResult]::new('--infer-boolean', '--infer-boolean', [CompletionResultType]::ParameterName, 'infer-boolean')
             [CompletionResult]::new('--infer-dates', '--infer-dates', [CompletionResultType]::ParameterName, 'infer-dates')

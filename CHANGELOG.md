@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`readstat`: keep user-defined missing values ("sentinels") with `--sentinels-as value|label`** ([#4625](https://github.com/dathere/qsv/issues/4625)). SAS `.A`-`.Z`/`._` and SPSS declared missing codes (discrete, range and string) otherwise become empty cells. With the option, each eligible variable gets a `<name>_null` column holding its sentinel. `--sentinels-embedded` writes the sentinel into the variable's own column instead, and `--sentinels-columns` limits it to named variables.
+  - Every request the reader would silently get wrong is refused up front, before `--output` is touched: `.xpt`/`.por` files (their readers ignore the option), unknown or ineligible `--sentinels-columns` names (the reader drops them), SAS `label` (labels live in a `.sas7bcat` catalog), and SPSS `label`/`value` when it contradicts `--value-labels` (the SPSS reader labels sentinels exactly when it decodes value labels).
+  - **Not yet supported for Stata files.** The reader loses the sentinels of `float`/`double` variables and the labels of `.a`-`.z`, so the option is refused rather than exiting 0 with the sentinels gone.
 - **`moarstats`: 17 more statistical measures (56 -> 73), each checked against scipy or a closed-form oracle.**
   - **Derived from the stats cache, no extra pass:**
     - `mad_normalized` (MAD/0.6745) and `iqr_normalized` (IQR/1.349), the robust, normal-consistent estimates of sigma.

@@ -36,6 +36,7 @@ portugues     = "portugues"
 lits          = "lits"
 "SME"         = "SME"
 "sav"         = "sav"
+"missings"    = "missings"
 
 [files]
 extend-exclude = [

@@ -105,6 +105,7 @@ use std::{
     path::Path,
 };
 
+use bitvec::vec::BitVec;
 use polars::prelude::{
     CsvWriter, DataFrame, DataType, Float32Chunked, Float64Chunked, IntoSeries, PlSmallStr,
     PolarsResult, SerWriter, StringChunked,
@@ -504,7 +505,7 @@ fn check_sentinel_columns(
 /// Under `--value-labels` a labeled float variable arrives already stringified,
 /// its NaN rendered as the text `"NaN"`; `labeled.cols` names those columns.
 /// Where a value label is itself spelled "NaN" that text is ambiguous, so
-/// those columns null exactly the rows in `labeled.raw_nan_rows` instead.
+/// those columns null exactly the rows flagged in `labeled.raw_nan` instead.
 /// `offset` is the row number of the batch's first row.
 fn stata_nan_to_null(
     df: &mut DataFrame,
@@ -544,16 +545,16 @@ fn stata_nan_to_null(
             },
             DataType::String => {
                 let ca = col.str()?;
-                let fixed: StringChunked = if let Some(nan_rows) = labeled.raw_nan_rows.get(&name) {
-                    let end = offset + ca.len() as u64;
-                    let nan_rows = &nan_rows[nan_rows.partition_point(|&r| r < offset)
-                        ..nan_rows.partition_point(|&r| r < end)];
-                    if nan_rows.is_empty() {
+                let fixed: StringChunked = if let Some(raw_nan) = labeled.raw_nan.get(&name) {
+                    let start = (offset as usize).min(raw_nan.len());
+                    let end = (start + ca.len()).min(raw_nan.len());
+                    let raw_nan = &raw_nan[start..end];
+                    if raw_nan.not_any() {
                         continue;
                     }
                     ca.iter()
-                        .zip(offset..)
-                        .map(|(v, row)| v.filter(|_| nan_rows.binary_search(&row).is_err()))
+                        .zip(raw_nan.iter().by_vals().chain(std::iter::repeat(false)))
+                        .map(|(v, nan)| v.filter(|_| !nan))
                         .collect()
                 } else {
                     if !ca.iter().any(|v| v == Some("NaN")) {
@@ -573,10 +574,10 @@ fn stata_nan_to_null(
 /// Stata float variables that `--value-labels` turned into strings.
 #[derive(Default)]
 struct StataLabeledFloats {
-    cols:         Vec<PlSmallStr>,
-    /// Sorted row numbers holding a raw NaN, for the columns that have a value
-    /// label spelled "NaN".
-    raw_nan_rows: HashMap<PlSmallStr, Vec<u64>>,
+    cols:    Vec<PlSmallStr>,
+    /// One bit per row, set where the raw value is NaN, for the columns that
+    /// have a value label spelled "NaN".
+    raw_nan: HashMap<PlSmallStr, BitVec>,
 }
 
 impl StataLabeledFloats {
@@ -622,8 +623,10 @@ impl StataLabeledFloats {
             .filter_map(|name| cols.iter().find(|c| c.as_str() == name).cloned())
             .collect();
 
-        let mut raw_nan_rows: HashMap<PlSmallStr, Vec<u64>> =
-            ambiguous.iter().map(|c| (c.clone(), Vec::new())).collect();
+        let mut raw_nan: HashMap<PlSmallStr, BitVec> = ambiguous
+            .iter()
+            .map(|c| (c.clone(), BitVec::new()))
+            .collect();
         if !ambiguous.is_empty() {
             let batches = readstat_batch_iter(
                 path,
@@ -633,26 +636,18 @@ impl StataLabeledFloats {
                 None,
                 batch_size,
             )?;
-            let mut offset = 0_u64;
             for batch in batches {
                 let df = batch?;
-                for (name, rows) in &mut raw_nan_rows {
+                for (name, bits) in &mut raw_nan {
                     let col = df
                         .column(name)?
                         .as_materialized_series()
                         .cast(&DataType::Float64)?;
-                    rows.extend(
-                        col.f64()?
-                            .iter()
-                            .zip(offset..)
-                            .filter(|(v, _)| v.is_some_and(f64::is_nan))
-                            .map(|(_, row)| row),
-                    );
+                    bits.extend(col.f64()?.iter().map(|v| v.is_some_and(f64::is_nan)));
                 }
-                offset += df.height() as u64;
             }
         }
-        Ok(Self { cols, raw_nan_rows })
+        Ok(Self { cols, raw_nan })
     }
 }
 

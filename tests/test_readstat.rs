@@ -105,6 +105,31 @@ fn readstat_stata_extended_missing_is_empty_value_labels() {
     assert_eq!(got, expected);
 }
 
+// A value label may itself be spelled "NaN", making the stringified text
+// ambiguous: `l` labels 1 as "NaN" and holds `.a`/`.z` in rows 2 & 4, so only
+// those rows may be emptied. `m` has no such label and takes the text path.
+//   readstat_stata_nan_label.dta - written with pyreadstat 1.3.6: `id`, `l`,
+//     `m` are `double`; `l` labels 1 "NaN", 2 "two"; `m` labels 1 "one".
+#[test]
+fn readstat_stata_value_label_spelled_nan_is_kept() {
+    let wrk = Workdir::new("readstat_stata_value_label_spelled_nan_is_kept");
+    let f = wrk.load_test_file("readstat_stata_nan_label.dta");
+    let expected = vec![
+        svec!["id", "l", "m"],
+        svec!["1.0", "NaN", "one"],
+        svec!["2.0", "", ""],
+        svec!["3.0", "two", "3"],
+        svec!["4.0", "", "4"],
+    ];
+    // batch 1 puts every row in its own batch, exercising the row offsets
+    for batch in ["0", "1"] {
+        let mut cmd = wrk.command("readstat");
+        cmd.arg("--value-labels").args(["--batch", batch]).arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "--batch {batch}");
+    }
+}
+
 #[test]
 fn readstat_stata_float_extended_missing_is_empty() {
     let wrk = Workdir::new("readstat_stata_float_extended_missing_is_empty");

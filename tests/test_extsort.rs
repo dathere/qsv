@@ -342,3 +342,79 @@ fn extsort_statscache_multicolumn_no_shortcircuit() {
     let got: String = wrk.from_str(&wrk.path("out.csv"));
     assert_eq!(dos2unix(&got), "c1,c2\na,1\nb,2\nc,3\n");
 }
+
+// QSV_TEST_EXTSORT_BUFFER_BYTES=1 makes every line its own spilled chunk, so these
+// exercise the multi-chunk k-way merge against the single-chunk golden outputs.
+#[test]
+fn extsort_linemode_multichunk() {
+    let wrk = Workdir::new("extsort_linemode_multichunk").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let unsorted_csv = wrk.load_test_resource("adur-public-toilets.csv");
+    wrk.create_from_string("adur-public-toilets.csv", &unsorted_csv);
+
+    let mut cmd = wrk.command("extsort");
+    cmd.env("QSV_TEST_EXTSORT_BUFFER_BYTES", "1")
+        .arg("adur-public-toilets.csv")
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let sorted_output: String = wrk.from_str(&wrk.path("out.csv"));
+    let expected_csv = wrk.load_test_resource("adur-public-toilets-sorted.csv");
+    assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
+}
+
+#[test]
+fn extsort_csvmode_multichunk() {
+    let wrk = Workdir::new("extsort_csvmode_multichunk").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    let unsorted_csv = wrk.load_test_resource("adur-public-toilets.csv");
+    wrk.create_from_string("adur-public-toilets.csv", &unsorted_csv);
+
+    let mut cmd = wrk.command("extsort");
+    cmd.env("QSV_AUTOINDEX_SIZE", "1")
+        .env("QSV_TEST_EXTSORT_BUFFER_BYTES", "1")
+        .arg("adur-public-toilets.csv")
+        .args(["--select", "OpeningHours,StreetAddress,LocationText"])
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let sorted_output: String = wrk.from_str(&wrk.path("out.csv"));
+    let expected_csv = wrk.load_test_resource("adur-public-toilets-extsorted-csvmode.csv");
+    assert_eq!(dos2unix(&sorted_output), dos2unix(&expected_csv));
+}
+
+// The merge keeps one temp file open per chunk. With a soft open-file limit of 64 and
+// 300 one-line chunks, this only passes because extsort raises the soft limit.
+#[cfg(unix)]
+#[test]
+fn extsort_many_chunks_low_fd_limit() {
+    let wrk = Workdir::new("extsort_many_chunks_low_fd_limit").flexible(true);
+    wrk.clear_contents().unwrap();
+
+    // deterministic, unsorted, all-distinct values
+    let mut values: Vec<String> = (0..300_u32)
+        .map(|i| format!("v{:05}", (i * 7919) % 300))
+        .collect();
+    let mut input = String::from("value\n");
+    for v in &values {
+        input.push_str(v);
+        input.push('\n');
+    }
+    wrk.create_from_string("in.csv", &input);
+
+    let mut cmd = std::process::Command::new("sh");
+    cmd.current_dir(wrk.path(""))
+        .env("QSV_TEST_EXTSORT_BUFFER_BYTES", "1")
+        .arg("-c")
+        .arg(r#"ulimit -Sn 64 && exec "$0" "$@""#)
+        .arg(wrk.qsv_bin())
+        .args(["extsort", "in.csv", "out.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    values.sort_unstable();
+    let expected = format!("value\n{}\n", values.join("\n"));
+    let sorted_output: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&sorted_output), expected);
+}

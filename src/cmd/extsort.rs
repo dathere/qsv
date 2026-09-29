@@ -29,7 +29,11 @@ External sort option:
                            If --select is NOT set, extsort will work in LINE MODE, sorting
                            the input as a text file on a line-by-line basis.
     -R, --reverse          Reverse order
-    --memory-limit <arg>   The maximum amount of memory to buffer the external merge sort.
+    --memory-limit <arg>   The memory budget for sorting each in-memory chunk. Input that
+                           exceeds it is sorted in chunks spilled to the tmp-dir, then merged.
+                           The budget is approximate - peak memory use is higher, as it
+                           does not count sort scratch space, allocator overhead, or the
+                           merge phase's read buffer (~1 MB per chunk).
                            If less than 50, this is a percentage of total memory.
                            If more than 50, this is the memory in MB to allocate, capped
                            at 90 percent of total memory.
@@ -100,8 +104,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // Set the memory buffer size for the external merge sort based on --memory-limit
-    // and system capabilities.
-    let mem_limited_buffer_bytes = calculate_memory_limit(args.flag_memory_limit);
+    // and system capabilities. QSV_TEST_EXTSORT_BUFFER_BYTES lets tests force a
+    // multi-chunk sort, which --memory-limit can't (its floor is 1% of RAM).
+    let mem_limited_buffer_bytes = std::env::var("QSV_TEST_EXTSORT_BUFFER_BYTES")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&bytes| bytes > 0)
+        .unwrap_or_else(|| calculate_memory_limit(args.flag_memory_limit));
     log::info!("{mem_limited_buffer_bytes} bytes used for in memory mergesort buffer...");
 
     // The budget is in bytes, so the buffer must be byte-limited (each String counts as
@@ -121,10 +130,50 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         };
 
+    raise_open_file_limit();
+
     if args.flag_select.is_some() {
         sort_csv(&args, &tmp_dir, &sorter)
     } else {
         sort_lines(&args, &sorter)
+    }
+}
+
+/// The merge phase keeps one temp file open per spilled chunk, so a small --memory-limit
+/// on a large input can exceed the default soft open-file limit (256 on macOS).
+/// Best-effort: raise the soft limit to the hard limit.
+fn raise_open_file_limit() {
+    cfg_select! {
+        unix => {
+            // macOS rejects a soft RLIMIT_NOFILE above OPEN_MAX (<sys/syslimits.h>),
+            // even when the hard limit is RLIM_INFINITY - see setrlimit(2).
+            const MACOS_OPEN_MAX: libc::rlim_t = 10240;
+
+            let mut rlim = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            // SAFETY: getrlimit/setrlimit only read or write the rlimit we pass them.
+            if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &raw mut rlim) } != 0 {
+                return;
+            }
+            let target = if cfg!(target_os = "macos") {
+                rlim.rlim_max.min(MACOS_OPEN_MAX)
+            } else {
+                rlim.rlim_max
+            };
+            if rlim.rlim_cur < target {
+                let prev = rlim.rlim_cur;
+                rlim.rlim_cur = target;
+                // SAFETY: see above.
+                if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &raw const rlim) } == 0 {
+                    log::debug!("raised open-file soft limit from {prev} to {target}");
+                } else {
+                    log::debug!("could not raise open-file soft limit from {prev}");
+                }
+            }
+        },
+        _ => {},
     }
 }
 

@@ -49,7 +49,7 @@ qsv extsort --help
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select a subset of columns to sort (CSV MODE). Note that the outputs will remain at the full width of the CSV. If --select is NOT set, extsort will work in LINE MODE, sorting the input as a text file on a line-by-line basis. |  |
 | &nbsp;`‑R,`<br>`‑‑reverse`&nbsp; | flag | Reverse order |  |
-| &nbsp;`‑‑memory‑limit`&nbsp; | integer | The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `20` |
+| &nbsp;`‑‑memory‑limit`&nbsp; | integer | The memory budget for sorting each in-memory chunk. Input that exceeds it is sorted in chunks spilled to the tmp-dir, then merged. The budget is approximate - peak memory use is higher, as it does not count sort scratch space, allocator overhead, or the merge phase's read buffer (~1 MB per chunk). If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory. | `20` |
 | &nbsp;`‑‑tmp‑dir`&nbsp; | string | The directory to use for externally sorting file segments. | `./` |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 

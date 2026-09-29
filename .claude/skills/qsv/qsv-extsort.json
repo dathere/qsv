@@ -28,7 +28,7 @@
       {
         "flag": "--memory-limit",
         "type": "number",
-        "description": "The maximum amount of memory to buffer the external merge sort. If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory.",
+        "description": "The memory budget for sorting each in-memory chunk. Input that exceeds it is sorted in chunks spilled to the tmp-dir, then merged. The budget is approximate - peak memory use is higher, as it does not count sort scratch space, allocator overhead, or the merge phase's read buffer (~1 MB per chunk). If less than 50, this is a percentage of total memory. If more than 50, this is the memory in MB to allocate, capped at 90 percent of total memory.",
         "default": 20
       },
       {

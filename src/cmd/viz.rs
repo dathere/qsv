@@ -29406,7 +29406,11 @@ fn build_cyclic_panel(
         let Some(dt) = parse_record_cyclic_date(&record, date_idx, prefer_dmy) else {
             continue;
         };
-        if is_datetime {
+        // a date-only value in a datetime column (it parses to 00:00:00) carries no time of day
+        // at all: keep it out of the hour cycle outright rather than leave it to the midnight
+        // heuristic, which can't tell it from a real midnight row on hour-rounded data.
+        let has_time_of_day = record.get(date_idx).is_some_and(|f| f.contains(&b':'));
+        if is_datetime && has_time_of_day {
             use chrono::Timelike;
             rows_in_hour[dt.hour() as usize] += 1;
             if dt.minute() == 0 && dt.second() == 0 && dt.nanosecond() == 0 {

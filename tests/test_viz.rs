@@ -5616,6 +5616,40 @@ fn viz_smart_cyclic_panel_keeps_real_midnight_on_a_sparse_grid() {
     );
 }
 
+#[test]
+fn viz_smart_cyclic_panel_ignores_date_only_values_in_a_datetime_column() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_ignores_date_only_values_in_a_datetime_column");
+    // flat hour-rounded datetimes mixed with a block of DATE-ONLY values, which parse to
+    // 00:00:00. On hour-rounded data a real midnight row and a date-only default share the same
+    // stamp, so only the missing time component tells them apart; counted as midnight, the
+    // date-only rows would draw a fabricated midnight spike.
+    let mut rows = String::from("ts,kind\n");
+    let kinds = ["a", "b", "c"];
+    let mut i = 0;
+    for day in 1..=20 {
+        for h in 0..24 {
+            for _ in 0..2 {
+                rows.push_str(&format!("2021-06-{day:02} {h:02}:00,{}\n", kinds[i % 3]));
+                i += 1;
+            }
+        }
+        for _ in 0..30 {
+            rows.push_str(&format!("2021-06-{day:02},{}\n", kinds[i % 3]));
+            i += 1;
+        }
+    }
+    wrk.create_from_string("events.csv", &rows);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""name":"hour of day""#),
+        "date-only values must not draw a midnight spike on the hour-of-day ring"
+    );
+}
+
 /// `YYYY-MM-DD` for `offset` days after Monday 2021-06-07 (up to 2021-07-31), without pulling a
 /// date crate into the integration tests.
 fn date_after_monday_june_7_2021(offset: u32) -> String {

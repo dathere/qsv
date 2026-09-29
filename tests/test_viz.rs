@@ -5583,6 +5583,39 @@ fn viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid() {
     }
 }
 
+#[test]
+fn viz_smart_cyclic_panel_keeps_real_midnight_on_a_sparse_grid() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_keeps_real_midnight_on_a_sparse_grid");
+    // shift stamps at 00:00, 08:00 and 16:00 only, equal volume: most hours have no rows, so a
+    // baseline over all 23 other hours is 0 and midnight would be dropped as a default. The ring
+    // must show midnight level with the other two shifts, not as a fabricated trough.
+    let mut rows = String::new();
+    for day in 1..=20 {
+        for h in [0, 8, 16] {
+            for _ in 0..20 {
+                rows.push_str(&format!("2021-06-{day:02}T{h:02}:00:00\n"));
+            }
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
+    let ring = html
+        .split(r#""name":"hour of day""#)
+        .nth(1)
+        .expect("an hour-of-day ring");
+    let r_start = ring.find(r#""r":["#).expect("ring values") + 5;
+    let r: Vec<f64> = ring[r_start..ring[r_start..].find(']').unwrap() + r_start]
+        .split(',')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    assert!(
+        (r[0] - r[8]).abs() < 0.01 * r[8] && (r[0] - r[16]).abs() < 0.01 * r[16],
+        "midnight must match the other shifts: 00h={} 08h={} 16h={}",
+        r[0],
+        r[8],
+        r[16]
+    );
+}
+
 /// `YYYY-MM-DD` for `offset` days after Monday 2021-06-07 (up to 2021-07-31), without pulling a
 /// date crate into the integration tests.
 fn date_after_monday_june_7_2021(offset: u32) -> String {

@@ -29153,12 +29153,13 @@ const CYCLIC_MAX_BINS: i64 = 10_000_000;
 /// otherwise score as a midnight rush — but still counts toward the weekday and month cycles.
 const CYCLIC_MIDNIGHT_DEFAULT_SHARE: f64 = 0.01;
 
-/// How far exact-00:00:00 stamps must exceed the typical (median) exact-on-the-hour count of the
-/// other 23 hours to be read as a default. The share alone can't tell: timestamps recorded on the
-/// hour put ~1/24 of rows at exactly 00:00:00 (half-hourly ~1/48, quarter-hourly ~1/96), all
-/// real — dropping them would carve a fake midnight trough into flat data. On such a grid midnight
-/// looks like every other hour; with second-resolution stamps the other hours are almost never
-/// exactly on the hour, so a genuine default spike still stands out.
+/// How far the share of hour-0 rows stamped exactly 00:00:00 must exceed the typical (median)
+/// exact-on-the-hour share of the other hours that HAVE rows, to be read as a default. The overall
+/// share alone can't tell: timestamps recorded on the hour put ~1/24 of rows at exactly 00:00:00
+/// (half-hourly ~1/48, quarter-hourly ~1/96), all real — dropping them would carve a fake
+/// midnight trough into the ring. Per-hour shares are ~1 on any on-the-hour grid, however few
+/// hours it covers (shift stamps at 00/08/16 included), and ~0 with second-resolution stamps, so a
+/// genuine default spike still stands out.
 const CYCLIC_MIDNIGHT_DEFAULT_RATIO: f64 = 3.0;
 
 /// Lay a sparse `bin id -> count` map out as a gap-free series spanning its smallest to largest
@@ -29394,7 +29395,8 @@ fn build_cyclic_panel(
     // can fall outside its series.
     let mut hourly: HashMap<i64, u64> = HashMap::new();
     let mut midnight: HashMap<i64, u64> = HashMap::new();
-    // rows stamped exactly HH:00:00, per hour — the grid midnight is judged against
+    // timed rows per hour, and those stamped exactly HH:00:00 — the grid midnight is judged against
+    let mut rows_in_hour = [0u64; 24];
     let mut on_the_hour = [0u64; 24];
     let mut daily: HashMap<i64, u64> = HashMap::new();
     let mut monthly: HashMap<i64, u64> = HashMap::new();
@@ -29406,6 +29408,7 @@ fn build_cyclic_panel(
         };
         if is_datetime {
             use chrono::Timelike;
+            rows_in_hour[dt.hour() as usize] += 1;
             if dt.minute() == 0 && dt.second() == 0 && dt.nanosecond() == 0 {
                 on_the_hour[dt.hour() as usize] += 1;
             }
@@ -29423,11 +29426,18 @@ fn build_cyclic_panel(
     }
     let n_midnight: u64 = midnight.values().sum();
     let n_timed = n_midnight + hourly.values().sum::<u64>();
-    let mut other_hours = on_the_hour[1..].to_vec();
-    other_hours.sort_unstable();
-    let typical_on_the_hour = other_hours[other_hours.len() / 2] as f64;
-    let midnight_is_default = n_midnight as f64 > CYCLIC_MIDNIGHT_DEFAULT_SHARE * n_timed as f64
-        && n_midnight as f64 > CYCLIC_MIDNIGHT_DEFAULT_RATIO * typical_on_the_hour;
+    let on_the_hour_share = |h: usize| on_the_hour[h] as f64 / rows_in_hour[h] as f64;
+    let mut other_hours: Vec<f64> = (1..24)
+        .filter(|&h| rows_in_hour[h] > 0)
+        .map(on_the_hour_share)
+        .collect();
+    other_hours.sort_unstable_by(f64::total_cmp);
+    // no other active hour: nothing to compare against, so fall back to the share alone
+    let grid_says_default = other_hours
+        .get(other_hours.len() / 2)
+        .is_none_or(|&typical| on_the_hour_share(0) > CYCLIC_MIDNIGHT_DEFAULT_RATIO * typical);
+    let midnight_is_default =
+        n_midnight as f64 > CYCLIC_MIDNIGHT_DEFAULT_SHARE * n_timed as f64 && grid_says_default;
     if !midnight_is_default {
         for (bin, c) in midnight {
             *hourly.entry(bin).or_default() += c;

@@ -308,7 +308,7 @@ viz:
     ohlc: "Apertura: %{open}<br>Massimo: %{high}<br>Minimo: %{low}<br>Chiusura: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>conteggio: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>conteggio: %{y:,}<extra></extra>"
-    polar_records: "%{theta}<br>record: %{r:,.0f}<extra></extra>"
+    polar_index: "%{theta}<br>%{r:.2f}× la media<extra></extra>"
     # Righe di hover per regione del coropleto. Il `%` di `pct_of_total` è un segno di
     # percentuale LETTERALE subito dopo un segnaposto, il che è sicuro.
     pct_of_total: "%{q_pct}% del totale"
@@ -370,7 +370,7 @@ viz:
       freq: "%{q_col} ha solo %{q_n} valori distinti, quindi una barra per valore mostra la quota di righe di ciascuno."
       histogram: "%{q_col} è una colonna numerica continua; i suoi valori sono raggruppati in un istogramma per mostrare la forma della distribuzione."
       timeseries: "Questo dataset ha una colonna di date, quindi %{q_y} è tracciata su di essa in ordine cronologico per esporre la tendenza."
-      cyclic: "I timestamp si ripetono ciclicamente, quindi il volume dei record è ripiegato su quella fase ricorrente per esporre la stagionalità che la linea temporale nasconde."
+      cyclic: "Ogni anello ripiega il volume dei record su un ciclo ricorrente — ora del giorno, giorno della settimana o mese — rispetto alla sua media locale (1.0 = tipico), per esporre la stagionalità che la linea temporale nasconde. Un ciclo ottiene un anello solo quando si ripete in modo costante."
       corr: "Le %{q_n} colonne numeriche sono confrontate a coppie in questa heatmap di correlazione — celle più scure indicano due colonne che si muovono insieme."
       assoc: "Questa heatmap di associazione valuta ogni coppia di colonne con l'informazione mutua normalizzata, che — a differenza della correlazione — funziona anche per le colonne categoriche."
       relationships: "Le associazioni di coppie di colonne più forti, in classifica. La posizione del punto è la forza dell'associazione; la sua dimensione, quante righe la sostengono."

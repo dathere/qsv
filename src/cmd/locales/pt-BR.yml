@@ -314,7 +314,7 @@ viz:
     ohlc: "Abertura: %{open}<br>Máxima: %{high}<br>Mínima: %{low}<br>Fechamento: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>contagem: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>contagem: %{y:,}<extra></extra>"
-    polar_records: "%{theta}<br>registros: %{r:,.0f}<extra></extra>"
+    polar_index: "%{theta}<br>%{r:.2f}× a média<extra></extra>"
     # Linhas de hover por região do coroplético. O `%` de `pct_of_total` é um sinal de
     # porcentagem LITERAL logo após um marcador, o que é seguro.
     pct_of_total: "%{q_pct}% do total"
@@ -376,7 +376,7 @@ viz:
       freq: "%{q_col} tem apenas %{q_n} valores distintos, então uma barra por valor mostra a fatia de linhas de cada um."
       histogram: "%{q_col} é uma coluna numérica contínua; seus valores são agrupados em um histograma para mostrar a forma da distribuição."
       timeseries: "Este conjunto de dados carrega uma coluna de data, então %{q_y} é traçada sobre ela em ordem cronológica para expor a tendência."
-      cyclic: "Os timestamps se repetem em um ciclo, então o volume de registros é dobrado sobre essa fase repetida para expor a sazonalidade que a linha do tempo esconde."
+      cyclic: "Cada anel dobra o volume de registros sobre um ciclo repetido — hora do dia, dia da semana ou mês — em relação à sua média local (1.0 = típico), para expor a sazonalidade que a linha do tempo esconde. Um ciclo só ganha um anel quando se repete de forma consistente."
       corr: "As %{q_n} colunas numéricas são comparadas aos pares neste mapa de calor de correlação — células mais escuras significam duas colunas que se movem juntas."
       assoc: "Este mapa de calor de associação pontua cada par de colunas por informação mútua normalizada, que — ao contrário da correlação — também funciona para colunas categóricas."
       relationships: "As associações de pares de colunas mais fortes, ranqueadas. A posição do ponto é a força da associação; o tamanho, quantas linhas a sustentam."

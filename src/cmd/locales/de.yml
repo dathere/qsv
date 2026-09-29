@@ -308,7 +308,7 @@ viz:
     ohlc: "Eröffnung: %{open}<br>Hoch: %{high}<br>Tief: %{low}<br>Schluss: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>Anzahl: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>Anzahl: %{y:,}<extra></extra>"
-    polar_records: "%{theta}<br>Datensätze: %{r:,.0f}<extra></extra>"
+    polar_index: "%{theta}<br>%{r:.2f}× Durchschnitt<extra></extra>"
     # Choroplethen-Hover pro Region. Das `%` in `pct_of_total` ist ein LITERALES
     # Prozentzeichen direkt hinter einem Platzhalter -- das ist unbedenklich.
     pct_of_total: "%{q_pct} % des Gesamtwerts"
@@ -370,7 +370,7 @@ viz:
       freq: "%{q_col} hat nur %{q_n} verschiedene Werte, daher zeigt ein Balken je Wert dessen Anteil an den Zeilen."
       histogram: "%{q_col} ist eine kontinuierliche numerische Spalte; ihre Werte werden zu einem Histogramm gebündelt, das die Form der Verteilung zeigt."
       timeseries: "Dieser Datensatz trägt eine Datumsspalte, daher wird %{q_y} chronologisch darüber aufgetragen, um den Trend sichtbar zu machen."
-      cyclic: "Die Zeitstempel wiederholen sich zyklisch, daher wird das Datenaufkommen auf diese wiederkehrende Phase gefaltet — so wird die Saisonalität sichtbar, die die Zeitachse verbirgt."
+      cyclic: "Jeder Ring faltet das Datenaufkommen auf einen wiederkehrenden Zyklus — Tageszeit, Wochentag oder Monat — relativ zum lokalen Durchschnitt (1.0 = typisch) und macht so die Saisonalität sichtbar, die die Zeitachse verbirgt. Ein Zyklus erhält nur dann einen Ring, wenn er sich beständig wiederholt."
       corr: "Die %{q_n} numerischen Spalten werden in dieser Korrelations-Heatmap paarweise verglichen — dunklere Zellen heißen: zwei Spalten bewegen sich gemeinsam."
       assoc: "Diese Assoziations-Heatmap bewertet jedes Spaltenpaar per normalisierter Transinformation, die — anders als Korrelation — auch für kategoriale Spalten funktioniert."
       relationships: "Die stärksten Spaltenpaar-Assoziationen, gereiht. Die Punktposition ist die Stärke der Assoziation; die Punktgröße, wie viele Zeilen sie stützen."

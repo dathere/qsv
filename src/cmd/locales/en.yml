@@ -561,7 +561,7 @@ viz:
     ohlc: "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>count: %{y:,}<extra></extra>"
     histogram: "%{q_col}: %{x:,.3f}<br>count: %{y:,}<extra></extra>"
-    polar_records: "%{theta}<br>records: %{r:,.0f}<extra></extra>"
+    polar_index: "%{theta}<br>%{r:.2f}× average<extra></extra>"
     # Choropleth per-region hover lines, appended under "<label>: <value>". These
     # are built in Rust (not a plotly template), so the `%` in `pct_of_total` is a
     # LITERAL percent sign directly after a slot -- which is safe, and is the one
@@ -655,7 +655,7 @@ viz:
       freq: "%{q_col} has only %{q_n} distinct values, so a bar per value shows each one's share of the rows."
       histogram: "%{q_col} is a continuous numeric column; its values are binned into a histogram to show the shape of the distribution."
       timeseries: "This dataset carries a date column, so %{q_y} is plotted over it chronologically to expose the trend."
-      cyclic: "The timestamps repeat on a cycle, so record volume is folded onto that repeating phase to expose seasonality the timeline hides."
+      cyclic: "Each ring folds record volume onto one repeating cycle — hour of day, day of week or month — relative to its local average (1.0 = typical), exposing seasonality the timeline hides. A cycle gets a ring only when it repeats consistently."
       corr: "The %{q_n} numeric columns are compared pairwise in this correlation heatmap - darker cells mean two columns move together."
       assoc: "This association heatmap scores every column pair by normalized mutual information, which - unlike correlation - also works for categorical columns."
       relationships: "The strongest column-pair associations, ranked. Dot position is association strength; dot size is how many rows back it."

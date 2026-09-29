@@ -809,8 +809,9 @@ FIGURES = [
              "--location-mode", "geojson-id", "--geojson", "auto",
              "--title", "Allegheny County dog licenses by owner ZIP"]),
     ("smart Data Schematic (time-series)",
-     "Auto Data Schematic for stock_prices: a monthly-seasonality polar profile and a time-series trend "
-     "panel (the first numeric column over the date) lead; the strongest-correlated pair drill-down "
+     "Auto Data Schematic for stock_prices: a day-of-week seasonality polar profile (records fall "
+     "only on trading days &mdash; no weekend sessions &mdash; the strongest cycle qsv scores) and a "
+     "time-series trend panel (the first numeric column over the date) lead; the strongest-correlated pair drill-down "
      "(open vs low) is shown as a <b>static "
      "scatter</b> — that relationship is a near-perfect line whose 2-D shape doesn't evolve, so "
      "the judicious animation gate withholds the (uninformative) animated version — alongside "
@@ -1145,7 +1146,7 @@ SCREENSHOTS = [
             "many nearby strays were snapped into it. Because the matched regions span a city-scale "
             "extent, the fill lands on an interactive <b>MapLibre tile basemap</b> rather than the "
             "coarse projection basemap used for country/continental choropleths. Beyond the maps the "
-            "auto-profiler adds an <b>hour-of-day</b> seasonality profile, a case-volume time trend, "
+            "auto-profiler adds <b>hour-of-day</b> and <b>day-of-week</b> seasonality rings, a case-volume time trend, "
             "a <b>parallel-categories flow</b> (<i>Data Source &rarr; Subject Area &rarr; Fire "
             "District &rarr; City Council District</i>), a <i>Fire District &rarr; City Council "
             "District</i> Sankey, the <code>--bivariate</code> NMI association heatmap with its ranked "

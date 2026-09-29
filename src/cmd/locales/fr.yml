@@ -308,7 +308,7 @@ viz:
     ohlc: "Ouverture : %{open}<br>Haut : %{high}<br>Bas : %{low}<br>Clôture : %{close}<extra></extra>"
     count_by_label: "%{hovertext}<br>nombre : %{y:,}<extra></extra>"
     histogram: "%{q_col} : %{x:,.3f}<br>nombre : %{y:,}<extra></extra>"
-    polar_records: "%{theta}<br>enregistrements : %{r:,.0f}<extra></extra>"
+    polar_index: "%{theta}<br>%{r:.2f}× la moyenne<extra></extra>"
     # Lignes de survol par région du choroplèthe. Le `%` de `pct_of_total` est un signe
     # pourcent LITTERAL placé juste après un emplacement, ce qui est sans danger.
     pct_of_total: "%{q_pct} % du total"
@@ -370,7 +370,7 @@ viz:
       freq: "%{q_col} n'a que %{q_n} valeurs distinctes : une barre par valeur montre la part de lignes de chacune."
       histogram: "%{q_col} est une colonne numérique continue ; ses valeurs sont regroupées en histogramme pour montrer la forme de la distribution."
       timeseries: "Ce jeu de données porte une colonne de date : %{q_y} y est tracée chronologiquement pour révéler la tendance."
-      cyclic: "Les horodatages se répètent selon un cycle : le volume d'enregistrements est replié sur cette phase répétée pour révéler la saisonnalité que la chronologie masque."
+      cyclic: "Chaque anneau replie le volume d'enregistrements sur un cycle répété — heure du jour, jour de la semaine ou mois — par rapport à sa moyenne locale (1.0 = typique), pour révéler la saisonnalité que la chronologie masque. Un cycle n'obtient un anneau que s'il se répète de façon régulière."
       corr: "Les %{q_n} colonnes numériques sont comparées deux à deux dans cette carte de chaleur de corrélation — plus une case est sombre, plus deux colonnes évoluent ensemble."
       assoc: "Cette carte de chaleur d'association note chaque paire de colonnes par information mutuelle normalisée, qui — contrairement à la corrélation — fonctionne aussi pour les colonnes catégorielles."
       relationships: "Les associations de paires de colonnes les plus fortes, classées. La position du point donne la force de l'association ; sa taille, le nombre de lignes qui l'appuient."

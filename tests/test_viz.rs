@@ -5432,29 +5432,40 @@ fn viz_smart_bubble_scatter_size_encodes_third() {
     assert!(html.contains(r#""size":["#));
 }
 
-#[test]
-fn viz_smart_cyclic_seasonality_panel() {
-    let wrk = Workdir::new("viz_smart_cyclic_seasonality_panel");
-    // a datetime column with intraday timestamps spread across many hours -> a polar
-    // hour-of-day "seasonality" profile (HTML-only, ScatterPolar).
-    let mut rows = String::from("ts\n");
-    for i in 0..48 {
-        let h = i % 24;
-        rows.push_str(&format!("2021-06-01T{h:02}:15:00\n"));
-    }
-    wrk.create_from_string("events.csv", &rows);
-
+/// Runs `viz smart` over a single `ts` column and returns the dashboard HTML.
+fn cyclic_dashboard(wrk: &Workdir, rows: &str) -> String {
+    wrk.create_from_string("events.csv", &format!("ts\n{rows}"));
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "events.csv", "-o", &out_html]);
     wrk.assert_success(&mut cmd);
+    wrk.read_to_string("dash.html").unwrap()
+}
 
-    let html = wrk.read_to_string("dash.html").unwrap();
+#[test]
+fn viz_smart_cyclic_seasonality_panel() {
+    let wrk = Workdir::new("viz_smart_cyclic_seasonality_panel");
+    // 20 days of a daytime rush (5 records/hour 08-18h, 1 otherwise) -> a polar hour-of-day
+    // seasonality profile (HTML-only, ScatterPolar).
+    let mut rows = String::new();
+    for day in 1..=20 {
+        for h in 0..24 {
+            for _ in 0..if (8..18).contains(&h) { 5 } else { 1 } {
+                rows.push_str(&format!("2021-06-{day:02}T{h:02}:15:00\n"));
+            }
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
     assert!(
         html.contains("Records by hour of day"),
         "expected an hour-of-day cyclic panel"
     );
     assert!(html.contains(r#""type":"scatterpolar""#));
+    // the ring plots the seasonal index (× average), not raw counts
+    assert!(
+        html.contains("× average"),
+        "hover should read as a seasonal index"
+    );
     // a polar subplot paints its angular tick labels OUTSIDE its plot area, so the panel carries
     // taller top/bottom margins than the other inline panels — otherwise the 12 o'clock label
     // collides with the title and the 6 o'clock one is clipped by the panel edge.
@@ -5462,6 +5473,193 @@ fn viz_smart_cyclic_seasonality_panel() {
         html.contains(r#""margin":{"l":20,"r":20,"t":64,"b":44,"pad":4}"#),
         "polar panel should reserve extra top/bottom margin for its angular tick labels"
     );
+}
+
+#[test]
+fn viz_smart_cyclic_panel_weekday_only_on_a_datetime() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_weekday_only_on_a_datetime");
+    // a DATETIME column that is flat by hour but busy on weekdays (3 records/hour Mon-Fri, 1 on
+    // weekends): the panel must fold by day of week and draw no hour ring for the flat hours.
+    let mut rows = String::new();
+    for d in 0..35u32 {
+        let date = date_after_monday_june_7_2021(d);
+        for h in 0..24 {
+            for _ in 0..if d % 7 < 5 { 3 } else { 1 } {
+                rows.push_str(&format!("{date}T{h:02}:15:00\n"));
+            }
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
+    assert!(
+        html.contains("Records by day of week"),
+        "expected a day-of-week cyclic panel"
+    );
+    assert_eq!(
+        html.matches(r#""type":"scatterpolar""#).count(),
+        1,
+        "flat hours must not get a ring of their own"
+    );
+}
+
+#[test]
+fn viz_smart_cyclic_panel_draws_every_real_cycle() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_draws_every_real_cycle");
+    // 5 weeks with BOTH a daytime rush and a weekday/weekend split: the hour and week rhythms are
+    // independent answers, so both get a ring — side by side in one panel, not just the winner.
+    let mut rows = String::new();
+    for d in 0..35u32 {
+        let date = date_after_monday_june_7_2021(d);
+        let day_weight = if d % 7 < 5 { 3 } else { 1 };
+        for h in 0..24 {
+            let hour_weight = if (8..18).contains(&h) { 4 } else { 1 };
+            for _ in 0..day_weight * hour_weight {
+                rows.push_str(&format!("{date}T{h:02}:15:00\n"));
+            }
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
+    assert!(html.contains("hour of day"), "expected an hour-of-day ring");
+    assert!(html.contains("day of week"), "expected a day-of-week ring");
+    assert_eq!(
+        html.matches(r#""type":"scatterpolar""#).count(),
+        2,
+        "one ring per real cycle"
+    );
+    // the second ring sits in its own side-by-side polar subplot
+    assert!(html.contains(r#""subplot":"polar2""#));
+    assert!(
+        html.contains(r#""polar2":{"domain":{"x":[0.53"#),
+        "html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_cyclic_panel_skips_flat_and_midnight_default_timestamps() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_skips_flat_and_midnight_default_timestamps");
+    // 20 days, 2 records every hour (no cycle), plus a batch of rows stamped exactly 00:00:00 —
+    // the "time unknown" default. Read literally, those would be a midnight rush; they must be
+    // kept out of the hour-of-day cycle, leaving nothing worth drawing.
+    let mut rows = String::new();
+    for day in 1..=20 {
+        for h in 0..24 {
+            rows.push_str(&format!("2021-06-{day:02}T{h:02}:15:00\n"));
+            rows.push_str(&format!("2021-06-{day:02}T{h:02}:45:00\n"));
+        }
+        for _ in 0..10 {
+            rows.push_str(&format!("2021-06-{day:02}T00:00:00\n"));
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
+    assert!(
+        !html.contains("Records by"),
+        "flat hours + default-midnight stamps should not draw a cyclic panel"
+    );
+    assert!(!html.contains(r#""type":"scatterpolar""#));
+}
+
+#[test]
+fn viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid() {
+    // flat data stamped ON the hour (and a half-hourly variant): 1/24 (1/48) of rows sit at exactly
+    // 00:00:00 and every one is real. Read as "time unknown" defaults and dropped, they'd carve a
+    // perfectly repeating midnight trough — a fake hour-of-day cycle — into flat data.
+    for (name, minutes) in [("hourly", &[0][..]), ("half_hourly", &[0, 30][..])] {
+        let wrk = Workdir::new(&format!(
+            "viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid_{name}"
+        ));
+        let mut rows = String::new();
+        for day in 1..=20 {
+            for h in 0..24 {
+                for m in minutes {
+                    rows.push_str(&format!("2021-06-{day:02}T{h:02}:{m:02}:00\n"));
+                    rows.push_str(&format!("2021-06-{day:02}T{h:02}:{m:02}:00\n"));
+                }
+            }
+        }
+        let html = cyclic_dashboard(&wrk, &rows);
+        assert!(
+            !html.contains(r#""type":"scatterpolar""#),
+            "{name}: flat on-the-hour data must not draw a cyclic ring"
+        );
+    }
+}
+
+#[test]
+fn viz_smart_cyclic_panel_keeps_real_midnight_on_a_sparse_grid() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_keeps_real_midnight_on_a_sparse_grid");
+    // shift stamps at 00:00, 08:00 and 16:00 only, equal volume: most hours have no rows, so a
+    // baseline over all 23 other hours is 0 and midnight would be dropped as a default. The ring
+    // must show midnight level with the other two shifts, not as a fabricated trough.
+    let mut rows = String::new();
+    for day in 1..=20 {
+        for h in [0, 8, 16] {
+            for _ in 0..20 {
+                rows.push_str(&format!("2021-06-{day:02}T{h:02}:00:00\n"));
+            }
+        }
+    }
+    let html = cyclic_dashboard(&wrk, &rows);
+    let ring = html
+        .split(r#""name":"hour of day""#)
+        .nth(1)
+        .expect("an hour-of-day ring");
+    let r_start = ring.find(r#""r":["#).expect("ring values") + 5;
+    let r: Vec<f64> = ring[r_start..ring[r_start..].find(']').unwrap() + r_start]
+        .split(',')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    assert!(
+        (r[0] - r[8]).abs() < 0.01 * r[8] && (r[0] - r[16]).abs() < 0.01 * r[16],
+        "midnight must match the other shifts: 00h={} 08h={} 16h={}",
+        r[0],
+        r[8],
+        r[16]
+    );
+}
+
+#[test]
+fn viz_smart_cyclic_panel_ignores_date_only_values_in_a_datetime_column() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_ignores_date_only_values_in_a_datetime_column");
+    // flat hour-rounded datetimes mixed with a block of DATE-ONLY values, which parse to
+    // 00:00:00. On hour-rounded data a real midnight row and a date-only default share the same
+    // stamp, so only the missing time component tells them apart; counted as midnight, the
+    // date-only rows would draw a fabricated midnight spike.
+    let mut rows = String::from("ts,kind\n");
+    let kinds = ["a", "b", "c"];
+    let mut i = 0;
+    for day in 1..=20 {
+        for h in 0..24 {
+            for _ in 0..2 {
+                rows.push_str(&format!("2021-06-{day:02} {h:02}:00,{}\n", kinds[i % 3]));
+                i += 1;
+            }
+        }
+        for _ in 0..30 {
+            rows.push_str(&format!("2021-06-{day:02},{}\n", kinds[i % 3]));
+            i += 1;
+        }
+    }
+    wrk.create_from_string("events.csv", &rows);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""name":"hour of day""#),
+        "date-only values must not draw a midnight spike on the hour-of-day ring"
+    );
+}
+
+/// `YYYY-MM-DD` for `offset` days after Monday 2021-06-07 (up to 2021-07-31), without pulling a
+/// date crate into the integration tests.
+fn date_after_monday_june_7_2021(offset: u32) -> String {
+    let d = 7 + offset;
+    assert!(d <= 61);
+    if d <= 30 {
+        format!("2021-06-{d:02}")
+    } else {
+        format!("2021-07-{:02}", d - 30)
+    }
 }
 
 #[test]

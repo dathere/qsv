@@ -20501,14 +20501,14 @@ enum PanelKind {
         y_unit:      Option<String>,
         size_unit:   Option<String>,
     },
-    /// Cyclic "seasonality" profile: a date/datetime column folded onto a repeating phase —
-    /// hour-of-day, day-of-week, or month-of-year — with record volume as the radial value. Exposes
-    /// periodicity (rush-hour, weekly, seasonal) that the absolute `TimeSeries` timeline hides.
-    /// Drawn as a `ScatterPolar`; like `Scatter3D`, a polar subplot can't share the typed x/y grid,
-    /// so it is HTML-only and rendered via the inline path. `theta` are the phase labels and `r`
-    /// the matching counts, both CLOSED (first element repeated at the end) so the polar ring
-    /// connects.
-    CyclicProfile { theta: Vec<String>, r: Vec<f64> },
+    /// Cyclic "seasonality" profile: a date/datetime column folded onto each repeating phase —
+    /// hour-of-day, day-of-week, month-of-year — that `seasonal_strength` finds a real cycle in,
+    /// one polar ring per cycle, strongest first, with the seasonal index (record volume relative
+    /// to its local average, 1.0 = typical) as the radial value. Exposes periodicity (rush-hour,
+    /// weekly, seasonal) that the absolute `TimeSeries` timeline hides. Drawn as `ScatterPolar`
+    /// subplots side by side; like `Scatter3D`, a polar subplot can't share the typed x/y grid,
+    /// so it is HTML-only and rendered via the inline path.
+    CyclicProfile { rings: Vec<CyclicRing> },
     /// Correlation heatmap over the dataset's numeric columns. Carries precomputed data (labels +
     /// matrix) so the render loop stays a pure assembly step. `spearman` records WHICH coefficient
     /// the cells hold — Spearman's rank rho on a mostly heavy-tailed table, else Pearson's r
@@ -29015,6 +29015,15 @@ fn add_bubble_traces_and_frames(
     }
 }
 
+/// One ring of a `CyclicProfile`: `theta` are the phase labels and `r` the matching seasonal
+/// index, both CLOSED (first element repeated at the end) so the polar line connects around.
+struct CyclicRing {
+    /// The cycle's name ("hour of day"), for the panel title and the trace name.
+    word:  String,
+    theta: Vec<String>,
+    r:     Vec<f64>,
+}
+
 /// The repeating phase a `CyclicProfile` folds timestamps onto.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CyclicAxis {
@@ -29030,16 +29039,6 @@ impl CyclicAxis {
             CyclicAxis::HourOfDay => 24,
             CyclicAxis::DayOfWeek => 7,
             CyclicAxis::MonthOfYear => 12,
-        }
-    }
-
-    /// 0-based bucket index for a timestamp.
-    fn bucket(self, dt: &chrono::NaiveDateTime) -> usize {
-        use chrono::{Datelike, Timelike};
-        match self {
-            CyclicAxis::HourOfDay => dt.hour() as usize,
-            CyclicAxis::DayOfWeek => dt.weekday().num_days_from_monday() as usize,
-            CyclicAxis::MonthOfYear => dt.month0() as usize,
         }
     }
 
@@ -29080,6 +29079,49 @@ impl CyclicAxis {
         }
     }
 
+    /// Absolute, gap-free bin id at this cycle's base grain (hour, day or month), so consecutive
+    /// ids are consecutive hours/days/months and a dense series can be laid out from them.
+    fn bin_id(self, dt: &chrono::NaiveDateTime) -> i64 {
+        use chrono::{Datelike, Timelike};
+        let day = i64::from(dt.num_days_from_ce());
+        match self {
+            CyclicAxis::HourOfDay => day * 24 + i64::from(dt.hour()),
+            CyclicAxis::DayOfWeek => day,
+            CyclicAxis::MonthOfYear => i64::from(dt.year()) * 12 + i64::from(dt.month0()),
+        }
+    }
+
+    /// 0-based phase bucket (hour, weekday from Monday, month) of a `bin_id`.
+    fn phase_of_bin(self, bin: i64) -> usize {
+        match self {
+            CyclicAxis::HourOfDay => bin.rem_euclid(24) as usize,
+            // day 1 of the common era (0001-01-01, proleptic Gregorian) is a Monday
+            CyclicAxis::DayOfWeek => (bin - 1).rem_euclid(7) as usize,
+            CyclicAxis::MonthOfYear => bin.rem_euclid(12) as usize,
+        }
+    }
+
+    /// Factor turning a `bin_id`'s record count into a rate over an equal-length bin: 1.0 for hours
+    /// and days; for a month, the average month length (30.436875 days) over that month's days.
+    fn bin_scale(self, bin: i64) -> f64 {
+        const AVG_MONTH_DAYS: f64 = 365.2425 / 12.0;
+        match self {
+            CyclicAxis::HourOfDay | CyclicAxis::DayOfWeek => 1.0,
+            CyclicAxis::MonthOfYear => {
+                let (year, month0) = (bin.div_euclid(12), bin.rem_euclid(12));
+                let days = i32::try_from(year)
+                    .ok()
+                    .and_then(|y| {
+                        let start = chrono::NaiveDate::from_ymd_opt(y, month0 as u32 + 1, 1)?;
+                        let next = start.checked_add_months(chrono::Months::new(1))?;
+                        Some((next - start).num_days())
+                    })
+                    .unwrap_or(30);
+                AVG_MONTH_DAYS / days as f64
+            },
+        }
+    }
+
     /// Word for the panel title.
     fn word(self) -> String {
         match self {
@@ -29091,15 +29133,231 @@ impl CyclicAxis {
     }
 }
 
-/// Minimum populated phase buckets for a `CyclicProfile` to be worth drawing: fewer than this isn't
-/// a cycle, just a couple of points scattered on a ring.
-const CYCLIC_MIN_POPULATED_BUCKETS: usize = 3;
+/// Minimum cycle strength (the bias-corrected ε² from `seasonal_strength`) for a `CyclicProfile`
+/// to be drawn: below it, the phase explains too little of the detrended variation to call it a
+/// cycle rather than noise.
+const CYCLIC_MIN_STRENGTH: f64 = 0.25;
 
-/// Build the cyclic-seasonality polar panel: fold the canonical date/datetime column onto a
-/// repeating phase (hour-of-day for datetimes; day-of-week or month-of-year for dates, by span) and
-/// plot record volume per phase. Complements `build_timeseries_panel` (absolute timeline) by
-/// surfacing periodicity. Returns `Ok(None)` when there's no date column or too few phase buckets
-/// are populated to show a real cycle.
+/// Minimum noise-corrected spread of the seasonal index (`CycleScore::spread`, in "× average"
+/// units) for a `CyclicProfile` to be drawn. ε² alone rises with record density, so on a large
+/// table a perfectly consistent but trivial wobble (a few percent) would pass; this keeps the
+/// ring to cycles big enough to see.
+const CYCLIC_MIN_SPREAD: f64 = 0.05;
+
+/// Cap on the dense series laid out for one cycle (~1,100 years of hourly bins). A single junk
+/// far-off date can stretch the observed span; past this the cycle is skipped, not allocated.
+const CYCLIC_MAX_BINS: i64 = 10_000_000;
+
+/// Share of timed rows stamped exactly 00:00:00 above which midnight MAY be a "time unknown"
+/// default rather than real activity. A default is kept out of the hour-of-day cycle — it would
+/// otherwise score as a midnight rush — but still counts toward the weekday and month cycles.
+const CYCLIC_MIDNIGHT_DEFAULT_SHARE: f64 = 0.01;
+
+/// How far the share of hour-0 rows stamped exactly 00:00:00 must exceed the typical (median)
+/// exact-on-the-hour share of the other hours that HAVE rows, to be read as a default. The overall
+/// share alone can't tell: timestamps recorded on the hour put ~1/24 of rows at exactly 00:00:00
+/// (half-hourly ~1/48, quarter-hourly ~1/96), all real — dropping them would carve a fake
+/// midnight trough into the ring. Per-hour shares are ~1 on any on-the-hour grid, however few
+/// hours it covers (shift stamps at 00/08/16 included), and ~0 with second-resolution stamps, so a
+/// genuine default spike still stands out.
+const CYCLIC_MIDNIGHT_DEFAULT_RATIO: f64 = 3.0;
+
+/// Lay a sparse `bin id -> count` map out as a gap-free series spanning its smallest to largest
+/// observed bin. Returns the series and its first bin id, or `None` when the map is empty or the
+/// span exceeds `CYCLIC_MAX_BINS`.
+fn densify_cyclic_bins(bins: &HashMap<i64, u64>) -> Option<(Vec<u64>, i64)> {
+    let lo = *bins.keys().min()?;
+    let hi = *bins.keys().max()?;
+    let width = hi - lo + 1;
+    if width > CYCLIC_MAX_BINS {
+        return None;
+    }
+    let mut series = vec![0u64; width as usize];
+    for (&bin, &c) in bins {
+        series[(bin - lo) as usize] = c;
+    }
+    Some((series, lo))
+}
+
+/// Minimum records per phase pooled into one `seasonal_strength` block. Single-bin ratios on sparse
+/// data (e.g. 10k rows over a decade of hourly bins) are pure Poisson noise; pooling consecutive
+/// cycles until each phase averages this many records makes each observation meaningful.
+const CYCLIC_MIN_PER_PHASE: u64 = 10;
+
+/// A cycle's score from `seasonal_strength`.
+struct CycleScore {
+    /// Bias-corrected ε²: the share of the detrended variation the phase explains — how
+    /// consistently the cycle repeats (~0 for noise, approaching 1 for an exact repeat).
+    strength: f64,
+    /// Noise-corrected spread of the seasonal index across phases, in "× average" units — how big
+    /// the cycle is, independent of how many records back it.
+    spread:   f64,
+    /// Seasonal index per phase, normalized to average 1.0.
+    index:    Vec<f64>,
+    /// ANOVA F ratio (between-phase over within-phase mean square).
+    f_ratio:  f64,
+    /// Number of pooled blocks behind the score.
+    blocks:   usize,
+}
+
+impl CycleScore {
+    /// Consistent enough (`CYCLIC_MIN_STRENGTH`), big enough (`CYCLIC_MIN_SPREAD`) and unlikely to
+    /// be noise (`cyclic_f_critical`) to draw.
+    fn is_drawable(&self) -> bool {
+        self.strength >= CYCLIC_MIN_STRENGTH
+            && self.spread >= CYCLIC_MIN_SPREAD
+            && self.f_ratio > cyclic_f_critical(self.index.len(), self.blocks)
+    }
+}
+
+/// Upper-1% critical value of F(period − 1, (blocks − 1) × period), the null distribution of
+/// `CycleScore::f_ratio`. The effect-size gates alone let pure noise through on small tables — with
+/// 2-3 blocks, ε² ≥ 0.25 is only F ≈ 1.7, which flat Poisson data clears 10-25% of the time for a
+/// weekday cycle — so the phase effect must also be significant. Large tables clear this trivially;
+/// it only filters small ones. Values from `scipy.stats.f.ppf(0.99, ..)` for 2..=8 blocks; past 8
+/// the 8-block value is reused, which is conservative since the critical value falls as blocks
+/// grow.
+fn cyclic_f_critical(period: usize, blocks: usize) -> f64 {
+    const DAY_OF_WEEK: [f64; 7] = [7.191, 4.456, 3.812, 3.528, 3.368, 3.266, 3.195];
+    const MONTH_OF_YEAR: [f64; 7] = [4.220, 3.094, 2.786, 2.642, 2.559, 2.504, 2.466];
+    const HOUR_OF_DAY: [f64; 7] = [2.676, 2.219, 2.078, 2.009, 1.969, 1.942, 1.923];
+    let table = match period {
+        7 => &DAY_OF_WEEK,
+        12 => &MONTH_OF_YEAR,
+        24 => &HOUR_OF_DAY,
+        _ => return f64::INFINITY,
+    };
+    table[blocks.clamp(2, 8) - 2]
+}
+
+/// Score a `period`-long cycle in a gap-free count series whose first bin sits at phase `phase0`.
+/// `bin_scale(i)` converts bin `i`'s count to a rate on a common footing before scoring — 1.0 for
+/// equal-length bins; for months, days-per-average-month over that month's days, without which
+/// every February would read ~9% low. The block threshold still counts actual records.
+///
+/// Each bin is set against a centered moving average one cycle wide, which cancels trend and
+/// uneven phase coverage. Consecutive full cycles are pooled into blocks of at least
+/// `CYCLIC_MIN_PER_PHASE` records per phase, and each (block, phase) observation is a ratio of
+/// sums — counts over moving average across that block's bins at that phase — so sparse data
+/// isn't drowned in single-bin noise while the trend correction survives pooling. The
+/// observations are then grouped by phase and scored with a one-way ANOVA: an effect size
+/// rather than a p-value, because on large tables every trivial wobble is "significant".
+///
+/// Returns `None` with fewer than 2 blocks (ANOVA needs 2 observations per phase); since the
+/// moving average eats half a cycle at each end, that needs at least 3 cycles of span (3 days /
+/// 3 weeks / 3 years).
+fn seasonal_strength(
+    series: &[u64],
+    period: usize,
+    phase0: usize,
+    bin_scale: impl Fn(usize) -> f64,
+) -> Option<CycleScore> {
+    const MIN_BLOCKS: usize = 2;
+    let n = series.len();
+    let half = period / 2;
+    if n < 3 * period {
+        return None;
+    }
+    let s = |i: usize| series[i] as f64 * bin_scale(i);
+    let mut prefix = vec![0.0; n + 1];
+    for i in 0..n {
+        prefix[i + 1] = prefix[i] + s(i);
+    }
+    let moving_avg = |t: usize| {
+        let sum = prefix[t + half + 1] - prefix[t - half];
+        if period % 2 == 1 {
+            sum / period as f64
+        } else {
+            // 2xL centered moving average for an even period: the two end bins get half weight
+            (sum - 0.5 * (s(t - half) + s(t + half))) / period as f64
+        }
+    };
+
+    // full cycles (phase 0 .. period-1) lying wholly inside the moving average's valid range
+    let first = half + (period - (phase0 + half) % period) % period;
+    let min_block_records = CYCLIC_MIN_PER_PHASE as f64 * period as f64;
+    let mut groups: Vec<Vec<f64>> = vec![Vec::new(); period];
+    let mut counts = vec![0.0; period];
+    let mut expected = vec![0.0; period];
+    let mut records = 0u64;
+    let mut start = first;
+    while start + period <= n - half {
+        for p in 0..period {
+            counts[p] += s(start + p);
+            expected[p] += moving_avg(start + p);
+            records += series[start + p];
+        }
+        start += period;
+        if records as f64 >= min_block_records {
+            records = 0;
+            if expected.iter().all(|&e| e > 0.0) {
+                for p in 0..period {
+                    groups[p].push(counts[p] / expected[p]);
+                }
+            }
+            counts.fill(0.0);
+            expected.fill(0.0);
+        }
+    }
+    let n_blocks = groups[0].len();
+    if n_blocks < MIN_BLOCKS {
+        return None;
+    }
+
+    let n_obs = n_blocks * period;
+    let means: Vec<f64> = groups
+        .iter()
+        .map(|g| g.iter().sum::<f64>() / n_blocks as f64)
+        .collect();
+    let grand = means.iter().sum::<f64>() / period as f64;
+    let ss_between: f64 = means
+        .iter()
+        .map(|m| n_blocks as f64 * (m - grand).powi(2))
+        .sum();
+    let ss_within: f64 = groups
+        .iter()
+        .zip(&means)
+        .flat_map(|(g, m)| g.iter().map(move |x| (x - m).powi(2)))
+        .sum();
+    let ss_total = ss_between + ss_within;
+    let index: Vec<f64> = if grand > 0.0 {
+        means.iter().map(|m| m / grand).collect()
+    } else {
+        vec![1.0; period]
+    };
+    if ss_total == 0.0 || grand <= 0.0 {
+        return Some(CycleScore {
+            strength: 0.0,
+            spread: 0.0,
+            index,
+            f_ratio: 0.0,
+            blocks: n_blocks,
+        });
+    }
+    let ms_between = ss_between / (period - 1) as f64;
+    let ms_within = ss_within / (n_obs - period) as f64;
+    let strength = ((ss_between - (period - 1) as f64 * ms_within) / ss_total).max(0.0);
+    let spread = ((ms_between - ms_within).max(0.0) / n_blocks as f64).sqrt() / grand;
+    let f_ratio = if ms_within > 0.0 {
+        ms_between / ms_within
+    } else {
+        f64::INFINITY // ss_total > 0, so the phases differ with zero noise: a perfect repeat
+    };
+    Some(CycleScore {
+        strength,
+        spread,
+        index,
+        f_ratio,
+        blocks: n_blocks,
+    })
+}
+
+/// Build the cyclic-seasonality polar panel: score every cycle the canonical date/datetime column
+/// can carry (hour-of-day for datetimes; day-of-week and month-of-year for both) with
+/// `seasonal_strength`, and draw the strongest one's seasonal index — record volume per phase
+/// relative to its local average — when it clears `CYCLIC_MIN_STRENGTH`. Complements
+/// `build_timeseries_panel` (absolute timeline) by surfacing periodicity. Returns `Ok(None)` when
+/// there's no date column or no cycle is strong enough.
 fn build_cyclic_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -29108,8 +29366,6 @@ fn build_cyclic_panel(
     sems: &[ColSemantics],
     dict_icons: Option<&DictData>,
 ) -> CliResult<Option<Panel>> {
-    use qsv_dateparser::parse_with_preference;
-
     // pick the canonical date/datetime column, same ranking as the time-series panel.
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
     let Some((date_idx, is_datetime)) = stats
@@ -29134,49 +29390,105 @@ fn build_cyclic_panel(
     // the date column is picked here, so resolve its parsing preference here too (issue #4303).
     let prefer_dmy = dmy_prefs.get(date_idx).copied().unwrap_or(false);
 
-    // choose the cycle: intraday timestamps -> hour-of-day; date-only -> month-of-year when the
-    // span is wide enough to show a yearly shape, else the weekly rhythm.
-    let axis = if is_datetime {
-        CyclicAxis::HourOfDay
-    } else {
-        let parse_bound = |o: &Option<String>| {
-            o.as_deref()
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
-                .and_then(|t| parse_with_preference(t, prefer_dmy).ok())
-        };
-        let span_days = match (
-            parse_bound(&stats[date_idx].min),
-            parse_bound(&stats[date_idx].max),
-        ) {
-            (Some(lo), Some(hi)) => (hi - lo).num_days().max(0),
-            _ => 0,
-        };
-        if span_days >= 60 {
-            CyclicAxis::MonthOfYear
-        } else {
-            CyclicAxis::DayOfWeek
-        }
-    };
-
-    let mut counts = vec![0u64; axis.len()];
+    // one pass, binning each row at every cycle's base grain. Bins are keyed by what the rows
+    // actually parse to — not the stats min/max, which a different parser produced — so no row
+    // can fall outside its series.
+    let mut hourly: HashMap<i64, u64> = HashMap::new();
+    let mut midnight: HashMap<i64, u64> = HashMap::new();
+    // timed rows per hour, and those stamped exactly HH:00:00 — the grid midnight is judged against
+    let mut rows_in_hour = [0u64; 24];
+    let mut on_the_hour = [0u64; 24];
+    let mut daily: HashMap<i64, u64> = HashMap::new();
+    let mut monthly: HashMap<i64, u64> = HashMap::new();
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        if let Some(dt) = parse_record_cyclic_date(&record, date_idx, prefer_dmy) {
-            counts[axis.bucket(&dt)] += 1;
+        let Some(dt) = parse_record_cyclic_date(&record, date_idx, prefer_dmy) else {
+            continue;
+        };
+        // a date-only value in a datetime column (it parses to 00:00:00) carries no time of day
+        // at all: keep it out of the hour cycle outright rather than leave it to the midnight
+        // heuristic, which can't tell it from a real midnight row on hour-rounded data.
+        let has_time_of_day = record.get(date_idx).is_some_and(|f| f.contains(&b':'));
+        if is_datetime && has_time_of_day {
+            use chrono::Timelike;
+            rows_in_hour[dt.hour() as usize] += 1;
+            if dt.minute() == 0 && dt.second() == 0 && dt.nanosecond() == 0 {
+                on_the_hour[dt.hour() as usize] += 1;
+            }
+            let hours = if dt.time() == chrono::NaiveTime::MIN {
+                &mut midnight
+            } else {
+                &mut hourly
+            };
+            *hours.entry(CyclicAxis::HourOfDay.bin_id(&dt)).or_default() += 1;
+        }
+        *daily.entry(CyclicAxis::DayOfWeek.bin_id(&dt)).or_default() += 1;
+        *monthly
+            .entry(CyclicAxis::MonthOfYear.bin_id(&dt))
+            .or_default() += 1;
+    }
+    let n_midnight: u64 = midnight.values().sum();
+    let n_timed = n_midnight + hourly.values().sum::<u64>();
+    let on_the_hour_share = |h: usize| on_the_hour[h] as f64 / rows_in_hour[h] as f64;
+    let mut other_hours: Vec<f64> = (1..24)
+        .filter(|&h| rows_in_hour[h] > 0)
+        .map(on_the_hour_share)
+        .collect();
+    other_hours.sort_unstable_by(f64::total_cmp);
+    // no other active hour: nothing to compare against, so fall back to the share alone
+    let grid_says_default = other_hours
+        .get(other_hours.len() / 2)
+        .is_none_or(|&typical| on_the_hour_share(0) > CYCLIC_MIDNIGHT_DEFAULT_RATIO * typical);
+    let midnight_is_default =
+        n_midnight as f64 > CYCLIC_MIDNIGHT_DEFAULT_SHARE * n_timed as f64 && grid_says_default;
+    if !midnight_is_default {
+        for (bin, c) in midnight {
+            *hourly.entry(bin).or_default() += c;
         }
     }
 
-    if counts.iter().filter(|&&c| c > 0).count() < CYCLIC_MIN_POPULATED_BUCKETS {
+    // every cycle that passes its own gates gets a ring — the hour, week and year rhythms answer
+    // different questions — strongest first.
+    let mut scored: Vec<(CyclicAxis, CycleScore)> = [
+        (CyclicAxis::HourOfDay, &hourly),
+        (CyclicAxis::DayOfWeek, &daily),
+        (CyclicAxis::MonthOfYear, &monthly),
+    ]
+    .into_iter()
+    .filter_map(|(axis, bins)| {
+        let (series, first) = densify_cyclic_bins(bins)?;
+        let score = seasonal_strength(&series, axis.len(), axis.phase_of_bin(first), |i| {
+            axis.bin_scale(first + i as i64)
+        })?;
+        Some((axis, score))
+    })
+    .filter(|(_, score)| score.is_drawable())
+    .collect();
+    if scored.is_empty() {
         return Ok(None);
     }
-
-    // close the ring: repeat the first phase/value at the end so the polar line connects around.
-    let mut theta = axis.labels();
-    theta.push(theta[0].clone());
-    let mut r: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
-    r.push(r[0]);
+    scored.sort_by(|a, b| b.1.strength.total_cmp(&a.1.strength));
+    let rings: Vec<CyclicRing> = scored
+        .into_iter()
+        .map(|(axis, score)| {
+            // close the ring: repeat the first phase/value at the end so the line connects around.
+            let mut theta = axis.labels();
+            theta.push(theta[0].clone());
+            let mut r = score.index;
+            r.push(r[0]);
+            CyclicRing {
+                word: axis.word(),
+                theta,
+                r,
+            }
+        })
+        .collect();
+    let q_axis = rings
+        .iter()
+        .map(|ring| ring.word.as_str())
+        .collect::<Vec<_>>()
+        .join(" · ");
 
     let date_label = sems
         .get(date_idx)
@@ -29188,11 +29500,11 @@ fn build_cyclic_panel(
         Panel::new(
             t!(
                 "viz.title.cyclic_records_by",
-                q_axis = axis.word(),
+                q_axis = q_axis,
                 q_date = date_label
             )
             .into_owned(),
-            PanelKind::CyclicProfile { theta, r },
+            PanelKind::CyclicProfile { rings },
         )
         // --dict-info: like the trend panel, anchor on the driving date column's entry
         .with_dict_info(dict_info_for_field(dict_icons, &stats[date_idx].field)),
@@ -39035,19 +39347,22 @@ fn inline_panel_plot_scatter3d(
 fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
     let themed = theme.is_some();
     let row_height = panel_render_height(&panel.kind, panel.axis_log);
-    let PanelKind::CyclicProfile { theta, r } = &panel.kind else {
+    let PanelKind::CyclicProfile { rings } = &panel.kind else {
         unreachable!("smart_inline_panel_plot dispatches on panel.kind")
     };
     let mut plot = Plot::new();
-    plot.add_trace(
-        ScatterPolar::new(theta.clone(), r.clone())
-            // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
-            // just a single hover on the ring.
-            .mode(Mode::LinesMarkers)
-            .fill(Fill::ToSelf)
-            .name(escape_hover(&panel.name))
-            .hover_template(&t!("viz.hover.polar_records")),
-    );
+    for (i, ring) in rings.iter().enumerate() {
+        plot.add_trace(
+            ScatterPolar::new(ring.theta.clone(), ring.r.clone())
+                // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
+                // just a single hover on the ring.
+                .mode(Mode::LinesMarkers)
+                .fill(Fill::ToSelf)
+                .name(escape_hover(&ring.word))
+                .subplot(cyclic_polar_ref(i))
+                .hover_template(&t!("viz.hover.polar_index")),
+        );
+    }
     // A polar subplot draws its angular tick labels ("06h", "Mon", "Jan") OUTSIDE its plot
     // area — ~22px past the top and bottom edges — and this plotly version's `LayoutPolar`
     // exposes no `domain` to rein the ring in. So the panel's own margins do the work: a
@@ -39067,6 +39382,56 @@ fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) 
     plot.set_layout(apply_theme(layout, theme));
     plot.set_configuration(Configuration::new().responsive(true));
     plot
+}
+
+/// Plotly subplot id of cyclic ring `i`: `polar`, `polar2`, `polar3`.
+fn cyclic_polar_ref(i: usize) -> String {
+    if i == 0 {
+        "polar".to_string()
+    } else {
+        format!("polar{}", i + 1)
+    }
+}
+
+/// Horizontal domain of ring `i` of `n` side-by-side polar subplots. The gap leaves room for each
+/// ring's angular tick labels, which plotly paints outside the subplot's own area.
+fn cyclic_ring_domain(i: usize, n: usize) -> [f64; 2] {
+    const GAP: f64 = 0.06;
+    let width = (1.0 - GAP * (n - 1) as f64) / n as f64;
+    let x0 = i as f64 * (width + GAP);
+    [x0, (x0 + width).min(1.0)]
+}
+
+/// Inline-HTML emitter for a cyclic panel. One ring renders through the plotly crate as before;
+/// with several, each `polar{n}` subplot needs its own side-by-side `domain`, which this plotly
+/// version's typed `Layout` can't express (it has a single `polar` and no `domain` on it) — so the
+/// figure is serialized and the subplots injected as JSON, as `render_smart_grid_json` does for
+/// its geo cells. Each injected subplot copies whatever the typed layout set on `polar`.
+fn cyclic_panel_inline_html(plot: &Plot, div_id: &str, n_rings: usize) -> String {
+    if n_rings < 2 {
+        return plot.to_inline_html(Some(div_id));
+    }
+    let Ok(mut figure) = serde_json::to_value(plot) else {
+        return plot.to_inline_html(Some(div_id));
+    };
+    let Some(layout) = figure
+        .get_mut("layout")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return plot.to_inline_html(Some(div_id));
+    };
+    let base = layout
+        .get("polar")
+        .filter(|v| v.is_object())
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    for i in 0..n_rings {
+        let mut polar = base.clone();
+        polar["domain"] =
+            serde_json::json!({ "x": cyclic_ring_domain(i, n_rings), "y": [0.0, 1.0] });
+        layout.insert(cyclic_polar_ref(i), polar);
+    }
+    figure_inline_html(&figure.to_string(), div_id)
 }
 
 // hierarchy (treemap/sunburst) panels are domain-based — no cartesian x/y axes — so, like the
@@ -39790,6 +40155,13 @@ fn map_panel_inline_html(plot: &Plot, div_id: &str) -> String {
             );
         }
     }
+    figure_inline_html(&json_plain, div_id)
+}
+
+/// Plain (uncompressed) inline-HTML emitter for a serialized plotly figure, matching the plotly
+/// crate's `to_inline_html`: `<`/`>`/`&` are escaped to `\u003c`-style sequences, which keeps a
+/// pathological `</script>` inside embedded data from terminating the script block.
+fn figure_inline_html(json_plain: &str, div_id: &str) -> String {
     let json = json_plain
         .replace('&', "\\u0026")
         .replace('<', "\\u003c")
@@ -39857,6 +40229,8 @@ fn render_smart_inline(
         // renderer. Static-export paths serialize the typed `Plot` and are untouched by this.
         if matches!(panel.kind, PanelKind::Map { .. } | PanelKind::Geo { .. }) {
             cells.push_str(&map_panel_inline_html(&plot, &div_id));
+        } else if let PanelKind::CyclicProfile { rings } = &panel.kind {
+            cells.push_str(&cyclic_panel_inline_html(&plot, &div_id, rings.len()));
         } else {
             cells.push_str(&plot.to_inline_html(Some(&div_id)));
         }
@@ -52699,13 +53073,7 @@ mod tests {
         assert_eq!(ticks, vec!["6 SR", "5.3", "(NULL)"]);
 
         // a non-bar panel still leaves its axis untouched (returns None → autodetected axis)
-        let other = Panel::new(
-            "c".to_string(),
-            PanelKind::CyclicProfile {
-                theta: vec![],
-                r:     vec![],
-            },
-        );
+        let other = Panel::new("c".to_string(), PanelKind::CyclicProfile { rings: vec![] });
         assert!(freq_bar_tick_text(&other, &freq).is_none());
     }
 
@@ -53189,6 +53557,244 @@ mod tests {
         let normalized = parse_record_date(&record, 0, false).expect("UTC timestamp");
         assert_eq!(normalized.hour(), 2);
         assert_eq!(normalized.weekday(), chrono::Weekday::Sat);
+    }
+
+    /// Deterministic Poisson draws for the `seasonal_strength` tests (xorshift64 + Knuth for small
+    /// rates, a normal approximation for large ones).
+    struct CyclicTestRng(u64);
+
+    impl CyclicTestRng {
+        fn uniform(&mut self) -> f64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            ((self.0 >> 11) as f64 + 0.5) / (1u64 << 53) as f64
+        }
+
+        fn poisson(&mut self, lambda: f64) -> u64 {
+            if lambda < 30.0 {
+                let limit = (-lambda).exp();
+                let (mut k, mut p) = (0u64, 1.0);
+                loop {
+                    p *= self.uniform();
+                    if p <= limit {
+                        return k;
+                    }
+                    k += 1;
+                }
+            }
+            let z = (-2.0 * self.uniform().ln()).sqrt()
+                * (std::f64::consts::TAU * self.uniform()).cos();
+            (lambda + lambda.sqrt() * z).round().max(0.0) as u64
+        }
+    }
+
+    #[test]
+    fn cyclic_phase_of_bin_matches_chrono() {
+        use chrono::{Datelike, NaiveDate, Timelike};
+
+        let start = NaiveDate::from_ymd_opt(1999, 12, 20).unwrap();
+        for d in 0..800 {
+            for h in [0, 7, 13, 23] {
+                let dt = (start + chrono::Days::new(d))
+                    .and_hms_opt(h, 30, 0)
+                    .unwrap();
+                let phase = |axis: CyclicAxis| axis.phase_of_bin(axis.bin_id(&dt));
+                assert_eq!(phase(CyclicAxis::HourOfDay), dt.hour() as usize);
+                assert_eq!(
+                    phase(CyclicAxis::DayOfWeek),
+                    dt.weekday().num_days_from_monday() as usize,
+                    "{dt}"
+                );
+                assert_eq!(phase(CyclicAxis::MonthOfYear), dt.month0() as usize);
+            }
+        }
+        // consecutive days/months are consecutive bins, so a dense series has no gaps
+        let a = NaiveDate::from_ymd_opt(2023, 12, 31)
+            .unwrap()
+            .and_hms_opt(23, 0, 0)
+            .unwrap();
+        let b = NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        assert_eq!(
+            CyclicAxis::HourOfDay.bin_id(&b) - CyclicAxis::HourOfDay.bin_id(&a),
+            1
+        );
+        assert_eq!(
+            CyclicAxis::DayOfWeek.bin_id(&b) - CyclicAxis::DayOfWeek.bin_id(&a),
+            1
+        );
+        assert_eq!(
+            CyclicAxis::MonthOfYear.bin_id(&b) - CyclicAxis::MonthOfYear.bin_id(&a),
+            1
+        );
+    }
+
+    #[test]
+    fn seasonal_strength_finds_a_sparse_hourly_cycle() {
+        // ~0.1 records/hour over 4 years (the density of a 10k-row sample of a decade of 311
+        // calls): single-bin ratios are pure noise, so this only passes because blocks pool.
+        let mut rng = CyclicTestRng(0x9E37_79B9_7F4A_7C15);
+        let phase0 = 5;
+        let series: Vec<u64> = (0..24 * 365 * 4)
+            .map(|i| {
+                let h = ((phase0 + i) % 24) as f64;
+                rng.poisson(0.1 * (1.0 + 0.8 * (std::f64::consts::TAU * h / 24.0).sin()))
+            })
+            .collect();
+        let score = seasonal_strength(&series, 24, phase0, |_| 1.0).expect("enough blocks");
+        assert!(
+            score.is_drawable(),
+            "strength {} spread {}",
+            score.strength,
+            score.spread
+        );
+        let peak = (0..24).max_by(|&a, &b| score.index[a].total_cmp(&score.index[b]));
+        assert!(
+            matches!(peak, Some(5..=7)),
+            "peak at {peak:?}, index {:?}",
+            score.index
+        );
+    }
+
+    #[test]
+    fn seasonal_strength_ignores_steady_growth() {
+        // 5 years of monthly counts growing 20%/year with NO seasonality. A flat per-block mean
+        // would read the within-year ramp as a Jan-low/Dec-high cycle repeating every year; the
+        // centered moving average must cancel it.
+        let mut rng = CyclicTestRng(0xD1B5_4A32_D192_ED03);
+        let series: Vec<u64> = (0..60)
+            .map(|m| rng.poisson(500.0 * 1.2f64.powf(f64::from(m) / 12.0)))
+            .collect();
+        let score = seasonal_strength(&series, 12, 0, |_| 1.0).expect("enough blocks");
+        assert!(
+            !score.is_drawable(),
+            "strength {} spread {}",
+            score.strength,
+            score.spread
+        );
+    }
+
+    #[test]
+    fn seasonal_strength_rejects_noise_and_trivial_wobbles() {
+        // flat Poisson noise: no cycle
+        let mut rng = CyclicTestRng(0x2545_F491_4F6C_DD1D);
+        let flat: Vec<u64> = (0..24 * 60).map(|_| rng.poisson(5.0)).collect();
+        let score = seasonal_strength(&flat, 24, 0, |_| 1.0).expect("enough blocks");
+        assert!(
+            score.strength < CYCLIC_MIN_STRENGTH,
+            "noise strength {}",
+            score.strength
+        );
+
+        // a perfectly consistent but tiny (±3%) weekday wobble on dense data: ε² climbs with
+        // density, so only the spread floor keeps this off the dashboard
+        let wobble: Vec<u64> = (0..7 * 150)
+            .map(|d| rng.poisson(50_000.0 * (1.0 + 0.03 * (d % 7) as f64 / 6.0)))
+            .collect();
+        let score = seasonal_strength(&wobble, 7, 0, |_| 1.0).expect("enough blocks");
+        assert!(
+            score.strength >= CYCLIC_MIN_STRENGTH,
+            "consistent wobble {}",
+            score.strength
+        );
+        assert!(!score.is_drawable(), "spread {}", score.spread);
+    }
+
+    #[test]
+    fn seasonal_strength_scores_a_short_weekly_schedule() {
+        // daily record counts from the gallery's 4-week Brazil LPG price survey (Mon 2026-06-29 ..
+        // Fri 2026-07-24): collection runs Mon-Thu, tails off Fri, never on weekends. The moving
+        // average's edge loss leaves exactly 2 full weeks of ratios — the minimum — and that is
+        // plenty for a schedule this regular.
+        let series = [
+            1032, 1074, 508, 447, 106, 0, 0, 1033, 747, 671, 650, 49, 0, 0, 1095, 861, 560, 655,
+            41, 0, 0, 1011, 782, 691, 632, 87,
+        ];
+        let score = seasonal_strength(&series, 7, 0, |_| 1.0).expect("2 full weeks of ratios");
+        assert!(
+            score.is_drawable(),
+            "strength {} spread {}",
+            score.strength,
+            score.spread
+        );
+        assert_eq!(score.index[5], 0.0, "no Saturday collections");
+    }
+
+    #[test]
+    fn seasonal_strength_rarely_draws_noise_at_the_minimum_block_count() {
+        // flat Poisson data sized to exactly 2 blocks (26 days from a Monday, 100 records/day):
+        // the worst case for false positives. Without the F-significance gate ~25% of these
+        // draw a "weekday cycle"; with it the rate sits near the 1% alpha.
+        let mut rng = CyclicTestRng(0x5851_F42D_4C95_7F2D);
+        let trials = 400;
+        let drawn = (0..trials)
+            .filter(|_| {
+                let series: Vec<u64> = (0..26).map(|_| rng.poisson(100.0)).collect();
+                seasonal_strength(&series, 7, 0, |_| 1.0).is_some_and(|score| score.is_drawable())
+            })
+            .count();
+        assert!(
+            drawn * 100 <= trials * 5,
+            "{drawn} of {trials} noise series drawn"
+        );
+    }
+
+    #[test]
+    fn cyclic_rings_tile_the_panel_without_overlap() {
+        for n in 1..=3 {
+            let domains: Vec<[f64; 2]> = (0..n).map(|i| cyclic_ring_domain(i, n)).collect();
+            assert!(domains[0][0].abs() < 1e-12);
+            assert!((domains[n - 1][1] - 1.0).abs() < 1e-9, "{domains:?}");
+            for pair in domains.windows(2) {
+                assert!(pair[0][1] < pair[1][0], "rings overlap: {domains:?}");
+            }
+        }
+        assert_eq!(cyclic_polar_ref(0), "polar");
+        assert_eq!(cyclic_polar_ref(2), "polar3");
+    }
+
+    #[test]
+    fn month_ring_corrects_for_month_length() {
+        use chrono::{Datelike, NaiveDate};
+
+        // 5 years of a constant DAILY rate within each season — winter (Dec/Jan/Feb) all equal,
+        // a summer peak — tallied per calendar month. February's 28 days must not read as a dip.
+        let axis = CyclicAxis::MonthOfYear;
+        let start = NaiveDate::from_ymd_opt(2019, 1, 1).unwrap();
+        let first = axis.bin_id(&start.and_hms_opt(0, 0, 0).unwrap());
+        let series: Vec<u64> = (0..60)
+            .map(|m| {
+                let month_start = start + chrono::Months::new(m);
+                let days = ((month_start + chrono::Months::new(1)) - month_start).num_days() as u64;
+                let per_day = match month_start.month() {
+                    12 | 1 | 2 => 70,
+                    6..=8 => 160,
+                    _ => 100,
+                };
+                days * per_day
+            })
+            .collect();
+        let score = seasonal_strength(&series, 12, axis.phase_of_bin(first), |i| {
+            axis.bin_scale(first + i as i64)
+        })
+        .expect("5 years of months");
+        assert!(score.is_drawable());
+        let (jan, feb, dec) = (score.index[0], score.index[1], score.index[11]);
+        assert!((feb - jan).abs() / jan < 0.02, "Feb {feb} vs Jan {jan}");
+        assert!((feb - dec).abs() / dec < 0.02, "Feb {feb} vs Dec {dec}");
+    }
+
+    #[test]
+    fn seasonal_strength_needs_two_full_cycles() {
+        // 2 weeks of a strong weekday cycle: too short to tell a cycle from a one-off
+        let two_weeks: Vec<u64> = (0..14).map(|d| if d % 7 < 5 { 100 } else { 10 }).collect();
+        assert!(seasonal_strength(&two_weeks, 7, 0, |_| 1.0).is_none());
+        // too few records to fill 2 blocks of CYCLIC_MIN_PER_PHASE per phase, however long
+        let sparse: Vec<u64> = (0..24 * 30).map(|h| u64::from(h % 97 == 0)).collect();
+        assert!(seasonal_strength(&sparse, 24, 0, |_| 1.0).is_none());
     }
 
     #[test]

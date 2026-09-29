@@ -58,7 +58,7 @@ use std::{
     path,
 };
 
-use ext_sort::{ExternalSorter, ExternalSorterBuilder, LimitedBufferBuilder};
+use ext_sort::{ExternalSorter, ExternalSorterBuilder, buffer::mem::MemoryLimitedBufferBuilder};
 use serde::Deserialize;
 
 use crate::{
@@ -104,13 +104,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mem_limited_buffer_bytes = calculate_memory_limit(args.flag_memory_limit);
     log::info!("{mem_limited_buffer_bytes} bytes used for in memory mergesort buffer...");
 
-    let sorter: ExternalSorter<String, io::Error, LimitedBufferBuilder> =
+    // The budget is in bytes, so the buffer must be byte-limited (each String counts as
+    // its 24-byte header plus heap capacity) - an element-count limit would treat
+    // "20% of RAM" as billions of lines and never spill.
+    let sorter: ExternalSorter<String, io::Error, MemoryLimitedBufferBuilder> =
         match ExternalSorterBuilder::new()
             .with_tmp_dir(path::Path::new(&tmp_dir))
-            .with_buffer(LimitedBufferBuilder::new(
-                mem_limited_buffer_bytes as usize,
-                true,
-            ))
+            .with_buffer(MemoryLimitedBufferBuilder::new(mem_limited_buffer_bytes))
             .with_rw_buf_size(RW_BUFFER_CAPACITY)
             .with_threads_number(util::njobs(args.flag_jobs))
             .build()
@@ -131,7 +131,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 fn sort_csv(
     args: &Args,
     tmp_dir: &str,
-    sorter: &ExternalSorter<String, io::Error, LimitedBufferBuilder>,
+    sorter: &ExternalSorter<String, io::Error, MemoryLimitedBufferBuilder>,
 ) -> Result<(), crate::clitypes::CliError> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
@@ -285,7 +285,7 @@ fn sort_csv(
 
 fn sort_lines(
     args: &Args,
-    sorter: &ExternalSorter<String, io::Error, LimitedBufferBuilder>,
+    sorter: &ExternalSorter<String, io::Error, MemoryLimitedBufferBuilder>,
 ) -> Result<(), crate::clitypes::CliError> {
     let mut input_rdr: Box<dyn BufRead> = match &args.arg_input {
         Some(input_path) => {

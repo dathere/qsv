@@ -201,7 +201,7 @@ dynfmt2 = { version = "0.4", default-features = false, features = ["curly"] }
 # simd-accel (+ std, which multiversions more x86 code paths) for the whole dep tree.
 encoding_rs = "0.8"
 eudex = { version = "0.1", optional = true }
-ext-sort = { version = "0.1", default-features = false }
+ext-sort = { version = "0.1", default-features = false, features = ["memory-limit"] }
 fake = { version = "5", features = [
     "derive",
     "chrono",

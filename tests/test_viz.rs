@@ -5557,6 +5557,32 @@ fn viz_smart_cyclic_panel_skips_flat_and_midnight_default_timestamps() {
     assert!(!html.contains(r#""type":"scatterpolar""#));
 }
 
+#[test]
+fn viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid() {
+    // flat data stamped ON the hour (and a half-hourly variant): 1/24 (1/48) of rows sit at exactly
+    // 00:00:00 and every one is real. Read as "time unknown" defaults and dropped, they'd carve a
+    // perfectly repeating midnight trough — a fake hour-of-day cycle — into flat data.
+    for (name, minutes) in [("hourly", &[0][..]), ("half_hourly", &[0, 30][..])] {
+        let wrk = Workdir::new(&format!(
+            "viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid_{name}"
+        ));
+        let mut rows = String::new();
+        for day in 1..=20 {
+            for h in 0..24 {
+                for m in minutes {
+                    rows.push_str(&format!("2021-06-{day:02}T{h:02}:{m:02}:00\n"));
+                    rows.push_str(&format!("2021-06-{day:02}T{h:02}:{m:02}:00\n"));
+                }
+            }
+        }
+        let html = cyclic_dashboard(&wrk, &rows);
+        assert!(
+            !html.contains(r#""type":"scatterpolar""#),
+            "{name}: flat on-the-hour data must not draw a cyclic ring"
+        );
+    }
+}
+
 /// `YYYY-MM-DD` for `offset` days after Monday 2021-06-07 (up to 2021-07-31), without pulling a
 /// date crate into the integration tests.
 fn date_after_monday_june_7_2021(offset: u32) -> String {

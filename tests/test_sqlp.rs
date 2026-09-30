@@ -6062,3 +6062,57 @@ fn sqlp_window_order_by_multiple_keys_limitation() {
         "unexpected stderr: {mixed_dir_stderr}"
     );
 }
+
+// Issue #4688: Polars py-1.44.2 (qsv 23.0.1) printed "Deprecation: Casting from String to Date
+// is deprecated" once per evaluation of a SQL `CAST(<string> AS DATE)`, so an LLM-written
+// describegpt query produced a wall of warnings. Newer Polars handles the SQL cast without the
+// warning. Pin both the results and the silence, so a Polars bump can't bring the warning back
+// (or turn the cast into an error) unnoticed.
+#[test]
+fn sqlp_cast_string_to_date_is_silent() {
+    let wrk = Workdir::new("sqlp_cast_string_to_date_is_silent");
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["id", "d", "y"],
+            svec!["1", "2020-01-15", "2019"],
+            svec!["2", "2021-03-02", "2020"],
+            svec!["3", "2022-07-09", "2021"],
+        ],
+    );
+
+    for (query, try_parsedates, expected) in [
+        // a String column (no date inference)
+        (
+            "select CAST(d AS DATE) AS x from _t_1",
+            false,
+            "x\n2020-01-15\n2021-03-02\n2022-07-09\n",
+        ),
+        // a string expression
+        (
+            "select CAST(CONCAT(CAST(y AS VARCHAR), '-01-01') AS DATE) AS x from _t_1",
+            true,
+            "x\n2019-01-01\n2020-01-01\n2021-01-01\n",
+        ),
+        // a string literal compared against a parsed Date column
+        (
+            "select count(*) AS n from _t_1 where d >= CAST('2021-01-01' AS DATE)",
+            true,
+            "n\n2\n",
+        ),
+    ] {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv").arg(query);
+        if try_parsedates {
+            cmd.arg("--try-parsedates");
+        }
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{query}: {stderr}");
+        assert_eq!(String::from_utf8_lossy(&out.stdout), expected, "{query}");
+        assert!(
+            !stderr.to_ascii_lowercase().contains("deprecat"),
+            "{query} printed a deprecation warning: {stderr}"
+        );
+    }
+}

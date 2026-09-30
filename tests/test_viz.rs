@@ -20995,6 +20995,36 @@ fn viz_smart_value_and_agg_choose_the_measure_slot() {
 }
 
 #[test]
+fn viz_smart_agg_without_a_region_code_map_is_reported() {
+    // no dictionary -> no region-code candidate -> no region map, so an otherwise valid
+    // `--agg count` has nothing to apply to and must say so instead of vanishing
+    let wrk = Workdir::new("viz_smart_agg_without_a_region_code_map_is_reported");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--agg",
+        "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--value/--agg: no region-code map was built"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn viz_smart_value_and_agg_misuse_is_rejected() {
     let wrk = Workdir::new("viz_smart_value_and_agg_misuse_is_rejected");
     wrk.create_from_string("rg.csv", &sum_map_csv(false));

@@ -34545,8 +34545,8 @@ impl<'a> SmartCtx<'a> {
         };
         // `run` guarantees a --geojson, but the region-code map is still not the only one it can
         // feed: a point-in-polygon companion or image output takes that slot, and neither reads
-        // --value (issue #4683). Say so rather than ignore the flag silently.
-        if args.flag_value.is_some() && summary_choros.is_none() {
+        // --value/--agg (issue #4683). Say so rather than ignore the flags silently.
+        if (args.flag_value.is_some() || args.flag_agg.is_some()) && summary_choros.is_none() {
             viz_note(
                 "viz smart --value/--agg: no region-code map was built (a point-in-polygon map, \
                  image output, or no region column matched the --geojson), so they were not \

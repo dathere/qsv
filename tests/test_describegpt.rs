@@ -2386,6 +2386,78 @@ fn describegpt_process_response_produces_output() {
     );
 }
 
+/// Issue #4689: single-symbol LaTeX spans in a Description are rewritten to Unicode on the
+/// shared output path, so an MCP `--process-response` gets the same cleanup as a direct run.
+/// `\$` is left alone: it is a valid Markdown escape.
+#[test]
+fn describegpt_process_response_description_replaces_latex_symbols() {
+    use std::{io::Write, process::Stdio};
+
+    let wrk = Workdir::new("describegpt_process_response_description_latex");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["name", "age", "city"],
+            svec!["Alice", "30", "NYC"],
+            svec!["Bob", "25", "LA"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--description")
+        .arg("--no-cache")
+        .arg("data.csv");
+    let prep: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": r"728 records (52 states $\times$ 7 years), median ($\approx$\$179.73).",
+                "reasoning": "",
+                "token_usage": {"prompt": 1, "completion": 1, "total": 2, "elapsed": 1}
+            })
+        })
+        .collect();
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"]
+    });
+
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2
+        .arg("--process-response")
+        .arg("--description")
+        .arg("--no-cache")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd_2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains(r"728 records (52 states × 7 years), median (≈\$179.73)."),
+        "Got: {stdout}"
+    );
+    assert!(!stdout.contains(r"$\times$"), "Got: {stdout}");
+}
+
 /// Run --prepare-context then --process-response (with a canned Dictionary response)
 /// on `data.csv` in `wrk`, returning the parsed total JSON output. LLM-free.
 #[cfg(feature = "whatlang")]

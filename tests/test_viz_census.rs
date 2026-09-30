@@ -368,6 +368,7 @@ async fn serve_state_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResp
         .push(req.query_string().to_string());
     let features: Vec<serde_json::Value> = [
         ("06", "CA", "California", 40.0),
+        ("24", "MD", "Maryland", 38.0),
         ("36", "NY", "New York", 42.0),
         ("42", "PA", "Pennsylvania", 44.0),
         ("66", "GU", "Guam", 46.0),
@@ -1960,19 +1961,18 @@ fn viz_denominator_census_excludes_an_uncovered_state_s_counties() {
 /// `state_concept`, beside a county-FIPS column, and assert the county column keeps the map.
 fn assert_county_column_outranks_state_column(
     test_name: &str,
-    st_values: [&str; 2],
+    st_values: &[&str],
     state_concept: &str,
 ) {
     let wrk = Workdir::new(test_name);
-    // the state column comes FIRST, so column order cannot be what keeps the county map
-    wrk.create_from_string(
-        "mixed.csv",
-        &format!(
-            "st,fips,cases\n{a},42003,10\n{a},42003,20\n{b},42101,30\n{b},42101,40\n",
-            a = st_values[0],
-            b = st_values[1]
-        ),
-    );
+    // the state column comes FIRST, so column order cannot be what keeps the county map; the
+    // county column holds exactly two counties whatever the number of rows
+    let mut csv = String::from("st,fips,cases\n");
+    for (i, st) in st_values.iter().enumerate() {
+        let fips = if i % 2 == 0 { "42003" } else { "42101" };
+        csv.push_str(&format!("{st},{fips},{}\n", 10 * (i + 1)));
+    }
+    wrk.create_from_string("mixed.csv", &csv);
     wrk.create_from_string(
         "dict.schema.json",
         &r#"{
@@ -2047,22 +2047,98 @@ fn assert_county_column_outranks_state_column(
 fn viz_smart_state_column_does_not_outrank_a_county_column() {
     assert_county_column_outranks_state_column(
         "viz_smart_state_column_does_not_outrank_a_county_column",
-        ["PA", "NY"],
+        &["PA", "PA", "NY", "NY"],
         "geo.state",
     );
 }
 
-// The second net: an UNTAGGED column (generic geo.fips) of 2-digit state FIPS is probed like any
-// code column, ties the county column at 100%, and would win on column order - unless a probe
-// winner whose best layer is State is demoted behind every finer candidate.
+// The second net: an UNTAGGED column (generic geo.fips) whose values are only a MINORITY of state
+// FIPS is not classified as a state column by shape, so it is probed like any code column. Its
+// state-shaped values still resolve 100% against the States layer, tying the county column, and it
+// would win on column order - unless a probe winner whose best layer is State is demoted behind
+// every finer candidate.
 #[test]
 #[serial]
 fn viz_smart_generic_fips_state_column_does_not_outrank_a_county_column() {
     assert_county_column_outranks_state_column(
         "viz_smart_generic_fips_state_column_does_not_outrank_a_county_column",
-        ["42", "36"],
+        &["42", "36", "x1", "x2", "x3"],
         "geo.fips",
     );
+}
+
+// REGRESSION (roborev 4931): an untagged state-FIPS column that is the ONLY probe slot skipped the
+// probe, so it was tried as-is ahead of a county-NAME column and drew a state map. It must be
+// classified as a state column by its values and tried last; the county names keep the map.
+// (Before #4681 a 2-digit column normalized to nothing for every layer, so the names always won.)
+#[test]
+#[serial]
+fn viz_smart_lone_state_fips_column_does_not_outrank_county_names() {
+    let wrk = Workdir::new("viz_smart_lone_state_fips_column_does_not_outrank_county_names");
+    // names unique nationally in the mock's name table, so no state hint is needed to resolve them
+    wrk.create_from_string(
+        "c.csv",
+        "stfp,county,cases\n42,Allegheny County,10\n42,Philadelphia County,20\n24,Baltimore \
+         County,30\n24,Baltimore County,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stfp": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("42003") && z.contains_key("24005"),
+            "the county names must keep the map: {z:?}"
+        );
+        let state_fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert!(
+            state_fetches.is_empty(),
+            "state boundaries must not be fetched while county names resolve: {state_fetches:?}"
+        );
+    });
 }
 
 // #4681: failure messages named candidate columns by dictionary TITLE only ("Recipient State

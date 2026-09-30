@@ -34,7 +34,7 @@
       {
         "flag": "--metadata",
         "type": "string",
-        "description": "Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json.",
+        "description": "Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json. For SAS, the value labels are included when a format catalog is used (see --value-labels).",
         "default": "none"
       },
       {
@@ -43,9 +43,14 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
+        "flag": "--sas7bcat",
+        "type": "string",
+        "description": "The SAS format catalog (.sas7bcat) holding the value labels of a .sas7bdat file. Implies the option --value-labels."
+      },
+      {
         "flag": "--sentinels-as",
         "type": "string",
-        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. SAS supports value only - its labels live in a .sas7bcat catalog. SPSS takes its sentinel labels from the value labels, so for SPSS, label requires the --value-labels option & value rules it out. Not supported for .xpt & .por files. Tracking sentinels makes SAS & Stata files read on a single thread, so --jobs has no effect on them.",
+        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. SAS supports value only - the catalog reader does not yet tell which sentinel a label belongs to. SPSS takes its sentinel labels from the value labels, so for SPSS, label requires --value-labels & value rules it out. Not supported for .xpt & .por files. Tracking sentinels makes SAS & Stata files read on a single thread, so --jobs has no effect on them.",
         "default": "none"
       },
       {
@@ -61,7 +66,7 @@
       {
         "flag": "--value-labels",
         "type": "flag",
-        "description": "Decode coded values to their label strings (e.g. 1 becomes \"Male\") instead of writing the underlying codes. Stata & SPSS only - SAS keeps its value labels in a separate .sas7bcat catalog, which this command does not read yet."
+        "description": "Decode coded values to their label strings (e.g. 1 becomes \"Male\") instead of writing the underlying codes. For SAS .sas7bdat files, the labels come from the format catalog: the file named by --sas7bcat, else <name>.sas7bcat or formats.sas7bcat next to the data file. Not supported for .xpt files."
       }
     ]
   },

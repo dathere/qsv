@@ -11,7 +11,9 @@ Supported input formats:
     SPSS    .sav, .zsav, .por
 
 Coded values are written as their underlying codes, not their labels, so the
-conversion is lossless. Use --value-labels to decode them instead.
+conversion is lossless. Use --value-labels to decode them instead. SAS keeps
+its value labels in a separate .sas7bcat format catalog, which --value-labels
+finds next to the data file, or --sas7bcat names.
 
 User-defined missing values ("sentinels") - SAS's .A to .Z & ._, Stata's .a
 to .z, SPSS's declared missing codes - become empty cells by default, like any
@@ -52,12 +54,19 @@ Usage:
 readstat options:
     --metadata <fmt>       Dump variable metadata instead of the data.
                            Valid values: none, csv, json, pretty-json.
+                           For SAS, the value labels are included when a
+                           format catalog is used (see --value-labels).
                            [default: none]
     --value-labels         Decode coded values to their label strings
                            (e.g. 1 becomes "Male") instead of writing the
-                           underlying codes. Stata & SPSS only - SAS keeps its
-                           value labels in a separate .sas7bcat catalog, which
-                           this command does not read yet.
+                           underlying codes. For SAS .sas7bdat files, the
+                           labels come from the format catalog: the file
+                           named by --sas7bcat, else <name>.sas7bcat or
+                           formats.sas7bcat next to the data file. Not
+                           supported for .xpt files.
+    --sas7bcat <file>      The SAS format catalog (.sas7bcat) holding the
+                           value labels of a .sas7bdat file. Implies
+                           the option --value-labels.
     --compress-numeric     Write float variables that only ever hold whole
                            numbers as integers, without the ".0" (e.g. 3.0
                            becomes 3). SPSS stores every number as a float, so
@@ -76,10 +85,11 @@ readstat options:
                              value - the sentinel's code (e.g. .A or 99).
                              label - the sentinel's value label if it has one,
                                      else its code.
-                           SAS supports value only - its labels live in a
-                           .sas7bcat catalog. SPSS takes its sentinel labels
-                           from the value labels, so for SPSS, label requires
-                           the --value-labels option & value rules it out.
+                           SAS supports value only - the catalog reader does
+                           not yet tell which sentinel a label belongs to.
+                           SPSS takes its sentinel labels from the value
+                           labels, so for SPSS, label requires --value-labels
+                           & value rules it out.
                            Not supported for .xpt & .por files. Tracking
                            sentinels makes SAS & Stata files read on a single
                            thread, so --jobs has no effect on them.
@@ -109,9 +119,10 @@ Common options:
 "#;
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use polars::prelude::{
@@ -119,8 +130,8 @@ use polars::prelude::{
     StringChunked,
 };
 use polars_readstat_rs::{
-    InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat, ScanOptions,
-    readstat_batch_iter, readstat_metadata_json, readstat_schema,
+    CatalogKey, InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat,
+    ScanOptions, readstat_batch_iter, readstat_metadata_json, readstat_schema,
 };
 use serde::Deserialize;
 
@@ -132,6 +143,7 @@ struct Args {
     flag_metadata:           String,
     flag_value_labels:       bool,
     flag_compress_numeric:   bool,
+    flag_sas7bcat:           Option<String>,
     flag_sentinels_as:       String,
     flag_sentinels_embedded: bool,
     flag_sentinels_columns:  Option<String>,
@@ -179,11 +191,6 @@ impl Format {
             Self::Spss => Some(ReadStatFormat::Spss),
             Self::SpssPor => None,
         }
-    }
-
-    /// True for the formats whose readers apply value labels while decoding.
-    const fn honors_value_labels(self) -> bool {
-        matches!(self, Self::Stata | Self::Spss | Self::SpssPor)
     }
 
     /// True for the formats whose readers report user-defined missing values.
@@ -261,8 +268,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .is_some_and(|e| e.eq_ignore_ascii_case("sas7bcat"))
         {
             return fail_incorrectusage_clierror!(
-                "\"{input}\" is a SAS format catalog, not a dataset. Pass the .sas7bdat file \
-                 instead."
+                "\"{input}\" is a SAS format catalog, not a dataset. Pass the .sas7bdat file, \
+                 with this catalog as --sas7bcat."
             );
         }
         return fail_incorrectusage_clierror!(
@@ -271,12 +278,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     };
 
-    if args.flag_value_labels && !format.honors_value_labels() {
+    if args.flag_sas7bcat.is_some() && format != Format::Sas {
+        return fail_incorrectusage_clierror!("--sas7bcat applies to SAS .sas7bdat files only.");
+    }
+    if args.flag_value_labels && format == Format::SasXpt {
         return fail_incorrectusage_clierror!(
-            "--value-labels is not supported for SAS files. SAS keeps value labels in a separate \
-             .sas7bcat catalog, which this command does not read yet."
+            "--value-labels is not supported for SAS transport (.xpt) files."
         );
     }
+    // before --output is created, so a rejected request leaves it untouched
+    let sas_labels = SasLabels::resolve(&args, input, path, format)?;
 
     let sentinels_as = SentinelsAs::parse(&args.flag_sentinels_as)?;
     if sentinels_as != SentinelsAs::None && metadata_mode != MetadataMode::None {
@@ -301,6 +312,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         b','
     };
 
+    // The shared --output guard only sees command-line arguments, so it misses
+    // a catalog that --value-labels found on its own.
+    if let (Some(out), Some(labels)) = (&args.flag_output, &sas_labels)
+        && same_file::is_same_file(out, &labels.catalog).unwrap_or(false)
+    {
+        return fail_incorrectusage_clierror!(
+            "--output ({out}) is the SAS format catalog being read ({}). Pass a different \
+             --output.",
+            labels.catalog.display()
+        );
+    }
     let w = match args.flag_output.as_ref() {
         Some(p) => {
             delim = tsvssv_delim(p, delim);
@@ -311,11 +333,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut w = io::BufWriter::with_capacity(crate::config::DEFAULT_WTR_BUFFER_CAPACITY, w);
 
     if metadata_mode == MetadataMode::None {
-        let rows = write_data(&args, path, format, sentinels, delim, &mut w)?;
+        let rows = write_data(
+            &args,
+            path,
+            format,
+            sentinels,
+            sas_labels.as_ref(),
+            delim,
+            &mut w,
+        )?;
         w.flush()?;
         winfo!("{rows} row{} exported.", if rows == 1 { "" } else { "s" });
     } else {
-        write_metadata(path, format, &metadata_mode, delim, &mut w)?;
+        write_metadata(
+            path,
+            format,
+            &metadata_mode,
+            sas_labels.as_ref(),
+            delim,
+            &mut w,
+        )?;
         w.flush()?;
     }
 
@@ -360,9 +397,10 @@ fn sentinel_opts(
     match (format, sentinels_as) {
         (Format::Sas, SentinelsAs::Label) => {
             return fail_incorrectusage_clierror!(
-                "--sentinels-as label is not supported for SAS files. SAS keeps value labels in a \
-                 separate .sas7bcat catalog, which this command does not read yet. Use \
-                 --sentinels-as value to keep the sentinel codes."
+                "--sentinels-as label is not supported for SAS files yet: the .sas7bcat reader \
+                 does not tell which sentinel (.A-.Z, ._) a label belongs to \
+                 (https://github.com/jrothbaum/polars_readstat/issues/65). Use --sentinels-as \
+                 value to keep the sentinel codes."
             );
         },
         // The SPSS reader labels sentinels exactly when it decodes value labels,
@@ -668,12 +706,227 @@ fn numeric_label_variables(path: &Path, rs_format: ReadStatFormat) -> CliResult<
         .collect())
 }
 
+/// One SAS format's labels, as read from a `.sas7bcat` catalog.
+#[derive(Clone, Default)]
+struct FormatLabels {
+    /// A numeric format; character formats are named with a leading `$`.
+    numeric_format: bool,
+    numeric:        Vec<(f64, String)>,
+    text:           HashMap<String, String>,
+}
+
+impl FormatLabels {
+    fn number(&self, v: f64) -> String {
+        self.numeric
+            .iter()
+            .find(|(code, _)| *code == v)
+            .map_or_else(|| number_text(v), |(_, label)| label.clone())
+    }
+
+    /// A cell of a labeled column that is already text: a character variable,
+    /// or a numeric one that `--sentinels-embedded` turned into text. In the
+    /// latter, a cell that isn't a number is a sentinel and is left alone.
+    fn text(&self, s: &str) -> String {
+        if let Some(label) = self.text.get(s.trim_end()) {
+            return label.clone();
+        }
+        if self.numeric_format
+            && let Ok(v) = s.parse::<f64>()
+        {
+            return self.number(v);
+        }
+        s.to_string()
+    }
+}
+
+/// How a number in a labeled column is written when it has no label: like the
+/// Stata & SPSS readers do, whole numbers without a ".0".
+fn number_text(v: f64) -> String {
+    if is_whole(v, F64_WHOLE_LIMIT) {
+        #[allow(clippy::cast_possible_truncation)]
+        let whole = v as i64;
+        whole.to_string()
+    } else {
+        v.to_string()
+    }
+}
+
+/// The value labels of a SAS dataset, from its `.sas7bcat` format catalog.
+///
+/// The reader crate only parses the catalog (format name -> labels), so the
+/// join to the dataset's columns is done here: each column's format, from
+/// the dataset's metadata, names its catalog entry.
+struct SasLabels {
+    catalog: PathBuf,
+    columns: Vec<(PlSmallStr, FormatLabels)>,
+}
+
+impl SasLabels {
+    /// The catalog is used when `--sas7bcat` names one, or when
+    /// `--value-labels` is given, in which case it is looked for next to the
+    /// data file as `<name>.sas7bcat`, then `formats.sas7bcat`.
+    fn resolve(args: &Args, input: &str, path: &Path, format: Format) -> CliResult<Option<Self>> {
+        if format != Format::Sas || !(args.flag_value_labels || args.flag_sas7bcat.is_some()) {
+            return Ok(None);
+        }
+        let catalog = if let Some(named) = &args.flag_sas7bcat {
+            let named = PathBuf::from(named);
+            if !named.is_file() {
+                return fail_incorrectusage_clierror!(
+                    "Cannot find the SAS format catalog \"{}\".",
+                    named.display()
+                );
+            }
+            named
+        } else {
+            let beside = path.with_extension("sas7bcat");
+            let shared = path
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join("formats.sas7bcat");
+            match [&beside, &shared].into_iter().find(|p| p.is_file()) {
+                Some(found) => found.clone(),
+                None => {
+                    return fail_incorrectusage_clierror!(
+                        "--value-labels on a SAS file needs its .sas7bcat format catalog, and \
+                         there is none at \"{}\" or \"{}\". Pass it with --sas7bcat.",
+                        beside.display(),
+                        shared.display()
+                    );
+                },
+            }
+        };
+
+        let parsed = polars_readstat_rs::read_sas7bcat(&catalog).map_err(|e| {
+            crate::CliError::Other(format!(
+                "Could not read the SAS format catalog \"{}\": {e}",
+                catalog.display()
+            ))
+        })?;
+        let mut formats: HashMap<String, FormatLabels> = HashMap::new();
+        for (name, entries) in parsed {
+            let labels = formats.entry(format_key(&name)).or_default();
+            labels.numeric_format = !name.starts_with('$');
+            for (code, label) in entries {
+                match code {
+                    CatalogKey::Numeric(v) => labels.numeric.push((v, label)),
+                    CatalogKey::Text(s) => {
+                        labels.text.insert(s.trim_end().to_string(), label);
+                    },
+                    // the reader drops which sentinel (.A-.Z, ._) a label is for
+                    CatalogKey::Missing => {},
+                }
+            }
+        }
+
+        let meta = readstat_metadata_json(path, Some(ReadStatFormat::Sas)).map_err(|e| {
+            crate::CliError::Other(format!(
+                "Could not read the metadata of \"{}\": {e}",
+                path.display()
+            ))
+        })?;
+        let meta: serde_json::Value = serde_json::from_str(&meta)?;
+        let columns: Vec<(PlSmallStr, FormatLabels)> = meta["columns"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|col| {
+                let name = col["name"].as_str()?;
+                let labels = formats.get(&format_key(col["format"].as_str()?))?;
+                Some((PlSmallStr::from(name), labels.clone()))
+            })
+            .collect();
+
+        if columns.is_empty() {
+            wwarn!(
+                "None of the formats of \"{input}\" are in the SAS format catalog \"{}\", so no \
+                 values were labeled.",
+                catalog.display()
+            );
+        } else {
+            winfo!("Using SAS format catalog \"{}\".", catalog.display());
+        }
+        Ok(Some(Self { catalog, columns }))
+    }
+
+    fn get(&self, name: &str) -> Option<&FormatLabels> {
+        self.columns
+            .iter()
+            .find(|(n, _)| n.as_str() == name)
+            .map(|(_, labels)| labels)
+    }
+
+    /// Replace the labeled columns' codes with their labels. They become text.
+    fn apply(&self, df: &mut DataFrame) -> PolarsResult<()> {
+        for (name, labels) in &self.columns {
+            let Ok(col) = df.column(name) else {
+                continue;
+            };
+            let col = col.as_materialized_series();
+            let labeled: StringChunked = match col.dtype() {
+                dt if dt.is_float() => col
+                    .cast(&DataType::Float64)?
+                    .f64()?
+                    .iter()
+                    .map(|v| v.map(|v| labels.number(v)))
+                    .collect(),
+                DataType::String => col
+                    .str()?
+                    .iter()
+                    .map(|v| v.map(|s| labels.text(s)))
+                    .collect(),
+                _ => continue,
+            };
+            df.replace(name, labeled.with_name(name.clone()).into_series().into())?;
+        }
+        Ok(())
+    }
+
+    /// `--metadata`: add each labeled column's labels, keyed by code as the
+    /// Stata & SPSS metadata key theirs.
+    fn annotate(&self, json: &str) -> CliResult<String> {
+        let mut meta: serde_json::Value = serde_json::from_str(json)?;
+        if let Some(cols) = meta["columns"].as_array_mut() {
+            for col in cols {
+                let Some(labels) = col["name"].as_str().and_then(|n| self.get(n)) else {
+                    continue;
+                };
+                let mut map = serde_json::Map::new();
+                for (code, label) in &labels.numeric {
+                    map.insert(number_text(*code), label.clone().into());
+                }
+                let mut text: Vec<_> = labels.text.iter().collect();
+                text.sort();
+                for (code, label) in text {
+                    map.insert(code.clone(), label.clone().into());
+                }
+                // a format labeling only sentinels has nothing to show until
+                // the reader says which sentinel each label is for
+                if !map.is_empty() {
+                    col["value_labels"] = map.into();
+                }
+            }
+        }
+        Ok(serde_json::to_string(&meta)?)
+    }
+}
+
+/// A SAS format name as the catalog keys it: without the trailing width &
+/// decimals (`WORKSHOP5.` is `WORKSHOP`), upper-cased. A SAS format name
+/// cannot end in a digit, so trailing digits are always the width.
+fn format_key(format: &str) -> String {
+    format
+        .trim_end_matches(|c: char| c.is_ascii_digit() || c == '.')
+        .to_ascii_uppercase()
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
     path: &Path,
     format: Format,
     sentinels: Option<InformativeNullOpts>,
+    sas_labels: Option<&SasLabels>,
     delim: u8,
     w: &mut W,
 ) -> CliResult<u64> {
@@ -737,6 +990,15 @@ fn write_data<W: Write>(
             schema.get(name) != Some(&DataType::String) || !risky.iter().any(|r| r == name.as_str())
         });
     }
+    if let Some(labels) = sas_labels {
+        // labeled columns are text, their unlabeled numbers already without ".0"
+        whole.retain(|name| labels.get(name).is_none());
+        for (name, _) in &labels.columns {
+            if schema.contains(name) {
+                std::sync::Arc::make_mut(&mut schema).set_dtype(name, DataType::String);
+            }
+        }
+    }
     for name in &whole {
         if schema.get(name).is_some_and(DataType::is_float) {
             std::sync::Arc::make_mut(&mut schema).set_dtype(name, DataType::Int64);
@@ -756,6 +1018,9 @@ fn write_data<W: Write>(
             readstat_batch_iter(path, Some(opts), Some(rs_format), None, None, batch_size)?;
         for batch in batches {
             let mut df = batch?;
+            if let Some(labels) = sas_labels {
+                labels.apply(&mut df)?;
+            }
             drop_whole_number_fraction(&mut df, &whole)?;
             rows += df.height() as u64;
             // write_batch panics on unaligned chunks
@@ -778,10 +1043,11 @@ fn write_metadata<W: Write>(
     path: &Path,
     format: Format,
     mode: &MetadataMode,
+    sas_labels: Option<&SasLabels>,
     delim: u8,
     w: &mut W,
 ) -> CliResult<()> {
-    let json = if let Some(rs_format) = format.readstat_format() {
+    let mut json = if let Some(rs_format) = format.readstat_format() {
         readstat_metadata_json(path, Some(rs_format))
     } else {
         polars_readstat_rs::metadata_json_por(path).map_err(|e| e.to_string())
@@ -792,6 +1058,9 @@ fn write_metadata<W: Write>(
             path.display()
         ))
     })?;
+    if let Some(labels) = sas_labels {
+        json = labels.annotate(&json)?;
+    }
 
     match mode {
         MetadataMode::Json => {

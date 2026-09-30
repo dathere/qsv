@@ -25,6 +25,15 @@
 //!    actually exist, so [`latest_acs_vintage`] reads them rather than assuming "current year minus
 //!    one", which rots annually.
 //!
+//! 5. **Oversized responses are refused by a firewall, with HTTP 200.** In front of `TIGERweb` sits
+//!    an F5 web-application firewall that answers a request whose response would be too large
+//!    (observed: ~25 MB passes, larger is refused) with `200 OK`, `text/html`, and a "Request
+//!    Rejected ... support ID" page. `error_for_status` cannot see it, and parsing it reported "not
+//!    valid JSON" (#4682). Size, not state count or URL length, is the trigger: eight small states
+//!    pass where four large ones fail. Geometry is therefore generalized server-side
+//!    ([`Layer::max_allowable_offset`]), and the pager halves its page size on a refusal
+//!    ([`query_layer_geojson`]).
+//!
 //! Pagination uses `orderByFields` + `resultOffset`/`resultRecordCount`: verified to yield stable,
 //! non-overlapping pages. The response envelope sets `exceededTransferLimit: true` while more
 //! records remain and omits it on the final page; [`query_layer_geojson`] treats either that flag
@@ -46,19 +55,26 @@ fn tigerweb_root() -> String {
     std::env::var("QSV_CENSUS_TIGERWEB_URL").unwrap_or_else(|_| TIGERWEB_ROOT.to_string())
 }
 
-/// Per-request timeout for `TIGERweb` calls. Boundary payloads are large (an ungeneralized
-/// 67-county state runs ~7 MB), so this is more generous than the plain `--geojson` URL fetch.
+/// Per-request timeout for `TIGERweb` calls. Generalizing geometry is server-side work (a
+/// 500-county page takes a few seconds to compute, and an ungeneralized one took ~15 s), so this
+/// is more generous than the plain `--geojson` URL fetch.
 /// Honors `QSV_TIMEOUT` via [`util::timeout_secs`], like every other network path in qsv.
 const CENSUS_FETCH_TIMEOUT_SECS: u16 = 60;
 
 /// Safety ceiling on a single `TIGERweb` response body, mirroring `viz`'s `GEOJSON_MAX_BYTES`.
-/// A CEILING, not a target: state-scoped county layers are single-digit MB.
+/// A CEILING, not a target: generalized, even the nationwide county layer is ~11 MB, and the
+/// service's firewall refuses any single response far below this (module fact 5).
 const CENSUS_MAX_BYTES: usize = 512_000_000;
 
 /// Records requested per page. Well under the service's advertised `maxRecordCount` (100000) so
 /// the server never silently truncates below our own paging, and small enough that a single
-/// oversized page cannot blow the byte ceiling on geometry-bearing layers.
+/// oversized page cannot blow the byte ceiling on geometry-bearing layers. The geometry pager
+/// starts here and halves on a firewall refusal (module fact 5), down to [`MIN_PAGE_SIZE`].
 const PAGE_SIZE: usize = 500;
+
+/// Floor for the geometry pager's halving. Generalized, even a large county is tens of KB, so a
+/// page this small that is still refused is not a size problem that smaller pages can fix.
+const MIN_PAGE_SIZE: usize = 25;
 
 /// Region codes per `IN (...)` clause. Each code costs ~8 URL characters, so this keeps a request
 /// URL a few KB — comfortably inside every proxy's line limit — while still resolving a few
@@ -214,6 +230,23 @@ impl Layer {
         }
     }
 
+    /// Server-side generalization tolerance for this layer's geometry fetch, in DEGREES (the
+    /// `maxAllowableOffset` is read in `outSR` units, and the fetch asks for EPSG:4326).
+    ///
+    /// Ungeneralized boundaries are survey-grade and far beyond what a choropleth can show:
+    /// nationwide counties run ~300 MB, which the service's firewall refuses to serve (module fact
+    /// 5) and no browser renders usefully. Measured against the live county layer: 0.0005°
+    /// (~50 m) brings all 3,235 counties to ~11 MB. Sub-county layers keep a finer 0.0001° (~10
+    /// m), because an urban tract, place or ZCTA can be a few hundred metres across and a coarser
+    /// tolerance visibly deforms it. `geometryPrecision` was measured too and saves nothing once
+    /// the geometry is generalized, so it is not sent.
+    pub const fn max_allowable_offset(self) -> &'static str {
+        match self {
+            Self::County => "0.0005",
+            Self::Zcta | Self::Tract | Self::Place => "0.0001",
+        }
+    }
+
     /// The explicit `--geojson census:<name>` selector for this layer.
     #[must_use]
     pub const fn selector(self) -> &'static str {
@@ -314,17 +347,73 @@ fn redact_api_key(text: &str) -> String {
     out
 }
 
-fn get_json(
+/// Why a Census request produced no usable JSON.
+///
+/// The firewall case is its own variant because it is the one failure a caller can do something
+/// about — the geometry pager answers it by asking for smaller pages (module fact 5) — and it must
+/// be told apart without matching on message text.
+enum FetchError {
+    /// `TIGERweb`'s web-application firewall refused the request. Carries the finished message.
+    WafRejected(String),
+    Other(crate::CliError),
+}
+
+impl From<FetchError> for crate::CliError {
+    /// A firewall refusal is a statement about the SERVICE, not about the column being resolved,
+    /// so it maps to `Network`: `resolve_smart_auto_geojson` then aborts instead of charging the
+    /// same doomed fetch to every candidate column in turn, and `resolve` may answer it from a
+    /// stale cache entry — boundaries fetched earlier are exactly as good as they were.
+    fn from(e: FetchError) -> Self {
+        match e {
+            FetchError::WafRejected(msg) => crate::CliError::Network(msg),
+            FetchError::Other(e) => e,
+        }
+    }
+}
+
+/// Is this body `TIGERweb`'s firewall "Request Rejected" page (module fact 5)?
+fn is_waf_rejection(content_type: &str, body: &[u8]) -> bool {
+    let html = content_type.to_ascii_lowercase().starts_with("text/html")
+        || body.trim_ascii_start().starts_with(b"<");
+    html && body.windows(16).any(|w| w == b"Request Rejected")
+}
+
+/// The support ID the firewall page quotes, which the Bureau asks for when a block is reported.
+fn waf_support_id(body: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(body);
+    let rest = &text[text.find("support ID is:")? + "support ID is:".len()..];
+    let id: String = rest
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    (!id.is_empty()).then_some(id)
+}
+
+/// The first ~200 characters of a body, whitespace-collapsed, for an error message.
+fn body_prefix(body: &[u8]) -> String {
+    let text = String::from_utf8_lossy(&body[..body.len().min(400)]);
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let prefix: String = collapsed.chars().take(200).collect();
+    if prefix.len() < collapsed.len() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
+}
+
+/// GET `url` with `params` and parse the body as JSON, classifying every failure.
+fn fetch_json(
     client: &reqwest::blocking::Client,
     url: &str,
     params: &[(&str, &str)],
-) -> CliResult<serde_json::Value> {
+) -> Result<serde_json::Value, FetchError> {
     // `RequestBuilder::query` is behind a reqwest feature qsv does not enable, so the parameters
     // are encoded onto the URL here instead — same percent-encoding, no new build feature.
     let target = reqwest::Url::parse_with_params(url, params.iter().copied()).map_err(|e| {
-        crate::CliError::Other(redact_api_key(&format!(
+        FetchError::Other(crate::CliError::Other(redact_api_key(&format!(
             "could not build Census URL '{url}': {e}"
-        )))
+        ))))
     })?;
     // Classify the failure, because only a TRANSIENT one may be answered from a stale cache entry
     // (see `resolve`). `error_for_status` turns any 4xx into an error too, so wrapping everything
@@ -346,35 +435,67 @@ fn get_json(
         Ok(resp) => resp,
         Err(e) => {
             let msg = redact_api_key(&format!("Census request to '{url}' failed: {e}"));
-            return Err(if status_is_transient(e.status()) {
+            return Err(FetchError::Other(if status_is_transient(e.status()) {
                 crate::CliError::Network(msg)
             } else {
                 crate::CliError::Other(msg)
-            });
+            }));
         },
     };
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("(none)")
+        .to_string();
     let mut buf: Vec<u8> = Vec::new();
     // one byte past the cap, so exceeding it is distinguishable from exactly reaching it
     resp.by_ref()
         .take(CENSUS_MAX_BYTES as u64 + 1)
         .read_to_end(&mut buf)
         .map_err(|e| {
-            crate::CliError::Network(redact_api_key(&format!(
+            FetchError::Other(crate::CliError::Network(redact_api_key(&format!(
                 "reading Census response body: {e}"
-            )))
+            ))))
         })?;
     if buf.len() > CENSUS_MAX_BYTES {
-        return Err(crate::CliError::Other(format!(
+        return Err(FetchError::Other(crate::CliError::Other(format!(
             "Census response from '{url}' exceeds the {} MB limit. Narrow the dataset's \
              geographic extent, or supply an explicit --geojson file.",
             CENSUS_MAX_BYTES / 1_000_000
-        )));
+        ))));
     }
     serde_json::from_slice(&buf).map_err(|e| {
-        crate::CliError::Other(redact_api_key(&format!(
-            "Census response is not valid JSON: {e}"
-        )))
+        if is_waf_rejection(&content_type, &buf) {
+            let support = waf_support_id(&buf)
+                .map(|id| format!(", support ID {id}"))
+                .unwrap_or_default();
+            return FetchError::WafRejected(redact_api_key(&format!(
+                "the Census TIGERweb firewall rejected the request to '{url}' (HTTP {status} with \
+                 an HTML \"Request Rejected\" page{support}). It does this when a response would \
+                 be too large."
+            )));
+        }
+        // Say WHAT came back. "expected value at line 1 column 1" alone cannot distinguish an
+        // empty body, an HTML interstitial and an undecoded compressed stream, and #4682 cost a
+        // debugging session to tell them apart.
+        FetchError::Other(crate::CliError::Other(redact_api_key(&format!(
+            "Census response from '{url}' is not valid JSON (HTTP {status}, content-type \
+             {content_type}, {} bytes): {e}. Body begins: {}",
+            buf.len(),
+            body_prefix(&buf)
+        ))))
     })
+}
+
+/// [`fetch_json`] for callers with no use for the firewall distinction.
+fn get_json(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    params: &[(&str, &str)],
+) -> CliResult<serde_json::Value> {
+    fetch_json(client, url, params).map_err(crate::CliError::from)
 }
 
 /// Every ACS vintage the service publishes, ascending.
@@ -566,11 +687,6 @@ fn probe_layer(
     Ok(found)
 }
 
-/// Query one layer, following pagination, and return the merged feature array.
-///
-/// Paging is explicit (`orderByFields` + `resultOffset`) rather than trusting a single unbounded
-/// request: without `orderByFields` `ArcGIS` does not guarantee a stable order across pages, which
-/// would duplicate and drop features.
 fn query_layer_geojson(
     client: &reqwest::blocking::Client,
     vintage: u16,
@@ -578,6 +694,7 @@ fn query_layer_geojson(
     where_clause: &str,
     out_fields: &str,
     order_by: &str,
+    max_allowable_offset: &str,
 ) -> CliResult<Vec<serde_json::Value>> {
     let url = format!(
         "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
@@ -585,10 +702,13 @@ fn query_layer_geojson(
     );
     let mut features: Vec<serde_json::Value> = Vec::new();
     let mut offset = 0usize;
+    // Shrinks, never grows back: a page the firewall refused at this density will be refused
+    // again on the next page of the same scope.
+    let mut page_size = PAGE_SIZE;
     loop {
         let offset_str = offset.to_string();
-        let page_size_str = PAGE_SIZE.to_string();
-        let page = get_json(
+        let page_size_str = page_size.to_string();
+        let page = match fetch_json(
             client,
             &url,
             &[
@@ -596,12 +716,34 @@ fn query_layer_geojson(
                 ("outFields", out_fields),
                 ("returnGeometry", "true"),
                 ("outSR", "4326"),
+                // in outSR units (degrees) — see `Layer::max_allowable_offset`
+                ("maxAllowableOffset", max_allowable_offset),
                 ("orderByFields", order_by),
                 ("resultOffset", &offset_str),
                 ("resultRecordCount", &page_size_str),
                 ("f", "geojson"),
             ],
-        )?;
+        ) {
+            Ok(page) => page,
+            // module fact 5: the firewall refuses by response SIZE, so ask for less at the same
+            // offset. Geometry density varies too much by region for a fixed page size to be
+            // both safe everywhere and cheap everywhere.
+            Err(FetchError::WafRejected(_)) if page_size > MIN_PAGE_SIZE => {
+                page_size = (page_size / 2).max(MIN_PAGE_SIZE);
+                log::info!(
+                    "--geojson auto: TIGERweb firewall rejected a page at offset {offset}; \
+                     retrying with {page_size} records per page"
+                );
+                continue;
+            },
+            Err(FetchError::WafRejected(msg)) => {
+                return Err(crate::CliError::Network(format!(
+                    "{msg} Pages of {page_size} records were still refused. Narrow the dataset's \
+                     geographic extent, or supply an explicit --geojson file."
+                )));
+            },
+            Err(FetchError::Other(e)) => return Err(e),
+        };
         // ArcGIS reports a query-level failure as a 200 with an `error` object, so a body that
         // isn't a FeatureCollection must be surfaced rather than silently read as zero features.
         if let Some(err) = page.get("error") {
@@ -774,7 +916,10 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     //               Designated Places. The selector string did not change, so a v3 entry would
     //               keep serving incorporated-only boundaries for a request that now means both
     //               - every CDP row silently missing from the map, with no error.
-    hasher.update(b"census/v4/");
+    //   v5 (#4682): geometry is generalized server-side (`Layer::max_allowable_offset`). A v4
+    //               entry holds ungeneralized, survey-grade boundaries — up to ~300 MB
+    //               nationwide — and would keep being embedded in every page until it expired.
+    hasher.update(b"census/v5/");
     // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
     // mirror (or a mock) must not be served boundaries fetched from a different source
     hasher.update(tigerweb_root().as_bytes());
@@ -1203,6 +1348,7 @@ fn fetch_layer(
                 clause,
                 &format!("{},NAME,AREALAND,AREAWATER", layer.id_field()),
                 layer.id_field(),
+                layer.max_allowable_offset(),
             )?);
         }
     }
@@ -1306,6 +1452,45 @@ mod tests {
         // a URL that a log wrapped: the key is no less secret for having a space before it
         assert_eq!(redact_api_key("...& key=abc123"), "...& key=REDACTED");
         assert_eq!(redact_api_key("no key here"), "no key here");
+    }
+
+    // #4682: the live firewall page, as served (HTTP 200, text/html).
+    const WAF_PAGE: &[u8] = b"<html><head><title>Request Rejected</title></head><body>The \
+                              requested URL was rejected. Please consult with your \
+                              administrator.<br><br>Your support ID is: \
+                              13427891564991414132</body></html>";
+
+    #[test]
+    fn waf_page_is_recognized_and_its_support_id_read() {
+        assert!(is_waf_rejection("text/html; charset=utf-8", WAF_PAGE));
+        // a missing/odd content-type must not hide it: the body alone is HTML
+        assert!(is_waf_rejection("(none)", WAF_PAGE));
+        assert_eq!(
+            waf_support_id(WAF_PAGE).as_deref(),
+            Some("13427891564991414132")
+        );
+        // other HTML (the Data API's missing-key page) and JSON errors are NOT the firewall
+        assert!(!is_waf_rejection(
+            "text/html",
+            b"<html><body>Missing Key</body></html>"
+        ));
+        assert!(!is_waf_rejection(
+            "application/json",
+            br#"{"error":{"message":"Request Rejected"}}"#
+        ));
+    }
+
+    #[test]
+    fn body_prefix_collapses_whitespace_and_truncates() {
+        assert_eq!(
+            body_prefix(b"  <html>\n\n  <body>x</body>"),
+            "<html> <body>x</body>"
+        );
+        let long = "a".repeat(500);
+        let p = body_prefix(long.as_bytes());
+        assert_eq!(p.chars().count(), 201);
+        assert!(p.ends_with('…'));
+        assert_eq!(body_prefix(b""), "");
     }
 
     #[test]

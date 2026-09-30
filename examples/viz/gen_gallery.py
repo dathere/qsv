@@ -932,9 +932,10 @@ FIGURES = [
      "rate means something different against a different release; results cache under "
      "<code>~/.qsv-cache</code>, so a repeat run makes no request. Boundaries are committed "
      "(<code>tristate_counties.geojson</code>, TIGERweb at "
-     "<code>maxAllowableOffset=0.001</code>) rather than fetched with <code>--geojson auto</code>: "
-     "<code>viz smart</code> embeds the geometry once PER TRACE and this figure has two, so full "
-     "resolution would inline ~34&nbsp;MB here. The curated <code>--dictionary</code> tags only "
+     "<code>maxAllowableOffset=0.001</code>) rather than fetched with <code>--geojson auto</code>, "
+     "whose county geometry is generalized more finely (0.0005&deg;, ~50&nbsp;m): "
+     "<code>viz smart</code> embeds the geometry once PER TRACE and this figure has two, so the "
+     "coarser committed file keeps the page small. The curated <code>--dictionary</code> tags only "
      "<code>county_fips</code> as <code>geo.county_fips</code> — concepts come from a data "
      "dictionary, and a stats-only run has no choropleth candidates at all. Note the county names "
      "carry their state: 30 of the 175 distinct names in these three states belong to more than "
@@ -1284,9 +1285,8 @@ SCREENSHOTS = [
             "counties carrying I-80 and I-70 come out on top. The ACS vintage is <b>pinned</b> "
             "(<code>census@2024</code>): unpinned, qsv probes the newest published release against "
             "today, so a rebuild next year would silently re-vintage every number on this page. "
-            "The standalone Data Schematic is a ~18&nbsp;MB self-contained page &mdash; too large "
-            "to embed inline &mdash; so this is a screenshot: <b>click it to open the fully "
-            "interactive Data Schematic in a new window</b>."),
+            "This is a screenshot of the standalone, self-contained Data Schematic (~2&nbsp;MB): "
+            "<b>click it to open the fully interactive Data Schematic in a new window</b>."),
         "image": "pa-crashes-visual-datadic.webp",
         "href":  "smart_pa_crashes.html",
         "cmd":   ("qsv viz smart pa_crashes.csv --smarter "

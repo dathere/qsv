@@ -139,11 +139,24 @@ pub enum Layer {
     Zcta,
     Tract,
     Place,
+    /// States, DC, Puerto Rico and the four island areas with a `TIGERweb` polygon (#4681).
+    /// Keyed by GEOID (2-digit FIPS) OR `STUSAB` (USPS code) — see [`state_feature_id_key`].
+    State,
 }
 
 impl Layer {
     /// Every layer `auto` will probe, in the order they are reported when the choice is ambiguous.
-    pub const ALL: [Self; 4] = [Self::County, Self::Zcta, Self::Tract, Self::Place];
+    ///
+    /// `State` comes LAST, and `viz smart` also tries state columns only after every finer
+    /// candidate has failed: a state column resolves near 100% by construction, so ranking it
+    /// alongside a county column would quietly trade a county map for a state map.
+    pub const ALL: [Self; 5] = [
+        Self::County,
+        Self::Zcta,
+        Self::Tract,
+        Self::Place,
+        Self::State,
+    ];
 
     /// Does a `MapServer` catalog entry name this layer?
     ///
@@ -178,6 +191,7 @@ impl Layer {
             Self::Zcta => name.contains("ZIP Code Tabulation Areas"),
             Self::Tract => name == "Census Tracts",
             Self::Place => name == "Incorporated Places" || name == "Census Designated Places",
+            Self::State => name == "States",
         }
     }
 
@@ -199,6 +213,8 @@ impl Layer {
             Self::Tract => 11,
             // 2-digit state + 5-digit place
             Self::Place => 7,
+            // 2-digit state FIPS
+            Self::State => 2,
         }
     }
 
@@ -227,6 +243,7 @@ impl Layer {
             Self::Zcta => "ZCTA",
             Self::Tract => "census tract",
             Self::Place => "place",
+            Self::State => "state",
         }
     }
 
@@ -244,6 +261,9 @@ impl Layer {
         match self {
             Self::County => "0.0005",
             Self::Zcta | Self::Tract | Self::Place => "0.0001",
+            // measured: all 56 state polygons come to ~1 MB at 0.001° (~100 m), which no national
+            // or single-state choropleth can resolve anyway
+            Self::State => "0.001",
         }
     }
 
@@ -255,6 +275,7 @@ impl Layer {
             Self::Zcta => "census:zcta",
             Self::Tract => "census:tract",
             Self::Place => "census:place",
+            Self::State => "census:state",
         }
     }
 
@@ -265,6 +286,7 @@ impl Layer {
             "census:zcta" | "census:zip" => Some(Self::Zcta),
             "census:tract" | "census:tracts" => Some(Self::Tract),
             "census:place" | "census:places" => Some(Self::Place),
+            "census:state" | "census:states" => Some(Self::State),
             _ => None,
         }
     }
@@ -443,6 +465,15 @@ fn fetch_json(
         },
     };
     let status = resp.status();
+    // The Data API answers a geography it has no rows for — a county query `in=` a state the ACS
+    // does not cover (the island areas) or does not exist — with 204 and an EMPTY body. That is
+    // "no rows", not a failure: parsing the empty body used to surface as "not valid JSON", which
+    // `acs_get_json` then misreported as a bad API key and the whole run aborted (#4680). An empty
+    // array is exactly what `parse_acs_rows` reads as no rows, so the uncovered regions fall
+    // through to the caller's exclude-and-report path like any other missing population.
+    if status == reqwest::StatusCode::NO_CONTENT {
+        return Ok(serde_json::Value::Array(Vec::new()));
+    }
     let content_type = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -587,6 +618,70 @@ fn resolve_layer_ids(
     Ok(found)
 }
 
+/// The four island areas the `TIGERweb` States layer draws beyond [`USPS_STATE_FIPS`]'s 52.
+///
+/// Kept OUT of that table on purpose: it also scopes county fetches and keys the Data API
+/// denominator, and the ACS 5-year release covers none of these. Here they only need to resolve
+/// to a polygon — a Census denominator then excludes and reports them (#4680).
+const ISLAND_AREA_STATE_FIPS: &[(&str, &str)] =
+    &[("AS", "60"), ("GU", "66"), ("MP", "69"), ("VI", "78")];
+
+/// State GEOID for a 1-2 digit FIPS (re-padded, `6` -> `06`) or a USPS code (case-insensitive,
+/// including the island areas), or `None` for anything else.
+///
+/// A FIPS is NOT validated here, mirroring every other layer's normalization: an unknown code is
+/// simply queried and scored as a miss, so the probe's coverage reflects what the data holds.
+fn state_geoid_for_code(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if (1..=2).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit()) {
+        return Some(format!("{raw:0>2}"));
+    }
+    if raw.len() != 2 || !raw.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    state_fips_for_usps(raw)
+        .or_else(|| {
+            let folded = raw.to_ascii_uppercase();
+            ISLAND_AREA_STATE_FIPS
+                .iter()
+                .find(|(usps, _)| *usps == folded)
+                .map(|(_, fips)| *fips)
+        })
+        .map(str::to_string)
+}
+
+/// Could `raw` name a state polygon — a USPS code (island areas included) or a 1-2 digit FIPS?
+///
+/// Lets `viz`'s pre-probe shape check tell a USPS-coded column apart from the digitless NAME
+/// columns it otherwise refuses without a probe (#4681).
+#[must_use]
+pub fn is_state_code(raw: &str) -> bool {
+    state_geoid_for_code(raw).is_some()
+}
+
+/// Which States-layer attribute the data's own spelling matches: `STUSAB` for a column of USPS
+/// codes, `GEOID` for FIPS. Decided by majority so a stray value of the other shape (a typo, a
+/// footnote row) cannot flip the key for the whole column.
+///
+/// The fetched features carry both, and the map joins on whichever this names — a USPS column
+/// joined on GEOID would match nothing. It is recorded in the cached sidecar, so a warm run keys
+/// the map exactly as the cold run did.
+fn state_feature_id_key(codes: &[String]) -> &'static str {
+    let (mut alpha, mut digit) = (0usize, 0usize);
+    for code in codes {
+        let code = code.trim();
+        if code.is_empty() {
+            continue;
+        }
+        if code.bytes().all(|b| b.is_ascii_digit()) {
+            digit += 1;
+        } else if code.bytes().all(|b| b.is_ascii_alphabetic()) {
+            alpha += 1;
+        }
+    }
+    if alpha > digit { "STUSAB" } else { "GEOID" }
+}
+
 /// Normalize region codes for a layer: keep only codes that could BE one of its ids, and re-pad
 /// those whose leading zero a numeric CSV column dropped (`7936` -> `07936`, `1001` -> `01001`).
 ///
@@ -601,6 +696,17 @@ fn resolve_layer_ids(
 /// scored against the caller's original, unfiltered codes, so nothing is hidden from the honesty
 /// check by being dropped here.
 fn normalize_codes(codes: &[String], layer: Layer) -> Vec<String> {
+    // A state column holds USPS codes at least as often as FIPS, and a USPS code is not a
+    // paddable number, so it gets its own spelling-aware path to the same GEOID.
+    if layer == Layer::State {
+        let mut out: Vec<String> = codes
+            .iter()
+            .filter_map(|c| state_geoid_for_code(c))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        return out;
+    }
     // Using the loosest band for every layer would make a 5-digit county code look like a
     // paddable 7-digit place id (`0042003`, state "00", which does not exist) and buy a wasted
     // probe on every run. See `code_width_band` for why each layer's slack is what it is.
@@ -1251,17 +1357,17 @@ fn choose_layer(
         // numeric codes at all, so name the likely fix instead of interpolating "()"
         if scored.is_empty() {
             return Err(crate::CliError::Other(
-                "--geojson auto: none of the --locations values are numeric Census codes (county \
-                 FIPS, ZCTA, tract GEOID). If they are city/place names, add --geocode to \
-                 forward-geocode them to US county FIPS; otherwise supply an explicit --geojson \
-                 file."
+                "--geojson auto: none of the --locations values are Census codes (state FIPS or \
+                 USPS code, county FIPS, ZCTA, tract or place GEOID). If they are city/place \
+                 names, add --geocode to forward-geocode them to US county FIPS; otherwise supply \
+                 an explicit --geojson file."
                     .to_string(),
             ));
         }
         return Err(crate::CliError::Other(format!(
             "--geojson auto: the --locations values match no Census geography in the {vintage} \
-             vintage ({detail}), nor in the vintages before it. They may not be US county FIPS or \
-             ZIP codes — supply an explicit --geojson file."
+             vintage ({detail}), nor in the vintages before it. They may not be US state, county \
+             or ZIP codes — supply an explicit --geojson file."
         )));
     }
     // descending by match ratio, compared exactly
@@ -1336,6 +1442,30 @@ fn fetch_layer(
             format!("{} ZCTAs", normalized.len()),
             normalized.join(","),
         ),
+        // Scoped by exact code set like ZCTAs: a state IS its own scope, so there is no coarser
+        // unit to scope by, and a nationwide fetch of all 56 polygons for a 3-state dataset would
+        // fill the map's extent with regions the data never names. The probe (or the coverage
+        // gate) is the honesty check, as it is for ZCTAs.
+        Layer::State => (
+            in_clauses(&normalized, layer),
+            format!(
+                "{} state{}",
+                normalized.len(),
+                if normalized.len() == 1 { "" } else { "s" }
+            ),
+            normalized.join(","),
+        ),
+    };
+    // Every layer keys on GEOID except a USPS-coded state column, which must key on STUSAB.
+    let key_field = if layer == Layer::State {
+        state_feature_id_key(codes)
+    } else {
+        layer.id_field()
+    };
+    let out_fields = if layer == Layer::State {
+        format!("{},STUSAB,NAME,AREALAND,AREAWATER", layer.id_field())
+    } else {
+        format!("{},NAME,AREALAND,AREAWATER", layer.id_field())
     };
 
     let mut features: Vec<serde_json::Value> = Vec::new();
@@ -1346,7 +1476,7 @@ fn fetch_layer(
                 vintage,
                 *layer_id,
                 clause,
-                &format!("{},NAME,AREALAND,AREAWATER", layer.id_field()),
+                &out_fields,
                 layer.id_field(),
                 layer.max_allowable_offset(),
             )?);
@@ -1366,11 +1496,12 @@ fn fetch_layer(
     // `properties`. Without this, reusing the path exactly as printed failed validation with
     // "--feature-id-key 'id' resolves on no feature". Setting both makes the artifact portable
     // with the default key AND with `properties.GEOID`.
-    let id_field = layer.id_field();
+    // Mirrors the key the map joins on (`key_field`), so a USPS-keyed state set reused by path
+    // with the default `--feature-id-key id` still matches its USPS column.
     for feature in &mut features {
         let Some(geoid) = feature
             .get("properties")
-            .and_then(|p| p.get(id_field))
+            .and_then(|p| p.get(key_field))
             .and_then(serde_json::Value::as_str)
             .map(str::to_string)
         else {
@@ -1411,7 +1542,7 @@ fn fetch_layer(
         geojson,
         // filled in by the caller once it is written to the cache
         path: String::new(),
-        feature_id_key: format!("properties.{}", layer.id_field()),
+        feature_id_key: format!("properties.{key_field}"),
         // names the scope exactly — see the field docs for the collision this avoids
         scope_key: format!("census/{}/acs{vintage}/{scope_key_part}", layer.label()),
         // quotes the catalog's own layer name, so a ZCTA set reports its delineation year rather
@@ -1587,7 +1718,7 @@ mod tests {
         // A union raises Place's MATCHED count, but a column that scores for Place cannot also
         // score for county/ZCTA/tract, so no existing winner can change.
         let (plo, phi) = Layer::Place.code_width_band();
-        for other in [Layer::County, Layer::Zcta, Layer::Tract] {
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::State] {
             let (olo, ohi) = other.code_width_band();
             assert!(
                 phi < olo || ohi < plo,
@@ -1772,6 +1903,59 @@ mod tests {
         let sneaky = vec!["15213".to_string(), "x') OR 1=1 --".to_string()];
         let clauses = in_clauses(&sneaky, Layer::Zcta);
         assert_eq!(clauses, vec!["GEOID IN ('15213')"]);
+    }
+
+    // #4681: a 1-2 digit code can only ever be a state, so adding the layer cannot re-rank any
+    // column that resolved before - its band is disjoint from every other layer's.
+    #[test]
+    fn the_state_width_band_cannot_overlap_another_layers() {
+        let (slo, shi) = Layer::State.code_width_band();
+        assert_eq!((slo, shi), (1, 2));
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
+            let (olo, ohi) = other.code_width_band();
+            assert!(
+                shi < olo || ohi < slo,
+                "state band {slo}..={shi} must not overlap {} band {olo}..={ohi}",
+                other.label()
+            );
+        }
+    }
+
+    #[test]
+    fn state_layer_name_is_the_catalog_spelling() {
+        assert!(Layer::State.matches_catalog_name("States"));
+        assert!(!Layer::State.matches_catalog_name("States Labels"));
+        assert!(!Layer::State.matches_catalog_name("State American Indian Reservations"));
+        assert!(!Layer::State.matches_catalog_name("2026 State Legislative Districts - Upper"));
+    }
+
+    #[test]
+    fn state_codes_normalize_from_usps_or_fips() {
+        let codes: Vec<String> = ["ca", " PA ", "6", "42", "GU", "AA", "California", "123", ""]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        // USPS (any case, island areas included) and 1-2 digit FIPS all reach the GEOID; a
+        // military "state" (AA), a name, and a 3-digit code do not
+        assert_eq!(normalize_codes(&codes, Layer::State), ["06", "42", "66"]);
+        // and no other layer accepts them
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
+            assert!(
+                normalize_codes(&["CA".to_string(), "6".to_string()], other).is_empty(),
+                "{} must not normalize state codes",
+                other.label()
+            );
+        }
+    }
+
+    #[test]
+    fn state_feature_key_follows_the_majority_spelling() {
+        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(state_feature_id_key(&v(&["CA", "PA", "NY"])), "STUSAB");
+        assert_eq!(state_feature_id_key(&v(&["06", "42", "6"])), "GEOID");
+        // one stray value of the other shape cannot flip the column's key
+        assert_eq!(state_feature_id_key(&v(&["CA", "PA", "42"])), "STUSAB");
+        assert_eq!(state_feature_id_key(&v(&["06", "42", "CA"])), "GEOID");
     }
 
     #[test]

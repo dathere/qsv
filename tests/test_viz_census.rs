@@ -2180,3 +2180,67 @@ fn viz_smart_auto_failure_names_columns_not_just_titles() {
         );
     });
 }
+
+// REGRESSION (roborev 4932): the value-shape rule that files a lone state-FIPS column as a state
+// candidate must not claim a COUNTY column that merely contains a placeholder. Distinct values
+// `["0", "1", "42003", "42101"]` are half state-shaped placeholders, but the two real codes resolve
+// as counties and clear the 50% coverage gate on their own, so the column must keep its normal
+// place ahead of the county-name candidate. The two columns name DIFFERENT counties (PA vs MD/MA),
+// so the map shows which one won. Two real codes, not one: a single matched region draws no map,
+// which would hide the ordering entirely.
+#[test]
+#[serial]
+fn viz_smart_county_code_column_with_a_placeholder_is_not_a_state_column() {
+    let wrk = Workdir::new("viz_smart_county_code_column_with_a_placeholder_is_not_a_state_column");
+    wrk.create_from_string(
+        "c.csv",
+        "fips,county,cases\n0,Baltimore County,10\n42003,Hampden County,20\n1,Baltimore \
+         County,30\n42101,Hampden County,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("42003") && z.contains_key("42101") && !z.contains_key("24005"),
+            "the county-code column must keep the map, not the county names: {z:?}"
+        );
+    });
+}

@@ -6794,26 +6794,16 @@ fn resolve_smart_auto_geojson(
     // "A state column" is decided by concept OR by value shape. The shape test matters for an
     // untagged column (a generic `geo.fips` of `42`s) that is the ONLY probe slot: that path skips
     // the probe, so no layer is known and the post-ranking demotion below never sees it — it would
-    // be tried ahead of the county-name and city slots (roborev 4931). The shape test is exact, not
-    // a heuristic: a 1-2 digit or USPS value normalizes for the State layer and for no other
-    // (their width bands are disjoint and no other layer accepts letters), so a column that is
-    // mostly such values can only ever resolve as states.
+    // be tried ahead of the county-name and city slots (roborev 4931). See
+    // `viz_census::is_state_code_column` for why the shape test is exact: it never claims a
+    // column holding a value a finer layer could resolve (roborev 4932).
     let is_state_slot = |slot: usize| -> bool {
         state_layer_ok
             && slot < n_code
             && (matches!(
                 col_sems[candidates[slot]].concept.strip_prefix("geo."),
                 Some("state" | "state_fips")
-            ) || {
-                let values = &codes[slot];
-                !values.is_empty()
-                    && values
-                        .iter()
-                        .filter(|c| crate::cmd::viz_census::is_state_code(c))
-                        .count()
-                        * 2
-                        >= values.len()
-            })
+            ) || crate::cmd::viz_census::is_state_code_column(&codes[slot]))
     };
     let state_slots: Vec<usize> = (0..n_code)
         .filter(|s| is_state_slot(*s) && !is_county_name_slot(*s))

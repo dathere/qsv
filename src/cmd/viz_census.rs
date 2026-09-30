@@ -659,6 +659,39 @@ pub fn is_state_code(raw: &str) -> bool {
     state_geoid_for_code(raw).is_some()
 }
 
+/// Is `values` a column of STATE codes and nothing else a finer layer could claim?
+///
+/// True when at least half of the non-empty values are state codes ([`is_state_code`]) AND no
+/// value normalizes for the county, ZCTA, tract or place layer. The second condition is what makes
+/// the classification exact rather than a heuristic: a mixed column such as `["0", "42003"]` is
+/// half state-shaped, yet its `42003` resolves as a county and can clear the 50% coverage gate on
+/// its own, so it must be ranked as the county candidate it is (roborev 4932). A 1-2 digit or USPS
+/// value normalizes for the State layer and for no other, so a column passing both tests can only
+/// ever resolve as states.
+#[must_use]
+pub fn is_state_code_column(values: &[String]) -> bool {
+    const FINER: [Layer; 4] = [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place];
+    let (mut state_like, mut total) = (0usize, 0usize);
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        total += 1;
+        let one = [value.to_string()];
+        if FINER
+            .iter()
+            .any(|&layer| !normalize_codes(&one, layer).is_empty())
+        {
+            return false;
+        }
+        if is_state_code(value) {
+            state_like += 1;
+        }
+    }
+    total > 0 && state_like * 2 >= total
+}
+
 /// Which States-layer attribute the data's own spelling matches: `STUSAB` for a column of USPS
 /// codes, `GEOID` for FIPS. Decided by majority so a stray value of the other shape (a typo, a
 /// footnote row) cannot flip the key for the whole column.
@@ -1946,6 +1979,18 @@ mod tests {
                 other.label()
             );
         }
+    }
+
+    #[test]
+    fn state_code_column_excludes_anything_a_finer_layer_could_claim() {
+        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert!(is_state_code_column(&v(&["42", "24"])));
+        assert!(is_state_code_column(&v(&["PA", "md", ""])));
+        // a placeholder beside a real county code is a COUNTY column (roborev 4932)
+        assert!(!is_state_code_column(&v(&["0", "42003"])));
+        // a minority of state codes among junk is left to the probe
+        assert!(!is_state_code_column(&v(&["42", "x1", "x2"])));
+        assert!(!is_state_code_column(&v(&[""])));
     }
 
     #[test]

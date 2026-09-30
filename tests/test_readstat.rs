@@ -772,3 +772,222 @@ fn readstat_sentinels_rejection_leaves_output_untouched() {
     wrk.assert_err(&mut cmd);
     assert_eq!(wrk.read_to_string("out.csv").unwrap(), "keep me\n");
 }
+
+// `--compress-numeric` fixture:
+//   readstat_compress.sav - written with pyreadstat 1.3.6, all `double`: `flag`
+//     holds only 0 & 1, `n` whole numbers (one negative), `mix` 1, 2, 2.5 & a
+//     missing, `big` 1e20 then small whole numbers, `empty` only missings.
+
+/// The choice is per column over the whole file, so the output must not
+/// depend on the batch size: upstream's own `compress_numeric` decides per
+/// batch, and at `--batch 1` it prints `mix` as `2` in one row and `2.0` in
+/// another, and 0/1 columns as `true`/`false`.
+#[test]
+fn readstat_compress_numeric() {
+    let wrk = Workdir::new("readstat_compress_numeric");
+    let f = wrk.load_test_file("readstat_compress.sav");
+    // `mix` has a 2.5 & `big` is past 2^53, so both keep their ".0"
+    let expected = vec![
+        svec!["flag", "n", "mix", "big", "empty"],
+        svec!["0", "1", "1.0", "1e+20", ""],
+        svec!["1", "2", "2.0", "2.0", ""],
+        svec!["1", "3", "2.5", "3.0", ""],
+        svec!["0", "-4", "", "4.0", ""],
+    ];
+    for (batch, jobs) in [("0", "1"), ("1", "1"), ("2", "1"), ("1", "4")] {
+        let mut cmd = wrk.command("readstat");
+        cmd.arg("--compress-numeric")
+            .args(["--batch", batch, "--jobs", jobs])
+            .arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "--batch {batch} --jobs {jobs}");
+    }
+}
+
+#[test]
+fn readstat_compress_numeric_formats() {
+    let wrk = Workdir::new("readstat_compress_numeric_formats");
+    let mut expected = expected_rows();
+    for row in expected.iter_mut().skip(1) {
+        for i in [0, 3] {
+            if let Some(whole) = row[i].strip_suffix(".0") {
+                row[i] = whole.to_string();
+            }
+        }
+    }
+    // xpt: its reader garbles projected columns, which pass 1 must avoid
+    for ext in ["sav", "zsav", "dta", "xpt"] {
+        let f = sample(&wrk, ext);
+        let mut cmd = wrk.command("readstat");
+        cmd.arg("--compress-numeric").arg(f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "{ext}");
+    }
+
+    // `.por` is read whole rather than streamed
+    let f = sample(&wrk, "por");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--compress-numeric").arg(f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "Ana", "1.5", "1", "2020-01-31"]);
+    assert_eq!(got[4][2], "0.0");
+}
+
+/// Stata `float` variables are Float32, with their own whole-number limit.
+#[test]
+fn readstat_compress_numeric_stata() {
+    let wrk = Workdir::new("readstat_compress_numeric_stata");
+    let f = wrk.load_test_file("readstat_stata_extmiss.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--compress-numeric").arg(f);
+
+    // `d`, `f` & `l` hold a fraction somewhere, so they keep their ".0"
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "d", "f", "i", "b", "l", "s"],
+        svec!["1", "1.5", "0.5", "10", "1", "1.0", "x"],
+        svec!["2", "", "", "", "2", "", "NaN"],
+        svec!["3", "2.25", "", "30", "", "2.5", "y"],
+        svec!["4", "", "3.0", "", "4", "", "NaN"],
+    ];
+    assert_eq!(got, expected);
+
+    let f = wrk.load_test_file("readstat_stata_float_missing.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--compress-numeric").arg(f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][8], "1");
+}
+
+/// The publishing recipe: sentinels kept in the variable's own column, which
+/// turns it into text. Its numbers must still lose their ".0".
+#[test]
+fn readstat_compress_numeric_sentinels() {
+    let wrk = Workdir::new("readstat_compress_numeric_sentinels");
+    let f = sentinels(&wrk, "sav");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--compress-numeric",
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "income", "rating", "name", "plain"],
+        svec!["1", "1500.5", "3", "Ana", "1"],
+        svec!["2", "99", "8", "NA", "2"],
+        svec!["3", "950", "4", "Cy", "3"],
+        svec!["4", "", "9", "", "4"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--compress-numeric", "--sentinels-as", "value"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "1500.5", "", "3", "", "Ana", "", "1"]);
+    assert_eq!(got[2], svec!["2", "", "99", "", "8", "", "NA", "2"]);
+}
+
+// readstat_stata_numeric_labels.dta - written with pyreadstat 1.3.6: `double`
+// `v` holds 1, .a, 3, .b with .a labeled "001.0" & .b "1.0"; `v`'s labels
+// read as numbers, so embedding them beside its numbers must not rewrite them.
+// `w` holds 1, .a, 2, .a with .a labeled "Refused", and is compressed as usual.
+// `x` is `w` plus the ordinary value 1 labeled "001.0": without --value-labels
+// that label is never written, so it must not stop the compression.
+#[test]
+fn readstat_compress_numeric_keeps_numeric_labels() {
+    let wrk = Workdir::new("readstat_compress_numeric_keeps_numeric_labels");
+    let f = wrk.load_test_file("readstat_stata_numeric_labels.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--compress-numeric",
+        "--sentinels-as",
+        "label",
+        "--sentinels-embedded",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["v", "w", "x"],
+        svec!["1.0", "1", "1"],
+        svec!["001.0", "Refused", "Refused"],
+        svec!["3.0", "2", "2"],
+        svec!["1.0", "Refused", "Refused"],
+    ];
+    assert_eq!(got, expected);
+
+    // in their own <name>_null columns the labels are never at risk
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--compress-numeric", "--sentinels-as", "label"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[2], svec!["", "001.0", "", "Refused", "", "Refused"]);
+    assert_eq!(got[3], svec!["3", "", "2", "", "2", ""]);
+}
+
+#[test]
+fn readstat_compress_numeric_sas() {
+    let wrk = Workdir::new("readstat_compress_numeric_sas");
+    let f = sample(&wrk, "sas7bdat");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--compress-numeric").arg(f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][0], "1948");
+    assert_eq!(got[1][1], "1.2139999866485596");
+
+    // SAS sentinels embedded as text (.C) next to whole-number codes
+    let f = sentinels(&wrk, "sas7bdat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--compress-numeric",
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+    ])
+    .arg(f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", ".C", ".B"]);
+    assert_eq!(got[2], svec!["2", "0.9990987514611332", "31"]);
+}
+
+// readstat_partial_labels.sav - written with pyreadstat 1.3.6: `q` holds 1, 2,
+// 5 & a missing, labeled 1 "yes" & 2 "no"; `r` holds 1, 2.5, 1, 2, labeled 1
+// "one". Under --value-labels both become text, and the reader already writes
+// their unlabeled whole numbers without ".0" - --compress-numeric must agree.
+#[test]
+fn readstat_compress_numeric_value_labels() {
+    let wrk = Workdir::new("readstat_compress_numeric_value_labels");
+    let f = wrk.load_test_file("readstat_partial_labels.sav");
+    let expected = vec![
+        svec!["q", "r"],
+        svec!["yes", "one"],
+        svec!["no", "2.5"],
+        svec!["5", "one"],
+        svec!["", "2"],
+    ];
+    for compress in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        if compress {
+            cmd.arg("--compress-numeric");
+        }
+        cmd.arg("--value-labels").arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "--compress-numeric {compress}");
+    }
+}
+
+#[test]
+fn readstat_compress_numeric_rejects_metadata() {
+    let wrk = Workdir::new("readstat_compress_numeric_rejects_metadata");
+    let f = sample(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--compress-numeric", "--metadata", "json"])
+        .arg(f);
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("not to --metadata"), "{stderr}");
+}

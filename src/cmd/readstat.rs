@@ -58,6 +58,16 @@ readstat options:
                            underlying codes. Stata & SPSS only - SAS keeps its
                            value labels in a separate .sas7bcat catalog, which
                            this command does not read yet.
+    --compress-numeric     Write float variables that only ever hold whole
+                           numbers as integers, without the ".0" (e.g. 3.0
+                           becomes 3). SPSS stores every number as a float, so
+                           this matters most for SPSS files. It is decided per
+                           variable, over the whole file: one value like 2.5
+                           keeps the ".0" on every row of that variable. The
+                           file is read twice - once to check the values.
+                           With sentinel labels embedded, a variable with a
+                           label that reads as a number (e.g. "1.0") keeps its
+                           ".0", so the label is not rewritten.
     --sentinels-as <what>  Keep sentinels instead of writing them as empty
                            cells. Each eligible variable gets a <name>_null
                            column right after it, holding the sentinel of each
@@ -104,7 +114,10 @@ use std::{
     path::Path,
 };
 
-use polars::prelude::{CsvWriter, SerWriter};
+use polars::prelude::{
+    CsvWriter, DataFrame, DataType, IntoSeries, PlSmallStr, PolarsResult, Schema, SerWriter,
+    StringChunked,
+};
 use polars_readstat_rs::{
     InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat, ScanOptions,
     readstat_batch_iter, readstat_metadata_json, readstat_schema,
@@ -118,6 +131,7 @@ struct Args {
     arg_input:               Option<String>,
     flag_metadata:           String,
     flag_value_labels:       bool,
+    flag_compress_numeric:   bool,
     flag_sentinels_as:       String,
     flag_sentinels_embedded: bool,
     flag_sentinels_columns:  Option<String>,
@@ -269,6 +283,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "--sentinels-as applies to the data, not to --metadata. The metadata already lists \
              each variable's missing-value codes."
+        );
+    }
+    if args.flag_compress_numeric && metadata_mode != MetadataMode::None {
+        return fail_incorrectusage_clierror!(
+            "--compress-numeric applies to the data, not to --metadata."
         );
     }
     // before --output is created, so a rejected request leaves it untouched
@@ -481,6 +500,174 @@ fn check_sentinel_columns(
     Ok(())
 }
 
+/// Above these magnitudes a float's spacing is 1 or more, so "whole number"
+/// says nothing about the data: such columns keep their float form.
+const F64_WHOLE_LIMIT: f64 = 9_007_199_254_740_992.0; // 2^53
+const F32_WHOLE_LIMIT: f64 = 16_777_216.0; // 2^24
+
+fn is_whole(v: f64, limit: f64) -> bool {
+    v.is_finite() && v.fract() == 0.0 && v.abs() <= limit
+}
+
+/// Tracks which float columns have held only whole numbers so far.
+struct WholeNumberScan {
+    candidates: Vec<(PlSmallStr, bool)>,
+}
+
+impl WholeNumberScan {
+    fn new(schema: &Schema) -> Self {
+        Self {
+            candidates: schema
+                .iter()
+                .filter(|(_, dt)| dt.is_float())
+                .map(|(name, _)| (name.clone(), true))
+                .collect(),
+        }
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.candidates.iter().map(|(n, _)| n.to_string()).collect()
+    }
+
+    fn update(&mut self, df: &DataFrame) -> PolarsResult<()> {
+        for (name, whole) in &mut self.candidates {
+            if !*whole {
+                continue;
+            }
+            let col = df.column(name)?.as_materialized_series();
+            *whole = match col.dtype() {
+                DataType::Float64 => col
+                    .f64()?
+                    .iter()
+                    .flatten()
+                    .all(|v| is_whole(v, F64_WHOLE_LIMIT)),
+                DataType::Float32 => col
+                    .f32()?
+                    .iter()
+                    .flatten()
+                    .all(|v| is_whole(f64::from(v), F32_WHOLE_LIMIT)),
+                _ => false,
+            };
+        }
+        Ok(())
+    }
+
+    fn columns(self) -> Vec<PlSmallStr> {
+        self.candidates
+            .into_iter()
+            .filter_map(|(name, whole)| whole.then_some(name))
+            .collect()
+    }
+}
+
+/// `--compress-numeric` pass 1: the float columns whose every value, across
+/// the whole file, is a whole number. Upstream's own `compress_numeric` can't
+/// be used: it decides per batch, so one column can print `2` in one batch and
+/// `2.0` in the next, and it turns 0/1 & all-null columns into Booleans.
+///
+/// Sentinel columns are left out of the scan (`informative_nulls: None`), so a
+/// variable that `--sentinels-embedded` turns into text is judged by its
+/// numeric values alone.
+fn whole_number_columns(
+    path: &Path,
+    rs_format: ReadStatFormat,
+    opts: &ScanOptions,
+    batch_size: Option<usize>,
+) -> CliResult<Vec<PlSmallStr>> {
+    let scan_opts = ScanOptions {
+        informative_nulls: None,
+        preserve_order: Some(false),
+        ..opts.clone()
+    };
+    let schema = readstat_schema(path, Some(scan_opts.clone()), Some(rs_format))?;
+    let mut scan = WholeNumberScan::new(&schema);
+    if scan.candidates.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Only the float columns are read, except from XPT files: the XPT reader
+    // (polars-readstat-rs 0.23.2) decodes projected columns from the file's
+    // first columns' offsets (jrothbaum/polars_readstat#64), so it reads them all.
+    let columns = (!matches!(rs_format, ReadStatFormat::SasXpt)).then(|| scan.names());
+    let batches = readstat_batch_iter(
+        path,
+        Some(scan_opts),
+        Some(rs_format),
+        columns,
+        None,
+        batch_size,
+    )?;
+    for batch in batches {
+        scan.update(&batch?)?;
+    }
+    Ok(scan.columns())
+}
+
+/// `--compress-numeric` pass 2: write the `whole` columns without their ".0".
+/// A float column becomes Int64 (exact, as pass 1 bounded its values). A column
+/// `--sentinels-embedded` turned into text has each number rewritten in place,
+/// leaving its sentinels alone.
+fn drop_whole_number_fraction(df: &mut DataFrame, whole: &[PlSmallStr]) -> PolarsResult<()> {
+    for name in whole {
+        let Ok(col) = df.column(name) else {
+            continue;
+        };
+        let col = col.as_materialized_series();
+        let fixed = match col.dtype() {
+            dt if dt.is_float() => col.cast(&DataType::Int64)?,
+            DataType::String => col
+                .str()?
+                .iter()
+                .map(|v| v.map(|s| whole_number_text(s).unwrap_or_else(|| s.to_string())))
+                .collect::<StringChunked>()
+                .with_name(name.clone())
+                .into_series(),
+            _ => continue,
+        };
+        df.replace(name, fixed.into())?;
+    }
+    Ok(())
+}
+
+/// The integer text of `s` if it reads as a whole number, e.g. "3.0" -> "3".
+fn whole_number_text(s: &str) -> Option<String> {
+    match s.parse::<f64>() {
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(n) if is_whole(n, F64_WHOLE_LIMIT) => Some((n as i64).to_string()),
+        _ => None,
+    }
+}
+
+/// Under `--sentinels-as label --sentinels-embedded` a variable's text column
+/// mixes its numbers with its sentinels' labels, and nothing tells them apart.
+/// The variables with a label that the ".0" rewrite would change (e.g.
+/// "001.0") are returned, so they keep their ".0" rather than lose the label.
+fn numeric_label_variables(path: &Path, rs_format: ReadStatFormat) -> CliResult<Vec<String>> {
+    let meta = readstat_metadata_json(path, Some(rs_format)).map_err(|e| {
+        crate::CliError::Other(format!(
+            "Could not read the metadata of \"{}\": {e}",
+            path.display()
+        ))
+    })?;
+    let meta: serde_json::Value = serde_json::from_str(&meta)?;
+    Ok(meta["variables"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| {
+            // only sentinel labels are embedded; the metadata keys them as
+            // MISSING_a..MISSING_z, ordinary values by their code
+            v["value_labels"].as_object().is_some_and(|labels| {
+                labels
+                    .iter()
+                    .filter(|(code, _)| code.starts_with("MISSING_"))
+                    .filter_map(|(_, label)| label.as_str())
+                    .any(|l| whole_number_text(l).is_some_and(|t| t != l))
+            })
+        })
+        .filter_map(|v| v["name"].as_str().map(str::to_string))
+        .collect())
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
@@ -502,6 +689,9 @@ fn write_data<W: Write>(
     // chunk-interleaving path that is ordered only when `preserve_order` makes
     // it buffer chunks back into sequence. Defaulting to one thread therefore
     // also keeps memory flat; `--jobs` trades that for speed, still ordered.
+    let embedded_labels = sentinels
+        .as_ref()
+        .is_some_and(|s| s.use_value_labels && matches!(s.mode, InformativeNullMode::MergedString));
     let opts = ScanOptions {
         threads: Some(args.flag_jobs.unwrap_or(1).max(1)),
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
@@ -516,7 +706,8 @@ fn write_data<W: Write>(
     // dictionary rather than from the first batch - that way the header is
     // written exactly once even when the file has no rows at all.
     let rs_format = format.readstat_format();
-    let (schema, por_df) = if let Some(rs_format) = rs_format {
+    let batch_size = (args.flag_batch > 0).then_some(args.flag_batch);
+    let (mut schema, por_df) = if let Some(rs_format) = rs_format {
         (
             readstat_schema(path, Some(opts.clone()), Some(rs_format))?,
             None,
@@ -525,6 +716,32 @@ fn write_data<W: Write>(
         let df = polars_readstat_rs::scan_por(path, opts.clone())?.collect()?;
         (df.schema().clone(), Some(df))
     };
+
+    let mut whole = if !args.flag_compress_numeric {
+        Vec::new()
+    } else if let Some(rs_format) = rs_format {
+        whole_number_columns(path, rs_format, &opts, batch_size)?
+    } else if let Some(df) = &por_df {
+        let mut whole = WholeNumberScan::new(df.schema());
+        whole.update(df)?;
+        whole.columns()
+    } else {
+        Vec::new()
+    };
+    if let Some(rs_format) = rs_format
+        && embedded_labels
+        && !whole.is_empty()
+    {
+        let risky = numeric_label_variables(path, rs_format)?;
+        whole.retain(|name| {
+            schema.get(name) != Some(&DataType::String) || !risky.iter().any(|r| r == name.as_str())
+        });
+    }
+    for name in &whole {
+        if schema.get(name).is_some_and(DataType::is_float) {
+            std::sync::Arc::make_mut(&mut schema).set_dtype(name, DataType::Int64);
+        }
+    }
 
     let mut wtr = CsvWriter::new(w)
         .include_header(true)
@@ -535,22 +752,18 @@ fn write_data<W: Write>(
 
     let mut rows = 0_u64;
     if let Some(rs_format) = rs_format {
-        let batches = readstat_batch_iter(
-            path,
-            Some(opts),
-            Some(rs_format),
-            None,
-            None,
-            (args.flag_batch > 0).then_some(args.flag_batch),
-        )?;
+        let batches =
+            readstat_batch_iter(path, Some(opts), Some(rs_format), None, None, batch_size)?;
         for batch in batches {
             let mut df = batch?;
+            drop_whole_number_fraction(&mut df, &whole)?;
             rows += df.height() as u64;
             // write_batch panics on unaligned chunks
             df.align_chunks();
             wtr.write_batch(&df)?;
         }
     } else if let Some(mut df) = por_df {
+        drop_whole_number_fraction(&mut df, &whole)?;
         rows += df.height() as u64;
         df.align_chunks();
         wtr.write_batch(&df)?;

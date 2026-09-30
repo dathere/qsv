@@ -21,6 +21,11 @@
         "default": 50000
       },
       {
+        "flag": "--compress-numeric",
+        "type": "flag",
+        "description": "Write float variables that only ever hold whole numbers as integers, without the \".0\" (e.g. 3.0 becomes 3). SPSS stores every number as a float, so this matters most for SPSS files. It is decided per variable, over the whole file: one value like 2.5 keeps the \".0\" on every row of that variable. The file is read twice - once to check the values. With sentinel labels embedded, a variable with a label that reads as a number (e.g. \"1.0\") keeps its \".0\", so the label is not rewritten."
+      },
+      {
         "flag": "--delimiter",
         "type": "string",
         "description": "The delimiter to use when writing CSV data. Must be a single character.",

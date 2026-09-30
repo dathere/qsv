@@ -455,7 +455,8 @@ fn viz_smart_geojson_auto_geocode_city_column_resolves() {
     let wrk = Workdir::new("viz_smart_geojson_auto_geocode_city_column_resolves");
     wrk.create_from_string(
         "cities.csv",
-        "city,cases\nPittsburgh,10\nPittsburgh,20\nPhiladelphia,30\nPhiladelphia,40\n",
+        "city,cases\nPittsburgh,10\nPittsburgh,20\nPhiladelphia,30\nPhiladelphia,40\nPhiladelphia,\
+         50\n",
     );
     wrk.create_from_string("dict.schema.json", CITY_DICT);
     let cache_dir = build_mini_geocode_index(&wrk);
@@ -501,7 +502,7 @@ fn viz_smart_geojson_auto_geocode_code_column_beats_city() {
     wrk.create_from_string(
         "mixed.csv",
         "fips,city,cases\n42003,Pittsburgh,10\n42003,Pittsburgh,20\n42101,Philadelphia,30\n42101,\
-         Philadelphia,40\n",
+         Philadelphia,40\n42101,Philadelphia,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",
@@ -551,7 +552,7 @@ fn viz_smart_geojson_auto_geocode_falls_through_to_city() {
     wrk.create_from_string(
         "mixed.csv",
         "decoy,city,cases\n99998,Pittsburgh,10\n99998,Pittsburgh,20\n99999,Philadelphia,30\n99999,\
-         Philadelphia,40\n",
+         Philadelphia,40\n99999,Philadelphia,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",

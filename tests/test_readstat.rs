@@ -892,6 +892,41 @@ fn readstat_compress_numeric_sentinels() {
     assert_eq!(got[2], svec!["2", "", "99", "", "8", "", "NA", "2"]);
 }
 
+// readstat_stata_numeric_labels.dta - written with pyreadstat 1.3.6: `double`
+// `v` holds 1, .a, 3, .b with .a labeled "001.0" & .b "1.0"; `v`'s labels
+// read as numbers, so embedding them beside its numbers must not rewrite them.
+// `w` holds 1, .a, 2, .a with .a labeled "Refused", and is compressed as usual.
+#[test]
+fn readstat_compress_numeric_keeps_numeric_labels() {
+    let wrk = Workdir::new("readstat_compress_numeric_keeps_numeric_labels");
+    let f = wrk.load_test_file("readstat_stata_numeric_labels.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--compress-numeric",
+        "--sentinels-as",
+        "label",
+        "--sentinels-embedded",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["v", "w"],
+        svec!["1.0", "1"],
+        svec!["001.0", "Refused"],
+        svec!["3.0", "2"],
+        svec!["1.0", "Refused"],
+    ];
+    assert_eq!(got, expected);
+
+    // in their own <name>_null columns the labels are never at risk
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--compress-numeric", "--sentinels-as", "label"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[2], svec!["", "001.0", "", "Refused"]);
+    assert_eq!(got[3], svec!["3", "", "2", ""]);
+}
+
 #[test]
 fn readstat_compress_numeric_sas() {
     let wrk = Workdir::new("readstat_compress_numeric_sas");

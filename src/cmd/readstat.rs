@@ -65,6 +65,9 @@ readstat options:
                            variable, over the whole file: one value like 2.5
                            keeps the ".0" on every row of that variable. The
                            file is read twice - once to check the values.
+                           With sentinel labels embedded, a variable with a
+                           label that reads as a number (e.g. "1.0") keeps its
+                           ".0", so the label is not rewritten.
     --sentinels-as <what>  Keep sentinels instead of writing them as empty
                            cells. Each eligible variable gets a <name>_null
                            column right after it, holding the sentinel of each
@@ -614,13 +617,7 @@ fn drop_whole_number_fraction(df: &mut DataFrame, whole: &[PlSmallStr]) -> Polar
             DataType::String => col
                 .str()?
                 .iter()
-                .map(|v| {
-                    v.map(|s| match s.parse::<f64>() {
-                        #[allow(clippy::cast_possible_truncation)]
-                        Ok(n) if is_whole(n, F64_WHOLE_LIMIT) => (n as i64).to_string(),
-                        _ => s.to_string(),
-                    })
-                })
+                .map(|v| v.map(|s| whole_number_text(s).unwrap_or_else(|| s.to_string())))
                 .collect::<StringChunked>()
                 .with_name(name.clone())
                 .into_series(),
@@ -629,6 +626,43 @@ fn drop_whole_number_fraction(df: &mut DataFrame, whole: &[PlSmallStr]) -> Polar
         df.replace(name, fixed.into())?;
     }
     Ok(())
+}
+
+/// The integer text of `s` if it reads as a whole number, e.g. "3.0" -> "3".
+fn whole_number_text(s: &str) -> Option<String> {
+    match s.parse::<f64>() {
+        #[allow(clippy::cast_possible_truncation)]
+        Ok(n) if is_whole(n, F64_WHOLE_LIMIT) => Some((n as i64).to_string()),
+        _ => None,
+    }
+}
+
+/// Under `--sentinels-as label --sentinels-embedded` a variable's text column
+/// mixes its numbers with its sentinels' labels, and nothing tells them apart.
+/// The variables with a label that the ".0" rewrite would change (e.g.
+/// "001.0") are returned, so they keep their ".0" rather than lose the label.
+fn numeric_label_variables(path: &Path, rs_format: ReadStatFormat) -> CliResult<Vec<String>> {
+    let meta = readstat_metadata_json(path, Some(rs_format)).map_err(|e| {
+        crate::CliError::Other(format!(
+            "Could not read the metadata of \"{}\": {e}",
+            path.display()
+        ))
+    })?;
+    let meta: serde_json::Value = serde_json::from_str(&meta)?;
+    Ok(meta["variables"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|v| {
+            v["value_labels"].as_object().is_some_and(|labels| {
+                labels
+                    .values()
+                    .filter_map(serde_json::Value::as_str)
+                    .any(|l| whole_number_text(l).is_some_and(|t| t != l))
+            })
+        })
+        .filter_map(|v| v["name"].as_str().map(str::to_string))
+        .collect())
 }
 
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
@@ -652,6 +686,9 @@ fn write_data<W: Write>(
     // chunk-interleaving path that is ordered only when `preserve_order` makes
     // it buffer chunks back into sequence. Defaulting to one thread therefore
     // also keeps memory flat; `--jobs` trades that for speed, still ordered.
+    let embedded_labels = sentinels
+        .as_ref()
+        .is_some_and(|s| s.use_value_labels && matches!(s.mode, InformativeNullMode::MergedString));
     let opts = ScanOptions {
         threads: Some(args.flag_jobs.unwrap_or(1).max(1)),
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
@@ -677,7 +714,7 @@ fn write_data<W: Write>(
         (df.schema().clone(), Some(df))
     };
 
-    let whole = if !args.flag_compress_numeric {
+    let mut whole = if !args.flag_compress_numeric {
         Vec::new()
     } else if let Some(rs_format) = rs_format {
         whole_number_columns(path, rs_format, &opts, batch_size)?
@@ -688,6 +725,15 @@ fn write_data<W: Write>(
     } else {
         Vec::new()
     };
+    if let Some(rs_format) = rs_format
+        && embedded_labels
+        && !whole.is_empty()
+    {
+        let risky = numeric_label_variables(path, rs_format)?;
+        whole.retain(|name| {
+            schema.get(name) != Some(&DataType::String) || !risky.iter().any(|r| r == name.as_str())
+        });
+    }
     for name in &whole {
         if schema.get(name).is_some_and(DataType::is_float) {
             std::sync::Arc::make_mut(&mut schema).set_dtype(name, DataType::Int64);

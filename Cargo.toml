@@ -298,7 +298,7 @@ object_store = { version = "0.14", default-features = false, features = [
 odht = "0.3"
 # opener: open the generated chart/Data Schematic in the OS default app (browser for
 # HTML, image viewer for PNG/SVG/...) for `qsv viz --open`. See the `viz` feature.
-opener = { version = "0.8", optional = true }
+opener = { version = "0.9", optional = true }
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
 ort = { version = "2.0.0-rc.12", default-features = false, features = [
     "download-binaries",

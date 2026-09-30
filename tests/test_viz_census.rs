@@ -2244,3 +2244,77 @@ fn viz_smart_county_code_column_with_a_placeholder_is_not_a_state_column() {
         );
     });
 }
+
+// REGRESSION (roborev 4933): a lone code column skipped the probe, so no layer was known and a
+// column that resolves only as STATES was tried ahead of county names whenever the value-shape
+// rule could not classify it - here a state-FIPS column carrying a finer-shaped placeholder
+// (`99999` could be a county or a ZCTA). With a county-name slot queued behind it, the lone column
+// must be probed and, resolving best as States, tried last.
+#[test]
+#[serial]
+fn viz_smart_lone_mixed_state_column_is_probed_and_tried_last() {
+    let wrk = Workdir::new("viz_smart_lone_mixed_state_column_is_probed_and_tried_last");
+    wrk.create_from_string(
+        "c.csv",
+        "stfp,county,cases\n42,Baltimore County,10\n24,Baltimore city,20\n99999,Baltimore \
+         County,30\n24,Baltimore city,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stfp": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("24005") && z.contains_key("24510"),
+            "the county names must keep the map: {z:?}"
+        );
+        let state_fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert!(
+            state_fetches.is_empty(),
+            "state boundaries must not be fetched while county names resolve: {state_fetches:?}"
+        );
+    });
+}

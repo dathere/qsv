@@ -6813,7 +6813,16 @@ fn resolve_smart_auto_geojson(
         .collect();
 
     // (finer slots, slots whose best layer is State) - the second list is tried after the cities
-    let (ranked, ranked_state): (Vec<usize>, Vec<usize>) = if probe_slots.len() == 1 {
+    // A lone code slot skips the probe only when nothing is queued behind it: then its layer
+    // decides no ordering, and the common single-column case stays at zero extra requests. With a
+    // county-name or city slot waiting, it IS probed, so a lone column that resolves best as
+    // States is demoted behind them like any ranked State winner. Classifying such a column by
+    // value shape alone cannot be complete: a state column carrying a finer-shaped placeholder
+    // (`["42", "24", "99999"]`) looks mixed, yet resolves only as states (roborev 4933).
+    let nothing_queued_behind = name_slots.is_empty() && n_code == candidates.len();
+    let (ranked, ranked_state): (Vec<usize>, Vec<usize>) = if probe_slots.len() == 1
+        && nothing_queued_behind
+    {
         (vec![probe_slots[0]], Vec::new())
     } else if probe_slots.is_empty() {
         (Vec::new(), Vec::new())

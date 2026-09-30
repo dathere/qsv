@@ -13,9 +13,9 @@ Supported input formats:
 Coded values are written as their underlying codes, not their labels, so the
 conversion is lossless. Use --value-labels to decode them instead.
 
-User-defined missing values ("sentinels") - SAS's .A to .Z & ._, SPSS's
-declared missing codes - become empty cells by default, like any other missing
-value. Use --sentinels-as to keep them.
+User-defined missing values ("sentinels") - SAS's .A to .Z & ._, Stata's .a
+to .z, SPSS's declared missing codes - become empty cells by default, like any
+other missing value. Use --sentinels-as to keep them.
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
@@ -70,16 +70,16 @@ readstat options:
                            .sas7bcat catalog. SPSS takes its sentinel labels
                            from the value labels, so for SPSS, label requires
                            the --value-labels option & value rules it out.
-                           Not supported yet for Stata files, nor for .xpt &
-                           .por files. Tracking sentinels makes SAS files read
-                           on a single thread, so --jobs has no effect on them.
+                           Not supported for .xpt & .por files. Tracking
+                           sentinels makes SAS & Stata files read on a single
+                           thread, so --jobs has no effect on them.
     --sentinels-embedded   Write each sentinel into its variable's own column
                            instead of a <name>_null column. Those columns then
                            mix numbers & sentinels. Requires --sentinels-as.
     --sentinels-columns <list>  Comma-separated variables to keep sentinels
                            for. Requires --sentinels-as. By default, every
-                           eligible variable: the numeric ones for SAS, those
-                           with declared missing values for SPSS.
+                           eligible variable: the numeric ones for SAS &
+                           Stata, those with declared missing values for SPSS.
     -j, --jobs <arg>       Number of reader threads. [default: 1]
                            Raising it speeds up large uncompressed files at the
                            cost of memory, as out-of-order chunks have to be
@@ -99,17 +99,12 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
     fs::File,
     io::{self, Write},
     path::Path,
 };
 
-use bitvec::vec::BitVec;
-use polars::prelude::{
-    CsvWriter, DataFrame, DataType, Float32Chunked, Float64Chunked, IntoSeries, PlSmallStr,
-    PolarsResult, SerWriter, StringChunked,
-};
+use polars::prelude::{CsvWriter, SerWriter};
 use polars_readstat_rs::{
     InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat, ScanOptions,
     readstat_batch_iter, readstat_metadata_json, readstat_schema,
@@ -178,10 +173,9 @@ impl Format {
     }
 
     /// True for the formats whose readers report user-defined missing values.
-    /// The XPT & POR readers accept the option and silently ignore it; the
-    /// Stata reader drops some sentinels (see `sentinel_opts`).
+    /// The XPT & POR readers accept the option and silently ignore it.
     const fn honors_sentinels(self) -> bool {
-        matches!(self, Self::Sas | Self::Spss)
+        matches!(self, Self::Sas | Self::Stata | Self::Spss)
     }
 }
 
@@ -335,15 +329,6 @@ fn sentinel_opts(
         return Ok(None);
     }
 
-    // The Stata reader drops the sentinels of float & double variables (its
-    // extended-missing offsets use the wrong bit step) and the labels of .a-.z,
-    // so it would exit 0 having silently lost most of them.
-    if format == Format::Stata {
-        return fail_incorrectusage_clierror!(
-            "--sentinels-as is not supported for Stata files yet: the reader loses the sentinels \
-             of float & double variables."
-        );
-    }
     let rs_format = match format.readstat_format() {
         Some(rs_format) if format.honors_sentinels() => rs_format,
         _ => {
@@ -428,10 +413,10 @@ fn sentinel_opts(
         return Err(e.into());
     }
 
-    if args.flag_jobs.unwrap_or(1) > 1 && format == Format::Sas {
+    if args.flag_jobs.unwrap_or(1) > 1 && matches!(format, Format::Sas | Format::Stata) {
         wwarn!(
-            "--jobs has no effect with --sentinels-as on SAS files: tracking sentinels reads them \
-             on a single thread."
+            "--jobs has no effect with --sentinels-as on SAS & Stata files: tracking sentinels \
+             reads them on a single thread."
         );
     }
 
@@ -496,161 +481,6 @@ fn check_sentinel_columns(
     Ok(())
 }
 
-/// Upstream returns Stata `.a`-`.z` in `float`/`double` variables as a NaN
-/// *value* instead of a null (#4627), so they would print as `NaN` while the
-/// same missing in an integer variable prints empty. Stata has no NaN of its
-/// own - every bit pattern above the largest valid value is a missing - so
-/// nulling NaN here loses nothing.
-///
-/// Under `--value-labels` a labeled float variable arrives already stringified,
-/// its NaN rendered as the text `"NaN"`; `labeled.cols` names those columns.
-/// Where a value label is itself spelled "NaN" that text is ambiguous, so
-/// those columns null exactly the rows flagged in `labeled.raw_nan` instead.
-/// `offset` is the row number of the batch's first row.
-fn stata_nan_to_null(
-    df: &mut DataFrame,
-    labeled: &StataLabeledFloats,
-    offset: u64,
-) -> PolarsResult<()> {
-    let names: Vec<PlSmallStr> = df
-        .columns()
-        .iter()
-        .filter(|c| c.dtype().is_float() || labeled.cols.contains(c.name()))
-        .map(|c| c.name().clone())
-        .collect();
-    for name in names {
-        let col = df.column(&name)?.as_materialized_series();
-        let fixed = match col.dtype() {
-            DataType::Float64 => {
-                let ca = col.f64()?;
-                if !ca.iter().any(|v| v.is_some_and(f64::is_nan)) {
-                    continue;
-                }
-                ca.iter()
-                    .map(|v| v.filter(|x| !x.is_nan()))
-                    .collect::<Float64Chunked>()
-                    .with_name(name.clone())
-                    .into_series()
-            },
-            DataType::Float32 => {
-                let ca = col.f32()?;
-                if !ca.iter().any(|v| v.is_some_and(f32::is_nan)) {
-                    continue;
-                }
-                ca.iter()
-                    .map(|v| v.filter(|x| !x.is_nan()))
-                    .collect::<Float32Chunked>()
-                    .with_name(name.clone())
-                    .into_series()
-            },
-            DataType::String => {
-                let ca = col.str()?;
-                let fixed: StringChunked = if let Some(raw_nan) = labeled.raw_nan.get(&name) {
-                    let start = (offset as usize).min(raw_nan.len());
-                    let end = (start + ca.len()).min(raw_nan.len());
-                    let raw_nan = &raw_nan[start..end];
-                    if raw_nan.not_any() {
-                        continue;
-                    }
-                    ca.iter()
-                        .zip(raw_nan.iter().by_vals().chain(std::iter::repeat(false)))
-                        .map(|(v, nan)| v.filter(|_| !nan))
-                        .collect()
-                } else {
-                    if !ca.iter().any(|v| v == Some("NaN")) {
-                        continue;
-                    }
-                    ca.iter().map(|v| v.filter(|s| *s != "NaN")).collect()
-                };
-                fixed.with_name(name.clone()).into_series()
-            },
-            _ => continue,
-        };
-        df.replace(&name, fixed.into())?;
-    }
-    Ok(())
-}
-
-/// Stata float variables that `--value-labels` turned into strings.
-#[derive(Default)]
-struct StataLabeledFloats {
-    cols:    Vec<PlSmallStr>,
-    /// One bit per row, set where the raw value is NaN, for the columns that
-    /// have a value label spelled "NaN".
-    raw_nan: HashMap<PlSmallStr, BitVec>,
-}
-
-impl StataLabeledFloats {
-    fn new(
-        path: &Path,
-        opts: &ScanOptions,
-        rs_format: ReadStatFormat,
-        labeled_schema: &polars::prelude::Schema,
-        batch_size: Option<usize>,
-    ) -> CliResult<Self> {
-        let raw_opts = ScanOptions {
-            value_labels_as_strings: Some(false),
-            ..opts.clone()
-        };
-        let cols: Vec<PlSmallStr> = readstat_schema(path, Some(raw_opts.clone()), Some(rs_format))?
-            .iter()
-            .filter(|(name, dt)| {
-                dt.is_float() && labeled_schema.get(name.as_str()) == Some(&DataType::String)
-            })
-            .map(|(name, _)| name.clone())
-            .collect();
-        if cols.is_empty() {
-            return Ok(Self::default());
-        }
-
-        let meta = readstat_metadata_json(path, Some(rs_format)).map_err(|e| {
-            crate::CliError::Other(format!(
-                "Could not read the metadata of \"{}\": {e}",
-                path.display()
-            ))
-        })?;
-        let meta: serde_json::Value = serde_json::from_str(&meta)?;
-        let ambiguous: Vec<PlSmallStr> = meta["variables"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|v| {
-                v["value_labels"]
-                    .as_object()
-                    .is_some_and(|labels| labels.values().any(|l| l == "NaN"))
-            })
-            .filter_map(|v| v["name"].as_str())
-            .filter_map(|name| cols.iter().find(|c| c.as_str() == name).cloned())
-            .collect();
-
-        let mut raw_nan: HashMap<PlSmallStr, BitVec> = ambiguous
-            .iter()
-            .map(|c| (c.clone(), BitVec::new()))
-            .collect();
-        if !ambiguous.is_empty() {
-            let batches = readstat_batch_iter(
-                path,
-                Some(raw_opts),
-                Some(rs_format),
-                Some(ambiguous.iter().map(ToString::to_string).collect()),
-                None,
-                batch_size,
-            )?;
-            for batch in batches {
-                let df = batch?;
-                for (name, bits) in &mut raw_nan {
-                    let col = df
-                        .column(name)?
-                        .as_materialized_series()
-                        .cast(&DataType::Float64)?;
-                    bits.extend(col.f64()?.iter().map(|v| v.is_some_and(f64::is_nan)));
-                }
-            }
-        }
-        Ok(Self { cols, raw_nan })
-    }
-}
-
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
@@ -696,21 +526,6 @@ fn write_data<W: Write>(
         (df.schema().clone(), Some(df))
     };
 
-    // Labeled float variables that `--value-labels` turned into strings: their
-    // extended missings arrive as the text "NaN" (see `stata_nan_to_null`).
-    let stata_labeled_floats = match rs_format {
-        Some(rs_format) if format == Format::Stata && args.flag_value_labels => {
-            StataLabeledFloats::new(
-                path,
-                &opts,
-                rs_format,
-                &schema,
-                (args.flag_batch > 0).then_some(args.flag_batch),
-            )?
-        },
-        _ => StataLabeledFloats::default(),
-    };
-
     let mut wtr = CsvWriter::new(w)
         .include_header(true)
         .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
@@ -730,9 +545,6 @@ fn write_data<W: Write>(
         )?;
         for batch in batches {
             let mut df = batch?;
-            if format == Format::Stata {
-                stata_nan_to_null(&mut df, &stata_labeled_floats, rows)?;
-            }
             rows += df.height() as u64;
             // write_batch panics on unaligned chunks
             df.align_chunks();

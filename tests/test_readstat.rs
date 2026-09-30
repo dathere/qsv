@@ -58,9 +58,9 @@ fn readstat_stata_dta() {
 }
 
 // Stata extended missings (`.a`-`.z`) must render empty whatever the storage
-// type (#4627). Upstream returns them as NaN in `float`/`double` variables but
-// as null in integer ones, so without the fix `d`, `f` & `l` below print `NaN`
-// while `i` & `b` print empty.
+// type (#4627). polars-readstat-rs before 0.23.2 returned them as NaN in
+// `float`/`double` variables but as null in integer ones, so `d`, `f` & `l`
+// below printed `NaN` while `i` & `b` printed empty.
 //   readstat_stata_extmiss.dta - written with pyreadstat 1.3.6: `id`, `d`, `f`,
 //     `l` are `double`, `i`, `b` are `long`, `s` is a string holding the text
 //     "NaN"; `.a`/`.b`/`.c`/`.z` scattered through; `l` labels 1 as "low".
@@ -84,9 +84,9 @@ fn readstat_stata_extended_missing_is_empty() {
     assert_eq!(got, expected);
 }
 
-// With `--value-labels` the labeled `double` `l` reaches us already turned into
-// strings, its `.a`/`.z` as the text "NaN". The string variable `s` genuinely
-// holds "NaN" and must keep it.
+// With `--value-labels` the labeled `double` `l` is turned into strings, and
+// its `.a`/`.z` used to come out as the text "NaN". The string variable `s`
+// genuinely holds "NaN" and must keep it.
 #[test]
 fn readstat_stata_extended_missing_is_empty_value_labels() {
     let wrk = Workdir::new("readstat_stata_extended_missing_is_empty_value_labels");
@@ -105,9 +105,9 @@ fn readstat_stata_extended_missing_is_empty_value_labels() {
     assert_eq!(got, expected);
 }
 
-// A value label may itself be spelled "NaN", making the stringified text
-// ambiguous: `l` labels 1 as "NaN" and holds `.a`/`.z` in rows 2 & 4, so only
-// those rows may be emptied. `m` has no such label and takes the text path.
+// A value label may itself be spelled "NaN": `l` labels 1 as "NaN" and holds
+// `.a`/`.z` in rows 2 & 4, so only those rows may be empty - a missing must not
+// be confused with the label text. `m` has no such label.
 //   readstat_stata_nan_label.dta - written with pyreadstat 1.3.6: `id`, `l`,
 //     `m` are `double`; `l` labels 1 "NaN", 2 "two"; `m` labels 1 "one".
 #[test]
@@ -358,6 +358,8 @@ fn readstat_rejects_bad_metadata_format() {
 //     declares "NA", and `plain` declares nothing.
 //   readstat_sentinels_collide.sav - `income` declares 99, and the file already
 //     has an `income_null` variable.
+//   readstat_sentinels_collide.dta - written with pyreadstat: `double`
+//     variables `x` & `x_null`.
 //   readstat_sentinels.sas7bdat - info_nulls_test_data.sas7bdat from
 //     polars_readstat (Apache-2.0): 2000 rows of x, y, z with .A-.Z & ._ in y & z.
 
@@ -525,14 +527,128 @@ fn readstat_sentinels_sas_embedded_subset() {
 }
 
 #[test]
-fn readstat_sentinels_sas_jobs_warns() {
-    let wrk = Workdir::new("readstat_sentinels_sas_jobs_warns");
-    let f = sentinels(&wrk, "sas7bdat");
-    let mut cmd = wrk.command("readstat");
-    cmd.args(["--sentinels-as", "value", "--jobs", "4"]).arg(f);
+fn readstat_sentinels_jobs_warns() {
+    let wrk = Workdir::new("readstat_sentinels_jobs_warns");
+    // SAS & Stata read serially when tracking sentinels; SPSS does not
+    let files = [
+        (sentinels(&wrk, "sas7bdat"), true),
+        (wrk.load_test_file("readstat_stata_extmiss.dta"), true),
+        (sentinels(&wrk, "sav"), false),
+    ];
+    for (f, warns) in files {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sentinels-as", "value", "--jobs", "4"]).arg(&f);
+        let stderr = wrk.stderr_on_success(&mut cmd);
+        assert_eq!(
+            stderr.contains("--jobs has no effect"),
+            warns,
+            "{f}: {stderr}"
+        );
+    }
+}
 
-    let stderr = wrk.stderr_on_success(&mut cmd);
-    assert!(stderr.contains("--jobs has no effect"), "{stderr}");
+// Stata sentinels need polars-readstat-rs 0.23.2: before it, the `float` &
+// `double` ones were lost (wrong bit step between `.a`-`.z`) and the labels of
+// `.a`-`.z` dropped. `readstat_stata_extmiss.dta` mixes `double` (`d`, `f`,
+// `l`) & `long` (`i`, `b`) variables, so both storage paths are checked; the
+// string `s` cannot hold a sentinel and gets no column.
+#[test]
+fn readstat_sentinels_stata_value() {
+    let wrk = Workdir::new("readstat_sentinels_stata_value");
+    let f = wrk.load_test_file("readstat_stata_extmiss.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value"]).arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "id", "id_null", "d", "d_null", "f", "f_null", "i", "i_null", "b", "b_null", "l",
+            "l_null", "s"
+        ],
+        svec![
+            "1.0", "", "1.5", "", "0.5", "", "10", "", "1", "", "1.0", "", "x"
+        ],
+        svec![
+            "2.0", "", "", ".a", "", ".b", "", ".a", "2", "", "", ".a", "NaN"
+        ],
+        svec![
+            "3.0", "", "2.25", "", "", ".z", "30", "", "", ".c", "2.5", "", "y"
+        ],
+        svec![
+            "4.0", "", "", ".z", "3.0", "", "", ".z", "4", "", "", ".z", "NaN"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+// `readstat_stata_float_missing.dta` labels var1's `.a` "missing"; the other
+// sentinels are unlabeled, so they fall back to their codes. Unlike SPSS,
+// Stata's sentinel labels do not depend on --value-labels.
+#[test]
+fn readstat_sentinels_stata_label() {
+    let wrk = Workdir::new("readstat_sentinels_stata_label");
+    let f = wrk.load_test_file("readstat_stata_float_missing.dta");
+    let expected = vec![
+        svec![
+            "var1",
+            "var1_null",
+            "var2",
+            "var2_null",
+            "var3",
+            "var3_null",
+            "var4",
+            "var4_null",
+            "var5",
+            "var5_null",
+            "var6",
+            "var6_null",
+            "var7",
+            "var7_null",
+            "var8",
+            "var8_null",
+            "var9",
+            "var9_null"
+        ],
+        svec![
+            "", "missing", "", ".b", "", ".c", "", ".x", "", ".y", "", ".z", "", "", "", "", "1.0",
+            ""
+        ],
+    ];
+    for value_labels in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        if value_labels {
+            cmd.arg("--value-labels");
+        }
+        cmd.args(["--sentinels-as", "label"]).arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "--value-labels {value_labels}");
+    }
+}
+
+#[test]
+fn readstat_sentinels_stata_embedded_subset() {
+    let wrk = Workdir::new("readstat_sentinels_stata_embedded_subset");
+    let f = wrk.load_test_file("readstat_stata_extmiss.dta");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+        "--sentinels-columns",
+        "f,i",
+    ])
+    .arg(f);
+
+    // only `f` & `i` keep their sentinels; `d`, `b` & `l` stay empty
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "d", "f", "i", "b", "l", "s"],
+        svec!["1.0", "1.5", "0.5", "10", "1", "1.0", "x"],
+        svec!["2.0", "", ".b", ".a", "2", "", "NaN"],
+        svec!["3.0", "2.25", ".z", "30", "", "2.5", "y"],
+        svec!["4.0", "", "3.0", ".z", "4", "", "NaN"],
+    ];
+    assert_eq!(got, expected);
 }
 
 /// Every request the readers would silently get wrong is refused up front.
@@ -542,6 +658,7 @@ fn readstat_sentinels_rejections() {
     let sav = sentinels(&wrk, "sav");
     let sas = sentinels(&wrk, "sas7bdat");
     let collide = wrk.load_test_file("readstat_sentinels_collide.sav");
+    let collide_dta = wrk.load_test_file("readstat_sentinels_collide.dta");
     let dta = sample(&wrk, "dta");
     let xpt = sample(&wrk, "xpt");
     let por = sample(&wrk, "por");
@@ -559,9 +676,9 @@ fn readstat_sentinels_rejections() {
             "not a valid --sentinels-as value",
         ),
         (
-            vec!["--sentinels-as", "value"],
+            vec!["--sentinels-as", "value", "--sentinels-columns", "name"],
             &dta,
-            "not supported for Stata files",
+            "\"name\" cannot hold sentinels. Only numeric variables can.",
         ),
         (
             vec!["--sentinels-as", "value"],
@@ -627,6 +744,11 @@ fn readstat_sentinels_rejections() {
             vec!["--sentinels-as", "value"],
             &collide,
             "already has a variable named \"income_null\"",
+        ),
+        (
+            vec!["--sentinels-as", "value"],
+            &collide_dta,
+            "already has a variable named \"x_null\"",
         ),
     ];
     for (flags, file, expected) in cases {

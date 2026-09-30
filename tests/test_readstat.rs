@@ -896,6 +896,8 @@ fn readstat_compress_numeric_sentinels() {
 // `v` holds 1, .a, 3, .b with .a labeled "001.0" & .b "1.0"; `v`'s labels
 // read as numbers, so embedding them beside its numbers must not rewrite them.
 // `w` holds 1, .a, 2, .a with .a labeled "Refused", and is compressed as usual.
+// `x` is `w` plus the ordinary value 1 labeled "001.0": without --value-labels
+// that label is never written, so it must not stop the compression.
 #[test]
 fn readstat_compress_numeric_keeps_numeric_labels() {
     let wrk = Workdir::new("readstat_compress_numeric_keeps_numeric_labels");
@@ -910,11 +912,11 @@ fn readstat_compress_numeric_keeps_numeric_labels() {
     .arg(&f);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["v", "w"],
-        svec!["1.0", "1"],
-        svec!["001.0", "Refused"],
-        svec!["3.0", "2"],
-        svec!["1.0", "Refused"],
+        svec!["v", "w", "x"],
+        svec!["1.0", "1", "1"],
+        svec!["001.0", "Refused", "Refused"],
+        svec!["3.0", "2", "2"],
+        svec!["1.0", "Refused", "Refused"],
     ];
     assert_eq!(got, expected);
 
@@ -923,8 +925,8 @@ fn readstat_compress_numeric_keeps_numeric_labels() {
     cmd.args(["--compress-numeric", "--sentinels-as", "label"])
         .arg(&f);
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert_eq!(got[2], svec!["", "001.0", "", "Refused"]);
-    assert_eq!(got[3], svec!["3", "", "2", ""]);
+    assert_eq!(got[2], svec!["", "001.0", "", "Refused", "", "Refused"]);
+    assert_eq!(got[3], svec!["3", "", "2", "", "2", ""]);
 }
 
 #[test]

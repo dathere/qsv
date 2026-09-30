@@ -654,10 +654,13 @@ fn numeric_label_variables(path: &Path, rs_format: ReadStatFormat) -> CliResult<
         .into_iter()
         .flatten()
         .filter(|v| {
+            // only sentinel labels are embedded; the metadata keys them as
+            // MISSING_a..MISSING_z, ordinary values by their code
             v["value_labels"].as_object().is_some_and(|labels| {
                 labels
-                    .values()
-                    .filter_map(serde_json::Value::as_str)
+                    .iter()
+                    .filter(|(code, _)| code.starts_with("MISSING_"))
+                    .filter_map(|(_, label)| label.as_str())
                     .any(|l| whole_number_text(l).is_some_and(|t| t != l))
             })
         })

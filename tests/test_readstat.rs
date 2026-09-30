@@ -217,14 +217,261 @@ fn readstat_value_labels() {
 }
 
 #[test]
+
 fn readstat_value_labels_rejected_for_sas() {
     let wrk = Workdir::new("readstat_value_labels_rejected_for_sas");
+    // no .sas7bcat beside it, so there are no labels to decode
     let f = sample(&wrk, "sas7bdat");
+    wrk.create_from_string("out.csv", "keep me\n");
     let mut cmd = wrk.command("readstat");
-    cmd.arg("--value-labels").arg(f);
+    cmd.arg("--value-labels")
+        .args(["--output", "out.csv"])
+        .arg(f);
 
     let (_, stderr) = wrk.stdout_and_stderr_on_error::<String>(&mut cmd);
-    assert!(stderr.contains(".sas7bcat catalog"), "{stderr}");
+    assert!(
+        stderr.contains("needs its .sas7bcat format catalog"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("Pass it with --sas7bcat"), "{stderr}");
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "keep me\n");
+}
+
+// SAS format catalog (.sas7bcat) fixtures, each a data file & its catalog,
+// cross-checked against pyreadstat 1.3.6 (`read_sas7bdat(catalog_file=...)`):
+//   readstat_catalog.{sas7bdat,sas7bcat} - hadley.sas7bdat & formats.sas7bcat
+//     from haven (MIT): numeric format WORKSHOP (1 "R", 2 "SAS") on `workshop`,
+//     character format $GENDER ("f" "Female", "m" "Male") on `gender`.
+//   readstat_catalog_tagged.{sas7bdat,sas7bcat} - tagged-na.* from haven: `x`
+//     holds 1-5, .A, .H & .Z; format XFMT labels only .A "Apple" & .Z "Zebra".
+//   readstat_catalog_{linux,win}.{sas7bdat,sas7bcat} - test_data_*.sas7bdat &
+//     test_formats_*.sas7bcat from pyreadstat (Apache-2.0): character formats
+//     $A & $B on `SEXA` & `SEXB`, in both catalog layouts.
+
+fn catalog_rows() -> Vec<Vec<String>> {
+    vec![
+        svec!["id", "workshop", "gender", "q1", "q2", "q3", "q4"],
+        svec!["1.0", "R", "Female", "1.0", "1.0", "5.0", "1.0"],
+        svec!["2.0", "SAS", "Female", "2.0", "1.0", "4.0", "1.0"],
+        svec!["3.0", "R", "Female", "2.0", "2.0", "4.0", "3.0"],
+        svec!["4.0", "SAS", "", "3.0", "1.0", "", "3.0"],
+        svec!["5.0", "R", "Male", "4.0", "5.0", "2.0", "4.0"],
+        svec!["6.0", "SAS", "Male", "5.0", "4.0", "5.0", "5.0"],
+        svec!["7.0", "R", "Male", "5.0", "3.0", "4.0", "4.0"],
+        svec!["8.0", "SAS", "Male", "4.0", "5.0", "5.0", "5.0"],
+    ]
+}
+
+/// A copy of a fixture under another name, for the discovery tests.
+fn copy_fixture(wrk: &Workdir, fixture: &str, name: &str) {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("resources/test")
+        .join(fixture);
+    std::fs::copy(src, wrk.path(name)).unwrap();
+}
+
+#[test]
+fn readstat_sas7bcat() {
+    let wrk = Workdir::new("readstat_sas7bcat");
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog.sas7bcat");
+
+    // --sas7bcat implies --value-labels
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sas7bcat", &cat]).arg(&f);
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert_eq!(got, catalog_rows());
+    assert!(stderr.contains("Using SAS format catalog"), "{stderr}");
+
+    // --value-labels finds <name>.sas7bcat beside the data file
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, catalog_rows());
+
+    // without either, codes as usual
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1..3], svec!["1.0", "f"]);
+}
+
+#[test]
+fn readstat_sas7bcat_discovery_order() {
+    let wrk = Workdir::new("readstat_sas7bcat_discovery_order");
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+
+    // only formats.sas7bcat: used
+    copy_fixture(&wrk, "readstat_catalog.sas7bcat", "formats.sas7bcat");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, catalog_rows());
+
+    // <name>.sas7bcat wins over formats.sas7bcat, here a catalog without
+    // the file's formats
+    copy_fixture(&wrk, "readstat_catalog_tagged.sas7bcat", "formats.sas7bcat");
+    copy_fixture(
+        &wrk,
+        "readstat_catalog.sas7bcat",
+        "readstat_catalog.sas7bcat",
+    );
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, catalog_rows());
+}
+
+#[test]
+fn readstat_sas7bcat_character_formats() {
+    let wrk = Workdir::new("readstat_sas7bcat_character_formats");
+    // the two catalog layouts, 64-bit (linux) & 32-bit (win)
+    for os in ["linux", "win"] {
+        let f = wrk.load_test_file(&format!("readstat_catalog_{os}.sas7bdat"));
+        wrk.load_test_file(&format!("readstat_catalog_{os}.sas7bcat"));
+        let mut cmd = wrk.command("readstat");
+        cmd.arg("--value-labels").arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["ID", "SEXA", "SEXB"],
+            svec!["ID1", "Male", "Male"],
+            svec!["ID2", "Female", "Female"],
+            svec!["ID3", "Male", "Male"],
+        ];
+        assert_eq!(got, expected, "{os}");
+    }
+}
+
+/// A labeled numeric column is text; its unlabeled numbers are written like
+/// Stata's & SPSS's, without ".0", and its sentinels are left alone.
+#[test]
+fn readstat_sas7bcat_sentinels() {
+    let wrk = Workdir::new("readstat_sas7bcat_sentinels");
+    let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
+    wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+    let numbers = ["1", "2", "3", "4", "5"];
+
+    // a one-column CSV writes an empty cell as an empty line, so compare text
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(&f);
+    let out = cmd.output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "x\n1\n2\n3\n4\n5\n\n\n\n"
+    );
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--value-labels",
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let col: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert_eq!(col[..5], numbers);
+    assert_eq!(col[5..], [".A", ".H", ".Z"]);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--sentinels-as", "value"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["x", "x_null"]);
+    assert_eq!(got[1], svec!["1", ""]);
+    assert_eq!(got[6], svec!["", ".A"]);
+}
+
+#[test]
+fn readstat_sas7bcat_compress_numeric() {
+    let wrk = Workdir::new("readstat_sas7bcat_compress_numeric");
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+    wrk.load_test_file("readstat_catalog.sas7bcat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--compress-numeric"]).arg(&f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "R", "Female", "1", "1", "5", "1"]);
+    assert_eq!(got[4], svec!["4", "SAS", "", "3", "1", "", "3"]);
+}
+
+#[test]
+fn readstat_sas7bcat_metadata() {
+    let wrk = Workdir::new("readstat_sas7bcat_metadata");
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog.sas7bcat");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--metadata", "json", "--sas7bcat", &cat]).arg(&f);
+    let got: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    let cols = got["columns"].as_array().unwrap();
+    assert_eq!(cols[0]["name"], "id");
+    assert!(cols[0].get("value_labels").is_none());
+    assert_eq!(
+        cols[1]["value_labels"],
+        serde_json::json!({"1": "R", "2": "SAS"})
+    );
+    assert_eq!(
+        cols[2]["value_labels"],
+        serde_json::json!({"f": "Female", "m": "Male"})
+    );
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--metadata", "csv", "--sas7bcat", &cat]).arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let at = got[0].iter().position(|h| h == "value_labels").unwrap();
+    assert_eq!(got[2][at], r#"{"1":"R","2":"SAS"}"#);
+    assert_eq!(got[1][at], "");
+
+    // XFMT labels only sentinels, whose tags the reader drops: no empty map
+    let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--metadata", "json", "--sas7bcat", &cat]).arg(&f);
+    let got: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    assert!(got["columns"][0].get("value_labels").is_none(), "{got}");
+}
+
+#[test]
+fn readstat_sas7bcat_rejections() {
+    let wrk = Workdir::new("readstat_sas7bcat_rejections");
+    let sas = wrk.load_test_file("readstat_catalog.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog.sas7bcat");
+    let dta = sample(&wrk, "dta");
+    let xpt = sample(&wrk, "xpt");
+
+    let cases: Vec<(Vec<&str>, &str, &str)> = vec![
+        (
+            vec!["--sas7bcat", &cat],
+            &dta,
+            "--sas7bcat applies to SAS .sas7bdat files only",
+        ),
+        (
+            vec!["--value-labels"],
+            &xpt,
+            "not supported for SAS transport (.xpt) files",
+        ),
+        (
+            vec!["--sas7bcat", "nope.sas7bcat"],
+            &sas,
+            "Cannot find the SAS format catalog \"nope.sas7bcat\"",
+        ),
+    ];
+    for (flags, file, expected) in cases {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(&flags).arg(file);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains(expected), "{flags:?}: {stderr}");
+    }
+
+    // a catalog holding none of the file's formats warns & writes codes
+    let other = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sas7bcat", &other]).arg(&sas);
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert!(stderr.contains("None of the formats"), "{stderr}");
+    assert_eq!(got[1][1..3], svec!["1.0", "f"]);
 }
 
 /// Row order must not depend on `--jobs`.
@@ -309,7 +556,10 @@ fn readstat_rejects_catalog() {
 
     let (_, stderr) = wrk.stdout_and_stderr_on_error::<String>(&mut cmd);
     assert!(
-        stderr.contains("is a SAS format catalog, not a dataset"),
+        stderr.contains(
+            "is a SAS format catalog, not a dataset. Pass the .sas7bdat file, with this catalog \
+             as --sas7bcat"
+        ),
         "{stderr}"
     );
 }

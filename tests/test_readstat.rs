@@ -474,6 +474,43 @@ fn readstat_sas7bcat_rejections() {
     assert_eq!(got[1][1..3], svec!["1.0", "f"]);
 }
 
+/// The shared --output guard only checks command-line arguments, so a catalog
+/// found by --value-labels needs its own check, or it would be overwritten.
+#[test]
+fn readstat_sas7bcat_output_is_catalog() {
+    let wrk = Workdir::new("readstat_sas7bcat_output_is_catalog");
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog.sas7bcat");
+    copy_fixture(&wrk, "readstat_catalog.sas7bcat", "formats.sas7bcat");
+    let before = std::fs::read(&cat).unwrap();
+
+    for out in [cat.as_str(), "./readstat_catalog.sas7bcat"] {
+        let mut cmd = wrk.command("readstat");
+        cmd.arg("--value-labels").args(["--output", out]).arg(&f);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            stderr.contains("is the SAS format catalog being read"),
+            "{out}: {stderr}"
+        );
+        assert_eq!(std::fs::read(&cat).unwrap(), before, "{out}");
+    }
+
+    // formats.sas7bcat, found when <name>.sas7bcat is absent
+    std::fs::remove_file(&cat).unwrap();
+    let shared = wrk.path("formats.sas7bcat");
+    let before = std::fs::read(&shared).unwrap();
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels")
+        .args(["--output", "formats.sas7bcat"])
+        .arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("is the SAS format catalog being read"),
+        "{stderr}"
+    );
+    assert_eq!(std::fs::read(&shared).unwrap(), before);
+}
+
 /// Row order must not depend on `--jobs`.
 ///
 /// readstat_order.sav is deliberately 2000 rows and uncompressed: the readers

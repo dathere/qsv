@@ -312,6 +312,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         b','
     };
 
+    // The shared --output guard only sees command-line arguments, so it misses
+    // a catalog that --value-labels found on its own.
+    if let (Some(out), Some(labels)) = (&args.flag_output, &sas_labels)
+        && same_file::is_same_file(out, &labels.catalog).unwrap_or(false)
+    {
+        return fail_incorrectusage_clierror!(
+            "--output ({out}) is the SAS format catalog being read ({}). Pass a different \
+             --output.",
+            labels.catalog.display()
+        );
+    }
     let w = match args.flag_output.as_ref() {
         Some(p) => {
             delim = tsvssv_delim(p, delim);
@@ -746,6 +757,7 @@ fn number_text(v: f64) -> String {
 /// join to the dataset's columns is done here: each column's format, from
 /// the dataset's metadata, names its catalog entry.
 struct SasLabels {
+    catalog: PathBuf,
     columns: Vec<(PlSmallStr, FormatLabels)>,
 }
 
@@ -834,7 +846,7 @@ impl SasLabels {
         } else {
             winfo!("Using SAS format catalog \"{}\".", catalog.display());
         }
-        Ok(Some(Self { columns }))
+        Ok(Some(Self { catalog, columns }))
     }
 
     fn get(&self, name: &str) -> Option<&FormatLabels> {

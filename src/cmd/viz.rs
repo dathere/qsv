@@ -21493,7 +21493,12 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
             (Route::Dimension, None)
         },
         "latitude" | "longitude" => (Route::MapCoord, None),
-        "date" | "datetime" | "time" | "duration" => (Route::Temporal, None),
+        "date" | "datetime" | "time" => (Route::Temporal, None),
+        // A duration is a SPAN, not a point in time - the same call `route_from_concept` makes
+        // for `time.duration` (issue #4177), which this legacy path never received. As Temporal it
+        // was dropped from the Data Schematic, and 4-digit durations (1800 s, 3600 s) could be
+        // read as a bare-YEAR time axis (roborev 4936). Mean, not Sum, as for the concept.
+        "duration" => (Route::Measure, Some(Agg::Mean)),
         // the only NUMERIC token in the vocabulary, and the only arm here that carries an
         // aggregation: a money amount is an additive quantity. `currency_code` (above) names
         // the currency; `money` IS the amount. Without this arm the catch-all would `Skip` the
@@ -43953,7 +43958,11 @@ mod tests {
             route_from_content_type("datetime:%Y-%m-%dT%H:%M:%S").0,
             Route::Temporal
         );
-        assert_eq!(route_from_content_type("duration:3600").0, Route::Temporal);
+        // a duration is a span, not a time point: a measure, averaged (roborev 4936)
+        assert_eq!(
+            route_from_content_type("duration:3600"),
+            (Route::Measure, Some(Agg::Mean))
+        );
         // identifiers / PII / free-text -> skip
         assert_eq!(route_from_content_type("unique_id").0, Route::Skip);
         assert_eq!(route_from_content_type("email").0, Route::Skip);

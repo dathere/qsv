@@ -19120,6 +19120,42 @@ fn viz_smart_bare_year_column_without_a_dictionary_is_unchanged() {
 }
 
 #[test]
+fn viz_smart_duration_content_type_never_becomes_a_year_axis() {
+    // REGRESSION (roborev 4936): the legacy `content_type: duration` routed as time, so a column
+    // of 4-digit durations (1800 s .. 3600 s) passed the bare-year test and was drawn as a trend
+    // over the "years" 1800..3600. A duration is a span; it must never be a time axis.
+    let wrk = Workdir::new("viz_smart_duration_content_type_never_becomes_a_year_axis");
+    let mut rows = String::from("secs,amt\n");
+    for i in 0..15 {
+        rows.push_str(&format!("{},{}\n", 1800 + 120 * i, 100 + i));
+    }
+    wrk.create_from_string("d.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{ "type": "object", "properties": {
+          "secs": { "type": "integer", "x-qsv": { "qsv_type": "Integer", "content_type": "duration" } },
+          "amt": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.money" } }
+        } }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "d.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        year_axis_line_traces(&html).is_empty(),
+        "4-digit durations must not be drawn as a trend over years: {stderr}"
+    );
+    assert!(
+        !stderr.contains("secs (time axis)"),
+        "a duration must not be reported as the time axis: {stderr}"
+    );
+}
+
+#[test]
 fn viz_responsive_category_ticks_measure_labels_and_use_an_even_stride() {
     // Issue #4686: the tick-thinning script budgeted a FIXED 72 px per label (sized for
     // "2024-Q1"), so seven 4-digit years in a ~450 px panel kept five labels and dropped 2020,

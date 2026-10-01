@@ -12272,7 +12272,7 @@ fn viz_smart_summary_choropleth_county_fips_concept() {
     let wrk = Workdir::new("viz_smart_summary_choropleth_county_fips_concept");
     wrk.create_from_string(
         "counties.csv",
-        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n",
+        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n36061,500\n",
     );
     wrk.create_from_string(
         "counties.geojson",
@@ -18959,6 +18959,282 @@ fn viz_smart_trend_quarterly_uses_quarter_bucket_and_category_axis() {
     );
 }
 
+// ------------------------------------------------------------------------------------------------
+// Issue #4685: a dictionary-routed column of bare 4-digit years drives the time-series panel.
+// ------------------------------------------------------------------------------------------------
+
+/// Line traces whose x values are all 4-digit years, from a page rendered with
+/// `QSV_VIZ_NO_COMPRESS` (plain figure JSON), paired with that figure's x-axis type.
+fn year_axis_line_traces(html: &str) -> Vec<(serde_json::Value, String)> {
+    let mut out = Vec::new();
+    for chunk in html.split("Plotly.newPlot(").skip(1) {
+        let Some(comma) = chunk.find(", ") else {
+            continue;
+        };
+        let mut vals = serde_json::Deserializer::from_str(&chunk[comma + 2..])
+            .into_iter::<serde_json::Value>();
+        let Some(Ok(fig)) = vals.next() else {
+            continue;
+        };
+        let axis_type = fig["layout"]["xaxis"]["type"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        for t in fig["data"].as_array().into_iter().flatten() {
+            let xs: Vec<&str> = t["x"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            if t["mode"] == "lines"
+                && !xs.is_empty()
+                && xs
+                    .iter()
+                    .all(|x| x.len() == 4 && x.bytes().all(|b| b.is_ascii_digit()))
+            {
+                out.push((t.clone(), axis_type.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// yr,amt rows: 2019..=2023, three rows per year, amounts chosen so each year's sum is distinct.
+fn bare_year_rows() -> String {
+    let mut rows = String::from("yr,amt\n");
+    for (i, year) in (2019..=2023).enumerate() {
+        for k in 1..=3 {
+            rows.push_str(&format!("{year},{}\n", 100 * (i + 1) + k));
+        }
+    }
+    rows
+}
+
+fn bare_year_dict(amt_concept: Option<&str>) -> String {
+    let amt = amt_concept.map_or(String::new(), |c| {
+        format!(
+            r#", "amt": {{ "type": "number", "x-qsv": {{ "qsv_type": "Integer", "role": "measure", "concept": "{c}" }} }}"#
+        )
+    });
+    format!(
+        r#"{{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "properties": {{
+    "yr": {{ "type": "integer", "title": "Program Year", "x-qsv": {{ "qsv_type": "Integer", "role": "dimension", "concept": "time.date" }} }}{amt}
+  }} }}"#
+    )
+}
+
+#[test]
+fn viz_smart_bare_year_column_drives_the_time_series() {
+    let wrk = Workdir::new("viz_smart_bare_year_column_drives_the_time_series");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args([
+            "smart",
+            "y.csv",
+            "--dict-info",
+            "-o",
+            "dash.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let traces = year_axis_line_traces(&html);
+    assert_eq!(
+        traces.len(),
+        1,
+        "exactly one year-axis trend expected: {stderr}"
+    );
+    let (trace, axis_type) = &traces[0];
+    assert_eq!(
+        trace["x"],
+        serde_json::json!(["2019", "2020", "2021", "2022", "2023"])
+    );
+    // measure.money sums per year: (101+102+103), (201+202+203), ...
+    assert_eq!(
+        trace["y"],
+        serde_json::json!([306.0, 606.0, 906.0, 1206.0, 1506.0])
+    );
+    assert_eq!(
+        axis_type, "category",
+        "yearly buckets use the category axis"
+    );
+    // stderr and the drawer both name the column as the time axis, not as dropped
+    assert!(
+        stderr.contains("yr (time axis)"),
+        "stderr must say the year column is the time axis: {stderr}"
+    );
+    assert!(
+        html.contains("it is the x-axis of the time-based panels"),
+        "the drawer must describe the year column as the time axis"
+    );
+}
+
+#[test]
+fn viz_smart_bare_year_axis_averages_an_untagged_measure_per_year() {
+    // An un-tagged numeric Y normally plots RAW rows over time; on a year axis that would stack
+    // every row of a year on its Jan 1 and label it "2019-01-01". It must be averaged per year.
+    let wrk = Workdir::new("viz_smart_bare_year_axis_averages_an_untagged_measure_per_year");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(None));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "y.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let traces = year_axis_line_traces(&html);
+    assert_eq!(traces.len(), 1, "exactly one year-axis trend expected");
+    assert_eq!(
+        traces[0].0["y"],
+        serde_json::json!([102.0, 202.0, 302.0, 402.0, 502.0]),
+        "an untagged measure must be averaged per year"
+    );
+    // (the page itself may contain "2019-01-01": plotly.js's inlined source uses it in a help
+    // string, so check the trace, not the page)
+    assert_eq!(
+        traces[0].0["x"],
+        serde_json::json!(["2019", "2020", "2021", "2022", "2023"]),
+        "no row may be plotted on a synthetic Jan 1"
+    );
+}
+
+#[test]
+fn viz_smart_integer_time_column_that_is_not_years_explains_the_skip() {
+    // Epoch seconds routed as time are Integer, like a bare year, but not 4-digit: no year axis,
+    // and stderr must say WHY rather than a bare "skipped".
+    let wrk = Workdir::new("viz_smart_integer_time_column_that_is_not_years_explains_the_skip");
+    let mut rows = String::from("yr,amt\n");
+    for i in 0..15 {
+        rows.push_str(&format!("{},{}\n", 1_700_000_000 + i * 86_400, 100 + i));
+    }
+    wrk.create_from_string("e.csv", &rows);
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "e.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""mode":"lines""#) || year_axis_line_traces(&html).is_empty(),
+        "epoch seconds must not become a year axis"
+    );
+    assert!(
+        stderr.contains(
+            "yr (a timestamp in the dictionary, but its values are Integer, not dates or 4-digit \
+             years)"
+        ),
+        "stderr must explain why the timestamp column drew no time panel: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_bare_year_column_without_a_dictionary_is_unchanged() {
+    // Without a dictionary a column of 4-digit numbers is also a price, a count or a code, so it
+    // must never be promoted to a time axis on shape alone.
+    let wrk = Workdir::new("viz_smart_bare_year_column_without_a_dictionary_is_unchanged");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "y.csv", "-o", "dash.html"]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        year_axis_line_traces(&html).is_empty(),
+        "no dictionary, no year axis"
+    );
+}
+
+#[test]
+fn viz_smart_duration_content_type_never_becomes_a_year_axis() {
+    // REGRESSION (roborev 4936): the legacy `content_type: duration` routed as time, so a column
+    // of 4-digit durations (1800 s .. 3600 s) passed the bare-year test and was drawn as a trend
+    // over the "years" 1800..3600. A duration is a span; it must never be a time axis.
+    let wrk = Workdir::new("viz_smart_duration_content_type_never_becomes_a_year_axis");
+    let mut rows = String::from("secs,amt\n");
+    for i in 0..15 {
+        rows.push_str(&format!("{},{}\n", 1800 + 120 * i, 100 + i));
+    }
+    wrk.create_from_string("d.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{ "type": "object", "properties": {
+          "secs": { "type": "integer", "x-qsv": { "qsv_type": "Integer", "content_type": "duration" } },
+          "amt": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.money" } }
+        } }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "d.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        year_axis_line_traces(&html).is_empty(),
+        "4-digit durations must not be drawn as a trend over years: {stderr}"
+    );
+    assert!(
+        !stderr.contains("secs (time axis)"),
+        "a duration must not be reported as the time axis: {stderr}"
+    );
+}
+
+#[test]
+fn viz_responsive_category_ticks_measure_labels_and_use_an_even_stride() {
+    // Issue #4686: the tick-thinning script budgeted a FIXED 72 px per label (sized for
+    // "2024-Q1"), so seven 4-digit years in a ~450 px panel kept five labels and dropped 2020,
+    // and its rounded indices put labels on adjacent categories. The rendered behaviour was
+    // verified by a browser width sweep; this pins the two mechanisms in the shipped script.
+    let wrk = Workdir::new("viz_responsive_category_ticks_measure_labels_and_use_an_even_stride");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "y.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // Scope every check to viz's OWN script block: the inlined plotly.js bundle uses
+    // `measureText` itself, so a page-wide search would pass even with the fix reverted.
+    let mark = html
+        .find("qsv-responsive-category-ticks")
+        .expect("the responsive tick script must ship");
+    let start = html[..mark].rfind("<script>").expect("script start");
+    let end = mark + html[mark..].find("</script>").expect("script end");
+    let script = &html[start..end];
+    assert!(
+        script.contains("measureText("),
+        "label slots must be measured, not a fixed width"
+    );
+    assert!(
+        script.contains("i += k"),
+        "labels must follow an even stride, not rounded indices"
+    );
+    assert!(
+        !script.contains("PX_PER_TICK = 72;"),
+        "the fixed 72 px budget must be gone"
+    );
+}
+
 #[test]
 fn viz_smart_trend_dictionary_cadence_overrides_detection() {
     // A dictionary carrying `x-qsv.cadence: "quarterly"` sets the trend bucket floor even where
@@ -20753,6 +21029,401 @@ fn viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro() {
 // against the region column's own concept.
 // ---------------------------------------------------------------------------
 
+/// `region,txns,avg_spend,spend,date` rows for the region map's measure slot (issue #4683).
+/// `spend` totals A=400, B=6,000, C=100 and varies within every region (a per-row amount, not a
+/// region-level one). `flat` gives every region the same two rows, the pre-aggregated shape.
+fn sum_map_csv(flat: bool) -> String {
+    let rows: &[(&str, u32, &str, &str)] = if flat {
+        &[
+            ("A", 1, "100.5", "10.5"),
+            ("A", 2, "299.5", "20.5"),
+            ("B", 3, "2000.25", "30.5"),
+            ("B", 4, "3999.75", "40.5"),
+            ("C", 5, "40.5", "50.5"),
+            ("C", 6, "59.5", "60.5"),
+        ]
+    } else {
+        &[
+            ("A", 1, "100.5", "10.5"),
+            ("A", 2, "299.5", "20.5"),
+            ("B", 3, "1000.25", "30.5"),
+            ("B", 4, "1999.75", "40.5"),
+            ("B", 5, "3000", "50.5"),
+            ("C", 6, "10.5", "60.5"),
+            ("C", 7, "20.5", "70.5"),
+            ("C", 8, "30.5", "80.5"),
+            ("C", 9, "38.5", "90.5"),
+        ]
+    };
+    let mut s = String::from("region,txns,avg_spend,spend,date\n");
+    for (i, (r, t, sp, av)) in rows.iter().enumerate() {
+        let date = if i % 2 == 0 {
+            "2019-01-01"
+        } else {
+            "2020-06-01"
+        };
+        s.push_str(&format!("{r},{t},{av},{sp},{date}\n"));
+    }
+    s
+}
+
+/// `txns` is a `measure.count` placed BEFORE the money column, so a picker walking concepts in
+/// `MAP_MEASURE_CONCEPTS` order would pick it (issue #4684). `avg_spend` is money declared
+/// `aggregation: mean`, placed before `spend` so a picker ignoring the aggregation would total it.
+fn sum_map_dictionary() -> &'static str {
+    r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "properties":{
+   "region":{"type":"string","title":"Region","x-qsv":{"concept":"geo.zip_code","role":"dimension"}},
+   "txns":{"type":"integer","title":"Transactions","x-qsv":{"concept":"measure.count","role":"measure"}},
+   "spend":{"type":"number","title":"Spend","x-qsv":{"concept":"measure.money","role":"measure","aggregation":"sum"}},
+   "avg_spend":{"type":"number","title":"Average Spend","x-qsv":{"concept":"measure.money","role":"measure","aggregation":"mean"}},
+   "date":{"type":"string","title":"Date","x-qsv":{"concept":"time.date","role":"timestamp"}}
+ }}"#
+}
+
+#[test]
+fn viz_smart_region_map_totals_the_additive_measure() {
+    let wrk = Workdir::new("viz_smart_region_map_totals_the_additive_measure");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // counts differ (2/3/4 rows), so the count map and its rate stay
+    assert!(html.contains("count by Region"), "count panel: {html}");
+    // money outranks the earlier count column (#4684), totalled rather than median'd (#4683),
+    // with the multi-year span stated
+    assert!(
+        html.contains("Total Spend by Region (2019–2020)"),
+        "sum panel: {html}"
+    );
+    assert!(
+        html.contains("Spend: 6,000"),
+        "B's total in the hover: {html}"
+    );
+    // A: 400 / 10,000 = 40 per 1,000; B: 6,000 / 200,000 = 30 per 1,000
+    assert!(
+        html.contains("Spend per 1,000 residents by Region (2019–2020)"),
+        "the total's own rate panel: {html}"
+    );
+    assert!(html.contains("40 per 1,000 residents"), "A's rate: {html}");
+    assert!(
+        html.contains("raw totals — not adjusted for region size"),
+        "{html}"
+    );
+    // neither the count column nor the declared-mean money column is totalled, and the sum takes
+    // the median's slot
+    assert!(!html.contains("Total Transactions by Region"), "{html}");
+    assert!(!html.contains("Total Average Spend by Region"), "{html}");
+    assert!(!html.contains("median Spend by Region"), "{html}");
+    assert!(!html.contains("median Transactions by Region"), "{html}");
+}
+
+#[test]
+fn viz_smart_region_total_states_a_bare_year_span() {
+    // a dictionary-tagged column of bare years (Integer to stats) is a time axis too, so the
+    // cumulative total names its span (roborev 4939, after #4685)
+    let wrk = Workdir::new("viz_smart_region_total_states_a_bare_year_span");
+    let csv = sum_map_csv(false)
+        .replace("2019-01-01", "2019")
+        .replace("2020-06-01", "2020");
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &sum_map_dictionary().replace(
+            r#""date":{"type":"string","title":"Date""#,
+            r#""date":{"type":"integer","title":"Year""#,
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("Total Spend by Region (2019–2020)"),
+        "bare-year span: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_flat_region_count_map_is_skipped() {
+    let wrk = Workdir::new("viz_smart_flat_region_count_map_is_skipped");
+    wrk.create_from_string("rg.csv", &sum_map_csv(true));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("region count map skipped — all 3 matched regions have exactly 2 rows"),
+        "{stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("count by Region"), "flat count map: {html}");
+    assert!(
+        html.contains("Total Spend by Region"),
+        "sum panel leads: {html}"
+    );
+    // with no rate beside it, the total carries the "add a denominator" caveat
+    assert!(
+        html.contains("raw totals — bigger/busier regions accumulate more"),
+        "{html}"
+    );
+}
+
+#[test]
+fn viz_smart_flat_region_count_map_kept_for_explicit_agg_count() {
+    let wrk = Workdir::new("viz_smart_flat_region_count_map_kept_for_explicit_agg_count");
+    wrk.create_from_string("rg.csv", &sum_map_csv(true));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--agg",
+        "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("region count map skipped"),
+        "an explicit --agg count asks for the count map"
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("count by Region"));
+}
+
+#[test]
+fn viz_smart_region_level_measure_is_not_totalled() {
+    // `area` describes the REGION (it repeats unchanged on every row of its region) but is tagged
+    // `measure.amount` (additive), so a per-region total would multiply it by the row count: B's
+    // 40.25 would map as 120.75. Float, so the small-integer-scale guardrail cannot reroute it.
+    let wrk = Workdir::new("viz_smart_region_level_measure_is_not_totalled");
+    let mut csv = String::from("region,area\n");
+    for (r, area, n) in [("A", "12.5", 2), ("B", "40.25", 3), ("C", "7.75", 4)] {
+        for _ in 0..n {
+            csv.push_str(&format!("{r},{area}\n"));
+        }
+    }
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "properties":{
+   "region":{"type":"string","title":"Region","x-qsv":{"concept":"geo.zip_code","role":"dimension"}},
+   "area":{"type":"number","title":"Area","x-qsv":{"concept":"measure.amount","role":"measure"}}
+ }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("'Area' repeats one value on every row of each region"),
+        "{stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("Total Area by Region"), "{html}");
+    assert!(!html.contains("Area: 120.75"), "the inflated total: {html}");
+    assert!(html.contains("median Area by Region"), "{html}");
+    assert!(
+        html.contains("Area: 40.25"),
+        "the region's own value: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_value_and_agg_choose_the_measure_slot() {
+    let wrk = Workdir::new("viz_smart_value_and_agg_choose_the_measure_slot");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+        "--value",
+        "avg_spend",
+        "--agg",
+        "max",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("maximum Average Spend by Region"),
+        "the flag outranks the dictionary's additive pick: {html}"
+    );
+    assert!(!html.contains("Total Spend by Region"), "{html}");
+    // a maximum is intensive: no rate panel of it
+    assert!(
+        !html.contains("Average Spend per 1,000 residents"),
+        "{html}"
+    );
+
+    // --value alone defaults to sum, like `viz choropleth`
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--value",
+        "txns",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Total Transactions by Region"));
+}
+
+#[test]
+fn viz_smart_agg_without_a_region_code_map_is_reported() {
+    // no dictionary -> no region-code candidate -> no region map, so an otherwise valid
+    // `--agg count` has nothing to apply to and must say so instead of vanishing
+    let wrk = Workdir::new("viz_smart_agg_without_a_region_code_map_is_reported");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--agg",
+        "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--value/--agg: no region-code map was built"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_value_and_agg_misuse_is_rejected() {
+    let wrk = Workdir::new("viz_smart_value_and_agg_misuse_is_rejected");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    for (extra, expected) in [
+        (
+            &["--value", "spend"][..],
+            "need a --geojson for that map to exist",
+        ),
+        (
+            &["--geojson", "regions.geojson", "--agg", "sum"][..],
+            "requires a --value column",
+        ),
+        (
+            &[
+                "--geojson",
+                "regions.geojson",
+                "--value",
+                "spend",
+                "--agg",
+                "count",
+            ][..],
+            "needs no --value",
+        ),
+        (
+            &["--geojson", "regions.geojson", "--value", "region"][..],
+            "must name a numeric column",
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "rg.csv"]).args(extra);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{extra:?} must fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(expected), "{extra:?}: {stderr}");
+    }
+}
+
 /// `denom_dictionary` with the region column's own concept and the denominator's declared
 /// geographic level both parameterized. A separate builder rather than more parameters on
 /// `denom_dictionary`: that one has ten callers, and widening its signature would edit ten tests
@@ -21187,13 +21858,15 @@ const MEDIAN_REGIONS_GEOJSON: &str = r#"{"type":"FeatureCollection","features":[
 {"type":"Feature","id":"42049","properties":{},"geometry":{"type":"Polygon","coordinates":[[[3,0],[3,1],[4,1],[4,0],[3,0]]]}},
 {"type":"Feature","id":"42133","properties":{},"geometry":{"type":"Polygon","coordinates":[[[4,0],[4,1],[5,1],[5,0],[4,0]]]}}]}"#;
 
+// `aggregation: mean`, so the measure slot falls back to the per-region MEDIAN these tests are
+// about: an additive (`sum`) measure is totalled there instead (issue #4683).
 const MEDIAN_REGIONS_DICT: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema",
 "title":"median_regions","type":"object",
 "x-qsv":{"grain":"one row = one record","grain_unit":"record"},
 "properties":{
 "county_fips":{"type":"string","title":"County","x-qsv":{"qsv_type":"String","role":"dimension","concept":"geo.county_fips","content_type":"category"}},
 "category":{"type":"string","title":"Category","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.type","content_type":"category"}},
-"value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"sum"}}}}"#;
+"value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"mean"}}}}"#;
 
 // every region: three DIFFERENT values whose median is 5. The column itself is NOT constant, so
 // `SkipReason::ConstantColumn` does not fire upstream and the rows do reach the median panel.

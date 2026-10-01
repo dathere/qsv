@@ -329,11 +329,12 @@ choropleth options:
                            QSV_GEOJSON_SHORTCUTS env var (whose id sets --feature-id-key
                            when you don't pass one). Use `auto` (or `census`) to fetch US
                            boundaries from Census TIGERweb automatically; force a layer
-                           with census:county, census:zcta, census:tract or census:place
-                           (incorporated places AND CDPs), and pin a vintage with @<year>,
-                           e.g. census:county@2021. That path sets feature-id-key to
-                           properties.GEOID and caches under ~/.qsv-cache for 30 days
-                           (QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS); it reads the codes from
+                           with census:state, census:county, census:zcta, census:tract or
+                           census:place (incorporated places AND CDPs), and pin a vintage
+                           with @<year>, e.g. census:county@2021. That path sets
+                           feature-id-key to properties.GEOID (properties.STUSAB for a
+                           column of USPS state codes) and caches under ~/.qsv-cache for
+                           30 days (QSV_VIZ_BOUNDARY_CACHE_TTL_DAYS); it reads the codes from
                            the --locations column, so in `viz smart` it needs a --dictionary
                            naming the region column. A column of city/place NAMES also
                            needs --geocode. Required for --map and for the geojson-id
@@ -5476,8 +5477,19 @@ fn resolve_auto_geojson(
     }
     // A column with NO digit-bearing values cannot survive any layer's code normalization, so
     // every probe is a foregone conclusion. Mixed columns (some digits) still flow to the
-    // per-layer diagnostics.
-    if codes.iter().all(|c| !c.bytes().any(|b| b.is_ascii_digit())) {
+    // per-layer diagnostics. The one exception is USPS state codes (#4681), which the States layer
+    // normalizes: a column of mostly those goes on to the probe, which scores it honestly.
+    let state_layer_ok = matches!(
+        auto_spec.layer,
+        None | Some(crate::cmd::viz_census::Layer::State)
+    );
+    let usps_like = codes
+        .iter()
+        .filter(|c| crate::cmd::viz_census::is_state_code(c))
+        .count();
+    if !(state_layer_ok && usps_like * 2 >= codes.len())
+        && codes.iter().all(|c| !c.bytes().any(|b| b.is_ascii_digit()))
+    {
         // County NAMES are servable directly from the Census's own name table (issue #4417
         // Part B). Route on VALUE SHAPE — a county-name spelling, or an explicit --region-state —
         // rather than by letting the name path run and fall back on a poor result: a column of
@@ -5503,10 +5515,10 @@ fn resolve_auto_geojson(
                       --geocode";
         return fail_incorrectusage_clierror!(
             "--geojson {spec}: none of the {} distinct --locations values look like region codes \
-             (e.g. {sample}) - Census geographies are keyed by numeric codes (county FIPS, ZCTA, \
-             tract GEOID). {remedy}. If they are COUNTY names, spell them the way the Census does \
-             (Allegheny County, Orleans Parish) or pass --region-state <column>. Otherwise supply \
-             an explicit --geojson file.",
+             (e.g. {sample}) - Census geographies are keyed by USPS state codes or numeric codes \
+             (state or county FIPS, ZCTA, tract GEOID). {remedy}. If they are COUNTY names, spell \
+             them the way the Census does (Allegheny County, Orleans Parish) or pass \
+             --region-state <column>. Otherwise supply an explicit --geojson file.",
             codes.len()
         );
     }
@@ -6698,20 +6710,23 @@ fn resolve_smart_auto_geojson(
         return fail_incorrectusage_clierror!(
             "--geojson {spec}: no region column to fetch boundaries for. `viz smart` identifies \
              one from a data dictionary, so it needs --dictionary with a column tagged as a \
-             region concept (e.g. geo.county_fips, geo.zip_code, geo.census_tract - or geo.city \
-             on a geocode-enabled build, resolved by forward geocoding). Supply one, or pass an \
-             explicit --geojson file."
+             region concept (e.g. geo.county_fips, geo.zip_code, geo.census_tract, geo.state - or \
+             geo.city on a geocode-enabled build, resolved by forward geocoding). Supply one, or \
+             pass an explicit --geojson file."
         );
     }
 
     let codes = distinct_column_values(args, &candidates)?;
+    // A dictionary title alone ("Recipient State Code") names no column the user can find in the
+    // CSV, so a message quoting it is a dead end (#4681). Quote the header too when they differ.
     let label_of = |slot: usize| {
         let idx = candidates[slot];
-        let s = &col_sems[idx];
-        if s.label.is_empty() {
-            stats[idx].field.clone()
+        let label = &col_sems[idx].label;
+        let field = &stats[idx].field;
+        if label.is_empty() || label == field {
+            field.clone()
         } else {
-            s.label.clone()
+            format!("{label} ({field})")
         }
     };
 
@@ -6760,12 +6775,57 @@ fn resolve_smart_auto_geojson(
                 .all(|c| !c.bytes().any(|b| b.is_ascii_digit()))
     };
     let name_slots: Vec<usize> = (0..n_code).filter(|s| is_county_name_slot(*s)).collect();
-    let probe_slots: Vec<usize> = (0..n_code).filter(|s| !is_county_name_slot(*s)).collect();
 
-    let ranked: Vec<usize> = if probe_slots.len() == 1 {
-        vec![probe_slots[0]]
+    // State columns are tried LAST, after every finer code, county-name and city candidate
+    // (#4681). A state column resolves near 100% by construction, so ranking it by match ratio
+    // alongside a county column would quietly replace a county map with a state map - and the
+    // gallery's own county-name dashboards carry a state column for disambiguation. Two nets:
+    // a column TAGGED as a state is pulled out of the probe here (which also covers the
+    // single-probe-slot case, where no ranking happens at all), and any other probed column that
+    // resolves best as a State (a generic `geo.fips` of 2-digit codes) is demoted after ranking.
+    //
+    // Only when the layer is unpinned or pinned to states: under another pin the column stays in
+    // the probe set, where it scores `None` against that layer - the honest answer.
+    let state_layer_ok = matches!(
+        auto_spec.layer,
+        None | Some(crate::cmd::viz_census::Layer::State)
+    );
+    //
+    // "A state column" is decided by concept OR by value shape. The shape test matters for an
+    // untagged column (a generic `geo.fips` of `42`s) that is the ONLY probe slot: that path skips
+    // the probe, so no layer is known and the post-ranking demotion below never sees it — it would
+    // be tried ahead of the county-name and city slots (roborev 4931). See
+    // `viz_census::is_state_code_column` for why the shape test is exact: it never claims a
+    // column holding a value a finer layer could resolve (roborev 4932).
+    let is_state_slot = |slot: usize| -> bool {
+        state_layer_ok
+            && slot < n_code
+            && (matches!(
+                col_sems[candidates[slot]].concept.strip_prefix("geo."),
+                Some("state" | "state_fips")
+            ) || crate::cmd::viz_census::is_state_code_column(&codes[slot]))
+    };
+    let state_slots: Vec<usize> = (0..n_code)
+        .filter(|s| is_state_slot(*s) && !is_county_name_slot(*s))
+        .collect();
+    let probe_slots: Vec<usize> = (0..n_code)
+        .filter(|s| !is_county_name_slot(*s) && !is_state_slot(*s))
+        .collect();
+
+    // (finer slots, slots whose best layer is State) - the second list is tried after the cities
+    // A lone code slot skips the probe only when nothing is queued behind it: then its layer
+    // decides no ordering, and the common single-column case stays at zero extra requests. With a
+    // county-name or city slot waiting, it IS probed, so a lone column that resolves best as
+    // States is demoted behind them like any ranked State winner. Classifying such a column by
+    // value shape alone cannot be complete: a state column carrying a finer-shaped placeholder
+    // (`["42", "24", "99999"]`) looks mixed, yet resolves only as states (roborev 4933).
+    let nothing_queued_behind = name_slots.is_empty() && n_code == candidates.len();
+    let (ranked, ranked_state): (Vec<usize>, Vec<usize>) = if probe_slots.len() == 1
+        && nothing_queued_behind
+    {
+        (vec![probe_slots[0]], Vec::new())
     } else if probe_slots.is_empty() {
-        Vec::new()
+        (Vec::new(), Vec::new())
     } else {
         let samples: Vec<Vec<String>> = probe_slots
             .iter()
@@ -6785,7 +6845,11 @@ fn resolve_smart_auto_geojson(
             .collect();
         // no code candidate resolves: a hard stop only when there is no county-name or city
         // candidate to fall through to
-        if ranked.is_empty() && name_slots.is_empty() && n_code == candidates.len() {
+        if ranked.is_empty()
+            && name_slots.is_empty()
+            && state_slots.is_empty()
+            && n_code == candidates.len()
+        {
             let tried = (0..candidates.len())
                 .map(label_of)
                 .collect::<Vec<_>>()
@@ -6807,7 +6871,13 @@ fn resolve_smart_auto_geojson(
                 score.layer.label()
             );
         }
-        ranked.into_iter().map(|(slot, _)| slot).collect()
+        let (state, finer): (Vec<_>, Vec<_>) = ranked
+            .into_iter()
+            .partition(|(_, score)| score.layer == crate::cmd::viz_census::Layer::State);
+        (
+            finer.into_iter().map(|(slot, _)| slot).collect(),
+            state.into_iter().map(|(slot, _)| slot).collect(),
+        )
     };
 
     // Try them in that order, keeping the first whose FULL value set clears the coverage gate.
@@ -6840,6 +6910,8 @@ fn resolve_smart_auto_geojson(
         .into_iter()
         .chain(name_slots)
         .chain(n_code..candidates.len())
+        .chain(ranked_state)
+        .chain(state_slots)
     {
         let region_codes = &codes[slot];
         if region_codes.is_empty() {
@@ -8231,7 +8303,7 @@ fn census_denominator_map(
         .and_then(|g| g.get("x-qsv"))
         .and_then(|x| x.get("layer"))
         .and_then(serde_json::Value::as_str)
-        && !matches!(layer, "census:county")
+        && !matches!(layer, "census:county" | "census:state")
     {
         return fail_incorrectusage_clierror!(
             "--denominator census resolves US state and county population, but these regions are \
@@ -8255,6 +8327,13 @@ fn census_denominator_map(
     let numeric_of =
         |n: usize| move |c: &str| c.len() == n && c.bytes().all(|b| b.is_ascii_digit());
 
+    // Codes that cannot name a Census geography at all (a USPS code for an island area, a military
+    // "state", a freely associated state). Excluded and REPORTED alongside the regions the release
+    // has no population for, exactly as `--denominator`'s help promises ("Uncovered regions are
+    // excluded and reported") - and as the FIPS branches already behaved, where an uncovered code
+    // simply comes back without a population. Refusing the whole map over them (#4680) made one
+    // territory row in a 50-state dataset cost every rate.
+    let mut unmapped: Vec<String> = Vec::new();
     // (geography, state FIPS to scope by, caller-code -> Census GEOID)
     let (geo, states, keyed): (DenominatorGeography, Vec<String>, Vec<(String, String)>) =
         if all(&numeric_of(5)) {
@@ -8273,23 +8352,22 @@ fn census_denominator_map(
             (DenominatorGeography::State, states, keyed)
         } else if all(&|c: &str| c.len() == 2 && c.bytes().all(|b| b.is_ascii_alphabetic())) {
             let mut keyed: Vec<(String, String)> = Vec::with_capacity(trimmed.len());
-            let mut unknown: Vec<&str> = Vec::new();
             for code in &trimmed {
                 match crate::cmd::viz_census::state_fips_for_usps(code) {
                     Some(fips) => keyed.push(((*code).to_string(), fips.to_string())),
-                    None => unknown.push(code),
+                    None => unmapped.push((*code).to_string()),
                 }
             }
-            if !unknown.is_empty() {
+            // only when NOTHING is a state is the column not a state column at all
+            if keyed.is_empty() {
                 return fail_incorrectusage_clierror!(
-                    "--denominator census: {} of {} location values are not US state codes (e.g. \
-                     {}). Census population is resolved for US states and counties.",
-                    unknown.len(),
+                    "--denominator census: none of the {} location values are US state codes \
+                     (e.g. {}). Census population is resolved for US states and counties.",
                     trimmed.len(),
-                    unknown
+                    unmapped
                         .iter()
                         .take(5)
-                        .copied()
+                        .cloned()
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
@@ -8316,7 +8394,8 @@ fn census_denominator_map(
     let population = crate::cmd::viz_census::resolve_population(geo, &states, vintage, this_year)?;
 
     let mut out: HashMap<String, f64> = HashMap::new();
-    let mut missing: Vec<String> = Vec::new();
+    // unmapped codes first: they are the likelier surprise, so they lead the reported examples
+    let mut missing: Vec<String> = unmapped;
     for (caller_code, geoid) in keyed {
         match population.values.get(&geoid) {
             Some(&value) if value > 0.0 => {

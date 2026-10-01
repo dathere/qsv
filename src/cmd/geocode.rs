@@ -361,16 +361,22 @@ geocode options:
     --min-score <score>         The minimum Jaro-Winkler distance score.
                                 [default: 0.8]
     --admin1 <admin1_list>      The comma-delimited, case-insensitive list of admin1s to filter for.
+                                Only a place inside one of them is returned. A value with no match
+                                inside them is left unchanged (or set to the invalid-result value),
+                                and the number of such values is reported on stderr.
     
                                 If all uppercase, it will be treated as an admin1 code (e.g. US.NY, JP.40, CN.23).
                                 Otherwise, it will be treated as an admin1 name (e.g New York, Tokyo, Shanghai).
+                                US territories, which Geonames files as countries of their own, are
+                                accepted as US.PR, US.VI, US.GU, US.AS and US.MP.
 
-                                Requires the --country option. However, if all admin1 codes have the same
-                                prefix (e.g. US.TX, US.NJ, US.CA), the country can be inferred from the
-                                admin1 code (in this example - US), and the --country option is not required.
+                                Requires the --country option, unless every entry is an admin1 code:
+                                then the countries are inferred from the code prefixes (e.g. US.TX,US.PR
+                                infers US and PR), and the --country option is not required.
 
-                                If specifying multiple admin1 filters, you can mix admin1 codes and names,
-                                and they are matched in priority order.
+                                If specifying multiple admin1 filters, you can mix admin1 codes and names.
+                                A place inside any of them qualifies, and the best-scoring one is
+                                returned, preferring a place whose name is exactly the value.
 
                                 Matches are made using a starts_with() comparison (i.e. "US" will match "US.NY",
                                 "US.NJ", etc. for admin1 code. "New" will match "New York", "New Jersey",
@@ -686,47 +692,77 @@ fn parse_region_filters(
     country_list: Option<&str>,
     admin1_list: Option<&str>,
 ) -> CliResult<(Option<Vec<String>>, Option<Vec<Admin1Filter>>)> {
-    let mut admin1_code_prefix = String::new();
-    let mut admin1_same_prefix = true;
+    // US territories are countries of their own in Geonames (Ponce is admin1 `PR.113` of country
+    // `PR`, not of `US`), so `US.PR` must become country `PR` with an admin1 prefix matching any
+    // of its municipios (issue #4687).
+    const US_TERRITORIES: &[&str] = &["PR", "VI", "GU", "AS", "MP"];
     let mut country_list = country_list.map(ToString::to_string);
 
     let admin1_filter_list = if let Some(admin1_list) = admin1_list {
         let admin1_code_re = ADMIN1_CODE_REGEX();
-        let list = admin1_list
-            .split(',')
-            .map(|s| {
-                let temp_s = s.trim();
-                let is_code_flag = admin1_code_re.is_match(temp_s);
-                Admin1Filter {
-                    admin1_string: if is_code_flag {
-                        if admin1_same_prefix {
-                            if admin1_code_prefix.is_empty() {
-                                admin1_code_prefix = temp_s[0..3].to_string();
-                            } else if admin1_code_prefix != temp_s[0..3] {
-                                // different country prefixes, so the country can't be inferred
-                                admin1_same_prefix = false;
-                            }
-                        }
-                        temp_s.to_string()
-                    } else {
-                        // its an admin1 name, lowercase it for case-insensitive starts_with()
-                        temp_s.to_lowercase()
-                    },
-                    is_code:       is_code_flag,
+        let mut prefixes: Vec<String> = Vec::new();
+        let mut all_codes = true;
+        let mut territories: Vec<&str> = Vec::new();
+        let mut list: Vec<Admin1Filter> = Vec::new();
+        for s in admin1_list.split(',') {
+            let temp_s = s.trim();
+            if let Some(t) = temp_s
+                .to_ascii_uppercase()
+                .strip_prefix("US.")
+                .and_then(|t| US_TERRITORIES.iter().find(|x| **x == t))
+            {
+                territories.push(t);
+                if !prefixes.iter().any(|p| p == t) {
+                    prefixes.push((*t).to_string());
                 }
-            })
-            .collect::<Vec<Admin1Filter>>();
-
-        if country_list.is_none() {
-            if !admin1_code_prefix.is_empty() && admin1_same_prefix {
-                admin1_code_prefix.pop(); // remove the dot
-                country_list = Some(admin1_code_prefix);
-            } else {
-                return fail_incorrectusage_clierror!(
-                    "If --admin1 is set, --country must also be set unless admin1 codes are used \
-                     with a common country prefix (e.g. US.CA,US.NY,US.OH, etc)."
-                );
+                list.push(Admin1Filter {
+                    admin1_string: format!("{t}."),
+                    is_code:       true,
+                });
+                continue;
             }
+            let is_code_flag = admin1_code_re.is_match(temp_s);
+            if is_code_flag {
+                let prefix = temp_s[0..2].to_string();
+                if !prefixes.contains(&prefix) {
+                    prefixes.push(prefix);
+                }
+            } else {
+                all_codes = false;
+            }
+            list.push(Admin1Filter {
+                admin1_string: if is_code_flag {
+                    temp_s.to_string()
+                } else {
+                    // its an admin1 name, lowercase it for case-insensitive starts_with()
+                    temp_s.to_lowercase()
+                },
+                is_code:       is_code_flag,
+            });
+        }
+
+        match country_list.as_mut() {
+            // an explicit country list still has to admit the territories the admin1 list names
+            Some(countries) => {
+                for t in territories {
+                    if !countries
+                        .split(',')
+                        .any(|c| c.trim().eq_ignore_ascii_case(t))
+                    {
+                        countries.push(',');
+                        countries.push_str(t);
+                    }
+                }
+            },
+            None if all_codes && !prefixes.is_empty() => {
+                country_list = Some(prefixes.join(","));
+            },
+            None => {
+                return fail_incorrectusage_clierror!(
+                    "If --admin1 is set, --country must also be set unless every admin1 entry is \
+                     a code (e.g. US.CA,US.NY,US.PR), from which the country is inferred."
+                );
+            },
         }
         Some(list)
     } else {
@@ -879,7 +915,8 @@ static INVALID_COUNTRY_CODE: &str = "Invalid country code.";
 
 // when suggesting with --admin1, how many suggestions to fetch from the engine
 // before filtering by admin1
-static SUGGEST_ADMIN1_LIMIT: usize = 10;
+static SUGGEST_ADMIN1_POOL: usize = 1000;
+static SUGGEST_EXACT_POOL: usize = 50;
 
 // valid column values for %dyncols
 // when adding new columns, make sure to maintain the sort order
@@ -1527,6 +1564,9 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     };
     let mut batch = Vec::with_capacity(batchsize);
     let mut batch_results = Vec::with_capacity(batchsize);
+    // values that found no match inside --admin1, reported once at the end (issue #4687): the
+    // filter is strict, so without a count the misses would vanish into unchanged cells
+    let admin1_misses = std::sync::atomic::AtomicU64::new(0);
 
     util::njobs(args.flag_jobs);
 
@@ -1609,6 +1649,9 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         true
                     };
                     if invalid {
+                        if admin1_filter_list.is_some() {
+                            admin1_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         if invalid_result.is_empty() {
                             // --invalid-result is not set, so add empty columns
                             add_fields(&mut record, "", dyncols_len);
@@ -1639,6 +1682,9 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         cell = geocoded_result;
                     } else {
                         // we have an invalid geocode result
+                        if admin1_filter_list.is_some() {
+                            admin1_misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         if !invalid_result.is_empty() {
                             // --invalid-result is set, so use that instead
                             // otherwise, we leave cell untouched.
@@ -1689,6 +1735,20 @@ async fn geocode_main(args: Args) -> CliResult<()> {
             }
         }
         util::finish_progress(&progress);
+    }
+    let misses = admin1_misses.into_inner();
+    if misses > 0 {
+        winfo!(
+            "{misses} value(s) found no match within --admin1 {}, so they were {}. Small towns \
+             may be missing from the index: the default holds places of 15,000+ people, and `qsv \
+             geocode index-load 1000` loads one with places of 1,000+.",
+            args.flag_admin1.as_deref().unwrap_or_default(),
+            if invalid_result.is_empty() {
+                "left unchanged"
+            } else {
+                "set to --invalid-result"
+            }
+        );
     }
     Ok(wtr.flush()?)
 }
@@ -2505,6 +2565,15 @@ fn search_index(
     )
 }
 
+/// The first candidate whose own name equals `query` (already lowercased), else the first.
+fn pick_exact_name<'a>(cands: &[&'a CitiesRecord], query: &str) -> Option<&'a CitiesRecord> {
+    cands
+        .iter()
+        .copied()
+        .find(|cr| cr.name.to_lowercase() == query)
+        .or_else(|| cands.first().copied())
+}
+
 /// Uncached geocode lookup — the raw body shared by the cached `search_index`
 /// wrapper and dyncols mode (which cannot use the cache).
 fn search_index_uncached(
@@ -2522,57 +2591,42 @@ fn search_index_uncached(
 ) -> Option<String> {
     if mode == GeocodeSubCmd::Suggest || mode == GeocodeSubCmd::SuggestNow {
         let search_result: Vec<&CitiesRecord>;
+        // A prefix match scores a flat 1.0 and ties go to population, so "Davis" ranks San Diego
+        // (an alternate name starting with "davis") above Davis, CA. Among the candidates, prefer
+        // one whose own name IS the query (issue #4687).
+        let query = cell.trim().to_lowercase();
         let cityrecord = if let Some(admin1_filter_list) = admin1_filter_list {
-            // we have an admin1 filter, run a search for top SUGGEST_ADMIN1_LIMIT results
+            // `--admin1` FILTERS (issue #4687): only an in-admin1 candidate is ever returned, out
+            // of a pool wide enough that a correct answer ranked below other states' places still
+            // reaches the filter. The engine sorts every match before truncating, so the width
+            // costs nothing.
             search_result =
-                engine.suggest(cell, SUGGEST_ADMIN1_LIMIT, min_score, country_filter_list);
-
-            // first, get the first result and store that in cityrecord
-            let Some(first_result) = search_result.first().copied() else {
-                // no results, so return early with None
-                return None;
-            };
-
-            // then iterate through search results and find the first one that matches admin1
-            // the search results are already sorted by score, so we just need to find the first
-            let mut matched_record: Option<&CitiesRecord> = None;
-            'outer: for cr in &search_result {
-                if let Some(admin_division) = cr.admin_division.as_ref() {
-                    // lowercase the admin1 name once per candidate, only when needed
-                    let mut admin1_name_lower: Option<String> = None;
-                    for admin1_filter in admin1_filter_list {
-                        if admin1_filter.is_code {
-                            // admin1 is a code, so we search for admin1 code
-                            if admin_division
-                                .code
-                                .starts_with(&admin1_filter.admin1_string)
-                            {
-                                matched_record = Some(cr);
-                                break 'outer;
+                engine.suggest(cell, SUGGEST_ADMIN1_POOL, min_score, country_filter_list);
+            let in_admin1: Vec<&CitiesRecord> = search_result
+                .iter()
+                .copied()
+                .filter(|cr| {
+                    cr.admin_division.as_ref().is_some_and(|admin_division| {
+                        admin1_filter_list.iter().any(|admin1_filter| {
+                            if admin1_filter.is_code {
+                                admin_division
+                                    .code
+                                    .starts_with(&admin1_filter.admin1_string)
+                            } else {
+                                admin_division
+                                    .name
+                                    .to_lowercase()
+                                    .starts_with(&admin1_filter.admin1_string)
                             }
-                        } else {
-                            // admin1 is a name, case-insensitive starts_with
-                            let lower = admin1_name_lower
-                                .get_or_insert_with(|| admin_division.name.to_lowercase());
-                            if lower.starts_with(&admin1_filter.admin1_string) {
-                                matched_record = Some(cr);
-                                break 'outer;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // no admin1 match, so we return the first result
-            matched_record.unwrap_or(first_result)
+                        })
+                    })
+                })
+                .collect();
+            pick_exact_name(&in_admin1, &query)?
         } else {
-            // no admin1 filter, run a search for 1 result (top match)
-            search_result = engine.suggest(cell, 1, min_score, country_filter_list);
-            let Some(cr) = search_result.into_iter().next() else {
-                // no results, so return early with None
-                return None;
-            };
-            cr
+            search_result =
+                engine.suggest(cell, SUGGEST_EXACT_POOL, min_score, country_filter_list);
+            pick_exact_name(&search_result, &query)?
         };
 
         let country = cityrecord.country.as_ref()?.code.as_str();
@@ -3806,7 +3860,7 @@ pub struct GeoRegion {
 
 /// How many candidates the HINTED forward path scores before applying an admin1 hint.
 ///
-/// Deliberately separate from [`SUGGEST_ADMIN1_LIMIT`], which feeds `search_index_uncached`'s
+/// Deliberately separate from [`SUGGEST_ADMIN1_POOL`], which feeds `search_index_uncached`'s
 /// `unwrap_or(first_result)` fallback — raising that would change which record `geocode suggest`
 /// returns. Generous here because geosuggest sorts and dedupes the FULL candidate set before
 /// `take(limit)` (geosuggest-core `Engine::suggest`), so a larger limit costs one longer `Vec` and

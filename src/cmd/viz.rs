@@ -24768,6 +24768,16 @@ fn md_inline_depth(text: &str, depth: usize) -> String {
     while i < n {
         let c = b[i];
         match c {
+            // CommonMark backslash escape: `\$`, `\*`, `\_` ... stand for the bare character
+            // (issue #4689 -- LLM descriptions escape dollar signs so a GitHub renderer won't read
+            // a `$...$` pair as math). Only ASCII punctuation escapes, so `\a` stays
+            // two characters. Handled before the emphasis/link/code arms, so an escaped
+            // marker never opens one, and the character goes through `lit`, so `\<` is
+            // still HTML-escaped.
+            b'\\' if i + 1 < n && b[i + 1].is_ascii_punctuation() => {
+                lit.push(b[i + 1] as char);
+                i += 2;
+            },
             b'`' => {
                 // Inline code: content up to the next backtick, escaped, not re-parsed.
                 if let Some(rel) = text[i + 1..].find('`') {
@@ -37089,7 +37099,9 @@ impl<'a> SmartCtx<'a> {
                     rows.push_str(&format!(
                         "<tr><td class=\"qsv-viz-meta-k\">{}</td><td>{}</td></tr>\n",
                         t!("viz.meta.description"),
-                        html_escape(&first_para)
+                        // the same inline Markdown the drawer renders (issue #4689): raw-escaping
+                        // it showed `**bold**` and `\$` literally in the header
+                        md_inline(&first_para)
                     ));
                 }
             }
@@ -47678,6 +47690,45 @@ mod tests {
         assert_eq!(data.rows["a"].description, "Column A holds categories.");
         assert!(data.dataset_description.is_none());
         assert!(data.generated_by.is_none());
+    }
+
+    #[test]
+    fn render_dict_markdown_backslash_escapes() {
+        // issue #4689: an escaped dollar is a literal dollar, as in any CommonMark renderer
+        assert_eq!(
+            render_dict_markdown(r"low (\$179.73), up to \$456 million"),
+            "<p>low ($179.73), up to $456 million</p>\n"
+        );
+        // an escaped marker never opens emphasis
+        assert_eq!(
+            render_dict_markdown(r"\*not emphasis\* and \_nor this\_"),
+            "<p>*not emphasis* and _nor this_</p>\n"
+        );
+        // only ASCII punctuation escapes; `\\` is one backslash; a trailing `\` is literal
+        assert_eq!(render_dict_markdown(r"\a stays"), "<p>\\a stays</p>\n");
+        assert_eq!(
+            render_dict_markdown(r"one \\ backslash"),
+            "<p>one \\ backslash</p>\n"
+        );
+        assert_eq!(
+            render_dict_markdown(r"ends with \"),
+            "<p>ends with \\</p>\n"
+        );
+        // the escaped character is still HTML-escaped: `\<` never emits a raw `<`
+        assert_eq!(
+            render_dict_markdown(r"\<script\>"),
+            "<p>&lt;script&gt;</p>\n"
+        );
+        // inside a code span the backslash is literal
+        assert_eq!(
+            render_dict_markdown(r"`a \$ b`"),
+            "<p><code>a \\$ b</code></p>\n"
+        );
+        // an escaped bullet marker is a paragraph, not a list item
+        assert_eq!(
+            render_dict_markdown(r"\* not a bullet"),
+            "<p>* not a bullet</p>\n"
+        );
     }
 
     #[test]

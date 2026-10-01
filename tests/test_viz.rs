@@ -5365,6 +5365,50 @@ fn viz_smart_metadata_description_only_with_dict_info() {
 }
 
 #[test]
+fn viz_smart_metadata_description_renders_inline_markdown() {
+    // issue #4689: the header row showed `**grew**` and `\$` literally, while the drawer
+    // rendered them. Both now go through the same inline renderer, which still escapes raw HTML.
+    let wrk = Workdir::new("viz_smart_metadata_description_renders_inline_markdown");
+    wrk.create_from_string(
+        "data.csv",
+        "region,revenue\neast,1000\neast,1200\nwest,5000\nwest,5200\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "description": "Payments **grew** to \\$456 million <b>here</b>.",
+          "properties": {
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+    let out = wrk.path("di.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out,
+        "--dict-info",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("di.html").unwrap();
+    assert!(
+        html.contains(
+            r#"<td class="qsv-viz-meta-k">Description:</td><td>Payments <strong>grew</strong> to $456 million &lt;b&gt;here&lt;/b&gt;.</td>"#
+        ),
+        "header description row"
+    );
+}
+
+#[test]
 fn viz_smart_metadata_description_absent_when_dictionary_has_none() {
     let wrk = Workdir::new("viz_smart_metadata_description_absent_when_dictionary_has_none");
     wrk.create_from_string(

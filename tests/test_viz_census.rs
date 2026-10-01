@@ -63,8 +63,23 @@ fn query_param(query: &str, want: &str) -> String {
 /// What the mock observed: how many requests arrived, and every `where` clause it was asked for.
 #[derive(Clone, Default)]
 pub(crate) struct Observed {
-    pub(crate) requests:      Arc<AtomicUsize>,
-    pub(crate) where_clauses: Arc<Mutex<Vec<String>>>,
+    pub(crate) requests:       Arc<AtomicUsize>,
+    pub(crate) where_clauses:  Arc<Mutex<Vec<String>>>,
+    /// raw query strings of county-layer requests, for asserting on paging/generalization params
+    pub(crate) county_queries: Arc<Mutex<Vec<String>>>,
+}
+
+/// `TIGERweb`'s firewall page, byte for byte as the live service sent it (#4682): HTTP 200,
+/// `text/html`, served in place of a response it judges too large.
+const WAF_REJECTED_BODY: &str = "<html><head><title>Request Rejected</title></head><body>The \
+                                 requested URL was rejected. Please consult with your \
+                                 administrator.<br><br>Your support ID is: \
+                                 13427891564991414132</body></html>";
+
+fn waf_rejected() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(WAF_REJECTED_BODY)
 }
 
 /// The service catalog: one ACS vintage.
@@ -187,6 +202,56 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     o.requests.fetch_add(1, Ordering::SeqCst);
     let where_clause = query_param(req.query_string(), "where");
     o.where_clauses.lock().unwrap().push(where_clause.clone());
+    o.county_queries
+        .lock()
+        .unwrap()
+        .push(req.query_string().to_string());
+
+    // #4682: the firewall refuses by response SIZE. State 36's geometry fetch is refused while a
+    // page asks for more than 100 records and honoured (with real paging) below that; state 37's
+    // is refused at every size. Probes (`GEOID IN`, no geometry) always pass, as on the live
+    // service — which is exactly why the failure was charged to the column rather than the fetch.
+    if where_clause.contains("'36") || where_clause.contains("'37") {
+        let is_ny = where_clause.contains("'36");
+        let all: Vec<&str> = if is_ny {
+            vec!["36001", "36047", "36061"]
+        } else {
+            vec!["37119", "37183"]
+        };
+        if where_clause.starts_with("STATE IN") {
+            let count: usize = query_param(req.query_string(), "resultRecordCount")
+                .parse()
+                .unwrap_or(usize::MAX);
+            if !is_ny || count > 100 {
+                return waf_rejected();
+            }
+            let offset: usize = query_param(req.query_string(), "resultOffset")
+                .parse()
+                .unwrap_or(0);
+            let page: Vec<serde_json::Value> = all
+                .iter()
+                .enumerate()
+                .skip(offset)
+                .take(count)
+                .map(|(i, g)| county_feature(g, 30.0 + 2.0 * i as f64))
+                .collect();
+            let more = offset + page.len() < all.len();
+            return HttpResponse::Ok().json(serde_json::json!({
+                "type": "FeatureCollection",
+                "features": page,
+                "exceededTransferLimit": more
+            }));
+        }
+        let features: Vec<serde_json::Value> = all
+            .iter()
+            .filter(|g| where_clause.contains(&format!("'{g}'")))
+            .map(|g| county_feature(g, 30.0))
+            .collect();
+        return HttpResponse::Ok().json(serde_json::json!({
+            "type": "FeatureCollection",
+            "features": features
+        }));
+    }
 
     // The county NAME table (issue #4417 Part B): `where=1=1`, no geometry. The fixture carries
     // the three collision shapes the resolver must handle — a name unique nationally, a name
@@ -1305,6 +1370,186 @@ fn viz_denominator_census_never_prints_the_api_key() {
         assert!(
             stderr.contains("key=REDACTED"),
             "the redaction should be visible where the key was: {stderr}"
+        );
+    });
+}
+
+/// The `STATE IN` (geometry) requests among the county-layer queries, as raw query strings.
+fn geometry_fetches(observed: &Observed) -> Vec<String> {
+    observed
+        .county_queries
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|q| query_param(q, "where").starts_with("STATE IN"))
+        .cloned()
+        .collect()
+}
+
+// #4682: TIGERweb's firewall answers an oversized geometry page with HTTP 200 + an HTML "Request
+// Rejected" page. The pager must answer that by halving its page size at the SAME offset until
+// the service accepts, then page normally — and every geometry fetch must ask for server-side
+// generalization, which is what keeps real pages under the firewall's limit in the first place.
+#[test]
+#[serial]
+fn viz_geojson_auto_shrinks_pages_when_the_census_firewall_refuses() {
+    let wrk = Workdir::new("viz_geojson_auto_shrinks_pages_when_the_census_firewall_refuses");
+    wrk.create_from_string("ny.csv", "fips,cases\n36001,10\n36047,20\n36061,30\n");
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "ny.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "census:county",
+            "-o",
+            "ny.html",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "a refused page must be retried smaller, not fail the run: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let fetches = geometry_fetches(observed);
+        let sizes: Vec<String> = fetches
+            .iter()
+            .map(|q| query_param(q, "resultRecordCount"))
+            .collect();
+        let offsets: Vec<String> = fetches
+            .iter()
+            .map(|q| query_param(q, "resultOffset"))
+            .collect();
+        assert_eq!(
+            sizes,
+            ["500", "250", "125", "62"],
+            "the pager must halve until accepted"
+        );
+        assert!(
+            offsets.iter().all(|o| o == "0"),
+            "a refused page must be retried at the same offset: {offsets:?}"
+        );
+        for q in &fetches {
+            assert_eq!(
+                query_param(q, "maxAllowableOffset"),
+                "0.0005",
+                "county geometry must be generalized server-side: {q}"
+            );
+        }
+
+        let html = std::fs::read_to_string(wrk.path("ny.html")).unwrap();
+        for geoid in ["36001", "36047", "36061"] {
+            assert!(html.contains(geoid), "{geoid} missing from the map");
+        }
+    });
+}
+
+// #4682: when even the smallest page is refused, say so — name the firewall, not "not valid
+// JSON" — and stop at the floor rather than halving forever.
+#[test]
+#[serial]
+fn viz_geojson_auto_reports_a_persistent_census_firewall_refusal() {
+    let wrk = Workdir::new("viz_geojson_auto_reports_a_persistent_census_firewall_refusal");
+    wrk.create_from_string("nc.csv", "fips,cases\n37119,10\n37183,20\n");
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "nc.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "census:county",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "a refused fetch cannot draw a map");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("TIGERweb firewall rejected the request")
+                && stderr.contains("support ID 13427891564991414132")
+                && stderr.contains("Pages of 25 records were still refused"),
+            "the refusal must be named as such: {stderr}"
+        );
+        assert!(
+            !stderr.contains("not valid JSON"),
+            "the firewall page must not be reported as a JSON error: {stderr}"
+        );
+        let sizes: Vec<String> = geometry_fetches(observed)
+            .iter()
+            .map(|q| query_param(q, "resultRecordCount"))
+            .collect();
+        assert_eq!(sizes, ["500", "250", "125", "62", "31", "25"]);
+    });
+}
+
+// #4682: the probe of every candidate column succeeds and only the shared geometry fetch is
+// refused, so the refusal says nothing about the column. It must abort the run as itself, not be
+// charged to each candidate in turn and summarized as "no region column resolved".
+#[test]
+#[serial]
+fn viz_smart_census_firewall_refusal_is_not_blamed_on_the_column() {
+    let wrk = Workdir::new("viz_smart_census_firewall_refusal_is_not_blamed_on_the_column");
+    wrk.create_from_string(
+        "two.csv",
+        "nc,fips,cases\n37119,42003,10\n37119,42003,20\n37183,42101,30\n37183,42101,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "nc": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "two.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("TIGERweb firewall rejected the request")
+                && !stderr.contains("no region column resolved"),
+            "the refusal must be reported as itself: {stderr}"
+        );
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            !clauses.iter().any(|c| c == "STATE IN ('42')"),
+            "the run moved on to another column after a service refusal: {clauses:?}"
         );
     });
 }

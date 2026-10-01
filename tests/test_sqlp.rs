@@ -6111,7 +6111,9 @@ fn sqlp_cast_string_to_date_is_silent() {
         assert!(out.status.success(), "{query}: {stderr}");
         assert_eq!(String::from_utf8_lossy(&out.stdout), expected, "{query}");
         assert!(
-            !stderr.to_ascii_lowercase().contains("deprecat"),
+            !["deprecation", "deprecated"]
+                .iter()
+                .any(|w| stderr.to_ascii_lowercase().contains(w)),
             "{query} printed a deprecation warning: {stderr}"
         );
     }

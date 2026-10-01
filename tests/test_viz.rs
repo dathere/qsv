@@ -4805,6 +4805,67 @@ fn viz_smart_timeseries_panel() {
 }
 
 #[test]
+fn viz_smart_timeseries_skips_constant_date_column() {
+    let wrk = Workdir::new("viz_smart_timeseries_skips_constant_date_column");
+    // a publication date stamped on every row comes FIRST and is trivially "sorted", so it used
+    // to win the canonical-date pick over the real (unsorted) event date and yield a one-bucket
+    // series - i.e. no time-series panel at all. Blank cells must not make it look like two dates.
+    let mut rows = String::from("published,txn_date,revenue\n");
+    for i in (0..40).rev() {
+        let day = (i % 28) + 1;
+        let month = (i / 28) + 1;
+        let revenue = 1000 + i * 13;
+        // a few blank cells: stats counts the blank as a value, so the column's cardinality is 2
+        let published = if i % 10 == 3 { "" } else { "2022-06-30" };
+        rows.push_str(&format!("{published},2021-{month:02}-{day:02},{revenue}\n"));
+    }
+    wrk.create_from_string("sales.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("revenue over txn_date"),
+        "no trend over the event date"
+    );
+    assert!(!html.contains("over published"));
+}
+
+#[test]
+fn viz_smart_cyclic_panel_skips_constant_date_column() {
+    let wrk = Workdir::new("viz_smart_cyclic_panel_skips_constant_date_column");
+    // a constant leading date column ties the event date on sort order and wins on column order,
+    // which left the cyclic panel folding a single day into nothing.
+    let mut rows = String::from("published,ts\n");
+    for d in 0..35u32 {
+        let date = date_after_monday_june_7_2021(d);
+        for h in 0..24 {
+            for _ in 0..if d % 7 < 5 { 3 } else { 1 } {
+                let published = if h == 5 { "" } else { "2022-06-30" };
+                rows.push_str(&format!("{published},{date}T{h:02}:15:00\n"));
+            }
+        }
+    }
+    wrk.create_from_string("events.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Records by day of week (ts)"),
+        "expected a day-of-week ring on the event timestamp"
+    );
+}
+
+#[test]
 fn viz_smart_collapses_one_to_one_categorical_twins() {
     // `orgcode` <-> `orgfullname`: a code/label pair in strict 1:1 correspondence. Charted
     // separately they produce byte-identical frequency bars and waste a parcats axis on the same

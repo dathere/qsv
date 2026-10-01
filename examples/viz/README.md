@@ -193,7 +193,9 @@ columns, a **3D scatter** of the strongest pair plus the *least-redundant* third
 axis is added as well — unless the strongest pair is itself near-collinear, in
 which case the 3D would collapse to a plane and is skipped. When the data has a date/datetime
 column (auto-detected via stats date inference) plus a continuous numeric column,
-a **time-series trend** panel of that column over time is added too. When a
+a **time-series trend** panel of that column over time is added too. With a `--dictionary`,
+a column of 4-digit years tagged as time (e.g. `Program_Year`, concept `time.date`) serves
+as a yearly time axis as well, since `stats` types bare years as Integer, not Date. When a
 latitude/longitude column pair is detected, a **geographic map** panel leads the
 Data Schematic — drawn on MapLibre tiles for local extents, or as an offline
 **projection world-overview** (ScatterGeo, no tiles or token) when the

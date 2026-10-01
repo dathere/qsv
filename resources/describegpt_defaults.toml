@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "9.1.0"
+version = "9.1.1"
 tokens = 20000
 base_url = "http://localhost:1234/v1"
 model = "google/gemma-4-26b-a4b"
@@ -573,7 +573,8 @@ other data quality issues that the User should be aware of).
 
 Add an Attribution with the placeholder "{{ generated_by_signature }}" at the bottom of the output.
 
-The entire output should be in Markdown format.
+The entire output should be in Markdown format. Write plain prose: do not use LaTeX or math markup
+such as `$\\times$` or `$\\approx$`, and write symbols directly as Unicode characters (×, ≈, ≤, ≥, ±).
 """
 
 tags_prompt = """

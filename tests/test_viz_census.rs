@@ -63,8 +63,25 @@ fn query_param(query: &str, want: &str) -> String {
 /// What the mock observed: how many requests arrived, and every `where` clause it was asked for.
 #[derive(Clone, Default)]
 pub(crate) struct Observed {
-    pub(crate) requests:      Arc<AtomicUsize>,
-    pub(crate) where_clauses: Arc<Mutex<Vec<String>>>,
+    pub(crate) requests:       Arc<AtomicUsize>,
+    pub(crate) where_clauses:  Arc<Mutex<Vec<String>>>,
+    /// raw query strings of county-layer requests, for asserting on paging/generalization params
+    pub(crate) county_queries: Arc<Mutex<Vec<String>>>,
+    /// raw query strings of States-layer requests (#4681)
+    pub(crate) state_queries:  Arc<Mutex<Vec<String>>>,
+}
+
+/// `TIGERweb`'s firewall page, byte for byte as the live service sent it (#4682): HTTP 200,
+/// `text/html`, served in place of a response it judges too large.
+const WAF_REJECTED_BODY: &str = "<html><head><title>Request Rejected</title></head><body>The \
+                                 requested URL was rejected. Please consult with your \
+                                 administrator.<br><br>Your support ID is: \
+                                 13427891564991414132</body></html>";
+
+fn waf_rejected() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(WAF_REJECTED_BODY)
 }
 
 /// The service catalog: one ACS vintage.
@@ -98,7 +115,10 @@ async fn serve_mapserver(o: web::Data<Observed>) -> HttpResponse {
             {"id": 28, "name": "Incorporated Places"},
             {"id": 29, "name": "Incorporated Places Labels"},
             {"id": 30, "name": "Census Designated Places"},
-            {"id": 31, "name": "Census Designated Places Labels"}
+            {"id": 31, "name": "Census Designated Places Labels"},
+            // #4681. The Labels sibling is left UNROUTED, like every other one here.
+            {"id": 55, "name": "States"},
+            {"id": 56, "name": "States Labels"}
         ]
     }))
 }
@@ -187,6 +207,56 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     o.requests.fetch_add(1, Ordering::SeqCst);
     let where_clause = query_param(req.query_string(), "where");
     o.where_clauses.lock().unwrap().push(where_clause.clone());
+    o.county_queries
+        .lock()
+        .unwrap()
+        .push(req.query_string().to_string());
+
+    // #4682: the firewall refuses by response SIZE. State 36's geometry fetch is refused while a
+    // page asks for more than 100 records and honoured (with real paging) below that; state 37's
+    // is refused at every size. Probes (`GEOID IN`, no geometry) always pass, as on the live
+    // service — which is exactly why the failure was charged to the column rather than the fetch.
+    if where_clause.contains("'36") || where_clause.contains("'37") {
+        let is_ny = where_clause.contains("'36");
+        let all: Vec<&str> = if is_ny {
+            vec!["36001", "36047", "36061"]
+        } else {
+            vec!["37119", "37183"]
+        };
+        if where_clause.starts_with("STATE IN") {
+            let count: usize = query_param(req.query_string(), "resultRecordCount")
+                .parse()
+                .unwrap_or(usize::MAX);
+            if !is_ny || count > 100 {
+                return waf_rejected();
+            }
+            let offset: usize = query_param(req.query_string(), "resultOffset")
+                .parse()
+                .unwrap_or(0);
+            let page: Vec<serde_json::Value> = all
+                .iter()
+                .enumerate()
+                .skip(offset)
+                .take(count)
+                .map(|(i, g)| county_feature(g, 30.0 + 2.0 * i as f64))
+                .collect();
+            let more = offset + page.len() < all.len();
+            return HttpResponse::Ok().json(serde_json::json!({
+                "type": "FeatureCollection",
+                "features": page,
+                "exceededTransferLimit": more
+            }));
+        }
+        let features: Vec<serde_json::Value> = all
+            .iter()
+            .filter(|g| where_clause.contains(&format!("'{g}'")))
+            .map(|g| county_feature(g, 30.0))
+            .collect();
+        return HttpResponse::Ok().json(serde_json::json!({
+            "type": "FeatureCollection",
+            "features": features
+        }));
+    }
 
     // The county NAME table (issue #4417 Part B): `where=1=1`, no geometry. The fixture carries
     // the three collision shapes the resolver must handle — a name unique nationally, a name
@@ -274,6 +344,45 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     }))
 }
 
+/// One state polygon, carrying both keys the States layer offers (#4681).
+fn state_feature(geoid: &str, stusab: &str, name: &str, x: f64) -> serde_json::Value {
+    serde_json::json!({
+        "type": "Feature",
+        "properties": {"GEOID": geoid, "STUSAB": stusab, "NAME": name, "AREALAND": 100_000_000_000_i64},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[x, 10.0], [x, 11.0], [x + 1.0, 11.0], [x + 1.0, 10.0], [x, 10.0]]]
+        }
+    })
+}
+
+/// The States layer (#4681): answers `GEOID IN (...)` from a fixture that includes an island area
+/// (GU), whose polygon exists though the ACS has no population for it.
+async fn serve_state_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
+    o.requests.fetch_add(1, Ordering::SeqCst);
+    let where_clause = query_param(req.query_string(), "where");
+    o.where_clauses.lock().unwrap().push(where_clause.clone());
+    o.state_queries
+        .lock()
+        .unwrap()
+        .push(req.query_string().to_string());
+    let features: Vec<serde_json::Value> = [
+        ("06", "CA", "California", 40.0),
+        ("24", "MD", "Maryland", 38.0),
+        ("36", "NY", "New York", 42.0),
+        ("42", "PA", "Pennsylvania", 44.0),
+        ("66", "GU", "Guam", 46.0),
+    ]
+    .iter()
+    .filter(|(geoid, ..)| where_clause.contains(&format!("'{geoid}'")))
+    .map(|(geoid, usps, name, x)| state_feature(geoid, usps, name, *x))
+    .collect();
+    HttpResponse::Ok().json(serde_json::json!({
+        "type": "FeatureCollection",
+        "features": features
+    }))
+}
+
 /// The ZCTA and tract layers never match this fixture's codes, so the probe rejects them.
 async fn serve_empty_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
     o.requests.fetch_add(1, Ordering::SeqCst);
@@ -298,6 +407,11 @@ async fn serve_acs(o: web::Data<Observed>, req: HttpRequest) -> HttpResponse {
         .push(format!("acs?{}", query_param(q, "for")));
     // an API key must never be required — and when one IS set, it must arrive
     let for_clause = query_param(q, "for");
+    // What the live API does for a county query `in=` a state it has no rows for — an island area
+    // the ACS does not cover, or no state at all: 204 with an EMPTY body (#4680).
+    if for_clause.starts_with("county") && query_param(q, "in") == "state:60" {
+        return HttpResponse::NoContent().finish();
+    }
     if for_clause.starts_with("county") {
         HttpResponse::Ok().json(serde_json::json!([
             ["B01003_001E", "NAME", "state", "county"],
@@ -354,6 +468,10 @@ async fn run_webserver(
             )
             .service(
                 web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/30/query").to(serve_cdp_query),
+            )
+            .service(
+                web::resource("/TIGERweb/tigerWMS_ACS2023/MapServer/55/query")
+                    .to(serve_state_query),
             )
             // the Data API lives under its own root; only 2023 is "published" here, so the
             // vintage probe has to walk back to find it
@@ -704,7 +822,7 @@ fn viz_smart_geojson_auto_resolves_from_the_dictionary_region_column() {
     let wrk = Workdir::new("viz_smart_geojson_auto_resolves_from_the_dictionary_region_column");
     wrk.create_from_string(
         "pa.csv",
-        "fips,cases\n42003,10\n42003,20\n42101,30\n42101,40\n",
+        "fips,cases\n42003,10\n42003,20\n42101,30\n42101,40\n42101,50\n",
     );
     wrk.create_from_string("dict.schema.json", COUNTY_DICT);
 
@@ -787,7 +905,8 @@ fn viz_smart_geojson_auto_decoy_region_column_does_not_win() {
     let wrk = Workdir::new("viz_smart_geojson_auto_decoy_region_column_does_not_win");
     wrk.create_from_string(
         "pa.csv",
-        "decoy,fips,cases\n99998,42003,10\n99998,42003,20\n99999,42101,30\n99999,42101,40\n",
+        "decoy,fips,cases\n99998,42003,10\n99998,42003,20\n99999,42101,30\n99999,42101,40\n99999,\
+         42101,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",
@@ -851,7 +970,8 @@ fn viz_smart_geojson_auto_falls_through_to_the_next_candidate() {
     // `ca` sits at column 0, so on the exact probe tie (2/2 each) the stable sort ranks it first.
     wrk.create_from_string(
         "two.csv",
-        "ca,fips,cases\n06001,42003,10\n06001,42003,20\n06075,42101,30\n06075,42101,40\n",
+        "ca,fips,cases\n06001,42003,10\n06001,42003,20\n06075,42101,30\n06075,42101,40\n06075,\
+         42101,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",
@@ -1305,6 +1425,898 @@ fn viz_denominator_census_never_prints_the_api_key() {
         assert!(
             stderr.contains("key=REDACTED"),
             "the redaction should be visible where the key was: {stderr}"
+        );
+    });
+}
+
+/// The `STATE IN` (geometry) requests among the county-layer queries, as raw query strings.
+fn geometry_fetches(observed: &Observed) -> Vec<String> {
+    observed
+        .county_queries
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|q| query_param(q, "where").starts_with("STATE IN"))
+        .cloned()
+        .collect()
+}
+
+// #4682: TIGERweb's firewall answers an oversized geometry page with HTTP 200 + an HTML "Request
+// Rejected" page. The pager must answer that by halving its page size at the SAME offset until
+// the service accepts, then page normally — and every geometry fetch must ask for server-side
+// generalization, which is what keeps real pages under the firewall's limit in the first place.
+#[test]
+#[serial]
+fn viz_geojson_auto_shrinks_pages_when_the_census_firewall_refuses() {
+    let wrk = Workdir::new("viz_geojson_auto_shrinks_pages_when_the_census_firewall_refuses");
+    wrk.create_from_string("ny.csv", "fips,cases\n36001,10\n36047,20\n36061,30\n");
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "ny.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "census:county",
+            "-o",
+            "ny.html",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "a refused page must be retried smaller, not fail the run: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let fetches = geometry_fetches(observed);
+        let sizes: Vec<String> = fetches
+            .iter()
+            .map(|q| query_param(q, "resultRecordCount"))
+            .collect();
+        let offsets: Vec<String> = fetches
+            .iter()
+            .map(|q| query_param(q, "resultOffset"))
+            .collect();
+        assert_eq!(
+            sizes,
+            ["500", "250", "125", "62"],
+            "the pager must halve until accepted"
+        );
+        assert!(
+            offsets.iter().all(|o| o == "0"),
+            "a refused page must be retried at the same offset: {offsets:?}"
+        );
+        for q in &fetches {
+            assert_eq!(
+                query_param(q, "maxAllowableOffset"),
+                "0.0005",
+                "county geometry must be generalized server-side: {q}"
+            );
+        }
+
+        let html = std::fs::read_to_string(wrk.path("ny.html")).unwrap();
+        for geoid in ["36001", "36047", "36061"] {
+            assert!(html.contains(geoid), "{geoid} missing from the map");
+        }
+    });
+}
+
+// #4682: when even the smallest page is refused, say so — name the firewall, not "not valid
+// JSON" — and stop at the floor rather than halving forever.
+#[test]
+#[serial]
+fn viz_geojson_auto_reports_a_persistent_census_firewall_refusal() {
+    let wrk = Workdir::new("viz_geojson_auto_reports_a_persistent_census_firewall_refusal");
+    wrk.create_from_string("nc.csv", "fips,cases\n37119,10\n37183,20\n");
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "nc.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "census:county",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "a refused fetch cannot draw a map");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("TIGERweb firewall rejected the request")
+                && stderr.contains("support ID 13427891564991414132")
+                && stderr.contains("Pages of 25 records were still refused"),
+            "the refusal must be named as such: {stderr}"
+        );
+        assert!(
+            !stderr.contains("not valid JSON"),
+            "the firewall page must not be reported as a JSON error: {stderr}"
+        );
+        let sizes: Vec<String> = geometry_fetches(observed)
+            .iter()
+            .map(|q| query_param(q, "resultRecordCount"))
+            .collect();
+        assert_eq!(sizes, ["500", "250", "125", "62", "31", "25"]);
+    });
+}
+
+// #4682: the probe of every candidate column succeeds and only the shared geometry fetch is
+// refused, so the refusal says nothing about the column. It must abort the run as itself, not be
+// charged to each candidate in turn and summarized as "no region column resolved".
+#[test]
+#[serial]
+fn viz_smart_census_firewall_refusal_is_not_blamed_on_the_column() {
+    let wrk = Workdir::new("viz_smart_census_firewall_refusal_is_not_blamed_on_the_column");
+    wrk.create_from_string(
+        "two.csv",
+        "nc,fips,cases\n37119,42003,10\n37119,42003,20\n37183,42101,30\n37183,42101,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "nc": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "two.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("TIGERweb firewall rejected the request")
+                && !stderr.contains("no region column resolved"),
+            "the refusal must be reported as itself: {stderr}"
+        );
+        let clauses = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            !clauses.iter().any(|c| c == "STATE IN ('42')"),
+            "the run moved on to another column after a service refusal: {clauses:?}"
+        );
+    });
+}
+
+// ------------------------------------------------------------------------------------------------
+// #4681: `census:state`, and #4680: territories under `--denominator census`
+// ------------------------------------------------------------------------------------------------
+
+/// Every choropleth trace in a rendered page (run with `QSV_VIZ_NO_COMPRESS` so figures are plain
+/// JSON), in document order.
+fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for chunk in html.split("Plotly.newPlot(").skip(1) {
+        let Some(comma) = chunk.find(", ") else {
+            continue;
+        };
+        let mut vals = serde_json::Deserializer::from_str(&chunk[comma + 2..])
+            .into_iter::<serde_json::Value>();
+        let Some(Ok(fig)) = vals.next() else {
+            continue;
+        };
+        for t in fig["data"].as_array().into_iter().flatten() {
+            if t["type"]
+                .as_str()
+                .is_some_and(|ty| ty.starts_with("choropleth"))
+            {
+                out.push(t.clone());
+            }
+        }
+    }
+    out
+}
+
+/// `location -> z` for one trace.
+fn z_by_location(trace: &serde_json::Value) -> std::collections::HashMap<String, f64> {
+    let locs = trace["locations"].as_array().cloned().unwrap_or_default();
+    let z = trace["z"].as_array().cloned().unwrap_or_default();
+    locs.iter()
+        .zip(z.iter())
+        .filter_map(|(l, z)| Some((l.as_str()?.to_string(), z.as_f64()?)))
+        .collect()
+}
+
+fn state_choropleth(wrk: &Workdir, base: &str, csv: &str) -> std::process::Output {
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        csv,
+        "--locations",
+        "state",
+        "--value",
+        "cases",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "auto",
+    ])
+    .env("QSV_VIZ_NO_COMPRESS", "1")
+    .env("QSV_CENSUS_TIGERWEB_URL", base)
+    .env(
+        "QSV_CACHE_DIR",
+        wrk.path("boundary-cache").to_string_lossy().to_string(),
+    );
+    wrk.output(&mut cmd)
+}
+
+// #4681: a USPS-coded state column resolves against the States layer, is fetched by exact code set,
+// and keys the map on STUSAB (the data's spelling), including a lower-case code.
+#[test]
+#[serial]
+fn viz_geojson_auto_resolves_usps_state_codes() {
+    let wrk = Workdir::new("viz_geojson_auto_resolves_usps_state_codes");
+    wrk.create_from_string("st.csv", "state,cases\nPA,10\nNY,20\npa,5\n");
+
+    with_mock_tigerweb(|base, observed| {
+        let out = state_choropleth(&wrk, base, "st.csv");
+        assert!(
+            out.status.success(),
+            "USPS state codes must resolve: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = String::from_utf8_lossy(&out.stdout);
+        let traces = choropleth_traces(&html);
+        assert_eq!(traces.len(), 1, "one choropleth trace expected");
+        assert_eq!(traces[0]["featureidkey"], "properties.STUSAB");
+        let z = z_by_location(&traces[0]);
+        assert_eq!(z.get("PA"), Some(&15.0), "pa/PA must aggregate: {z:?}");
+        assert_eq!(z.get("NY"), Some(&20.0));
+
+        let fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert_eq!(fetches.len(), 1, "one geometry fetch expected: {fetches:?}");
+        assert_eq!(query_param(&fetches[0], "where"), "GEOID IN ('36','42')");
+        assert_eq!(query_param(&fetches[0], "maxAllowableOffset"), "0.001");
+        assert!(
+            query_param(&fetches[0], "outFields").contains("STUSAB"),
+            "STUSAB must be fetched or the key cannot resolve"
+        );
+    });
+}
+
+// #4681: a numeric state-FIPS column that dropped its leading zero (`6`) keys on GEOID.
+#[test]
+#[serial]
+fn viz_geojson_auto_resolves_state_fips_with_a_dropped_zero() {
+    let wrk = Workdir::new("viz_geojson_auto_resolves_state_fips_with_a_dropped_zero");
+    wrk.create_from_string("st.csv", "state,cases\n6,10\n42,20\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let out = state_choropleth(&wrk, base, "st.csv");
+        assert!(
+            out.status.success(),
+            "state FIPS must resolve: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let traces = choropleth_traces(&String::from_utf8_lossy(&out.stdout));
+        assert_eq!(traces[0]["featureidkey"], "properties.GEOID");
+        let z = z_by_location(&traces[0]);
+        assert_eq!(z.get("06"), Some(&10.0), "6 must pad to 06: {z:?}");
+        assert_eq!(z.get("42"), Some(&20.0));
+    });
+}
+
+// The #4681 repro: `viz smart --geojson auto --denominator census` on state-level data had no path
+// at all ("none of this dataset's region columns ... resolve"). It must draw the count map AND the
+// per-resident rate map, and the error-free run must fetch STATE population.
+#[test]
+#[serial]
+fn viz_smart_state_column_draws_a_census_rate_map() {
+    let wrk = Workdir::new("viz_smart_state_column_draws_a_census_rate_map");
+    wrk.create_from_string("st.csv", "state,cases\nPA,100\nPA,300\nNY,200\nNY,400\n");
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "state": { "type": "string", "title": "Recipient State Code", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "st.csv",
+            "--geojson",
+            "auto",
+            "--denominator",
+            "census",
+            "-o",
+            "st.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "state-level smart + census denominator must render: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("st.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(
+            traces.len() >= 2,
+            "expected a count map and a rate map, got {} choropleth traces",
+            traces.len()
+        );
+        assert!(
+            html.contains("residents"),
+            "the rate map must be per resident"
+        );
+        let asked = observed.where_clauses.lock().unwrap().clone();
+        assert!(
+            asked.iter().any(|c| c.starts_with("acs?state")),
+            "expected a STATE-level ACS request: {asked:?}"
+        );
+    });
+}
+
+// #4680: `--denominator census` used to REFUSE the whole map when the region column held any code
+// that is not one of the 52 ACS states (here GU, which has a polygon, and AA, a military "state"
+// that has none). `--denominator`'s help promises "Uncovered regions are excluded and reported":
+// the run must render, name the excluded codes, and leave every real state's rate exactly what it
+// is without them.
+#[test]
+#[serial]
+fn viz_denominator_census_excludes_and_reports_territories() {
+    let wrk = Workdir::new("viz_denominator_census_excludes_and_reports_territories");
+    let states_geojson = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": [
+            state_feature("42", "PA", "Pennsylvania", 44.0),
+            state_feature("36", "NY", "New York", 42.0),
+            state_feature("66", "GU", "Guam", 46.0),
+            state_feature("60", "AS", "American Samoa", 48.0),
+        ]
+    });
+    wrk.create_from_string("states.geojson", &states_geojson.to_string());
+    wrk.create_from_string(
+        "with.csv",
+        "state,cases\nPA,100\nNY,200\nGU,5\nAS,3\nAA,1\n",
+    );
+    wrk.create_from_string("without.csv", "state,cases\nPA,100\nNY,200\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let run = |csv: &str| {
+            let mut cmd = wrk.command("viz");
+            cmd.args([
+                "choropleth",
+                csv,
+                "--locations",
+                "state",
+                "--value",
+                "cases",
+                "--location-mode",
+                "geojson-id",
+                "--geojson",
+                "states.geojson",
+                "--feature-id-key",
+                "properties.STUSAB",
+                "--denominator",
+                "census",
+            ])
+            .env("QSV_VIZ_NO_COMPRESS", "1")
+            .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path(&format!("cache-{csv}"))
+                    .to_string_lossy()
+                    .to_string(),
+            );
+            wrk.output(&mut cmd)
+        };
+
+        let with = run("with.csv");
+        let stderr = String::from_utf8_lossy(&with.stderr);
+        assert!(
+            with.status.success(),
+            "territory codes must be excluded, not fatal: {stderr}"
+        );
+        assert!(
+            stderr.contains("excluded from the rate")
+                && stderr.contains("GU")
+                && stderr.contains("AS"),
+            "the excluded regions must be reported: {stderr}"
+        );
+
+        let without = run("without.csv");
+        assert!(without.status.success());
+        let z_with = z_by_location(&choropleth_traces(&String::from_utf8_lossy(&with.stdout))[0]);
+        let z_without =
+            z_by_location(&choropleth_traces(&String::from_utf8_lossy(&without.stdout))[0]);
+        for st in ["PA", "NY"] {
+            assert!(
+                z_without.contains_key(st),
+                "{st} missing from the baseline: {z_without:?}"
+            );
+            assert_eq!(
+                z_with.get(st),
+                z_without.get(st),
+                "{st}'s rate must not change because territories were present"
+            );
+        }
+        for st in ["GU", "AS", "AA"] {
+            assert!(
+                !z_with.contains_key(st),
+                "{st} has no population and must not be shaded as a rate: {z_with:?}"
+            );
+        }
+    });
+}
+
+// #4680, county side: the Data API answers a county query `in=` a state it has no rows for (an
+// island area) with 204 and an EMPTY body. That used to parse as "not valid JSON", be misreported
+// as a bad API key, and abort the run; it must exclude-and-report like any uncovered region.
+#[test]
+#[serial]
+fn viz_denominator_census_excludes_an_uncovered_state_s_counties() {
+    let wrk = Workdir::new("viz_denominator_census_excludes_an_uncovered_state_s_counties");
+    let counties = serde_json::json!({
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {"GEOID": "42003"},
+             "geometry": {"type": "Polygon", "coordinates": [[[0.0,0.0],[0.0,1.0],[1.0,1.0],[1.0,0.0],[0.0,0.0]]]}},
+            {"type": "Feature", "properties": {"GEOID": "42101"},
+             "geometry": {"type": "Polygon", "coordinates": [[[2.0,0.0],[2.0,1.0],[3.0,1.0],[3.0,0.0],[2.0,0.0]]]}},
+            {"type": "Feature", "properties": {"GEOID": "60010"},
+             "geometry": {"type": "Polygon", "coordinates": [[[4.0,0.0],[4.0,1.0],[5.0,1.0],[5.0,0.0],[4.0,0.0]]]}}
+        ]
+    });
+    wrk.create_from_string("counties.geojson", &counties.to_string());
+    wrk.create_from_string("c.csv", "fips,cases\n42003,10\n42101,20\n60010,3\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "c.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--location-mode",
+            "geojson-id",
+            "--geojson",
+            "counties.geojson",
+            "--feature-id-key",
+            "properties.GEOID",
+            "--denominator",
+            "census",
+        ])
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_API_URL", format!("{base}/data"))
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "an uncovered state's counties must be excluded, not fatal: {stderr}"
+        );
+        assert!(
+            !stderr.contains("QSV_CENSUS_API_KEY"),
+            "a 204 must not be reported as a key problem: {stderr}"
+        );
+        assert!(
+            stderr.contains("excluded from the rate") && stderr.contains("60010"),
+            "the uncovered county must be reported: {stderr}"
+        );
+    });
+}
+
+// #4681's guard: a state column resolves near 100% by construction, so it must NOT outrank a finer
+// region column in the same dataset. The county map stays; the States layer is never even asked.
+// (The gallery's county-name dashboards carry exactly this shape: a county column plus a state
+// column kept for disambiguation.)
+/// Run `viz smart --geojson auto` over a dataset whose FIRST column holds state codes tagged
+/// `state_concept`, beside a county-FIPS column, and assert the county column keeps the map.
+fn assert_county_column_outranks_state_column(
+    test_name: &str,
+    st_values: &[&str],
+    state_concept: &str,
+) {
+    let wrk = Workdir::new(test_name);
+    // the state column comes FIRST, so column order cannot be what keeps the county map; the
+    // county column holds exactly two counties whatever the number of rows
+    let mut csv = String::from("st,fips,cases\n");
+    for (i, st) in st_values.iter().enumerate() {
+        let fips = if i % 2 == 0 { "42003" } else { "42101" };
+        csv.push_str(&format!("{st},{fips},{}\n", 10 * (i + 1)));
+    }
+    wrk.create_from_string("mixed.csv", &csv);
+    wrk.create_from_string(
+        "dict.schema.json",
+        &r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "st": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "CONCEPT" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#
+        .replace("CONCEPT", state_concept),
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "mixed.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "m.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("m.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        assert_eq!(
+            traces[0]["featureidkey"], "properties.GEOID",
+            "the county column must keep the map ({state_concept})"
+        );
+        assert!(
+            z_by_location(&traces[0]).contains_key("42003"),
+            "the map must be keyed by county ({state_concept})"
+        );
+        // no GEOMETRY fetch from the States layer (a probe of an untagged column is fine)
+        let state_fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert!(
+            state_fetches.is_empty(),
+            "state boundaries must not be fetched while a county column resolves: \
+             {state_fetches:?}"
+        );
+    });
+}
+
+// #4681's guard: a state column resolves near 100% by construction, so it must NOT outrank a finer
+// region column in the same dataset. A column TAGGED geo.state is pulled out of the probe and
+// tried last. (The gallery's county-name dashboards carry exactly this shape.)
+#[test]
+#[serial]
+fn viz_smart_state_column_does_not_outrank_a_county_column() {
+    assert_county_column_outranks_state_column(
+        "viz_smart_state_column_does_not_outrank_a_county_column",
+        &["PA", "PA", "NY", "NY"],
+        "geo.state",
+    );
+}
+
+// The second net: an UNTAGGED column (generic geo.fips) whose values are only a MINORITY of state
+// FIPS is not classified as a state column by shape, so it is probed like any code column. Its
+// state-shaped values still resolve 100% against the States layer, tying the county column, and it
+// would win on column order - unless a probe winner whose best layer is State is demoted behind
+// every finer candidate.
+#[test]
+#[serial]
+fn viz_smart_generic_fips_state_column_does_not_outrank_a_county_column() {
+    assert_county_column_outranks_state_column(
+        "viz_smart_generic_fips_state_column_does_not_outrank_a_county_column",
+        &["42", "36", "x1", "x2", "x3"],
+        "geo.fips",
+    );
+}
+
+// REGRESSION (roborev 4931): an untagged state-FIPS column that is the ONLY probe slot skipped the
+// probe, so it was tried as-is ahead of a county-NAME column and drew a state map. It must be
+// classified as a state column by its values and tried last; the county names keep the map.
+// (Before #4681 a 2-digit column normalized to nothing for every layer, so the names always won.)
+#[test]
+#[serial]
+fn viz_smart_lone_state_fips_column_does_not_outrank_county_names() {
+    let wrk = Workdir::new("viz_smart_lone_state_fips_column_does_not_outrank_county_names");
+    // names unique nationally in the mock's name table, so no state hint is needed to resolve them
+    wrk.create_from_string(
+        "c.csv",
+        "stfp,county,cases\n42,Allegheny County,10\n42,Philadelphia County,20\n24,Baltimore \
+         County,30\n24,Baltimore County,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stfp": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("42003") && z.contains_key("24005"),
+            "the county names must keep the map: {z:?}"
+        );
+        let state_fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert!(
+            state_fetches.is_empty(),
+            "state boundaries must not be fetched while county names resolve: {state_fetches:?}"
+        );
+    });
+}
+
+// #4681: failure messages named candidate columns by dictionary TITLE only ("Recipient State
+// Code"), which is not a header anywhere in the CSV. Quote the column too.
+#[test]
+#[serial]
+fn viz_smart_auto_failure_names_columns_not_just_titles() {
+    let wrk = Workdir::new("viz_smart_auto_failure_names_columns_not_just_titles");
+    // alphanumeric junk normalizes to nothing for every layer, so both candidates score None
+    wrk.create_from_string("junk.csv", "zc1,zc2,cases\nx1,y1,1\nx2,y2,2\nx3,y3,3\n");
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zc1": { "type": "string", "title": "Owner ZIP", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.zip_code" } },
+            "zc2": { "type": "string", "title": "Clinic ZIP", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.zip_code" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "junk.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("boundary-cache").to_string_lossy().to_string(),
+            );
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("Owner ZIP (zc1)") && stderr.contains("Clinic ZIP (zc2)"),
+            "candidates must be named by title AND column: {stderr}"
+        );
+    });
+}
+
+// REGRESSION (roborev 4932): the value-shape rule that files a lone state-FIPS column as a state
+// candidate must not claim a COUNTY column that merely contains a placeholder. Distinct values
+// `["0", "1", "42003", "42101"]` are half state-shaped placeholders, but the two real codes resolve
+// as counties and clear the 50% coverage gate on their own, so the column must keep its normal
+// place ahead of the county-name candidate. The two columns name DIFFERENT counties (PA vs MD/MA),
+// so the map shows which one won. Two real codes, not one: a single matched region draws no map,
+// which would hide the ordering entirely.
+#[test]
+#[serial]
+fn viz_smart_county_code_column_with_a_placeholder_is_not_a_state_column() {
+    let wrk = Workdir::new("viz_smart_county_code_column_with_a_placeholder_is_not_a_state_column");
+    wrk.create_from_string(
+        "c.csv",
+        "fips,county,cases\n0,Baltimore County,10\n42003,Hampden County,20\n1,Baltimore \
+         County,30\n42101,Hampden County,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("42003") && z.contains_key("42101") && !z.contains_key("24005"),
+            "the county-code column must keep the map, not the county names: {z:?}"
+        );
+    });
+}
+
+// REGRESSION (roborev 4933): a lone code column skipped the probe, so no layer was known and a
+// column that resolves only as STATES was tried ahead of county names whenever the value-shape
+// rule could not classify it - here a state-FIPS column carrying a finer-shaped placeholder
+// (`99999` could be a county or a ZCTA). With a county-name slot queued behind it, the lone column
+// must be probed and, resolving best as States, tried last.
+#[test]
+#[serial]
+fn viz_smart_lone_mixed_state_column_is_probed_and_tried_last() {
+    let wrk = Workdir::new("viz_smart_lone_mixed_state_column_is_probed_and_tried_last");
+    wrk.create_from_string(
+        "c.csv",
+        "stfp,county,cases\n42,Baltimore County,10\n24,Baltimore city,20\n99999,Baltimore \
+         County,30\n24,Baltimore city,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "stfp": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.fips" } },
+            "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "c.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("c.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        let z = z_by_location(&traces[0]);
+        assert!(
+            z.contains_key("24005") && z.contains_key("24510"),
+            "the county names must keep the map: {z:?}"
+        );
+        let state_fetches: Vec<String> = observed
+            .state_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|q| query_param(q, "returnGeometry") == "true")
+            .cloned()
+            .collect();
+        assert!(
+            state_fetches.is_empty(),
+            "state boundaries must not be fetched while county names resolve: {state_fetches:?}"
         );
     });
 }

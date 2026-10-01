@@ -25,6 +25,15 @@
 //!    actually exist, so [`latest_acs_vintage`] reads them rather than assuming "current year minus
 //!    one", which rots annually.
 //!
+//! 5. **Oversized responses are refused by a firewall, with HTTP 200.** In front of `TIGERweb` sits
+//!    an F5 web-application firewall that answers a request whose response would be too large
+//!    (observed: ~25 MB passes, larger is refused) with `200 OK`, `text/html`, and a "Request
+//!    Rejected ... support ID" page. `error_for_status` cannot see it, and parsing it reported "not
+//!    valid JSON" (#4682). Size, not state count or URL length, is the trigger: eight small states
+//!    pass where four large ones fail. Geometry is therefore generalized server-side
+//!    ([`Layer::max_allowable_offset`]), and the pager halves its page size on a refusal
+//!    ([`query_layer_geojson`]).
+//!
 //! Pagination uses `orderByFields` + `resultOffset`/`resultRecordCount`: verified to yield stable,
 //! non-overlapping pages. The response envelope sets `exceededTransferLimit: true` while more
 //! records remain and omits it on the final page; [`query_layer_geojson`] treats either that flag
@@ -46,19 +55,26 @@ fn tigerweb_root() -> String {
     std::env::var("QSV_CENSUS_TIGERWEB_URL").unwrap_or_else(|_| TIGERWEB_ROOT.to_string())
 }
 
-/// Per-request timeout for `TIGERweb` calls. Boundary payloads are large (an ungeneralized
-/// 67-county state runs ~7 MB), so this is more generous than the plain `--geojson` URL fetch.
+/// Per-request timeout for `TIGERweb` calls. Generalizing geometry is server-side work (a
+/// 500-county page takes a few seconds to compute, and an ungeneralized one took ~15 s), so this
+/// is more generous than the plain `--geojson` URL fetch.
 /// Honors `QSV_TIMEOUT` via [`util::timeout_secs`], like every other network path in qsv.
 const CENSUS_FETCH_TIMEOUT_SECS: u16 = 60;
 
 /// Safety ceiling on a single `TIGERweb` response body, mirroring `viz`'s `GEOJSON_MAX_BYTES`.
-/// A CEILING, not a target: state-scoped county layers are single-digit MB.
+/// A CEILING, not a target: generalized, even the nationwide county layer is ~11 MB, and the
+/// service's firewall refuses any single response far below this (module fact 5).
 const CENSUS_MAX_BYTES: usize = 512_000_000;
 
 /// Records requested per page. Well under the service's advertised `maxRecordCount` (100000) so
 /// the server never silently truncates below our own paging, and small enough that a single
-/// oversized page cannot blow the byte ceiling on geometry-bearing layers.
+/// oversized page cannot blow the byte ceiling on geometry-bearing layers. The geometry pager
+/// starts here and halves on a firewall refusal (module fact 5), down to [`MIN_PAGE_SIZE`].
 const PAGE_SIZE: usize = 500;
+
+/// Floor for the geometry pager's halving. Generalized, even a large county is tens of KB, so a
+/// page this small that is still refused is not a size problem that smaller pages can fix.
+const MIN_PAGE_SIZE: usize = 25;
 
 /// Region codes per `IN (...)` clause. Each code costs ~8 URL characters, so this keeps a request
 /// URL a few KB — comfortably inside every proxy's line limit — while still resolving a few
@@ -123,11 +139,24 @@ pub enum Layer {
     Zcta,
     Tract,
     Place,
+    /// States, DC, Puerto Rico and the four island areas with a `TIGERweb` polygon (#4681).
+    /// Keyed by GEOID (2-digit FIPS) OR `STUSAB` (USPS code) — see [`state_feature_id_key`].
+    State,
 }
 
 impl Layer {
     /// Every layer `auto` will probe, in the order they are reported when the choice is ambiguous.
-    pub const ALL: [Self; 4] = [Self::County, Self::Zcta, Self::Tract, Self::Place];
+    ///
+    /// `State` comes LAST, and `viz smart` also tries state columns only after every finer
+    /// candidate has failed: a state column resolves near 100% by construction, so ranking it
+    /// alongside a county column would quietly trade a county map for a state map.
+    pub const ALL: [Self; 5] = [
+        Self::County,
+        Self::Zcta,
+        Self::Tract,
+        Self::Place,
+        Self::State,
+    ];
 
     /// Does a `MapServer` catalog entry name this layer?
     ///
@@ -162,6 +191,7 @@ impl Layer {
             Self::Zcta => name.contains("ZIP Code Tabulation Areas"),
             Self::Tract => name == "Census Tracts",
             Self::Place => name == "Incorporated Places" || name == "Census Designated Places",
+            Self::State => name == "States",
         }
     }
 
@@ -183,6 +213,8 @@ impl Layer {
             Self::Tract => 11,
             // 2-digit state + 5-digit place
             Self::Place => 7,
+            // 2-digit state FIPS
+            Self::State => 2,
         }
     }
 
@@ -211,6 +243,27 @@ impl Layer {
             Self::Zcta => "ZCTA",
             Self::Tract => "census tract",
             Self::Place => "place",
+            Self::State => "state",
+        }
+    }
+
+    /// Server-side generalization tolerance for this layer's geometry fetch, in DEGREES (the
+    /// `maxAllowableOffset` is read in `outSR` units, and the fetch asks for EPSG:4326).
+    ///
+    /// Ungeneralized boundaries are survey-grade and far beyond what a choropleth can show:
+    /// nationwide counties run ~300 MB, which the service's firewall refuses to serve (module fact
+    /// 5) and no browser renders usefully. Measured against the live county layer: 0.0005°
+    /// (~50 m) brings all 3,235 counties to ~11 MB. Sub-county layers keep a finer 0.0001° (~10
+    /// m), because an urban tract, place or ZCTA can be a few hundred metres across and a coarser
+    /// tolerance visibly deforms it. `geometryPrecision` was measured too and saves nothing once
+    /// the geometry is generalized, so it is not sent.
+    pub const fn max_allowable_offset(self) -> &'static str {
+        match self {
+            Self::County => "0.0005",
+            Self::Zcta | Self::Tract | Self::Place => "0.0001",
+            // measured: all 56 state polygons come to ~1 MB at 0.001° (~100 m), which no national
+            // or single-state choropleth can resolve anyway
+            Self::State => "0.001",
         }
     }
 
@@ -222,6 +275,7 @@ impl Layer {
             Self::Zcta => "census:zcta",
             Self::Tract => "census:tract",
             Self::Place => "census:place",
+            Self::State => "census:state",
         }
     }
 
@@ -232,6 +286,7 @@ impl Layer {
             "census:zcta" | "census:zip" => Some(Self::Zcta),
             "census:tract" | "census:tracts" => Some(Self::Tract),
             "census:place" | "census:places" => Some(Self::Place),
+            "census:state" | "census:states" => Some(Self::State),
             _ => None,
         }
     }
@@ -314,17 +369,73 @@ fn redact_api_key(text: &str) -> String {
     out
 }
 
-fn get_json(
+/// Why a Census request produced no usable JSON.
+///
+/// The firewall case is its own variant because it is the one failure a caller can do something
+/// about — the geometry pager answers it by asking for smaller pages (module fact 5) — and it must
+/// be told apart without matching on message text.
+enum FetchError {
+    /// `TIGERweb`'s web-application firewall refused the request. Carries the finished message.
+    WafRejected(String),
+    Other(crate::CliError),
+}
+
+impl From<FetchError> for crate::CliError {
+    /// A firewall refusal is a statement about the SERVICE, not about the column being resolved,
+    /// so it maps to `Network`: `resolve_smart_auto_geojson` then aborts instead of charging the
+    /// same doomed fetch to every candidate column in turn, and `resolve` may answer it from a
+    /// stale cache entry — boundaries fetched earlier are exactly as good as they were.
+    fn from(e: FetchError) -> Self {
+        match e {
+            FetchError::WafRejected(msg) => crate::CliError::Network(msg),
+            FetchError::Other(e) => e,
+        }
+    }
+}
+
+/// Is this body `TIGERweb`'s firewall "Request Rejected" page (module fact 5)?
+fn is_waf_rejection(content_type: &str, body: &[u8]) -> bool {
+    let html = content_type.to_ascii_lowercase().starts_with("text/html")
+        || body.trim_ascii_start().starts_with(b"<");
+    html && body.windows(16).any(|w| w == b"Request Rejected")
+}
+
+/// The support ID the firewall page quotes, which the Bureau asks for when a block is reported.
+fn waf_support_id(body: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(body);
+    let rest = &text[text.find("support ID is:")? + "support ID is:".len()..];
+    let id: String = rest
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    (!id.is_empty()).then_some(id)
+}
+
+/// The first ~200 characters of a body, whitespace-collapsed, for an error message.
+fn body_prefix(body: &[u8]) -> String {
+    let text = String::from_utf8_lossy(&body[..body.len().min(400)]);
+    let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let prefix: String = collapsed.chars().take(200).collect();
+    if prefix.len() < collapsed.len() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
+}
+
+/// GET `url` with `params` and parse the body as JSON, classifying every failure.
+fn fetch_json(
     client: &reqwest::blocking::Client,
     url: &str,
     params: &[(&str, &str)],
-) -> CliResult<serde_json::Value> {
+) -> Result<serde_json::Value, FetchError> {
     // `RequestBuilder::query` is behind a reqwest feature qsv does not enable, so the parameters
     // are encoded onto the URL here instead — same percent-encoding, no new build feature.
     let target = reqwest::Url::parse_with_params(url, params.iter().copied()).map_err(|e| {
-        crate::CliError::Other(redact_api_key(&format!(
+        FetchError::Other(crate::CliError::Other(redact_api_key(&format!(
             "could not build Census URL '{url}': {e}"
-        )))
+        ))))
     })?;
     // Classify the failure, because only a TRANSIENT one may be answered from a stale cache entry
     // (see `resolve`). `error_for_status` turns any 4xx into an error too, so wrapping everything
@@ -346,35 +457,76 @@ fn get_json(
         Ok(resp) => resp,
         Err(e) => {
             let msg = redact_api_key(&format!("Census request to '{url}' failed: {e}"));
-            return Err(if status_is_transient(e.status()) {
+            return Err(FetchError::Other(if status_is_transient(e.status()) {
                 crate::CliError::Network(msg)
             } else {
                 crate::CliError::Other(msg)
-            });
+            }));
         },
     };
+    let status = resp.status();
+    // The Data API answers a geography it has no rows for — a county query `in=` a state the ACS
+    // does not cover (the island areas) or does not exist — with 204 and an EMPTY body. That is
+    // "no rows", not a failure: parsing the empty body used to surface as "not valid JSON", which
+    // `acs_get_json` then misreported as a bad API key and the whole run aborted (#4680). An empty
+    // array is exactly what `parse_acs_rows` reads as no rows, so the uncovered regions fall
+    // through to the caller's exclude-and-report path like any other missing population.
+    if status == reqwest::StatusCode::NO_CONTENT {
+        return Ok(serde_json::Value::Array(Vec::new()));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("(none)")
+        .to_string();
     let mut buf: Vec<u8> = Vec::new();
     // one byte past the cap, so exceeding it is distinguishable from exactly reaching it
     resp.by_ref()
         .take(CENSUS_MAX_BYTES as u64 + 1)
         .read_to_end(&mut buf)
         .map_err(|e| {
-            crate::CliError::Network(redact_api_key(&format!(
+            FetchError::Other(crate::CliError::Network(redact_api_key(&format!(
                 "reading Census response body: {e}"
-            )))
+            ))))
         })?;
     if buf.len() > CENSUS_MAX_BYTES {
-        return Err(crate::CliError::Other(format!(
+        return Err(FetchError::Other(crate::CliError::Other(format!(
             "Census response from '{url}' exceeds the {} MB limit. Narrow the dataset's \
              geographic extent, or supply an explicit --geojson file.",
             CENSUS_MAX_BYTES / 1_000_000
-        )));
+        ))));
     }
     serde_json::from_slice(&buf).map_err(|e| {
-        crate::CliError::Other(redact_api_key(&format!(
-            "Census response is not valid JSON: {e}"
-        )))
+        if is_waf_rejection(&content_type, &buf) {
+            let support = waf_support_id(&buf)
+                .map(|id| format!(", support ID {id}"))
+                .unwrap_or_default();
+            return FetchError::WafRejected(redact_api_key(&format!(
+                "the Census TIGERweb firewall rejected the request to '{url}' (HTTP {status} with \
+                 an HTML \"Request Rejected\" page{support}). It does this when a response would \
+                 be too large."
+            )));
+        }
+        // Say WHAT came back. "expected value at line 1 column 1" alone cannot distinguish an
+        // empty body, an HTML interstitial and an undecoded compressed stream, and #4682 cost a
+        // debugging session to tell them apart.
+        FetchError::Other(crate::CliError::Other(redact_api_key(&format!(
+            "Census response from '{url}' is not valid JSON (HTTP {status}, content-type \
+             {content_type}, {} bytes): {e}. Body begins: {}",
+            buf.len(),
+            body_prefix(&buf)
+        ))))
     })
+}
+
+/// [`fetch_json`] for callers with no use for the firewall distinction.
+fn get_json(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    params: &[(&str, &str)],
+) -> CliResult<serde_json::Value> {
+    fetch_json(client, url, params).map_err(crate::CliError::from)
 }
 
 /// Every ACS vintage the service publishes, ascending.
@@ -466,6 +618,103 @@ fn resolve_layer_ids(
     Ok(found)
 }
 
+/// The four island areas the `TIGERweb` States layer draws beyond [`USPS_STATE_FIPS`]'s 52.
+///
+/// Kept OUT of that table on purpose: it also scopes county fetches and keys the Data API
+/// denominator, and the ACS 5-year release covers none of these. Here they only need to resolve
+/// to a polygon — a Census denominator then excludes and reports them (#4680).
+const ISLAND_AREA_STATE_FIPS: &[(&str, &str)] =
+    &[("AS", "60"), ("GU", "66"), ("MP", "69"), ("VI", "78")];
+
+/// State GEOID for a 1-2 digit FIPS (re-padded, `6` -> `06`) or a USPS code (case-insensitive,
+/// including the island areas), or `None` for anything else.
+///
+/// A FIPS is NOT validated here, mirroring every other layer's normalization: an unknown code is
+/// simply queried and scored as a miss, so the probe's coverage reflects what the data holds.
+fn state_geoid_for_code(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if (1..=2).contains(&raw.len()) && raw.bytes().all(|b| b.is_ascii_digit()) {
+        return Some(format!("{raw:0>2}"));
+    }
+    if raw.len() != 2 || !raw.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return None;
+    }
+    state_fips_for_usps(raw)
+        .or_else(|| {
+            let folded = raw.to_ascii_uppercase();
+            ISLAND_AREA_STATE_FIPS
+                .iter()
+                .find(|(usps, _)| *usps == folded)
+                .map(|(_, fips)| *fips)
+        })
+        .map(str::to_string)
+}
+
+/// Could `raw` name a state polygon — a USPS code (island areas included) or a 1-2 digit FIPS?
+///
+/// Lets `viz`'s pre-probe shape check tell a USPS-coded column apart from the digitless NAME
+/// columns it otherwise refuses without a probe (#4681).
+#[must_use]
+pub fn is_state_code(raw: &str) -> bool {
+    state_geoid_for_code(raw).is_some()
+}
+
+/// Is `values` a column of STATE codes and nothing else a finer layer could claim?
+///
+/// True when at least half of the non-empty values are state codes ([`is_state_code`]) AND no
+/// value normalizes for the county, ZCTA, tract or place layer. The second condition is what makes
+/// the classification exact rather than a heuristic: a mixed column such as `["0", "42003"]` is
+/// half state-shaped, yet its `42003` resolves as a county and can clear the 50% coverage gate on
+/// its own, so it must be ranked as the county candidate it is (roborev 4932). A 1-2 digit or USPS
+/// value normalizes for the State layer and for no other, so a column passing both tests can only
+/// ever resolve as states.
+#[must_use]
+pub fn is_state_code_column(values: &[String]) -> bool {
+    const FINER: [Layer; 4] = [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place];
+    let (mut state_like, mut total) = (0usize, 0usize);
+    for value in values {
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+        total += 1;
+        let one = [value.to_string()];
+        if FINER
+            .iter()
+            .any(|&layer| !normalize_codes(&one, layer).is_empty())
+        {
+            return false;
+        }
+        if is_state_code(value) {
+            state_like += 1;
+        }
+    }
+    total > 0 && state_like * 2 >= total
+}
+
+/// Which States-layer attribute the data's own spelling matches: `STUSAB` for a column of USPS
+/// codes, `GEOID` for FIPS. Decided by majority so a stray value of the other shape (a typo, a
+/// footnote row) cannot flip the key for the whole column.
+///
+/// The fetched features carry both, and the map joins on whichever this names — a USPS column
+/// joined on GEOID would match nothing. It is recorded in the cached sidecar, so a warm run keys
+/// the map exactly as the cold run did.
+fn state_feature_id_key(codes: &[String]) -> &'static str {
+    let (mut alpha, mut digit) = (0usize, 0usize);
+    for code in codes {
+        let code = code.trim();
+        if code.is_empty() {
+            continue;
+        }
+        if code.bytes().all(|b| b.is_ascii_digit()) {
+            digit += 1;
+        } else if code.bytes().all(|b| b.is_ascii_alphabetic()) {
+            alpha += 1;
+        }
+    }
+    if alpha > digit { "STUSAB" } else { "GEOID" }
+}
+
 /// Normalize region codes for a layer: keep only codes that could BE one of its ids, and re-pad
 /// those whose leading zero a numeric CSV column dropped (`7936` -> `07936`, `1001` -> `01001`).
 ///
@@ -480,6 +729,17 @@ fn resolve_layer_ids(
 /// scored against the caller's original, unfiltered codes, so nothing is hidden from the honesty
 /// check by being dropped here.
 fn normalize_codes(codes: &[String], layer: Layer) -> Vec<String> {
+    // A state column holds USPS codes at least as often as FIPS, and a USPS code is not a
+    // paddable number, so it gets its own spelling-aware path to the same GEOID.
+    if layer == Layer::State {
+        let mut out: Vec<String> = codes
+            .iter()
+            .filter_map(|c| state_geoid_for_code(c))
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        return out;
+    }
     // Using the loosest band for every layer would make a 5-digit county code look like a
     // paddable 7-digit place id (`0042003`, state "00", which does not exist) and buy a wasted
     // probe on every run. See `code_width_band` for why each layer's slack is what it is.
@@ -566,11 +826,6 @@ fn probe_layer(
     Ok(found)
 }
 
-/// Query one layer, following pagination, and return the merged feature array.
-///
-/// Paging is explicit (`orderByFields` + `resultOffset`) rather than trusting a single unbounded
-/// request: without `orderByFields` `ArcGIS` does not guarantee a stable order across pages, which
-/// would duplicate and drop features.
 fn query_layer_geojson(
     client: &reqwest::blocking::Client,
     vintage: u16,
@@ -578,6 +833,7 @@ fn query_layer_geojson(
     where_clause: &str,
     out_fields: &str,
     order_by: &str,
+    max_allowable_offset: &str,
 ) -> CliResult<Vec<serde_json::Value>> {
     let url = format!(
         "{}/TIGERweb/tigerWMS_ACS{vintage}/MapServer/{layer_id}/query",
@@ -585,10 +841,13 @@ fn query_layer_geojson(
     );
     let mut features: Vec<serde_json::Value> = Vec::new();
     let mut offset = 0usize;
+    // Shrinks, never grows back: a page the firewall refused at this density will be refused
+    // again on the next page of the same scope.
+    let mut page_size = PAGE_SIZE;
     loop {
         let offset_str = offset.to_string();
-        let page_size_str = PAGE_SIZE.to_string();
-        let page = get_json(
+        let page_size_str = page_size.to_string();
+        let page = match fetch_json(
             client,
             &url,
             &[
@@ -596,12 +855,34 @@ fn query_layer_geojson(
                 ("outFields", out_fields),
                 ("returnGeometry", "true"),
                 ("outSR", "4326"),
+                // in outSR units (degrees) — see `Layer::max_allowable_offset`
+                ("maxAllowableOffset", max_allowable_offset),
                 ("orderByFields", order_by),
                 ("resultOffset", &offset_str),
                 ("resultRecordCount", &page_size_str),
                 ("f", "geojson"),
             ],
-        )?;
+        ) {
+            Ok(page) => page,
+            // module fact 5: the firewall refuses by response SIZE, so ask for less at the same
+            // offset. Geometry density varies too much by region for a fixed page size to be
+            // both safe everywhere and cheap everywhere.
+            Err(FetchError::WafRejected(_)) if page_size > MIN_PAGE_SIZE => {
+                page_size = (page_size / 2).max(MIN_PAGE_SIZE);
+                log::info!(
+                    "--geojson auto: TIGERweb firewall rejected a page at offset {offset}; \
+                     retrying with {page_size} records per page"
+                );
+                continue;
+            },
+            Err(FetchError::WafRejected(msg)) => {
+                return Err(crate::CliError::Network(format!(
+                    "{msg} Pages of {page_size} records were still refused. Narrow the dataset's \
+                     geographic extent, or supply an explicit --geojson file."
+                )));
+            },
+            Err(FetchError::Other(e)) => return Err(e),
+        };
         // ArcGIS reports a query-level failure as a 200 with an `error` object, so a body that
         // isn't a FeatureCollection must be surfaced rather than silently read as zero features.
         if let Some(err) = page.get("error") {
@@ -774,7 +1055,10 @@ fn cache_key(spec: AutoSpec, codes: &[String]) -> String {
     //               Designated Places. The selector string did not change, so a v3 entry would
     //               keep serving incorporated-only boundaries for a request that now means both
     //               - every CDP row silently missing from the map, with no error.
-    hasher.update(b"census/v4/");
+    //   v5 (#4682): geometry is generalized server-side (`Layer::max_allowable_offset`). A v4
+    //               entry holds ungeneralized, survey-grade boundaries — up to ~300 MB
+    //               nationwide — and would keep being embedded in every page until it expired.
+    hasher.update(b"census/v5/");
     // the service root is part of the entry's IDENTITY: pointing QSV_CENSUS_TIGERWEB_URL at a
     // mirror (or a mock) must not be served boundaries fetched from a different source
     hasher.update(tigerweb_root().as_bytes());
@@ -1106,17 +1390,17 @@ fn choose_layer(
         // numeric codes at all, so name the likely fix instead of interpolating "()"
         if scored.is_empty() {
             return Err(crate::CliError::Other(
-                "--geojson auto: none of the --locations values are numeric Census codes (county \
-                 FIPS, ZCTA, tract GEOID). If they are city/place names, add --geocode to \
-                 forward-geocode them to US county FIPS; otherwise supply an explicit --geojson \
-                 file."
+                "--geojson auto: none of the --locations values are Census codes (state FIPS or \
+                 USPS code, county FIPS, ZCTA, tract or place GEOID). If they are city/place \
+                 names, add --geocode to forward-geocode them to US county FIPS; otherwise supply \
+                 an explicit --geojson file."
                     .to_string(),
             ));
         }
         return Err(crate::CliError::Other(format!(
             "--geojson auto: the --locations values match no Census geography in the {vintage} \
-             vintage ({detail}), nor in the vintages before it. They may not be US county FIPS or \
-             ZIP codes — supply an explicit --geojson file."
+             vintage ({detail}), nor in the vintages before it. They may not be US state, county \
+             or ZIP codes — supply an explicit --geojson file."
         )));
     }
     // descending by match ratio, compared exactly
@@ -1191,6 +1475,30 @@ fn fetch_layer(
             format!("{} ZCTAs", normalized.len()),
             normalized.join(","),
         ),
+        // Scoped by exact code set like ZCTAs: a state IS its own scope, so there is no coarser
+        // unit to scope by, and a nationwide fetch of all 56 polygons for a 3-state dataset would
+        // fill the map's extent with regions the data never names. The probe (or the coverage
+        // gate) is the honesty check, as it is for ZCTAs.
+        Layer::State => (
+            in_clauses(&normalized, layer),
+            format!(
+                "{} state{}",
+                normalized.len(),
+                if normalized.len() == 1 { "" } else { "s" }
+            ),
+            normalized.join(","),
+        ),
+    };
+    // Every layer keys on GEOID except a USPS-coded state column, which must key on STUSAB.
+    let key_field = if layer == Layer::State {
+        state_feature_id_key(codes)
+    } else {
+        layer.id_field()
+    };
+    let out_fields = if layer == Layer::State {
+        format!("{},STUSAB,NAME,AREALAND,AREAWATER", layer.id_field())
+    } else {
+        format!("{},NAME,AREALAND,AREAWATER", layer.id_field())
     };
 
     let mut features: Vec<serde_json::Value> = Vec::new();
@@ -1201,8 +1509,9 @@ fn fetch_layer(
                 vintage,
                 *layer_id,
                 clause,
-                &format!("{},NAME,AREALAND,AREAWATER", layer.id_field()),
+                &out_fields,
                 layer.id_field(),
+                layer.max_allowable_offset(),
             )?);
         }
     }
@@ -1220,11 +1529,12 @@ fn fetch_layer(
     // `properties`. Without this, reusing the path exactly as printed failed validation with
     // "--feature-id-key 'id' resolves on no feature". Setting both makes the artifact portable
     // with the default key AND with `properties.GEOID`.
-    let id_field = layer.id_field();
+    // Mirrors the key the map joins on (`key_field`), so a USPS-keyed state set reused by path
+    // with the default `--feature-id-key id` still matches its USPS column.
     for feature in &mut features {
         let Some(geoid) = feature
             .get("properties")
-            .and_then(|p| p.get(id_field))
+            .and_then(|p| p.get(key_field))
             .and_then(serde_json::Value::as_str)
             .map(str::to_string)
         else {
@@ -1265,7 +1575,7 @@ fn fetch_layer(
         geojson,
         // filled in by the caller once it is written to the cache
         path: String::new(),
-        feature_id_key: format!("properties.{}", layer.id_field()),
+        feature_id_key: format!("properties.{key_field}"),
         // names the scope exactly — see the field docs for the collision this avoids
         scope_key: format!("census/{}/acs{vintage}/{scope_key_part}", layer.label()),
         // quotes the catalog's own layer name, so a ZCTA set reports its delineation year rather
@@ -1306,6 +1616,45 @@ mod tests {
         // a URL that a log wrapped: the key is no less secret for having a space before it
         assert_eq!(redact_api_key("...& key=abc123"), "...& key=REDACTED");
         assert_eq!(redact_api_key("no key here"), "no key here");
+    }
+
+    // #4682: the live firewall page, as served (HTTP 200, text/html).
+    const WAF_PAGE: &[u8] = b"<html><head><title>Request Rejected</title></head><body>The \
+                              requested URL was rejected. Please consult with your \
+                              administrator.<br><br>Your support ID is: \
+                              13427891564991414132</body></html>";
+
+    #[test]
+    fn waf_page_is_recognized_and_its_support_id_read() {
+        assert!(is_waf_rejection("text/html; charset=utf-8", WAF_PAGE));
+        // a missing/odd content-type must not hide it: the body alone is HTML
+        assert!(is_waf_rejection("(none)", WAF_PAGE));
+        assert_eq!(
+            waf_support_id(WAF_PAGE).as_deref(),
+            Some("13427891564991414132")
+        );
+        // other HTML (the Data API's missing-key page) and JSON errors are NOT the firewall
+        assert!(!is_waf_rejection(
+            "text/html",
+            b"<html><body>Missing Key</body></html>"
+        ));
+        assert!(!is_waf_rejection(
+            "application/json",
+            br#"{"error":{"message":"Request Rejected"}}"#
+        ));
+    }
+
+    #[test]
+    fn body_prefix_collapses_whitespace_and_truncates() {
+        assert_eq!(
+            body_prefix(b"  <html>\n\n  <body>x</body>"),
+            "<html> <body>x</body>"
+        );
+        let long = "a".repeat(500);
+        let p = body_prefix(long.as_bytes());
+        assert_eq!(p.chars().count(), 201);
+        assert!(p.ends_with('…'));
+        assert_eq!(body_prefix(b""), "");
     }
 
     #[test]
@@ -1402,7 +1751,7 @@ mod tests {
         // A union raises Place's MATCHED count, but a column that scores for Place cannot also
         // score for county/ZCTA/tract, so no existing winner can change.
         let (plo, phi) = Layer::Place.code_width_band();
-        for other in [Layer::County, Layer::Zcta, Layer::Tract] {
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::State] {
             let (olo, ohi) = other.code_width_band();
             assert!(
                 phi < olo || ohi < plo,
@@ -1587,6 +1936,71 @@ mod tests {
         let sneaky = vec!["15213".to_string(), "x') OR 1=1 --".to_string()];
         let clauses = in_clauses(&sneaky, Layer::Zcta);
         assert_eq!(clauses, vec!["GEOID IN ('15213')"]);
+    }
+
+    // #4681: a 1-2 digit code can only ever be a state, so adding the layer cannot re-rank any
+    // column that resolved before - its band is disjoint from every other layer's.
+    #[test]
+    fn the_state_width_band_cannot_overlap_another_layers() {
+        let (slo, shi) = Layer::State.code_width_band();
+        assert_eq!((slo, shi), (1, 2));
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
+            let (olo, ohi) = other.code_width_band();
+            assert!(
+                shi < olo || ohi < slo,
+                "state band {slo}..={shi} must not overlap {} band {olo}..={ohi}",
+                other.label()
+            );
+        }
+    }
+
+    #[test]
+    fn state_layer_name_is_the_catalog_spelling() {
+        assert!(Layer::State.matches_catalog_name("States"));
+        assert!(!Layer::State.matches_catalog_name("States Labels"));
+        assert!(!Layer::State.matches_catalog_name("State American Indian Reservations"));
+        assert!(!Layer::State.matches_catalog_name("2026 State Legislative Districts - Upper"));
+    }
+
+    #[test]
+    fn state_codes_normalize_from_usps_or_fips() {
+        let codes: Vec<String> = ["ca", " PA ", "6", "42", "GU", "AA", "California", "123", ""]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        // USPS (any case, island areas included) and 1-2 digit FIPS all reach the GEOID; a
+        // military "state" (AA), a name, and a 3-digit code do not
+        assert_eq!(normalize_codes(&codes, Layer::State), ["06", "42", "66"]);
+        // and no other layer accepts them
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
+            assert!(
+                normalize_codes(&["CA".to_string(), "6".to_string()], other).is_empty(),
+                "{} must not normalize state codes",
+                other.label()
+            );
+        }
+    }
+
+    #[test]
+    fn state_code_column_excludes_anything_a_finer_layer_could_claim() {
+        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert!(is_state_code_column(&v(&["42", "24"])));
+        assert!(is_state_code_column(&v(&["PA", "md", ""])));
+        // a placeholder beside a real county code is a COUNTY column (roborev 4932)
+        assert!(!is_state_code_column(&v(&["0", "42003"])));
+        // a minority of state codes among junk is left to the probe
+        assert!(!is_state_code_column(&v(&["42", "x1", "x2"])));
+        assert!(!is_state_code_column(&v(&[""])));
+    }
+
+    #[test]
+    fn state_feature_key_follows_the_majority_spelling() {
+        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(state_feature_id_key(&v(&["CA", "PA", "NY"])), "STUSAB");
+        assert_eq!(state_feature_id_key(&v(&["06", "42", "6"])), "GEOID");
+        // one stray value of the other shape cannot flip the column's key
+        assert_eq!(state_feature_id_key(&v(&["CA", "PA", "42"])), "STUSAB");
+        assert_eq!(state_feature_id_key(&v(&["06", "42", "CA"])), "GEOID");
     }
 
     #[test]

@@ -8258,7 +8258,12 @@ fn census_denominator_map(
     // (geography, state FIPS to scope by, caller-code -> Census GEOID)
     let (geo, states, keyed): (DenominatorGeography, Vec<String>, Vec<(String, String)>) =
         if all(&numeric_of(5)) {
-            let states: Vec<String> = trimmed.iter().map(|c| c[..2].to_string()).collect();
+            // ONE entry per state: `fetch_population` sends one request per entry, and each
+            // response already covers every county in that state. Undeduped, a cold run on 614
+            // counties in 52 states sent ~600 requests and took ~210 s (issue #4698).
+            let mut states: Vec<String> = trimmed.iter().map(|c| c[..2].to_string()).collect();
+            states.sort_unstable();
+            states.dedup();
             let keyed = trimmed
                 .iter()
                 .map(|c| ((*c).to_string(), (*c).to_string()))

@@ -1080,6 +1080,13 @@ fn viz_denominator_census_fetches_population_and_states_its_release() {
             asked.iter().any(|c| c.starts_with("acs?county")),
             "expected a county-level ACS request, got: {asked:?}"
         );
+        // ONE county request per STATE, not per county: both counties are in PA, and each
+        // response covers the whole state (issue #4698 -- one request per county took ~210 s)
+        assert_eq!(
+            asked.iter().filter(|c| c.starts_with("acs?county")).count(),
+            1,
+            "two PA counties must share one state request, got: {asked:?}"
+        );
 
         // and a repeated command makes no further request — the Data Schematic's offline promise
         let after_first = observed.requests.load(Ordering::SeqCst);

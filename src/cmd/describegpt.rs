@@ -4672,6 +4672,20 @@ fn process_phase_output(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
+    // A description is shown as plain text (the viz Data Schematic drawer, a catalog's abstract),
+    // where a `$\times$` from an LLM that writes LaTeX reads as noise (issue #4689). Cleaned here,
+    // the one point every Description passes through: a fresh completion, a cache replay and an
+    // MCP `--process-response` alike.
+    let cleaned;
+    let completion_response = if kind == PromptType::Description {
+        cleaned = CompletionResponse {
+            response: replace_latex_symbols(&completion_response.response),
+            ..completion_response.clone()
+        };
+        &cleaned
+    } else {
+        completion_response
+    };
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
         let (combined_entries, relationships, _grain, _grain_unit, _tour) =
@@ -5973,6 +5987,58 @@ fn finalize_structured_output(
         },
     }
     Ok(())
+}
+
+/// Single-symbol LaTeX math spans an LLM writes in prose, and their Unicode equivalents.
+const LATEX_SYMBOLS: &[(&str, &str)] = &[
+    ("times", "×"),
+    ("approx", "≈"),
+    ("le", "≤"),
+    ("leq", "≤"),
+    ("ge", "≥"),
+    ("geq", "≥"),
+    ("pm", "±"),
+    ("ne", "≠"),
+    ("neq", "≠"),
+    ("cdot", "·"),
+    ("div", "÷"),
+    ("to", "→"),
+    ("rightarrow", "→"),
+    ("infty", "∞"),
+];
+
+/// Replace whole `$\cmd$` spans (e.g. `$\times$`, `$\approx$`) with their Unicode symbol (issue
+/// #4689). Only a span that is exactly one known command between two dollar signs is rewritten:
+/// a bare `$` (a currency amount), `\$` (a Markdown-escaped dollar, which renders correctly and
+/// keeps GitHub from reading two amounts as a math span) and any other LaTeX are left alone.
+fn replace_latex_symbols(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(pos) = rest.find("$\\") {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 2..];
+        let name_len = after.bytes().take_while(u8::is_ascii_alphabetic).count();
+        let replacement = (name_len > 0 && after[name_len..].starts_with('$'))
+            .then(|| {
+                LATEX_SYMBOLS
+                    .iter()
+                    .find(|(name, _)| *name == &after[..name_len])
+                    .map(|(_, sym)| *sym)
+            })
+            .flatten();
+        match replacement {
+            Some(sym) => {
+                out.push_str(sym);
+                rest = &after[name_len + 1..];
+            },
+            None => {
+                out.push_str("$\\");
+                rest = after;
+            },
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Strip the rendered attribution footer (and any preceding `---` separator) from an
@@ -9837,6 +9903,36 @@ p_fewshot_examples = ""
         assert_eq!(yaml_scalar("0xZZ_label"), "0xZZ_label");
         // Special chars are still quoted + escaped.
         assert_eq!(yaml_scalar("a: b"), "\"a: b\"");
+    }
+
+    #[test]
+    fn replace_latex_symbols_rewrites_single_symbol_spans() {
+        // the strings gemma-4-31b actually wrote (issue #4689)
+        assert_eq!(
+            replace_latex_symbols(
+                r"728 records (52 states $\times$ 7 program years $\times$ 2 payment types)"
+            ),
+            "728 records (52 states × 7 program years × 2 payment types)"
+        );
+        assert_eq!(
+            replace_latex_symbols(r"relatively low ($\approx$\$179.73), up to \$456 million"),
+            r"relatively low (≈\$179.73), up to \$456 million"
+        );
+        assert_eq!(
+            replace_latex_symbols(r"$\le$ 5, $\geq$ 2, $\pm$ 1"),
+            "≤ 5, ≥ 2, ± 1"
+        );
+        // bare dollars, unknown commands, multi-token math and a dangling `$\` are untouched
+        for keep in [
+            "costs $5 and $10",
+            r"$\alpha$ level",
+            r"$52 \times 7$",
+            r"$\timesX$",
+            r"ends with $\",
+            r"$\times",
+        ] {
+            assert_eq!(replace_latex_symbols(keep), keep);
+        }
     }
 
     #[test]

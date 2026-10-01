@@ -56,7 +56,7 @@
       {
         "flag": "--admin1",
         "type": "string",
-        "description": "The comma-delimited, case-insensitive list of admin1s to filter for."
+        "description": "The comma-delimited, case-insensitive list of admin1s to filter for. Only a place inside one of them is returned. A value with no match inside them is left unchanged (or set to the invalid-result value), and the number of such values is reported on stderr."
       },
       {
         "flag": "--batch",

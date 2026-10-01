@@ -18915,6 +18915,282 @@ fn viz_smart_trend_quarterly_uses_quarter_bucket_and_category_axis() {
     );
 }
 
+// ------------------------------------------------------------------------------------------------
+// Issue #4685: a dictionary-routed column of bare 4-digit years drives the time-series panel.
+// ------------------------------------------------------------------------------------------------
+
+/// Line traces whose x values are all 4-digit years, from a page rendered with
+/// `QSV_VIZ_NO_COMPRESS` (plain figure JSON), paired with that figure's x-axis type.
+fn year_axis_line_traces(html: &str) -> Vec<(serde_json::Value, String)> {
+    let mut out = Vec::new();
+    for chunk in html.split("Plotly.newPlot(").skip(1) {
+        let Some(comma) = chunk.find(", ") else {
+            continue;
+        };
+        let mut vals = serde_json::Deserializer::from_str(&chunk[comma + 2..])
+            .into_iter::<serde_json::Value>();
+        let Some(Ok(fig)) = vals.next() else {
+            continue;
+        };
+        let axis_type = fig["layout"]["xaxis"]["type"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        for t in fig["data"].as_array().into_iter().flatten() {
+            let xs: Vec<&str> = t["x"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            if t["mode"] == "lines"
+                && !xs.is_empty()
+                && xs
+                    .iter()
+                    .all(|x| x.len() == 4 && x.bytes().all(|b| b.is_ascii_digit()))
+            {
+                out.push((t.clone(), axis_type.clone()));
+            }
+        }
+    }
+    out
+}
+
+/// yr,amt rows: 2019..=2023, three rows per year, amounts chosen so each year's sum is distinct.
+fn bare_year_rows() -> String {
+    let mut rows = String::from("yr,amt\n");
+    for (i, year) in (2019..=2023).enumerate() {
+        for k in 1..=3 {
+            rows.push_str(&format!("{year},{}\n", 100 * (i + 1) + k));
+        }
+    }
+    rows
+}
+
+fn bare_year_dict(amt_concept: Option<&str>) -> String {
+    let amt = amt_concept.map_or(String::new(), |c| {
+        format!(
+            r#", "amt": {{ "type": "number", "x-qsv": {{ "qsv_type": "Integer", "role": "measure", "concept": "{c}" }} }}"#
+        )
+    });
+    format!(
+        r#"{{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "properties": {{
+    "yr": {{ "type": "integer", "title": "Program Year", "x-qsv": {{ "qsv_type": "Integer", "role": "dimension", "concept": "time.date" }} }}{amt}
+  }} }}"#
+    )
+}
+
+#[test]
+fn viz_smart_bare_year_column_drives_the_time_series() {
+    let wrk = Workdir::new("viz_smart_bare_year_column_drives_the_time_series");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args([
+            "smart",
+            "y.csv",
+            "--dict-info",
+            "-o",
+            "dash.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let traces = year_axis_line_traces(&html);
+    assert_eq!(
+        traces.len(),
+        1,
+        "exactly one year-axis trend expected: {stderr}"
+    );
+    let (trace, axis_type) = &traces[0];
+    assert_eq!(
+        trace["x"],
+        serde_json::json!(["2019", "2020", "2021", "2022", "2023"])
+    );
+    // measure.money sums per year: (101+102+103), (201+202+203), ...
+    assert_eq!(
+        trace["y"],
+        serde_json::json!([306.0, 606.0, 906.0, 1206.0, 1506.0])
+    );
+    assert_eq!(
+        axis_type, "category",
+        "yearly buckets use the category axis"
+    );
+    // stderr and the drawer both name the column as the time axis, not as dropped
+    assert!(
+        stderr.contains("yr (time axis)"),
+        "stderr must say the year column is the time axis: {stderr}"
+    );
+    assert!(
+        html.contains("it is the x-axis of the time-based panels"),
+        "the drawer must describe the year column as the time axis"
+    );
+}
+
+#[test]
+fn viz_smart_bare_year_axis_averages_an_untagged_measure_per_year() {
+    // An un-tagged numeric Y normally plots RAW rows over time; on a year axis that would stack
+    // every row of a year on its Jan 1 and label it "2019-01-01". It must be averaged per year.
+    let wrk = Workdir::new("viz_smart_bare_year_axis_averages_an_untagged_measure_per_year");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(None));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "y.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let traces = year_axis_line_traces(&html);
+    assert_eq!(traces.len(), 1, "exactly one year-axis trend expected");
+    assert_eq!(
+        traces[0].0["y"],
+        serde_json::json!([102.0, 202.0, 302.0, 402.0, 502.0]),
+        "an untagged measure must be averaged per year"
+    );
+    // (the page itself may contain "2019-01-01": plotly.js's inlined source uses it in a help
+    // string, so check the trace, not the page)
+    assert_eq!(
+        traces[0].0["x"],
+        serde_json::json!(["2019", "2020", "2021", "2022", "2023"]),
+        "no row may be plotted on a synthetic Jan 1"
+    );
+}
+
+#[test]
+fn viz_smart_integer_time_column_that_is_not_years_explains_the_skip() {
+    // Epoch seconds routed as time are Integer, like a bare year, but not 4-digit: no year axis,
+    // and stderr must say WHY rather than a bare "skipped".
+    let wrk = Workdir::new("viz_smart_integer_time_column_that_is_not_years_explains_the_skip");
+    let mut rows = String::from("yr,amt\n");
+    for i in 0..15 {
+        rows.push_str(&format!("{},{}\n", 1_700_000_000 + i * 86_400, 100 + i));
+    }
+    wrk.create_from_string("e.csv", &rows);
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "e.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""mode":"lines""#) || year_axis_line_traces(&html).is_empty(),
+        "epoch seconds must not become a year axis"
+    );
+    assert!(
+        stderr.contains(
+            "yr (a timestamp in the dictionary, but its values are Integer, not dates or 4-digit \
+             years)"
+        ),
+        "stderr must explain why the timestamp column drew no time panel: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_bare_year_column_without_a_dictionary_is_unchanged() {
+    // Without a dictionary a column of 4-digit numbers is also a price, a count or a code, so it
+    // must never be promoted to a time axis on shape alone.
+    let wrk = Workdir::new("viz_smart_bare_year_column_without_a_dictionary_is_unchanged");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "y.csv", "-o", "dash.html"]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        year_axis_line_traces(&html).is_empty(),
+        "no dictionary, no year axis"
+    );
+}
+
+#[test]
+fn viz_smart_duration_content_type_never_becomes_a_year_axis() {
+    // REGRESSION (roborev 4936): the legacy `content_type: duration` routed as time, so a column
+    // of 4-digit durations (1800 s .. 3600 s) passed the bare-year test and was drawn as a trend
+    // over the "years" 1800..3600. A duration is a span; it must never be a time axis.
+    let wrk = Workdir::new("viz_smart_duration_content_type_never_becomes_a_year_axis");
+    let mut rows = String::from("secs,amt\n");
+    for i in 0..15 {
+        rows.push_str(&format!("{},{}\n", 1800 + 120 * i, 100 + i));
+    }
+    wrk.create_from_string("d.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{ "type": "object", "properties": {
+          "secs": { "type": "integer", "x-qsv": { "qsv_type": "Integer", "content_type": "duration" } },
+          "amt": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.money" } }
+        } }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "d.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        year_axis_line_traces(&html).is_empty(),
+        "4-digit durations must not be drawn as a trend over years: {stderr}"
+    );
+    assert!(
+        !stderr.contains("secs (time axis)"),
+        "a duration must not be reported as the time axis: {stderr}"
+    );
+}
+
+#[test]
+fn viz_responsive_category_ticks_measure_labels_and_use_an_even_stride() {
+    // Issue #4686: the tick-thinning script budgeted a FIXED 72 px per label (sized for
+    // "2024-Q1"), so seven 4-digit years in a ~450 px panel kept five labels and dropped 2020,
+    // and its rounded indices put labels on adjacent categories. The rendered behaviour was
+    // verified by a browser width sweep; this pins the two mechanisms in the shipped script.
+    let wrk = Workdir::new("viz_responsive_category_ticks_measure_labels_and_use_an_even_stride");
+    wrk.create_from_string("y.csv", &bare_year_rows());
+    wrk.create_from_string("dict.json", &bare_year_dict(Some("measure.money")));
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "y.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // Scope every check to viz's OWN script block: the inlined plotly.js bundle uses
+    // `measureText` itself, so a page-wide search would pass even with the fix reverted.
+    let mark = html
+        .find("qsv-responsive-category-ticks")
+        .expect("the responsive tick script must ship");
+    let start = html[..mark].rfind("<script>").expect("script start");
+    let end = mark + html[mark..].find("</script>").expect("script end");
+    let script = &html[start..end];
+    assert!(
+        script.contains("measureText("),
+        "label slots must be measured, not a fixed width"
+    );
+    assert!(
+        script.contains("i += k"),
+        "labels must follow an even stride, not rounded indices"
+    );
+    assert!(
+        !script.contains("PX_PER_TICK = 72;"),
+        "the fixed 72 px budget must be gone"
+    );
+}
+
 #[test]
 fn viz_smart_trend_dictionary_cadence_overrides_detection() {
     // A dictionary carrying `x-qsv.cadence: "quarterly"` sets the trend bucket floor even where

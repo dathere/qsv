@@ -539,9 +539,10 @@ smart options:
                            each field's semantic role/concept (falling back to its content
                            type) instead of relying on column statistics alone: dimensions
                            and numeric codes (ward, census_tract, zone) become bars, measures
-                           get box/correlation/trend panels, date/datetime columns feed the
-                           time-series panel, identifiers / PII / free-text are skipped, and
-                           lat/lon feed the map. Field labels are shown as panel subtitles.
+                           get box/correlation/trend panels, date/datetime columns (or a
+                           column of 4-digit years tagged as time) feed the time-series
+                           panel, identifiers / PII / free-text are skipped, and lat/lon
+                           feed the map. Field labels are shown as panel subtitles.
                            Columns the dictionary cannot classify still use the statistical
                            heuristic. <src> is either "infer", to run describegpt on the
                            input now (requires an LLM configured), or a path to an existing
@@ -13407,11 +13408,28 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
 /// Those labels deliberately use a category axis ("2024-Q1" is not a date), but plotly's default
 /// auto-angle turns a dense category axis vertical and then admits nearly every label. The axis is
 /// marked by an explicit zero-degree `tickangle`; this observer converts its measured pixel width
-/// into an evenly-spaced label budget (including both endpoints), preserving every trace point
-/// while showing only labels that fit.
+/// into an even label stride (including both endpoints), preserving every trace point while
+/// showing only labels that fit.
+///
+/// Each label's slot is its MEASURED width (canvas `measureText` in the axis's own tick font) plus
+/// a gap, capped at the original fixed 72 px, so a slot is never wider than before. The fixed
+/// 72 px was sized for "2024-Q1" and thinned 4-character years for no reason: seven years in a
+/// ~450 px panel kept five labels and dropped 2020 (issue #4686). Labels then follow an EVEN
+/// stride; on a wide dense axis that can show a label or two fewer than the old rounded-index
+/// picking, which is the price of never placing two labels on adjacent categories.
 const RESPONSIVE_CATEGORY_TICKS_SCRIPT: &str = r#"<script>
 (function () {
-  var MARK = "qsv-responsive-category-ticks", PX_PER_TICK = 72;
+  var MARK = "qsv-responsive-category-ticks", MAX_PX_PER_TICK = 72, TICK_GAP_PX = 16, ctx = null;
+  function labelPx(labels, font) {
+    try {
+      ctx = ctx || document.createElement("canvas").getContext("2d");
+      ctx.font = (font.size || 12) + "px " + (font.family || "sans-serif");
+      var widest = 0;
+      for (var i = 0; i < labels.length; i++)
+        widest = Math.max(widest, ctx.measureText(String(labels[i])).width);
+      return widest;
+    } catch (e) { return MAX_PX_PER_TICK; }
+  }
   function update(gd) {
     var layout = gd.layout || {}, full = gd._fullLayout, state = gd.__qsvCategoryTicks;
     if (!full || !full._size || !state || state.mark !== MARK) return;
@@ -13422,12 +13440,19 @@ const RESPONSIVE_CATEGORY_TICKS_SCRIPT: &str = r#"<script>
       if (!categories.length) return;
       var domain = fa.domain || [0, 1];
       var width = full._size.w * Math.max(0, domain[1] - domain[0]);
-      var budget = Math.min(categories.length, Math.max(2, Math.floor(width / PX_PER_TICK)));
-      var ticks = [];
-      for (var i = 0; i < budget; i++) {
-        var at = budget === 1 ? 0 : Math.round(i * (categories.length - 1) / (budget - 1));
-        if (ticks[ticks.length - 1] !== categories[at]) ticks.push(categories[at]);
-      }
+      var perTick = Math.min(MAX_PX_PER_TICK, Math.ceil(labelPx(categories, fa.tickfont || {})) + TICK_GAP_PX);
+      // An EVEN stride of k categories, sized so any two labels are at least one label slot
+      // apart. Picking a label budget and rounding indices instead put some labels on ADJACENT
+      // categories (2021 next to 2022, with 2020 and 2023 dropped), which reads as random and,
+      // once slots are measured rather than fixed, left dense axes only a few px apart.
+      var n = categories.length;
+      var k = Math.max(1, Math.ceil(perTick / Math.max(width / Math.max(n, 1), 1e-6)));
+      var idx = [];
+      for (var i = 0; i < n; i += k) idx.push(i);
+      // keep both endpoints: the last stride label moves to the final category, which only
+      // lengthens the final interval
+      if (idx[idx.length - 1] !== n - 1) { if (idx.length > 1) idx.pop(); idx.push(n - 1); }
+      var ticks = idx.map(function (i) { return categories[i]; });
       if (JSON.stringify(axis.ticktext || []) !== JSON.stringify(ticks)) {
         upd[key + ".tickmode"] = "array";
         upd[key + ".tickvals"] = ticks;
@@ -21547,7 +21572,12 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
             (Route::Dimension, None)
         },
         "latitude" | "longitude" => (Route::MapCoord, None),
-        "date" | "datetime" | "time" | "duration" => (Route::Temporal, None),
+        "date" | "datetime" | "time" => (Route::Temporal, None),
+        // A duration is a SPAN, not a point in time - the same call `route_from_concept` makes
+        // for `time.duration` (issue #4177), which this legacy path never received. As Temporal it
+        // was dropped from the Data Schematic, and 4-digit durations (1800 s, 3600 s) could be
+        // read as a bare-YEAR time axis (roborev 4936). Mean, not Sum, as for the concept.
+        "duration" => (Route::Measure, Some(Agg::Mean)),
         // the only NUMERIC token in the vocabulary, and the only arm here that carries an
         // aggregation: a money amount is an additive quantity. `currency_code` (above) names
         // the currency; `money` IS the amount. Without this arm the catch-all would `Skip` the
@@ -27704,6 +27734,77 @@ fn canonical_date_col(
         })
 }
 
+/// Inclusive range of values a bare-year column may hold: every 4-digit year. Wide on purpose — a
+/// historical series (1790 census counts) and a projection (2050) are both yearly data — while
+/// still excluding epoch seconds, `YYYYMMDD` integers and small counts, none of which are
+/// 4-digit.
+const BARE_YEAR_RANGE: std::ops::RangeInclusive<i64> = 1000..=9999;
+
+/// A column of bare 4-digit years that the data dictionary routes as TIME (issue #4685).
+///
+/// `qsv stats` types `2019` as Integer even under `--dates-whitelist all`, so
+/// [`canonical_date_col`] never sees a yearly column — and it must not: every consumer of that
+/// function re-parses its cells with `qsv_dateparser`, which reads `"2019"` as epoch SECONDS
+/// (1970-01-01T00:33:39) and would collapse the column into one 1970 bucket. So a bare-year column
+/// is picked here instead, and only by the consumers that parse it as a year: the time-series
+/// panel and the Data Schematic's "time axis" label ([`trend_time_col`]). Animations and the
+/// seasonality profile keep requiring a real date — a year has no hour, weekday or month to fold.
+///
+/// Requires the dictionary's `Route::Temporal` (any `time.*` concept but `time.duration`, or
+/// `role: timestamp`): without a dictionary an Integer `Year` column stays exactly as before,
+/// since "a column of 4-digit numbers" is also a price, a count or a code. The observed min/max
+/// must both be 4-digit years, and there must be at least two of them to draw a line.
+fn bare_year_col(stats: &[crate::cmd::stats::StatsData], sems: &[ColSemantics]) -> Option<usize> {
+    stats
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| is_bare_year_col(s, sems.get(*i)))
+        .min_by_key(|&(i, _)| {
+            (
+                timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                sort_order_rank(&stats[i]),
+                i,
+            )
+        })
+        .map(|(i, _)| i)
+}
+
+/// The per-column test behind [`bare_year_col`].
+fn is_bare_year_col(s: &crate::cmd::stats::StatsData, sem: Option<&ColSemantics>) -> bool {
+    let year = |v: Option<&String>| {
+        v.and_then(|s| s.trim().parse::<i64>().ok())
+            .filter(|y| BARE_YEAR_RANGE.contains(y))
+    };
+    s.r#type == "Integer"
+        && s.cardinality >= 2
+        && sem.is_some_and(|sem| sem.route == Route::Temporal)
+        && year(s.min.as_ref()).is_some()
+        && year(s.max.as_ref()).is_some()
+}
+
+/// How the time-series panel's x column is parsed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrendTime {
+    /// A stats-typed Date (`false`) or `DateTime` (`true`) column.
+    Date(bool),
+    /// A dictionary-routed column of bare 4-digit years ([`bare_year_col`]).
+    BareYear,
+}
+
+/// The time-series panel's x column: the canonical date column, else a bare-year column.
+///
+/// ONE function for the panel builder and for everything that must describe the builder's choice
+/// (the drawer's "time axis" label, the stderr skip note), so the description can never name a
+/// different column than the one actually charted.
+fn trend_time_col(
+    stats: &[crate::cmd::stats::StatsData],
+    sems: &[ColSemantics],
+) -> Option<(usize, TrendTime)> {
+    canonical_date_col(stats, sems)
+        .map(|(idx, is_datetime)| (idx, TrendTime::Date(is_datetime)))
+        .or_else(|| bare_year_col(stats, sems).map(|idx| (idx, TrendTime::BareYear)))
+}
+
 fn build_timeseries_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -27717,9 +27818,11 @@ fn build_timeseries_panel(
 ) -> CliResult<Option<Panel>> {
     use std::collections::BTreeMap;
 
-    let Some((date_idx, is_datetime)) = canonical_date_col(stats, sems) else {
+    let Some((date_idx, time_kind)) = trend_time_col(stats, sems) else {
         return Ok(None);
     };
+    let is_datetime = time_kind == TrendTime::Date(true);
+    let bare_year = time_kind == TrendTime::BareYear;
     // the date column is picked here, so resolve its parsing preference here too (issue #4303).
     let prefer_dmy = dmy_prefs.get(date_idx).copied().unwrap_or(false);
     // --dict-info: the overview trend anchors its info icon on the date column's entry (the
@@ -27767,6 +27870,10 @@ fn build_timeseries_panel(
     let mode = match y_idx {
         Some(i) => match sems.get(i).and_then(|s| s.agg) {
             Some(agg) => Mode::AggValue(i, agg),
+            // A bare-year axis has one x per YEAR, so plotting raw rows would stack every row of a
+            // year on its Jan 1 and label it "2019-01-01". Average per year instead: the neutral
+            // aggregate for an un-tagged numeric, whose additivity is unknown.
+            None if bare_year => Mode::AggValue(i, Agg::Mean),
             None => Mode::Raw(i),
         },
         None => Mode::Count,
@@ -27851,7 +27958,18 @@ fn build_timeseries_panel(
     };
     let mut days: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
     while rdr.read_byte_record(&mut record)? {
-        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+        // a bare year is its own Jan 1; everything else goes through the date parser, which must
+        // never see a bare year (it reads "2019" as epoch seconds - see `bare_year_col`)
+        let day = if bare_year {
+            std::str::from_utf8(record.get(date_idx).unwrap_or_default())
+                .ok()
+                .and_then(|t| t.trim().parse::<i64>().ok())
+                .filter(|y| BARE_YEAR_RANGE.contains(y))
+                .and_then(|y| chrono::NaiveDate::from_ymd_opt(i32::try_from(y).ok()?, 1, 1))
+        } else {
+            parse_record_date(&record, date_idx, prefer_dmy).map(|dt| dt.date_naive())
+        };
+        let Some(day) = day else {
             continue;
         };
         let y = match value_idx {
@@ -27862,12 +27980,16 @@ fn build_timeseries_panel(
             },
             None => 0.0,
         };
-        let entry = days.entry(dt.date_naive()).or_insert((0.0, 0));
+        let entry = days.entry(day).or_insert((0.0, 0));
         entry.0 += y;
         entry.1 += 1;
     }
     let day_keys: Vec<chrono::NaiveDate> = days.keys().copied().collect();
-    let bucket = {
+    let bucket = if bare_year {
+        // the column's own grain, whatever the span: there is nothing finer than a year to
+        // bucket, and nothing coarser should hide one
+        TsBucket::Year
+    } else {
         let span_bucket = match (day_keys.first(), day_keys.last()) {
             (Some(&lo), Some(&hi)) => ts_bucket_for_span((hi - lo).num_days().max(0)),
             _ => TsBucket::Day,
@@ -34398,6 +34520,29 @@ impl<'a> SmartCtx<'a> {
         self.dmy_prefs.get(idx).copied().unwrap_or(false)
     }
 
+    /// The header of the column that is the x-axis of a DRAWN time-based panel, if any.
+    ///
+    /// `RoutedTemporal` fires for EVERY date column, but only one becomes that axis, and only
+    /// when a time panel was actually built. Read from [`trend_time_col`] — the same function the
+    /// trend builder calls, with the same inputs — so the drawer and the stderr note can never
+    /// name a different column than the one charted. (A seasonality profile needs a real date, and
+    /// `trend_time_col` returns that same column whenever one exists.)
+    fn time_axis_field(&self) -> Option<&str> {
+        self.panels
+            .iter()
+            .any(|p| {
+                matches!(
+                    p.kind,
+                    PanelKind::TimeSeries { .. } | PanelKind::CyclicProfile { .. }
+                )
+            })
+            .then(|| trend_time_col(&self.stats, &self.col_sems))
+            .flatten()
+            .and_then(|(idx, _)| self.stats.get(idx))
+            .map(|s| s.field.as_str())
+            .filter(|f| !f.is_empty())
+    }
+
     /// `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
     /// per-field lookups share `dict_info_for_field`.
     fn dict_icons(&self) -> Option<&DictData> {
@@ -36307,15 +36452,46 @@ impl<'a> SmartCtx<'a> {
             );
         }
         if !self.skipped.is_empty() {
+            // A timestamp-routed column is "skipped" as a distribution even when it drives the
+            // time-series panel, and a bare "skipped 1: Program_Year" read as "the time series
+            // failed" (issue #4685). So each such entry says what became of it: the time axis,
+            // or why it is not one.
+            let time_axis = self.time_axis_field().map(str::to_string);
+            let describe = |r: &SkipRecord| -> String {
+                if !matches!(r.reason, SkipReason::RoutedTemporal) {
+                    return r.column.clone();
+                }
+                let Some(field) = r.field.as_deref() else {
+                    return r.column.clone();
+                };
+                if time_axis.as_deref() == Some(field) {
+                    return format!("{} (time axis)", r.column);
+                }
+                let idx = self.stats.iter().position(|s| s.field == field);
+                let stats = idx.and_then(|i| self.stats.get(i));
+                let time_capable = stats.is_some_and(|s| {
+                    matches!(s.r#type.as_str(), "Date" | "DateTime")
+                        || is_bare_year_col(s, idx.and_then(|i| self.col_sems.get(i)))
+                });
+                let why = match (&time_axis, stats) {
+                    (Some(axis), _) if time_capable => format!("{axis} is the time axis"),
+                    (_, Some(s)) if !time_capable => format!(
+                        "a timestamp in the dictionary, but its values are {}, not dates or \
+                         4-digit years",
+                        s.r#type
+                    ),
+                    _ => "no time panel could be drawn from it".to_string(),
+                };
+                format!("{} ({why})", r.column)
+            };
             viz_note(&format!(
-                // BYTE-IDENTICAL to the pre-`SkipRecord` wording — `column` is the display name
-                // this line has always used. Tests pin the "skipped N:" prefix.
+                // Tests pin the "skipped N:" prefix; only timestamp entries are annotated.
                 "viz smart: charting {} column(s); skipped {}: {}",
                 self.panels.len(),
                 self.skipped.len(),
                 self.skipped
                     .iter()
-                    .map(|r| r.column.as_str())
+                    .map(describe)
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -36490,23 +36666,9 @@ impl<'a> SmartCtx<'a> {
         // EVERY date column, but only ONE becomes the x-axis of a time-based panel. Left alone,
         // the dataset's canonical timestamp and a date column used nowhere render the identical
         // sentence, and a reader cannot tell "this drives the trend panel" from "this was dropped
-        // entirely". So the canonical column is named as such when a time panel actually exists —
-        // read from `canonical_date_col`, the SAME function the panel builders call, with the same
-        // inputs, rather than re-deriving the choice by other means.
-        let time_axis_field: Option<&str> = self
-            .panels
-            .iter()
-            .any(|p| {
-                matches!(
-                    p.kind,
-                    PanelKind::TimeSeries { .. } | PanelKind::CyclicProfile { .. }
-                )
-            })
-            .then(|| canonical_date_col(&self.stats, &self.col_sems))
-            .flatten()
-            .and_then(|(idx, _)| self.stats.get(idx))
-            .map(|s| s.field.as_str())
-            .filter(|f| !f.is_empty());
+        // entirely". So the time-axis column is named as such when a time panel actually exists
+        // (see `time_axis_field`).
+        let time_axis_field: Option<&str> = self.time_axis_field();
         let skipped_notes: std::collections::HashMap<String, String> = self
             .skipped
             .iter()
@@ -43875,7 +44037,11 @@ mod tests {
             route_from_content_type("datetime:%Y-%m-%dT%H:%M:%S").0,
             Route::Temporal
         );
-        assert_eq!(route_from_content_type("duration:3600").0, Route::Temporal);
+        // a duration is a span, not a time point: a measure, averaged (roborev 4936)
+        assert_eq!(
+            route_from_content_type("duration:3600"),
+            (Route::Measure, Some(Agg::Mean))
+        );
         // identifiers / PII / free-text -> skip
         assert_eq!(route_from_content_type("unique_id").0, Route::Skip);
         assert_eq!(route_from_content_type("email").0, Route::Skip);

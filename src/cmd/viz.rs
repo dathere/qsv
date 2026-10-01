@@ -27754,6 +27754,14 @@ fn parse_record_cyclic_date(
         .map(|dt| dt.naive_utc())
 }
 
+/// Whether a date column holds at least two distinct non-blank dates. `stats` counts the blank
+/// value in `cardinality`, so a constant date with some empty cells reads as cardinality 2. A
+/// constant date can't form a trend or a cycle, and being trivially "sorted" it would otherwise
+/// outrank the real event date in the temporal-column pickers.
+fn has_multiple_dates(s: &crate::cmd::stats::StatsData) -> bool {
+    s.cardinality.saturating_sub(u64::from(s.nullcount > 0)) >= 2
+}
+
 /// Pick the canonical date/datetime column for temporal panels (time-series overview, animated
 /// scatter). When a dictionary tagged timestamps, prefer the event/created one (`timestamp_rank`);
 /// among equal ranks prefer a column the file is physically sorted by (`sort_order_rank` — likely
@@ -27767,9 +27775,7 @@ fn canonical_date_col(
     stats
         .iter()
         .enumerate()
-        // a constant date (e.g. a publication date stamped on every row) can't form a trend, and
-        // being trivially "sorted" it would otherwise outrank the real event date
-        .filter(|(_, s)| s.cardinality >= 2)
+        .filter(|(_, s)| has_multiple_dates(s))
         .filter_map(|(i, s)| match s.r#type.as_str() {
             "Date" => Some((i, false)),
             "DateTime" => Some((i, true)),
@@ -29622,7 +29628,7 @@ fn build_cyclic_panel(
     let Some((date_idx, is_datetime)) = stats
         .iter()
         .enumerate()
-        .filter(|(i, s)| !is_map_col(*i) && s.cardinality >= 2)
+        .filter(|(i, s)| !is_map_col(*i) && has_multiple_dates(s))
         .filter_map(|(i, s)| match s.r#type.as_str() {
             "Date" => Some((i, false)),
             "DateTime" => Some((i, true)),

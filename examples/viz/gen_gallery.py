@@ -1285,7 +1285,7 @@ SCREENSHOTS = [
             "counties carrying I-80 and I-70 come out on top. The ACS vintage is <b>pinned</b> "
             "(<code>census@2024</code>): unpinned, qsv probes the newest published release against "
             "today, so a rebuild next year would silently re-vintage every number on this page. "
-            "This is a screenshot of the standalone, self-contained Data Schematic (~2&nbsp;MB): "
+            "This is a screenshot of the standalone, self-contained Data Schematic (~4&nbsp;MB): "
             "<b>click it to open the fully interactive Data Schematic in a new window</b>."),
         "image": "pa-crashes-visual-datadic.webp",
         "href":  "smart_pa_crashes.html",

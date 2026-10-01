@@ -407,6 +407,12 @@ describegpt options:
                            If the option is unset or the file is empty, {{ context }} renders as an
                            empty string and the prompts are unaffected. The file's contents are part
                            of the cache key, so editing it produces a fresh LLM call.
+                           Name any column you ADDED to the source data (a lookup, join or
+                           computed field) and how it was made. Otherwise its gaps read as
+                           defects of the source: e.g. "County_FIPS and County_Name are not in
+                           the source file; they were added by looking up each ZIP code, and a
+                           blank means the ZIP had no match". With such a line, descriptions
+                           call those blanks enrichment gaps rather than missing source data.
     --markdown-template <file>  TOML file with MiniJinja templates for Markdown output. The TOML
                            contains four wrapper templates - one per inference kind:
                            dictionary_md_template, description_md_template, tags_md_template

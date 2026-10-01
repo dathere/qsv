@@ -383,26 +383,133 @@ fn geocode_suggest_filter_country_admin1() {
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // --admin1 FILTERS (issue #4687): a value with no match inside the listed admin1s is left
+    // unchanged, never replaced by a place elsewhere (this used to return Melrose Park, Illinois
+    // and East Haven, Connecticut for New York values, and McKinney, Texas for Makati).
     let expected = vec![
         svec!["Location"],
-        svec!["Melrose Park, Illinois, Cook US"],
+        svec!["Melrose, New York"],
         svec!["Elmwood Park, New Jersey, Bergen County US"],
         svec!["New York, New York,  US"],
         svec!["Brooklyn, New York, Kings US"],
-        svec!["East Haven, Connecticut,  US"],
+        svec!["East Meadow, New York, Nassau US"],
         svec!["This is not a Location and it will not be geocoded"],
         // Jersey City matched as the admin1 filter included "New J"
         // which starts_with match "New Jersey"
         svec!["Jersey City, New Jersey, Hudson US"],
         // suggest expects a city name, not lat, long
         svec!["(41.90059, -87.85673)"],
-        // Makati did not match, even with the Metro Manila admin1 filter
-        // as the country filter was set to US
-        // as a result, the country filter takes precedence over the admin1 filter
-        // and the closest match for Makati in the US is McAllen in Texas
-        svec!["McKinney, Texas, Collin US"],
+        // the Metro Manila filter cannot admit it: the country filter is US
+        svec!["Makati, Metro Manila, Philippines"],
     ];
     assert_eq!(got, expected);
+}
+
+// US territories are countries of their own in Geonames (Ponce is admin1 `PR.113` of country
+// `PR`), so `US.PR` used to exclude every Puerto Rico place before ranking (issue #4687).
+#[test]
+fn geocode_suggest_admin1_us_territory() {
+    let wrk = Workdir::new("geocode_suggest_admin1_us_territory");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["city"],
+            svec!["Ponce"],
+            svec!["Mayaguez"],
+            svec!["Carolina"],
+        ],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.args(["suggest", "city", "data.csv"])
+        .args(["-f", "{name}, {admin1} {country}"])
+        .args(["--admin1", "US.PR"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["city"],
+        svec!["Ponce, Ponce PR"],
+        svec!["Mayagüez, Mayagüez PR"],
+        svec!["Carolina, Carolina PR"],
+    ];
+    assert_eq!(got, expected);
+
+    // an explicit --country US still admits the territory the admin1 list names
+    let mut cmd = wrk.command("geocode");
+    cmd.args(["suggest", "city", "data.csv"])
+        .args(["-f", "{name}, {admin1} {country}"])
+        .args(["--country", "US", "--admin1", "US.PR"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
+// Every entry an admin1 code: the countries are inferred from ALL their prefixes, so a mixed
+// state + territory list needs no --country (issue #4687).
+#[test]
+fn geocode_suggest_admin1_mixed_country_prefixes() {
+    let wrk = Workdir::new("geocode_suggest_admin1_mixed_country_prefixes");
+    wrk.create(
+        "data.csv",
+        vec![svec!["city"], svec!["Rochester"], svec!["Ponce"]],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.args(["suggest", "city", "data.csv"])
+        .args(["-f", "{name}, {admin1} {country}"])
+        .args(["--admin1", "US.NY,US.PR"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["city"],
+        svec!["Rochester, New York US"],
+        svec!["Ponce, Ponce PR"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// --admin1 is strict: Inverness, FL is not in the default (cities15000) index, and the value must
+// stay unchanged and be counted rather than become Inver Grove Heights, Minnesota (issue #4687).
+#[test]
+fn geocode_suggest_admin1_is_strict_and_reports_misses() {
+    let wrk = Workdir::new("geocode_suggest_admin1_is_strict_and_reports_misses");
+    wrk.create(
+        "data.csv",
+        vec![svec!["city"], svec!["Inverness"], svec!["Tampa"]],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.args(["suggest", "city", "data.csv"])
+        .args(["-f", "{name}, {admin1}"])
+        .args(["--admin1", "US.FL"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout, "city\nInverness\n\"Tampa, Florida\"\n");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(
+            "1 value(s) found no match within --admin1 US.FL, so they were left unchanged"
+        ),
+        "{stderr}"
+    );
+}
+
+// A prefix match scores a flat 1.0 and ties go to population, so "Davis" used to rank San Diego
+// (a name variant starting with "davis") above Davis, CA. A place whose own name IS the value now
+// wins the tie, with or without --admin1 (issue #4687).
+#[test]
+fn geocode_suggest_prefers_exact_name() {
+    let wrk = Workdir::new("geocode_suggest_prefers_exact_name");
+    wrk.create("data.csv", vec![svec!["city"], svec!["Davis"]]);
+    for admin1 in [None, Some("US.CA")] {
+        let mut cmd = wrk.command("geocode");
+        cmd.args(["suggest", "city", "data.csv"])
+            .args(["-f", "{name}, {admin1}"]);
+        if let Some(a) = admin1 {
+            cmd.args(["--admin1", a]);
+        }
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(
+            got,
+            vec![svec!["city"], svec!["Davis, California"]],
+            "--admin1 {admin1:?}"
+        );
+    }
 }
 
 #[test]

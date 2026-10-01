@@ -21094,6 +21094,46 @@ fn viz_smart_region_map_totals_the_additive_measure() {
 }
 
 #[test]
+fn viz_smart_region_total_states_a_bare_year_span() {
+    // a dictionary-tagged column of bare years (Integer to stats) is a time axis too, so the
+    // cumulative total names its span (roborev 4939, after #4685)
+    let wrk = Workdir::new("viz_smart_region_total_states_a_bare_year_span");
+    let csv = sum_map_csv(false)
+        .replace("2019-01-01", "2019")
+        .replace("2020-06-01", "2020");
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &sum_map_dictionary().replace(
+            r#""date":{"type":"string","title":"Date""#,
+            r#""date":{"type":"integer","title":"Year""#,
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("Total Spend by Region (2019–2020)"),
+        "bare-year span: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_flat_region_count_map_is_skipped() {
     let wrk = Workdir::new("viz_smart_flat_region_count_map_is_skipped");
     wrk.create_from_string("rg.csv", &sum_map_csv(true));

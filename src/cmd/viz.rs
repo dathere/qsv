@@ -30674,7 +30674,9 @@ fn region_total_period_suffix(
     stats: &[crate::cmd::stats::StatsData],
     sems: &[ColSemantics],
 ) -> String {
-    let Some((idx, _)) = canonical_date_col(stats, sems) else {
+    // the trend panel's own time column, so a dictionary-tagged bare-year column (`2019`, an
+    // Integer to stats) states its span too (roborev 4939)
+    let Some((idx, _)) = trend_time_col(stats, sems) else {
         return String::new();
     };
     let year = |v: Option<&String>| {

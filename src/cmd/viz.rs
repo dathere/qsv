@@ -248,7 +248,9 @@ viz options:
     --value <col>          Flow value column for a sankey diagram. When omitted,
                            each row counts as a flow of 1. For treemap/sunburst/icicle:
                            a numeric measure summed per sector (when omitted, each
-                           row counts as 1).
+                           row counts as 1). For smart: the numeric column its
+                           region map aggregates per region (see the agg option),
+                           in place of the dictionary's additive measure.
     --sankey-value-order   Order sankey nodes by total flow (largest at the top of each
                            column) instead of plotly's default crossing-minimizing "snap"
                            order. Either way the chart carries an on-screen "node order"
@@ -269,7 +271,12 @@ viz options:
                            of total" line would be too. On a bubble animation (see the
                            slider option), it collapses each entity x frame cell to a
                            single bubble and defaults to mean, the cell centroid; count is
-                           rejected there, since a row count is not a position.
+                           rejected there, since a row count is not a position. For smart
+                           (with a GeoJSON), how its region map combines the value column
+                           per region: sum (the default, and the only one that also gets a
+                           rate panel when a denominator is available), mean, min or max;
+                           count keeps the row-count map even when every region has the
+                           same number of rows, and takes no value column.
     --box-points <mode>    Which sample points to draw alongside a box or violin. Reading
                            the raw values lets plotly render true Tukey whiskers (1.5*IQR)
                            with the points beyond the fences as outliers. One of:
@@ -1848,6 +1855,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--denominator census turns `viz smart`'s region map into a rate map, so it needs a \
              --geojson for that map to exist (try `--geojson auto` to fetch boundaries too)."
         );
+    }
+    // `viz smart` reads --value/--agg only for its region map's measure slot (issue #4683); they
+    // used to be accepted and silently ignored. Reject what could not reach that map, or could not
+    // mean anything there, rather than render a dashboard that quietly disregards the request.
+    if args.cmd_smart && (args.flag_value.is_some() || args.flag_agg.is_some()) {
+        let agg = parse_agg(args.flag_agg.as_deref())?;
+        if args.flag_geojson.is_none() {
+            return fail_incorrectusage_clierror!(
+                "viz smart --value/--agg choose what its region map colors, so they need a \
+                 --geojson for that map to exist (try `--geojson auto`)."
+            );
+        }
+        match (agg, args.flag_value.is_some()) {
+            (Some(Agg::Count), true) => {
+                return fail_incorrectusage_clierror!(
+                    "viz smart --agg count maps row counts, which needs no --value."
+                );
+            },
+            (Some(a), false) if a != Agg::Count => {
+                return fail_incorrectusage_clierror!(
+                    "viz smart --agg sum/mean/min/max requires a --value column."
+                );
+            },
+            _ => {},
+        }
     }
     if args.flag_geojson.is_some() && !(args.cmd_choropleth || args.cmd_smart) {
         return fail_incorrectusage_clierror!(
@@ -30561,20 +30593,165 @@ fn candidates_by_leaves(
         .collect()
 }
 
+/// How a `viz smart` region map's measure slot combines one region's values (issue #4683).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RegionAgg {
+    Sum,
+    Mean,
+    Min,
+    Max,
+    Median,
+}
+
+impl RegionAgg {
+    /// Reduce one region's (non-empty) values. Sorts in place for the median.
+    fn reduce(self, vs: &mut [f64]) -> f64 {
+        match self {
+            Self::Sum => vs.iter().sum(),
+            Self::Mean => vs.iter().sum::<f64>() / vs.len() as f64,
+            Self::Min => vs.iter().copied().fold(f64::INFINITY, f64::min),
+            Self::Max => vs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            Self::Median => {
+                vs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let m = vs.len() / 2;
+                if vs.len() % 2 == 1 {
+                    vs[m]
+                } else {
+                    (vs[m - 1] + vs[m]) / 2.0
+                }
+            },
+        }
+    }
+}
+
+/// The dictionary-additive measure a `viz smart` region map TOTALS per region (issue #4683), or
+/// `None` to fall back to the per-region median.
+///
+/// Eligibility is the column's RESOLVED aggregation, never its concept alone: `agg` is `Sum` only
+/// after `derive_semantics` has applied an explicit `x-qsv.aggregation`, the intensive-label
+/// downgrade and the `measure.count` exemption, so a `measure.money` column declared
+/// `aggregation: mean` (a pre-averaged payment) is never totalled. Region-level concepts are
+/// refused outright: a population repeats on every row of its region, so a per-region sum is
+/// exactly the inflation issue #4528 removed. `excluded` carries the region candidates and any
+/// declared denominator.
+///
+/// Among eligible columns: money/amount before count before any other additive measure (issue
+/// #4684 — a transaction count must not outrank the dollars), then Float before Integer (the time
+/// series' own preference), then the lowest column index.
+fn additive_region_measure(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    excluded: &[usize],
+) -> Option<usize> {
+    col_sems
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            s.route == Route::Measure
+                && s.agg == Some(Agg::Sum)
+                && !excluded.contains(i)
+                && !REGION_LEVEL_CONCEPTS.contains(&s.concept.trim())
+                && stats
+                    .get(*i)
+                    .is_some_and(|st| matches!(st.r#type.as_str(), "Integer" | "Float"))
+        })
+        .min_by_key(|(i, s)| {
+            let tier: u8 = match s.concept.trim() {
+                "measure.money" | "measure.amount" => 0,
+                "measure.count" => 1,
+                _ => 2,
+            };
+            (tier, u8::from(stats[*i].r#type != "Float"), *i)
+        })
+        .map(|(i, _)| i)
+}
+
+/// ` (2019–2025)` when the dataset's trend time column spans more than one year, else empty. A
+/// per-region TOTAL over a multi-year extract is cumulative, and its rate ("dollars per resident")
+/// reads as annual unless the span is stated (issue #4683). Only a value that starts with a 4-digit
+/// year is read; anything else (a day-first date, say) states no span rather than a wrong one.
+fn region_total_period_suffix(
+    stats: &[crate::cmd::stats::StatsData],
+    sems: &[ColSemantics],
+) -> String {
+    // the trend panel's own time column, so a dictionary-tagged bare-year column (`2019`, an
+    // Integer to stats) states its span too (roborev 4939)
+    let Some((idx, _)) = trend_time_col(stats, sems) else {
+        return String::new();
+    };
+    let year = |v: Option<&String>| {
+        let v = v?.trim();
+        let y = v.get(..4)?;
+        let rest_ok = v.len() == 4 || v[4..].starts_with(['-', 'T', ' ', '/']);
+        (rest_ok && y.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| y.parse::<i32>().ok())
+            .flatten()
+    };
+    match (year(stats[idx].min.as_ref()), year(stats[idx].max.as_ref())) {
+        (Some(lo), Some(hi)) if lo != hi => format!(" ({lo}–{hi})"),
+        _ => String::new(),
+    }
+}
+
+/// `--value`/`--agg` under `viz smart` (issue #4683): an explicit column and aggregation for the
+/// region map's measure slot. They used to be silently ignored there. `run` has already rejected
+/// the combinations that cannot mean anything (`--agg` other than count without `--value`,
+/// `--value` with `--agg count`, either flag without `--geojson`); `Ok(None)` when no measure
+/// was asked for.
+fn smart_region_value_override(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    headers: &csv::ByteRecord,
+    nh: bool,
+) -> CliResult<Option<(usize, RegionAgg)>> {
+    let Some(sel) = args.flag_value.as_ref() else {
+        return Ok(None);
+    };
+    let idx = resolve_one(Some(sel), headers, nh, "value")?;
+    if !stats
+        .get(idx)
+        .is_some_and(|s| matches!(s.r#type.as_str(), "Integer" | "Float"))
+    {
+        return fail_incorrectusage_clierror!(
+            "viz smart --value must name a numeric column; '{}' is not numeric.",
+            col_label(headers, idx, nh)
+        );
+    }
+    let agg = match parse_agg(args.flag_agg.as_deref())? {
+        None | Some(Agg::Sum) => RegionAgg::Sum,
+        Some(Agg::Mean) => RegionAgg::Mean,
+        Some(Agg::Min) => RegionAgg::Min,
+        Some(Agg::Max) => RegionAgg::Max,
+        Some(Agg::Count) => {
+            return fail_incorrectusage_clierror!(
+                "viz smart --agg count maps row counts, which needs no --value."
+            );
+        },
+    };
+    Ok(Some((idx, agg)))
+}
+
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
 /// `zip_code` column) matched against a user `--geojson` boundary file via `--feature-id-key`,
-/// independent of any lat/lon columns. Emits up to three panels, in order:
+/// independent of any lat/lon columns. Emits up to four panels, in order:
 ///
-/// 1. the per-region row COUNT (always);
+/// 1. the per-region row COUNT — unless every region holds the SAME number of rows (issue #4683),
+///    the signature of pre-aggregated data, where a count map is a flat field and its rate map only
+///    the denominator upside down;
 /// 2. a per-region RATE (issue #4394), when a denominator is available from `--denominator-key` or
 ///    the dictionary's `x-qsv.denominator` hint — beside the count, never replacing it, since the
 ///    two answer different questions ("how much came from here" vs "how intense is it here").
 ///    Without a denominator the count panel instead carries the `raw_count_caveat` subtitle,
 ///    because an unqualified count choropleth reads as a map of where the problem is when it is
 ///    substantially a map of where the people are;
-/// 3. the per-region MEDIAN of a measure, when the dictionary tags one (a `MAP_MEASURE_CONCEPTS`
-///    concept, else any `role=measure` column) — median, not mean, since real-world measures like
-///    sale price are heavily right-skewed.
+/// 3. a MEASURE slot, first match wins:
+///    - an explicit `--value` aggregated by `--agg` (default sum), the user speaking now;
+///    - else the per-region TOTAL of the dictionary's additive measure
+///      ([`additive_region_measure`], issue #4683) — plus, when a denominator is available, that
+///      total's own rate panel (4.), e.g. payment dollars per resident;
+///    - else the per-region MEDIAN of a tagged measure (a `MAP_MEASURE_CONCEPTS` concept, else any
+///      `role=measure` column) — median, not mean, since real-world measures like sale price are
+///      heavily right-skewed.
 ///
 /// The key column is auto-chosen: in one pass, every geo region-code candidate column's trimmed
 /// cell values are matched against the GeoJSON feature-id set; the column whose matched-row
@@ -30595,6 +30772,7 @@ fn build_smart_summary_choropleth_panels(
     grain_unit: Option<&str>,
     grain: Option<&str>,
     extras: ArgvExtras,
+    value_slot: Option<(usize, RegionAgg)>,
 ) -> CliResult<Option<(Vec<Panel>, usize)>> {
     // explicit intent: only build when the user supplied a --geojson boundary file.
     let Some(spec) = args.flag_geojson.as_deref() else {
@@ -30644,12 +30822,12 @@ fn build_smart_summary_choropleth_panels(
         }
     }
 
-    // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
+    // median fallback for the measure slot: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
     // dictionary role is still "measure"). Never a candidate region column, never a denominator.
     // Empty hover exclusion: this picks a choropleth's COLOR measure, not a hover field, and the
     // excluded concepts are never measures anyway (`geo.ip_address` routes to `Route::Skip`).
-    let measure_idx: Option<usize> = first_col_by_concepts(
+    let median_idx: Option<usize> = first_col_by_concepts(
         col_sems,
         MAP_MEASURE_CONCEPTS,
         usize::MAX,
@@ -30664,6 +30842,16 @@ fn build_smart_summary_choropleth_panels(
             .find(|(i, s)| s.route == Route::Measure && !measure_excluded.contains(i))
             .map(|(i, _)| i)
     });
+    // The measure slot (issue #4683): an explicit `--value`/`--agg` outranks the dictionary, the
+    // same precedence `--denominator-key` has over `x-qsv.denominator`; then a dictionary-additive
+    // measure is TOTALLED per region; only then the median fallback. Selected by aggregation, not
+    // by `MAP_MEASURE_CONCEPTS` order, which also drives hover and bubble sizing (issue #4684).
+    let measure_slot: Option<(usize, RegionAgg)> = match value_slot {
+        Some(explicit) => Some(explicit),
+        None => additive_region_measure(stats, col_sems, &measure_excluded)
+            .map(|i| (i, RegionAgg::Sum))
+            .or_else(|| median_idx.map(|i| (i, RegionAgg::Median))),
+    };
 
     // one pass over the rows: for every candidate column tally matched-row count and (per matched
     // region id) the row count and the measure values, plus the matched/total ratio used to pick
@@ -30725,7 +30913,7 @@ fn build_smart_summary_choropleth_panels(
     let qualifier_col = qualifier_spec.single_column();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let measure = measure_idx.and_then(|mi| parse_f64(record.get(mi)));
+        let measure = measure_slot.and_then(|(mi, _)| parse_f64(record.get(mi)));
         let qual = qualifier_spec.for_record(&record);
         for (ci, &di) in candidates.iter().enumerate() {
             let cell = cell_to_string(record.get(di));
@@ -30939,27 +31127,80 @@ fn build_smart_summary_choropleth_panels(
         return Ok(None);
     }
     let count_z: Vec<f64> = count_locs.iter().map(|k| counts[ci][k]).collect();
-    let count_names = aligned_region_names(&features, &count_locs);
-    let count_hover = choropleth_hover_text(
-        &count_locs,
-        &count_z,
-        count_names.as_deref(),
-        &t!("viz.chart.count"),
-        true,
-    );
-    let mut out = vec![make_panel(
-        count_locs.clone(),
-        count_z.clone(),
-        t!("viz.chart.count").into_owned(),
-        count_hover,
-        t!("viz.title.count_by_region", q_region = region_label).into_owned(),
-    )];
+    // Every region holding the SAME number of rows is the signature of pre-aggregated data (one row
+    // per region x year x type): the count map is a single flat shade, and its rate map is that
+    // constant divided by the denominator — a map of the denominator, upside down (issue #4683).
+    // Exact equality, as the measure slot's constancy rule below: near-uniform screening was
+    // rejected in #4342. An explicit `--agg count` asks for the count map, so it keeps it.
+    let count_flat = count_z.iter().all(|v| *v == count_z[0])
+        && !matches!(parse_agg(args.flag_agg.as_deref())?, Some(Agg::Count));
+    if count_flat {
+        viz_skip_note!(
+            VIZ_SMART_PREFIX,
+            "viz.omit.count_uniform",
+            q_n = count_locs.len(),
+            q_count = fmt_measure(count_z[0])
+        );
+    }
 
-    // Rate panel (issue #4394), placed immediately AFTER the count panel and before the median
-    // one, so the Data Schematic reads [count, rate, median]. It is added BESIDE the count panel
-    // rather than replacing it: the raw count is a real quantity a reader still needs (how much
-    // work came from here), while the rate answers a different question (how intense is it here).
-    // Dropping either one loses half the story.
+    // The measure slot's per-region values, reduced by its aggregation, over the regions that
+    // parsed at least one value. Every region must not share ONE value: a single-valued map paints
+    // every polygon the same shade and still numbers them "rank 1 of N" in the hover -- an ordering
+    // invented entirely from ties. A 99%-zero measure does exactly this: on the PA crashes figure
+    // `fatal_count` gives all 67 counties a median of 0. Same principle the column router already
+    // applies as `SkipReason::ConstantColumn` -- a constant has no distribution to draw -- applied
+    // to the AGGREGATED values, which is where the constancy appears here. Exact equality is
+    // deliberate: this suppresses only the degenerate case, not near-uniform maps (screening those
+    // was proposed and rejected in #4342).
+    let measure_series: Option<(Vec<String>, Vec<f64>, usize, RegionAgg)> =
+        measure_slot.and_then(|(mi, mut agg)| {
+            // A dictionary-additive column whose value never varies within a region, while some
+            // region repeats it over several rows, describes the REGION, not its rows: a
+            // population mis-tagged `measure.count`, say. Totalling it multiplies it by each
+            // region's row count, the inflation issue #4528 removed for `measure.population`.
+            // Checked from the DATA, since the concept is exactly what was wrong; the map then
+            // shows the region's own value. An explicit `--value` is the user's call, not ours.
+            if agg == RegionAgg::Sum && args.flag_value.is_none() {
+                let (constant, repeated) = order[ci]
+                    .iter()
+                    .filter_map(|k| values[ci].get(k))
+                    .filter(|vs| !vs.is_empty())
+                    .fold((true, false), |(constant, repeated), vs| {
+                        (
+                            constant && vs.iter().all(|v| *v == vs[0]),
+                            repeated || vs.len() > 1,
+                        )
+                    });
+                if constant && repeated {
+                    viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.measure_region_level",
+                        q_col = label_of(mi)
+                    );
+                    agg = RegionAgg::Median;
+                }
+            }
+            let mut locs: Vec<String> = Vec::new();
+            let mut z: Vec<f64> = Vec::new();
+            for k in &order[ci] {
+                let Some(vs) = values[ci].get_mut(k) else {
+                    continue;
+                };
+                if vs.is_empty() {
+                    continue;
+                }
+                locs.push(k.clone());
+                z.push(agg.reduce(vs));
+            }
+            let varies = z.iter().any(|v| *v != z[0]);
+            (locs.len() >= 2 && varies).then_some((locs, z, mi, agg))
+        });
+
+    // Rate panel (issue #4394), placed immediately AFTER the count panel and before the measure
+    // slot, so the Data Schematic reads [count, rate, measure (, measure rate)]. It is added BESIDE
+    // the count panel rather than replacing it: the raw count is a real quantity a reader still
+    // needs (how much work came from here), while the rate answers a different question (how
+    // intense is it here). Dropping either one loses half the story.
     //
     // Precedence: the --denominator-key FLAG outranks the dictionary hint. A flag is the user
     // speaking now; the hint is the sidecar speaking from whenever it was written.
@@ -31084,11 +31325,15 @@ fn build_smart_summary_choropleth_panels(
         (None, None) => None,
     };
 
-    let mut rate_charted = false;
-    // stamped into the rate panel's subtitle below: a denominator qsv FETCHED is unreadable
-    // without its release, and the reader cannot see it anywhere else (issue #4395)
-    let mut census_provenance: Option<String> = None;
-    if let Some(source) = denom_source {
+    // Resolved ONCE and shared by both rate panels: the count's, and the measure slot's when it
+    // totals an additive measure (issue #4683). A Census fetch keys on every matched region, a
+    // superset of either panel's regions. Skipped when neither panel exists to use it.
+    let wants_rate = !count_flat || matches!(measure_series, Some((_, _, _, RegionAgg::Sum)));
+    let mut rate_ctx: Option<(HashMap<String, f64>, DenominatorLabels, Option<String>)> = None;
+    if let Some(source) = denom_source.filter(|_| wants_rate) {
+        // stamped into the rate panels' subtitle below: a denominator qsv FETCHED is unreadable
+        // without its release, and the reader cannot see it anywhere else (issue #4395)
+        let mut census_provenance: Option<String> = None;
         // The unit the denominator is IN (issue #4414), declared never guessed. For a GeoJSON
         // property the document may declare it — every `--geojson auto` set does; for a dictionary
         // column it rides beside the column name as `x-qsv.denominator.unit`. The flag outranks
@@ -31128,156 +31373,208 @@ fn build_smart_summary_choropleth_panels(
             },
         };
         let noun = apply_denominator_unit(&mut denoms, &denom_label, declared_unit.as_ref());
-        let series = build_rate_series(&count_locs, &count_z, &denoms);
+        // These two are mutually exclusive BY CONSTRUCTION, so neither needs to compose with the
+        // other and there is deliberately no join here: `census_provenance` is `Some` only for
+        // `DenominatorSource::Census`, while `level_caveat` is set only on the dictionary-hint
+        // `Column` path. A join over a set that can never hold two elements would be inventing a
+        // case to maintain. If a future source can set both, THAT change owns building the
+        // composition — the `auto_boundary_notes` join below is the pattern to follow when it does.
+        let subtitle = if let Some(provenance) = census_provenance {
+            Some(t!("viz.notes.denominator_provenance", q_source = provenance).into_owned())
+        } else {
+            level_caveat
+                .take()
+                .map(|col| t!("viz.notes.denominator_level_unverified", q_col = col).into_owned())
+        };
+        rate_ctx = Some((denoms, noun, subtitle));
+    }
+    // One rate panel for a per-region extensive quantity (`values`, aligned to `locs`): `what`
+    // names the numerator in the title, colorbar and hover; `suffix` is appended to the title
+    // before any excluded-regions note.
+    let rate_panel = |locs: &[String], values: &[f64], what: &str, suffix: &str| {
+        let (denoms, noun, subtitle) = rate_ctx.as_ref()?;
+        let series = build_rate_series(locs, values, denoms);
         // one rated region is a number, not a map: there is nothing to compare it against.
-        if series.locs.len() >= 2 {
-            let scale = rate_scale(&series.rates);
-            let per_phrase = rate_per_phrase(scale, &noun.noun);
-            let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
-            let unit = count_unit_from_grain(grain_unit, grain);
-            let names = aligned_region_names(&features, &series.locs);
-            let hover = choropleth_rate_hover_text(
-                &series.locs,
-                names.as_deref(),
-                &series.numerators,
-                &series.denominators,
-                &scaled,
-                &unit,
-                &noun.hover,
-                &per_phrase,
-            );
-            let mut title = t!(
-                "viz.title.rate_by_region",
-                q_what = unit,
-                q_per = per_phrase,
-                q_region = region_label
-            )
-            .into_owned();
-            if series.excluded > 0 {
-                // a sub-panel carries no below-map annotation, so the narrowed coverage is stated
-                // in the title — beside the map, never over it (matching the snap/drop accounting
-                // in `build_smart_pip_choropleth_panel`).
-                title.push_str(&format!(
-                    " ({})",
-                    t!(
-                        "viz.title.denom_excluded",
-                        q_n = series.excluded,
-                        q_total = count_locs.len()
-                    )
-                ));
-                viz_skip_note!(
-                    VIZ_SMART_PREFIX,
-                    "viz.omit.denominator_excluded",
+        if series.locs.len() < 2 {
+            return None;
+        }
+        let scale = rate_scale(&series.rates);
+        let per_phrase = rate_per_phrase(scale, &noun.noun);
+        let scaled: Vec<f64> = series.rates.iter().map(|r| r * f64::from(scale)).collect();
+        let names = aligned_region_names(&features, &series.locs);
+        let hover = choropleth_rate_hover_text(
+            &series.locs,
+            names.as_deref(),
+            &series.numerators,
+            &series.denominators,
+            &scaled,
+            what,
+            &noun.hover,
+            &per_phrase,
+        );
+        let mut title = t!(
+            "viz.title.rate_by_region",
+            q_what = what,
+            q_per = per_phrase,
+            q_region = region_label
+        )
+        .into_owned();
+        title.push_str(suffix);
+        if series.excluded > 0 {
+            // a sub-panel carries no below-map annotation, so the narrowed coverage is stated in
+            // the title — beside the map, never over it (matching the snap/drop accounting in
+            // `build_smart_pip_choropleth_panel`).
+            title.push_str(&format!(
+                " ({})",
+                t!(
+                    "viz.title.denom_excluded",
                     q_n = series.excluded,
-                    q_total = count_locs.len()
-                );
-            }
-            let mut rate_panel = make_panel(
-                series.locs,
-                scaled,
-                t!("viz.chart.rate_label", q_what = unit, q_per = per_phrase).into_owned(),
-                hover,
-                title,
-            );
-            // These two are mutually exclusive BY CONSTRUCTION, so neither needs to compose with
-            // the other and there is deliberately no join here: `census_provenance` is `Some` only
-            // for `DenominatorSource::Census`, while `level_caveat` is set only on the
-            // dictionary-hint `Column` path. A join over a set that can never hold two elements
-            // would be inventing a case to maintain. If a future source can set both, THAT change
-            // owns building the composition — the count panel's `auto_boundary_notes` join below
-            // is the pattern to follow when it does.
-            if let Some(provenance) = census_provenance.take() {
-                rate_panel = rate_panel.with_subtitle(Some(
-                    t!("viz.notes.denominator_provenance", q_source = provenance).into_owned(),
-                ));
-            } else if let Some(col) = level_caveat.take() {
-                rate_panel = rate_panel.with_subtitle(Some(
-                    t!("viz.notes.denominator_level_unverified", q_col = col).into_owned(),
-                ));
-            }
-            out.push(rate_panel);
-            rate_charted = true;
-        }
-    }
-    // No rate available: say so ON the count map. An unqualified count choropleth reads as a map
-    // of where the problem is, when it is substantially a map of where the people are.
-    // The count panel is caveated EITHER WAY, only with different wording. A raw-count region map
-    // is unadjusted whether or not a rate panel sits beside it — and the rate panel is not
-    // guaranteed to survive: both panels carry infinite `interest`, so `--max-charts 2` keeps the
-    // earlier one by document order and drops the rate, which without this would leave exactly the
-    // uncaveated count map this issue is about.
-    let caveat = if rate_charted {
-        t!("viz.notes.raw_count_paired")
-    } else {
-        t!("viz.notes.raw_count_caveat")
-    };
-    // A sub-panel has no below-map annotation, so an auto-resolved set's provenance rides in the
-    // subtitle instead (issue #4416). Without it a `viz smart --geojson auto` map is the one place
-    // a reader cannot tell fetched boundaries from supplied ones, nor which vintage drew them.
-    let subtitle = match auto_boundary_notes() {
-        // the caveat is a sentence in its own right but does not always end in punctuation (and
-        // which mark that is varies by locale), so supply a stop when it lacks one — otherwise the
-        // two notes run together mid-sentence
-        Some(note) => {
-            let stop = if caveat.ends_with(['.', '!', '?', '…', '。']) {
-                " "
-            } else {
-                ". "
-            };
-            format!("{caveat}{stop}{note}")
-        },
-        None => caveat.into_owned(),
-    };
-    let caveated = out.remove(0).with_subtitle(Some(subtitle));
-    out.insert(0, caveated);
-
-    // median-measure panel (when a measure column exists): per-region median of the buffered
-    // values, skipping regions with no parsed measure.
-    if let Some(mi) = measure_idx {
-        let measure_name = label_of(mi);
-        let mut med_locs: Vec<String> = Vec::new();
-        let mut med_z: Vec<f64> = Vec::new();
-        for k in &order[ci] {
-            let Some(vs) = values[ci].get_mut(k) else {
-                continue;
-            };
-            if vs.is_empty() {
-                continue;
-            }
-            vs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let m = vs.len() / 2;
-            let median = if vs.len() % 2 == 1 {
-                vs[m]
-            } else {
-                (vs[m - 1] + vs[m]) / 2.0
-            };
-            med_locs.push(k.clone());
-            med_z.push(median);
-        }
-        // ... and every region must not share ONE median. A single-valued median map paints every
-        // polygon the same shade and still numbers them "rank 1 of N" in the hover -- an ordering
-        // invented entirely from ties. A 99%-zero measure does exactly this: on the PA crashes
-        // figure `fatal_count` gives all 67 counties a median of 0. Same principle the column
-        // router already applies as `SkipReason::ConstantColumn` -- a constant has no distribution
-        // to draw -- applied to the AGGREGATED values, which is where the constancy appears here.
-        // Exact equality is deliberate: this suppresses only the degenerate case, not
-        // near-uniform maps (screening those was proposed and rejected in #4342).
-        let med_varies = med_z.iter().any(|v| *v != med_z[0]);
-        if med_locs.len() >= 2 && med_varies {
-            let med_names = aligned_region_names(&features, &med_locs);
-            let med_label = format!("median {measure_name}");
-            let med_hover =
-                choropleth_hover_text(&med_locs, &med_z, med_names.as_deref(), &med_label, false);
-            out.push(make_panel(
-                med_locs,
-                med_z,
-                med_label,
-                med_hover,
-                format!("median {measure_name} by {region_label}"),
+                    q_total = locs.len()
+                )
             ));
+            viz_skip_note!(
+                VIZ_SMART_PREFIX,
+                "viz.omit.denominator_excluded",
+                q_n = series.excluded,
+                q_total = locs.len()
+            );
+        }
+        let panel = make_panel(
+            series.locs,
+            scaled,
+            t!("viz.chart.rate_label", q_what = what, q_per = per_phrase).into_owned(),
+            hover,
+            title,
+        );
+        Some((panel, subtitle.clone()))
+    };
+
+    // Each panel travels with its own subtitle until the end, where the first one also takes the
+    // auto-resolved boundary note.
+    let mut out: Vec<(Panel, Option<String>)> = Vec::with_capacity(4);
+    if !count_flat {
+        let count_names = aligned_region_names(&features, &count_locs);
+        let count_hover = choropleth_hover_text(
+            &count_locs,
+            &count_z,
+            count_names.as_deref(),
+            &t!("viz.chart.count"),
+            true,
+        );
+        let count_panel = make_panel(
+            count_locs.clone(),
+            count_z.clone(),
+            t!("viz.chart.count").into_owned(),
+            count_hover,
+            t!("viz.title.count_by_region", q_region = region_label).into_owned(),
+        );
+        let unit = count_unit_from_grain(grain_unit, grain);
+        let count_rate = rate_panel(&count_locs, &count_z, &unit, "");
+        // No rate available: say so ON the count map. An unqualified count choropleth reads as a
+        // map of where the problem is, when it is substantially a map of where the people are.
+        // The count panel is caveated EITHER WAY, only with different wording. A raw-count region
+        // map is unadjusted whether or not a rate panel sits beside it — and the rate panel is not
+        // guaranteed to survive: both panels carry infinite `interest`, so `--max-charts 2` keeps
+        // the earlier one by document order and drops the rate, which without this would leave
+        // exactly the uncaveated count map this issue is about.
+        let caveat = if count_rate.is_some() {
+            t!("viz.notes.raw_count_paired")
+        } else {
+            t!("viz.notes.raw_count_caveat")
+        };
+        out.push((count_panel, Some(caveat.into_owned())));
+        out.extend(count_rate);
+    }
+
+    if let Some((locs, z, mi, agg)) = measure_series {
+        let measure_name = label_of(mi);
+        let names = aligned_region_names(&features, &locs);
+        match agg {
+            RegionAgg::Sum => {
+                // A total over a multi-year extract is cumulative; say over which years, or its
+                // rate ("dollars per resident") reads as annual.
+                let period = region_total_period_suffix(stats, col_sems);
+                let hover = choropleth_hover_text(&locs, &z, names.as_deref(), &measure_name, true);
+                let mut title = t!(
+                    "viz.title.sum_by_region",
+                    // the KPI tile's own "Total X" form, which skips the word when the label
+                    // already starts with it
+                    q_what = kpi_title(&measure_name, false),
+                    q_region = region_label
+                )
+                .into_owned();
+                title.push_str(&period);
+                let sum_rate = rate_panel(&locs, &z, &measure_name, &period);
+                // a total is exactly as unadjusted for region size as a count
+                let caveat = if sum_rate.is_some() {
+                    t!("viz.notes.raw_sum_paired")
+                } else {
+                    t!("viz.notes.raw_sum_caveat")
+                };
+                let panel = make_panel(locs, z, measure_name, hover, title);
+                out.push((panel, Some(caveat.into_owned())));
+                out.extend(sum_rate);
+            },
+            RegionAgg::Median => {
+                let med_label = format!("median {measure_name}");
+                let med_hover =
+                    choropleth_hover_text(&locs, &z, names.as_deref(), &med_label, false);
+                let panel = make_panel(
+                    locs,
+                    z,
+                    med_label,
+                    med_hover,
+                    format!("median {measure_name} by {region_label}"),
+                );
+                out.push((panel, None));
+            },
+            // an explicit `--value` with an intensive `--agg`: no rate (dividing an average by a
+            // population has no meaning) and no share-of-total in the hover
+            RegionAgg::Mean | RegionAgg::Min | RegionAgg::Max => {
+                // literal keys, so the catalog-coverage test can verify each one
+                let (w, r) = (&measure_name, &region_label);
+                let title = match agg {
+                    RegionAgg::Mean => t!("viz.title.mean_by_region", q_what = w, q_region = r),
+                    RegionAgg::Min => t!("viz.title.min_by_region", q_what = w, q_region = r),
+                    _ => t!("viz.title.max_by_region", q_what = w, q_region = r),
+                }
+                .into_owned();
+                let hover =
+                    choropleth_hover_text(&locs, &z, names.as_deref(), &measure_name, false);
+                let panel = make_panel(locs, z, measure_name, hover, title);
+                out.push((panel, None));
+            },
         }
     }
 
+    if out.is_empty() {
+        return Ok(None);
+    }
+    // A sub-panel has no below-map annotation, so an auto-resolved set's provenance rides in the
+    // first panel's subtitle instead (issue #4416). Without it a `viz smart --geojson auto` map is
+    // the one place a reader cannot tell fetched boundaries from supplied ones, nor which vintage
+    // drew them.
+    if let Some(note) = auto_boundary_notes() {
+        let first = &mut out[0].1;
+        *first = Some(match first.take() {
+            // the caveat is a sentence in its own right but does not always end in punctuation
+            // (and which mark that is varies by locale), so supply a stop when it lacks one —
+            // otherwise the two notes run together mid-sentence
+            Some(caveat) => {
+                let stop = if caveat.ends_with(['.', '!', '?', '…', '。']) {
+                    " "
+                } else {
+                    ". "
+                };
+                format!("{caveat}{stop}{note}")
+            },
+            None => note,
+        });
+    }
+    let out = out
+        .into_iter()
+        .map(|(panel, subtitle)| panel.with_subtitle(subtitle))
+        .collect();
     Ok(Some((out, region_idx)))
 }
 
@@ -34426,6 +34723,15 @@ impl<'a> SmartCtx<'a> {
         // when build_map_panel emitted no choropleth companion (avoid two competing region
         // fills), and never for image output (choropleths are HTML-only, like the PIP
         // companion above).
+        // `--value`/`--agg` (issue #4683), resolved and validated HERE rather than inside the
+        // builder: the builder returns early whenever no region column qualifies, and a
+        // non-numeric --value must fail whether or not a map gets built.
+        let value_slot = if args.flag_value.is_some() {
+            let (_, headers, nh) = reader_and_headers(&args)?;
+            smart_region_value_override(&args, &stats, &headers, nh)?
+        } else {
+            None
+        };
         let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
             build_smart_summary_choropleth_panels(
                 &args,
@@ -34435,10 +34741,21 @@ impl<'a> SmartCtx<'a> {
                 dict_data.as_ref().and_then(|d| d.grain_unit.as_deref()),
                 dict_data.as_ref().and_then(|d| d.grain.as_deref()),
                 extras,
+                value_slot,
             )?
         } else {
             None
         };
+        // `run` guarantees a --geojson, but the region-code map is still not the only one it can
+        // feed: a point-in-polygon companion or image output takes that slot, and neither reads
+        // --value/--agg (issue #4683). Say so rather than ignore the flags silently.
+        if (args.flag_value.is_some() || args.flag_agg.is_some()) && summary_choros.is_none() {
+            viz_note(
+                "viz smart --value/--agg: no region-code map was built (a point-in-polygon map, \
+                 image output, or no region column matched the --geojson), so they were not \
+                 applied.",
+            );
+        }
         let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
 
         // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only

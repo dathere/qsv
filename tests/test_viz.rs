@@ -12228,7 +12228,7 @@ fn viz_smart_summary_choropleth_county_fips_concept() {
     let wrk = Workdir::new("viz_smart_summary_choropleth_county_fips_concept");
     wrk.create_from_string(
         "counties.csv",
-        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n",
+        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n36061,500\n",
     );
     wrk.create_from_string(
         "counties.geojson",
@@ -20985,6 +20985,401 @@ fn viz_smart_two_value_denominator_still_rates_the_coarse_geography_repro() {
 // against the region column's own concept.
 // ---------------------------------------------------------------------------
 
+/// `region,txns,avg_spend,spend,date` rows for the region map's measure slot (issue #4683).
+/// `spend` totals A=400, B=6,000, C=100 and varies within every region (a per-row amount, not a
+/// region-level one). `flat` gives every region the same two rows, the pre-aggregated shape.
+fn sum_map_csv(flat: bool) -> String {
+    let rows: &[(&str, u32, &str, &str)] = if flat {
+        &[
+            ("A", 1, "100.5", "10.5"),
+            ("A", 2, "299.5", "20.5"),
+            ("B", 3, "2000.25", "30.5"),
+            ("B", 4, "3999.75", "40.5"),
+            ("C", 5, "40.5", "50.5"),
+            ("C", 6, "59.5", "60.5"),
+        ]
+    } else {
+        &[
+            ("A", 1, "100.5", "10.5"),
+            ("A", 2, "299.5", "20.5"),
+            ("B", 3, "1000.25", "30.5"),
+            ("B", 4, "1999.75", "40.5"),
+            ("B", 5, "3000", "50.5"),
+            ("C", 6, "10.5", "60.5"),
+            ("C", 7, "20.5", "70.5"),
+            ("C", 8, "30.5", "80.5"),
+            ("C", 9, "38.5", "90.5"),
+        ]
+    };
+    let mut s = String::from("region,txns,avg_spend,spend,date\n");
+    for (i, (r, t, sp, av)) in rows.iter().enumerate() {
+        let date = if i % 2 == 0 {
+            "2019-01-01"
+        } else {
+            "2020-06-01"
+        };
+        s.push_str(&format!("{r},{t},{av},{sp},{date}\n"));
+    }
+    s
+}
+
+/// `txns` is a `measure.count` placed BEFORE the money column, so a picker walking concepts in
+/// `MAP_MEASURE_CONCEPTS` order would pick it (issue #4684). `avg_spend` is money declared
+/// `aggregation: mean`, placed before `spend` so a picker ignoring the aggregation would total it.
+fn sum_map_dictionary() -> &'static str {
+    r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "properties":{
+   "region":{"type":"string","title":"Region","x-qsv":{"concept":"geo.zip_code","role":"dimension"}},
+   "txns":{"type":"integer","title":"Transactions","x-qsv":{"concept":"measure.count","role":"measure"}},
+   "spend":{"type":"number","title":"Spend","x-qsv":{"concept":"measure.money","role":"measure","aggregation":"sum"}},
+   "avg_spend":{"type":"number","title":"Average Spend","x-qsv":{"concept":"measure.money","role":"measure","aggregation":"mean"}},
+   "date":{"type":"string","title":"Date","x-qsv":{"concept":"time.date","role":"timestamp"}}
+ }}"#
+}
+
+#[test]
+fn viz_smart_region_map_totals_the_additive_measure() {
+    let wrk = Workdir::new("viz_smart_region_map_totals_the_additive_measure");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // counts differ (2/3/4 rows), so the count map and its rate stay
+    assert!(html.contains("count by Region"), "count panel: {html}");
+    // money outranks the earlier count column (#4684), totalled rather than median'd (#4683),
+    // with the multi-year span stated
+    assert!(
+        html.contains("Total Spend by Region (2019–2020)"),
+        "sum panel: {html}"
+    );
+    assert!(
+        html.contains("Spend: 6,000"),
+        "B's total in the hover: {html}"
+    );
+    // A: 400 / 10,000 = 40 per 1,000; B: 6,000 / 200,000 = 30 per 1,000
+    assert!(
+        html.contains("Spend per 1,000 residents by Region (2019–2020)"),
+        "the total's own rate panel: {html}"
+    );
+    assert!(html.contains("40 per 1,000 residents"), "A's rate: {html}");
+    assert!(
+        html.contains("raw totals — not adjusted for region size"),
+        "{html}"
+    );
+    // neither the count column nor the declared-mean money column is totalled, and the sum takes
+    // the median's slot
+    assert!(!html.contains("Total Transactions by Region"), "{html}");
+    assert!(!html.contains("Total Average Spend by Region"), "{html}");
+    assert!(!html.contains("median Spend by Region"), "{html}");
+    assert!(!html.contains("median Transactions by Region"), "{html}");
+}
+
+#[test]
+fn viz_smart_region_total_states_a_bare_year_span() {
+    // a dictionary-tagged column of bare years (Integer to stats) is a time axis too, so the
+    // cumulative total names its span (roborev 4939, after #4685)
+    let wrk = Workdir::new("viz_smart_region_total_states_a_bare_year_span");
+    let csv = sum_map_csv(false)
+        .replace("2019-01-01", "2019")
+        .replace("2020-06-01", "2020");
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        &sum_map_dictionary().replace(
+            r#""date":{"type":"string","title":"Date""#,
+            r#""date":{"type":"integer","title":"Year""#,
+        ),
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("Total Spend by Region (2019–2020)"),
+        "bare-year span: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_flat_region_count_map_is_skipped() {
+    let wrk = Workdir::new("viz_smart_flat_region_count_map_is_skipped");
+    wrk.create_from_string("rg.csv", &sum_map_csv(true));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("region count map skipped — all 3 matched regions have exactly 2 rows"),
+        "{stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("count by Region"), "flat count map: {html}");
+    assert!(
+        html.contains("Total Spend by Region"),
+        "sum panel leads: {html}"
+    );
+    // with no rate beside it, the total carries the "add a denominator" caveat
+    assert!(
+        html.contains("raw totals — bigger/busier regions accumulate more"),
+        "{html}"
+    );
+}
+
+#[test]
+fn viz_smart_flat_region_count_map_kept_for_explicit_agg_count() {
+    let wrk = Workdir::new("viz_smart_flat_region_count_map_kept_for_explicit_agg_count");
+    wrk.create_from_string("rg.csv", &sum_map_csv(true));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--agg",
+        "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("region count map skipped"),
+        "an explicit --agg count asks for the count map"
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("count by Region"));
+}
+
+#[test]
+fn viz_smart_region_level_measure_is_not_totalled() {
+    // `area` describes the REGION (it repeats unchanged on every row of its region) but is tagged
+    // `measure.amount` (additive), so a per-region total would multiply it by the row count: B's
+    // 40.25 would map as 120.75. Float, so the small-integer-scale guardrail cannot reroute it.
+    let wrk = Workdir::new("viz_smart_region_level_measure_is_not_totalled");
+    let mut csv = String::from("region,area\n");
+    for (r, area, n) in [("A", "12.5", 2), ("B", "40.25", 3), ("C", "7.75", 4)] {
+        for _ in 0..n {
+            csv.push_str(&format!("{r},{area}\n"));
+        }
+    }
+    wrk.create_from_string("rg.csv", &csv);
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string(
+        "d.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
+ "properties":{
+   "region":{"type":"string","title":"Region","x-qsv":{"concept":"geo.zip_code","role":"dimension"}},
+   "area":{"type":"number","title":"Area","x-qsv":{"concept":"measure.amount","role":"measure"}}
+ }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("'Area' repeats one value on every row of each region"),
+        "{stderr}"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("Total Area by Region"), "{html}");
+    assert!(!html.contains("Area: 120.75"), "the inflated total: {html}");
+    assert!(html.contains("median Area by Region"), "{html}");
+    assert!(
+        html.contains("Area: 40.25"),
+        "the region's own value: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_value_and_agg_choose_the_measure_slot() {
+    let wrk = Workdir::new("viz_smart_value_and_agg_choose_the_measure_slot");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+    wrk.create_from_string("d.schema.json", sum_map_dictionary());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--denominator-key",
+        "properties.POP",
+        "--value",
+        "avg_spend",
+        "--agg",
+        "max",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("maximum Average Spend by Region"),
+        "the flag outranks the dictionary's additive pick: {html}"
+    );
+    assert!(!html.contains("Total Spend by Region"), "{html}");
+    // a maximum is intensive: no rate panel of it
+    assert!(
+        !html.contains("Average Spend per 1,000 residents"),
+        "{html}"
+    );
+
+    // --value alone defaults to sum, like `viz choropleth`
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--dictionary",
+        "d.schema.json",
+        "--value",
+        "txns",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Total Transactions by Region"));
+}
+
+#[test]
+fn viz_smart_agg_without_a_region_code_map_is_reported() {
+    // no dictionary -> no region-code candidate -> no region map, so an otherwise valid
+    // `--agg count` has nothing to apply to and must say so instead of vanishing
+    let wrk = Workdir::new("viz_smart_agg_without_a_region_code_map_is_reported");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "rg.csv",
+        "--geojson",
+        "regions.geojson",
+        "--agg",
+        "count",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--value/--agg: no region-code map was built"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_value_and_agg_misuse_is_rejected() {
+    let wrk = Workdir::new("viz_smart_value_and_agg_misuse_is_rejected");
+    wrk.create_from_string("rg.csv", &sum_map_csv(false));
+    wrk.create_from_string("regions.geojson", denom_geojson());
+
+    for (extra, expected) in [
+        (
+            &["--value", "spend"][..],
+            "need a --geojson for that map to exist",
+        ),
+        (
+            &["--geojson", "regions.geojson", "--agg", "sum"][..],
+            "requires a --value column",
+        ),
+        (
+            &[
+                "--geojson",
+                "regions.geojson",
+                "--value",
+                "spend",
+                "--agg",
+                "count",
+            ][..],
+            "needs no --value",
+        ),
+        (
+            &["--geojson", "regions.geojson", "--value", "region"][..],
+            "must name a numeric column",
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "rg.csv"]).args(extra);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{extra:?} must fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(expected), "{extra:?}: {stderr}");
+    }
+}
+
 /// `denom_dictionary` with the region column's own concept and the denominator's declared
 /// geographic level both parameterized. A separate builder rather than more parameters on
 /// `denom_dictionary`: that one has ten callers, and widening its signature would edit ten tests
@@ -21419,13 +21814,15 @@ const MEDIAN_REGIONS_GEOJSON: &str = r#"{"type":"FeatureCollection","features":[
 {"type":"Feature","id":"42049","properties":{},"geometry":{"type":"Polygon","coordinates":[[[3,0],[3,1],[4,1],[4,0],[3,0]]]}},
 {"type":"Feature","id":"42133","properties":{},"geometry":{"type":"Polygon","coordinates":[[[4,0],[4,1],[5,1],[5,0],[4,0]]]}}]}"#;
 
+// `aggregation: mean`, so the measure slot falls back to the per-region MEDIAN these tests are
+// about: an additive (`sum`) measure is totalled there instead (issue #4683).
 const MEDIAN_REGIONS_DICT: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema",
 "title":"median_regions","type":"object",
 "x-qsv":{"grain":"one row = one record","grain_unit":"record"},
 "properties":{
 "county_fips":{"type":"string","title":"County","x-qsv":{"qsv_type":"String","role":"dimension","concept":"geo.county_fips","content_type":"category"}},
 "category":{"type":"string","title":"Category","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.type","content_type":"category"}},
-"value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"sum"}}}}"#;
+"value":{"type":"number","title":"Value","x-qsv":{"qsv_type":"Float","role":"measure","concept":"measure.count","aggregation":"mean"}}}}"#;
 
 // every region: three DIFFERENT values whose median is 5. The column itself is NOT constant, so
 // `SkipReason::ConstantColumn` does not fire upstream and the rows do reach the median panel.

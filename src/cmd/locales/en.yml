@@ -198,6 +198,15 @@ viz:
     # errors), a bad hint only costs the rate panel: the count panel still renders,
     # carrying its raw-count caveat. `q_reason` is an English clause from the code.
     denominator_invalid: "the Data Schematic's x-qsv.denominator column '%{q_col}' cannot be used (%{q_reason}); charting raw counts instead."
+    # `viz smart`'s region map when EVERY matched region has the same row count
+    # (issue #4683): typical of pre-aggregated data (one row per region x year x
+    # type). A flat count map says nothing, and its rate map would only redraw the
+    # denominator upside down, so both are skipped.
+    count_uniform: "region count map skipped — all %{q_n} matched regions have exactly %{q_count} rows (pre-aggregated data?), so it would be a flat field and its rate map only an inverse of the denominator."
+    # The region map's measure slot would have TOTALLED a dictionary-additive column
+    # whose value repeats unchanged on every row of each region (issue #4683), which
+    # multiplies a region-level figure by the row count; it maps that value instead.
+    measure_region_level: "'%{q_col}' repeats one value on every row of each region, so it describes the region rather than its rows; the region map shows that value instead of a per-region total."
     # Some regions lacked a usable denominator, so the rate panel covers fewer
     # regions than the count panel beside it.
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are omitted from the rate panel."
@@ -449,6 +458,15 @@ viz:
     us_states: "US states"
     countries: "Countries"
     count_by_region: "count by %{q_region}"
+    # Region-map panels coloring a MEASURE aggregated per region (issue #4683):
+    # `sum_by_region` for a dictionary-additive measure (or `--value --agg sum`),
+    # whose `q_what` is already the `kpi_total` form ("Total Payments", never
+    # "Total Total Payments" for a label that carries the word itself);
+    # the other three only for an explicit `--value` with `--agg mean|min|max`.
+    sum_by_region: "%{q_what} by %{q_region}"
+    mean_by_region: "mean %{q_what} by %{q_region}"
+    min_by_region: "minimum %{q_what} by %{q_region}"
+    max_by_region: "maximum %{q_what} by %{q_region}"
     # Title of the RATE panel that sits BESIDE the count panel when a denominator
     # is available (issue #4394). `q_what` is the numerator's label, `q_per` the
     # shared "per N nouns" phrase, `q_region` the region column's label:
@@ -521,6 +539,10 @@ viz:
     # already passed would be nonsense. Deliberately makes no reference to the
     # rate PANEL, which an explicit --max-charts can drop.
     raw_count_paired: "raw counts — not adjusted for region size"
+    # The `raw_count_*` pair's wording for a region map of per-region TOTALS of a
+    # measure (issue #4683): a total is just as unadjusted for region size as a count.
+    raw_sum_caveat: "raw totals — bigger/busier regions accumulate more; add --denominator-key for a rate"
+    raw_sum_paired: "raw totals — not adjusted for region size"
     # Below-map coverage note when some regions had no usable denominator (missing,
     # zero or negative) and were left out of the rate.
     denominator_excluded: "no usable denominator for %{q_n} of %{q_total} regions; they are not shown."

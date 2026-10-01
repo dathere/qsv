@@ -822,7 +822,7 @@ fn viz_smart_geojson_auto_resolves_from_the_dictionary_region_column() {
     let wrk = Workdir::new("viz_smart_geojson_auto_resolves_from_the_dictionary_region_column");
     wrk.create_from_string(
         "pa.csv",
-        "fips,cases\n42003,10\n42003,20\n42101,30\n42101,40\n",
+        "fips,cases\n42003,10\n42003,20\n42101,30\n42101,40\n42101,50\n",
     );
     wrk.create_from_string("dict.schema.json", COUNTY_DICT);
 
@@ -905,7 +905,8 @@ fn viz_smart_geojson_auto_decoy_region_column_does_not_win() {
     let wrk = Workdir::new("viz_smart_geojson_auto_decoy_region_column_does_not_win");
     wrk.create_from_string(
         "pa.csv",
-        "decoy,fips,cases\n99998,42003,10\n99998,42003,20\n99999,42101,30\n99999,42101,40\n",
+        "decoy,fips,cases\n99998,42003,10\n99998,42003,20\n99999,42101,30\n99999,42101,40\n99999,\
+         42101,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",
@@ -969,7 +970,8 @@ fn viz_smart_geojson_auto_falls_through_to_the_next_candidate() {
     // `ca` sits at column 0, so on the exact probe tie (2/2 each) the stable sort ranks it first.
     wrk.create_from_string(
         "two.csv",
-        "ca,fips,cases\n06001,42003,10\n06001,42003,20\n06075,42101,30\n06075,42101,40\n",
+        "ca,fips,cases\n06001,42003,10\n06001,42003,20\n06075,42101,30\n06075,42101,40\n06075,\
+         42101,50\n",
     );
     wrk.create_from_string(
         "dict.schema.json",

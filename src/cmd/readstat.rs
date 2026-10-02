@@ -370,7 +370,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut w = io::BufWriter::with_capacity(crate::config::DEFAULT_WTR_BUFFER_CAPACITY, w);
 
     if metadata_mode == MetadataMode::None {
-        let mut dropped = DroppedSentinels::default();
+        let mut dropped = DroppedSentinels::new(format, args.flag_value_labels);
         let rows = write_data(
             &args,
             path,
@@ -548,12 +548,29 @@ fn watch_opts(args: &Args, path: &Path, format: Format) -> CliResult<Option<Info
 
 /// The sentinels the hidden check found, per variable: how many, and one of
 /// their codes (or labels, under --value-labels) as an example.
-#[derive(Default)]
 struct DroppedSentinels {
     variables: Vec<(String, u64, String)>,
+    /// SAS reports an unrecognized missing as a bare ".", which is system
+    /// missing, not a sentinel. In SPSS "." can be a declared missing string.
+    skip_dot:  bool,
+    /// The --sentinels-as value that keeps them: SPSS refuses `value` with
+    /// --value-labels.
+    keep:      &'static str,
 }
 
 impl DroppedSentinels {
+    fn new(format: Format, value_labels: bool) -> Self {
+        Self {
+            variables: Vec::new(),
+            skip_dot:  format == Format::Sas,
+            keep:      if format == Format::Spss && value_labels {
+                "label"
+            } else {
+                "value"
+            },
+        }
+    }
+
     /// Tally & remove the check's indicator columns from a batch.
     fn take(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
         let probes: Vec<PlSmallStr> = df
@@ -566,8 +583,11 @@ impl DroppedSentinels {
             let col = df.drop_in_place(&probe)?;
             let name = probe.trim_end_matches(PROBE_SUFFIX);
             let col = col.as_materialized_series();
-            // a bare "." is system missing, which isn't a sentinel
-            let mut codes = col.str()?.iter().flatten().filter(|code| *code != ".");
+            let mut codes = col
+                .str()?
+                .iter()
+                .flatten()
+                .filter(|code| !(self.skip_dot && *code == "."));
             let Some(first) = codes.next() else {
                 continue;
             };
@@ -601,10 +621,11 @@ impl DroppedSentinels {
         let plural = |n: u64, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
         wwarn!(
             "{} (user-defined missing values) in {} ({names}) were written as empty cells, e.g. \
-             {example} in {var}. Use --sentinels-as value to keep them, or --sentinels-as none to \
+             {example} in {var}. Use --sentinels-as {} to keep them, or --sentinels-as none to \
              skip this check.",
             plural(total, "sentinel"),
             plural(self.variables.len() as u64, "variable"),
+            self.keep,
         );
     }
 }

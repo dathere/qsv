@@ -753,6 +753,7 @@ fn readstat_sentinel_check_leaves_output_alone() {
         "readstat_sentinels.sas7bdat",
         "readstat_sentinels.sav",
         "readstat_sentinels_labels.sav",
+        "readstat_sentinels_dot.sav",
         "readstat_stata_extmiss.dta",
         "readstat_stata_float_missing.dta",
         "readstat_stata_numeric_labels.dta",
@@ -823,6 +824,23 @@ fn readstat_sentinel_check_warns() {
     cmd.args(["--batch", "1"]).arg(sentinels(&wrk, "sav"));
     let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(stderr.contains("5 sentinels"), "{stderr}");
+
+    // the advice is one qsv accepts: SPSS refuses `value` with --value-labels
+    let mut cmd = wrk.command("readstat");
+    cmd.arg("--value-labels").arg(sentinels(&wrk, "sav"));
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("Use --sentinels-as label to keep"),
+        "{stderr}"
+    );
+
+    // readstat_sentinels_dot.sav - written with pyreadstat 1.3.6: `code`
+    // ("a", ".", "b", ".") declares "." missing. Only SAS's bare "." is
+    // system missing; in SPSS it can be a sentinel.
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(wrk.load_test_file("readstat_sentinels_dot.sav"));
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("2 sentinels"), "{stderr}");
 }
 
 /// No warning without sentinels, when told not to check, when --jobs makes

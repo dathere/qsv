@@ -623,15 +623,12 @@ fn whole_number_columns(
     if scan.candidates.is_empty() {
         return Ok(Vec::new());
     }
-    // Only the float columns are read, except from XPT files: the XPT reader
-    // (polars-readstat-rs 0.23.2) decodes projected columns from the file's
-    // first columns' offsets (jrothbaum/polars_readstat#64), so it reads them all.
-    let columns = (!matches!(rs_format, ReadStatFormat::SasXpt)).then(|| scan.names());
+    // only the float columns are read
     let batches = readstat_batch_iter(
         path,
         Some(scan_opts),
         Some(rs_format),
-        columns,
+        Some(scan.names()),
         None,
         batch_size,
     )?;

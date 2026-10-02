@@ -1142,7 +1142,8 @@ fn readstat_compress_numeric_formats() {
             }
         }
     }
-    // xpt: its reader garbles projected columns, which pass 1 must avoid
+    // pass 1 reads only the float columns; xpt's reader garbled projected
+    // columns before polars-readstat-rs 0.23.3 (jrothbaum/polars_readstat#64)
     for ext in ["sav", "zsav", "dta", "xpt"] {
         let f = sample(&wrk, ext);
         let mut cmd = wrk.command("readstat");

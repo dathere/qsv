@@ -33,9 +33,11 @@ finds next to the data file, or --sas7bcat names.
 User-defined missing values ("sentinels") - SAS's .A to .Z & ._, Stata's .a
 to .z, SPSS's declared missing codes - become empty cells by default, like any
 other missing value. Use --sentinels-as to keep them. Without it, a warning
-says how many sentinels were dropped & where. The check reads files on a
-single thread, so it is skipped when --jobs is above 1, and SPSS files whole
-(see --batch).
+says how many sentinels were dropped & where. Counting them reads files on a
+single thread, and SPSS files whole (see --batch), so it is skipped when the
+option --jobs is above 1, and for SPSS files holding over about 128 MB of
+data. As SPSS files declare their missing values, the warning then names the
+variables that do instead. SAS & Stata files don't, so they get no warning.
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
@@ -111,7 +113,7 @@ qsv readstat --help
 | &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a <name>_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |
 | &nbsp;`‑‑sentinels‑columns`&nbsp; | string | Comma-separated variables to keep sentinels for. Requires --sentinels-as. By default, every eligible variable: the numeric ones for SAS & Stata, those with declared missing values for SPSS. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of reader threads. Raising it speeds up large uncompressed files at the cost of memory, as out-of-order chunks have to be buffered to keep the rows in source order. Row order is preserved either way. | `1` |
-| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values (see --sentinels-as none). | `50000` |
+| &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values & the file holds at most about 128 MB of data (see --sentinels-as none). | `50000` |
 
 <a name="common-options"></a>
 

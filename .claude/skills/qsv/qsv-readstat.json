@@ -17,7 +17,7 @@
       {
         "flag": "--batch",
         "type": "number",
-        "description": "Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values (see --sentinels-as none).",
+        "description": "Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values & the file holds at most about 128 MB of data (see --sentinels-as none).",
         "default": 50000
       },
       {

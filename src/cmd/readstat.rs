@@ -767,8 +767,9 @@ struct SasLabels {
 
 impl SasLabels {
     /// The catalog is used when `--sas7bcat` names one, or when
-    /// `--value-labels` is given, in which case it is looked for next to the
-    /// data file as `<name>.sas7bcat`, then `formats.sas7bcat`.
+    /// `--value-labels` or `--sentinels-as label` is given, in which case it
+    /// is looked for next to the data file as `<name>.sas7bcat`, then
+    /// `formats.sas7bcat`.
     fn resolve(
         args: &Args,
         input: &str,
@@ -859,8 +860,8 @@ impl SasLabels {
 
         if columns.is_empty() {
             wwarn!(
-                "None of the formats of \"{input}\" are in the SAS format catalog \"{}\", so no \
-                 values were labeled.",
+                "None of the formats of \"{input}\" are in the SAS format catalog \"{}\", so \
+                 nothing was labeled.",
                 catalog.display()
             );
         } else {

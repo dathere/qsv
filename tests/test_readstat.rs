@@ -743,6 +743,109 @@ fn readstat_sentinels_off_by_default() {
     assert_eq!(got, expected);
 }
 
+/// Without --sentinels-as, the sentinels are tracked to warn about them, in
+/// indicator columns that must never reach the output: it is byte-identical
+/// to an explicit `--sentinels-as none`, which skips the check.
+#[test]
+fn readstat_sentinel_check_leaves_output_alone() {
+    let wrk = Workdir::new("readstat_sentinel_check_leaves_output_alone");
+    let files = [
+        "readstat_sentinels.sas7bdat",
+        "readstat_sentinels.sav",
+        "readstat_sentinels_labels.sav",
+        "readstat_stata_extmiss.dta",
+        "readstat_stata_float_missing.dta",
+        "readstat_stata_numeric_labels.dta",
+        "readstat_partial_labels.sav",
+        "readstat_sample.sas7bdat",
+        "readstat_sample.dta",
+        "readstat_sample.sav",
+        "readstat_catalog_tagged.sas7bdat",
+    ];
+    wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+    for file in files {
+        let f = wrk.load_test_file(file);
+        for flags in [
+            vec![],
+            vec!["--value-labels"],
+            vec!["--compress-numeric"],
+            vec!["--batch", "1"],
+        ] {
+            let run = |extra: &[&str]| {
+                let mut cmd = wrk.command("readstat");
+                cmd.args(extra).args(&flags).arg(&f);
+                cmd.output().unwrap()
+            };
+            let checked = run(&[]);
+            let unchecked = run(&["--sentinels-as", "none"]);
+            assert_eq!(checked.status.success(), unchecked.status.success());
+            assert_eq!(
+                String::from_utf8_lossy(&checked.stdout),
+                String::from_utf8_lossy(&unchecked.stdout),
+                "{file} {flags:?}"
+            );
+        }
+    }
+}
+
+/// The check counts the sentinels written as empty cells, per variable.
+/// Expected counts: pyreadstat finds 1892 `.A`-`.Z` in the SAS file (y, z);
+/// the SPSS file holds 99 & 950 in `income`, 8 & 9 in `rating`, "NA" in
+/// `name`; the Stata file 9 in `d`, `f`, `i`, `b` & `l`.
+#[test]
+fn readstat_sentinel_check_warns() {
+    let wrk = Workdir::new("readstat_sentinel_check_warns");
+    let cases = [
+        (
+            sentinels(&wrk, "sas7bdat"),
+            "1892 sentinels (user-defined missing values) in 2 variables (y, z)",
+        ),
+        (
+            sentinels(&wrk, "sav"),
+            "5 sentinels (user-defined missing values) in 3 variables (income, rating, name) were \
+             written as empty cells, e.g. 99 in income.",
+        ),
+        (
+            wrk.load_test_file("readstat_stata_extmiss.dta"),
+            "9 sentinels (user-defined missing values) in 5 variables (d, f, i, b, l)",
+        ),
+    ];
+    for (f, expected) in cases {
+        let mut cmd = wrk.command("readstat");
+        cmd.arg(&f);
+        let stderr = wrk.stderr_on_success(&mut cmd);
+        assert!(stderr.contains(expected), "{f}: {stderr}");
+        assert!(stderr.contains("--sentinels-as none"), "{f}: {stderr}");
+    }
+
+    // counts add up across batches
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--batch", "1"]).arg(sentinels(&wrk, "sav"));
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("5 sentinels"), "{stderr}");
+}
+
+/// No warning without sentinels, when told not to check, when --jobs makes
+/// the check too costly, or for the readers that don't report sentinels.
+#[test]
+fn readstat_sentinel_check_quiet() {
+    let wrk = Workdir::new("readstat_sentinel_check_quiet");
+    let mut runs: Vec<(Vec<&str>, String)> = ["sas7bdat", "dta", "sav", "zsav", "xpt", "por"]
+        .into_iter()
+        .map(|ext| (vec![], sample(&wrk, ext)))
+        .collect();
+    for f in [sentinels(&wrk, "sav"), sentinels(&wrk, "sas7bdat")] {
+        runs.push((vec!["--sentinels-as", "none"], f.clone()));
+        runs.push((vec!["--jobs", "2"], f));
+    }
+    for (flags, f) in runs {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(&flags).arg(&f);
+        let stderr = wrk.stderr_on_success(&mut cmd);
+        assert!(!stderr.contains("sentinel"), "{flags:?} {f}: {stderr}");
+    }
+}
+
 #[test]
 fn readstat_sentinels_spss_value() {
     let wrk = Workdir::new("readstat_sentinels_spss_value");

@@ -814,7 +814,7 @@ impl SasLabels {
                         labels.text.insert(s.trim_end().to_string(), label);
                     },
                     // the reader drops which sentinel (.A-.Z, ._) a label is for
-                    CatalogKey::Missing => {},
+                    CatalogKey::Missing(_) => {},
                 }
             }
         }

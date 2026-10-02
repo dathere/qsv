@@ -945,6 +945,15 @@ fn format_key(format: &str) -> String {
         .to_ascii_uppercase()
 }
 
+/// Whether `--sentinels-columns` (or its default, every eligible variable)
+/// keeps the sentinels of `name`.
+fn tracked(columns: &InformativeNullColumns, name: &str) -> bool {
+    match columns {
+        InformativeNullColumns::All => true,
+        InformativeNullColumns::Selected(names) => names.iter().any(|n| n == name),
+    }
+}
+
 /// One variable's sentinel labels, keyed by the sentinel's code as the reader
 /// writes it: `.A` for SAS, `8` or `NA` for SPSS.
 #[derive(Default)]
@@ -1060,11 +1069,16 @@ impl SentinelLabels {
         Ok(Self { columns })
     }
 
-    /// The variables with a sentinel label that the `--compress-numeric` ".0"
-    /// rewrite would change (e.g. "1.0"), were it embedded among numbers.
-    fn numeric_looking(&self) -> impl Iterator<Item = &PlSmallStr> {
+    /// The tracked variables with a sentinel label that the
+    /// `--compress-numeric` ".0" rewrite would change (e.g. "1.0"), were it
+    /// embedded among numbers.
+    fn numeric_looking<'a>(
+        &'a self,
+        columns: &'a InformativeNullColumns,
+    ) -> impl Iterator<Item = &'a PlSmallStr> {
         self.columns
             .iter()
+            .filter(|(name, _)| tracked(columns, name))
             .filter(|(_, codes)| {
                 codes
                     .text
@@ -1085,13 +1099,7 @@ impl SentinelLabels {
         embedded: bool,
     ) -> PolarsResult<()> {
         for (name, codes) in &self.columns {
-            let tracked = match columns {
-                InformativeNullColumns::All => true,
-                InformativeNullColumns::Selected(names) => {
-                    names.iter().any(|n| n.as_str() == name.as_str())
-                },
-            };
-            if !tracked {
+            if !tracked(columns, name) {
                 continue;
             }
             let target = if embedded {
@@ -1193,8 +1201,8 @@ fn write_data<W: Write>(
             schema.get(name) != Some(&DataType::String) || !risky.iter().any(|r| r == name.as_str())
         });
     }
-    if embedded && let Some(labels) = sentinel_labels {
-        let risky: Vec<&PlSmallStr> = labels.numeric_looking().collect();
+    if embedded && let (Some(labels), Some(columns)) = (sentinel_labels, &sentinel_columns) {
+        let risky: Vec<&PlSmallStr> = labels.numeric_looking(columns).collect();
         whole.retain(|name| !risky.contains(&name));
     }
     if let Some(labels) = sas_labels {

@@ -887,6 +887,52 @@ fn readstat_sentinels_spss_label_only_ranges_strings() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got[1], svec!["1", "", "a", ""]);
     assert_eq!(got[4], svec!["", "1.0", "a", ""]);
+
+    // only a tracked variable's labels hold back its ".0"
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-embedded"])
+        .args(["--sentinels-columns", "code", "--compress-numeric"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "a"]);
+}
+
+// readstat_sentinels_suffix.sav - written with pyreadstat 1.3.6: `rating`
+// (labels & declares missing 8) & `score` (9) sit next to variables of the
+// file named `rating_null` (text, holding "8") & `score_null` (numeric, 9).
+
+/// Sentinel labels go only into the `<name>_null` columns qsv adds. A variable
+/// of the file with such a name is left alone when its namesake isn't
+/// tracked; when it is, the collision check refuses the request instead.
+#[test]
+fn readstat_sentinels_label_leaves_suffix_named_variables() {
+    let wrk = Workdir::new("readstat_sentinels_label_leaves_suffix_named_variables");
+    let f = wrk.load_test_file("readstat_sentinels_suffix.sav");
+
+    for embedded in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sentinels-as", "label", "--sentinels-columns", "other"]);
+        if embedded {
+            cmd.arg("--sentinels-embedded");
+        }
+        cmd.arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(
+            got[1][..4],
+            svec!["3.0", "8", "1.0", "9.0"],
+            "embedded: {embedded}"
+        );
+        assert_eq!(
+            got[2][..4],
+            svec!["", "x", "", "2.0"],
+            "embedded: {embedded}"
+        );
+    }
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label"]).arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("named \"rating_null\""), "{stderr}");
 }
 
 #[test]

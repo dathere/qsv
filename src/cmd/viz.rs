@@ -3706,7 +3706,7 @@ fn inverse_mercator_y(y: f64) -> f64 {
 /// edge out of view. Both centre computations here fit their zoom with `fitbounds_zoom` (which
 /// measures the latitude span in Mercator y), so both must take their centre in the same space.
 fn mercator_lat_center(min_lat: f64, max_lat: f64) -> f64 {
-    inverse_mercator_y((mercator_y(min_lat) + mercator_y(max_lat)) / 2.0)
+    inverse_mercator_y(f64::midpoint(mercator_y(min_lat), mercator_y(max_lat)))
 }
 
 /// Aspect-aware Web-Mercator `fitBounds` zoom: fits the longitude and latitude spans SEPARATELY
@@ -3867,7 +3867,7 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
         // bounding-box midpoint and span
         let lo = sorted_quantile(&sorted, trim_frac);
         let hi = sorted_quantile(&sorted, 1.0 - trim_frac);
-        ((lo + hi) / 2.0, hi - lo)
+        (f64::midpoint(lo, hi), hi - lo)
     } else {
         // data crosses the antimeridian: unwrap the cluster into a contiguous ascending longitude
         // range — the arc east of the gap (sorted[gap_idx + 1..]), then the points west of it
@@ -3881,7 +3881,7 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
         unwrapped.extend(sorted[..=gap_idx].iter().map(|v| v + 360.0));
         let lo = sorted_quantile(&unwrapped, trim_frac);
         let hi = sorted_quantile(&unwrapped, 1.0 - trim_frac);
-        let mut center = (lo + hi) / 2.0;
+        let mut center = f64::midpoint(lo, hi);
         if center > 180.0 {
             center -= 360.0;
         }
@@ -8169,7 +8169,7 @@ fn rate_scale(rates: &[f64]) -> u32 {
     let median = if finite.len() % 2 == 1 {
         finite[m]
     } else {
-        (finite[m - 1] + finite[m]) / 2.0
+        f64::midpoint(finite[m - 1], finite[m])
     };
     for scale in [1_u32, 1_000, 10_000, 100_000, 1_000_000, 1_000_000_000] {
         let scaled = median * f64::from(scale);
@@ -29526,7 +29526,7 @@ fn seasonal_strength(
             sum / period as f64
         } else {
             // 2xL centered moving average for an even period: the two end bins get half weight
-            (sum - 0.5 * (s(t - half) + s(t + half))) / period as f64
+            (sum - f64::midpoint(s(t - half), s(t + half))) / period as f64
         }
     };
 
@@ -30311,7 +30311,7 @@ fn build_smart_pip_choropleth_panel(
                 geojson: geojson.clone(),
                 feature_id_key: feature_id_key.to_string(),
                 hover_text,
-                center_lon: (min_lon + max_lon) / 2.0,
+                center_lon: f64::midpoint(min_lon, max_lon),
                 center_lat: mercator_lat_center(min_lat, max_lat),
                 zoom: f64::from(fitbounds_zoom(
                     min_lat,
@@ -30641,7 +30641,7 @@ impl RegionAgg {
                 if vs.len() % 2 == 1 {
                     vs[m]
                 } else {
-                    (vs[m - 1] + vs[m]) / 2.0
+                    f64::midpoint(vs[m - 1], vs[m])
                 }
             },
         }
@@ -31118,7 +31118,7 @@ fn build_smart_summary_choropleth_panels(
                 geojson: geojson.clone(),
                 feature_id_key: feature_id_key.to_string(),
                 hover_text,
-                center_lon: (min_lon + max_lon) / 2.0,
+                center_lon: f64::midpoint(min_lon, max_lon),
                 center_lat: mercator_lat_center(min_lat, max_lat),
                 zoom: f64::from(fitbounds_zoom(
                     min_lat,
@@ -31709,7 +31709,7 @@ fn point_on_surface(rings: &[Vec<[f64; 2]>], y: f64) -> Option<[f64; 2]> {
         let w = xs[k + 1] - xs[k];
         if w > best_w {
             best_w = w;
-            best = Some((xs[k] + xs[k + 1]) / 2.0);
+            best = Some(f64::midpoint(xs[k], xs[k + 1]));
         }
         k += 2;
     }
@@ -31732,7 +31732,7 @@ fn representative_point(rings: &[Vec<[f64; 2]>]) -> Option<[f64; 2]> {
             lo = lo.min(y);
             hi = hi.max(y);
         }
-        (lo + hi) / 2.0
+        f64::midpoint(lo, hi)
     };
     point_on_surface(rings, centroid[1]).or_else(|| point_on_surface(rings, mid_y))
 }
@@ -31752,7 +31752,10 @@ fn feature_label_anchor(feature: &PipFeature) -> [f64; 2] {
         return pt;
     }
     let [min_lon, min_lat, max_lon, max_lat] = feature.bbox;
-    [(min_lon + max_lon) / 2.0, (min_lat + max_lat) / 2.0]
+    [
+        f64::midpoint(min_lon, max_lon),
+        f64::midpoint(min_lat, max_lat),
+    ]
 }
 
 /// Build the [`GeoJsonOverlay`] for a `--geojson` map overlay: every feature's boundary rings as
@@ -32742,7 +32745,7 @@ fn extent_marker_geo() -> Marker {
 #[cfg(feature = "geocode")]
 fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
     let lat_center = mercator_lat_center(e.min_lat, e.max_lat);
-    let lon_center = (e.min_lon + e.max_lon) / 2.0;
+    let lon_center = f64::midpoint(e.min_lon, e.max_lon);
     let zoom = fitbounds_zoom(
         e.min_lat,
         e.max_lat,
@@ -33155,8 +33158,8 @@ fn build_geo_meta(
     if extent_spans_antimeridian(&core_extent) {
         return None;
     }
-    let c_lat = (core_extent.min_lat + core_extent.max_lat) / 2.0;
-    let c_lon = (core_extent.min_lon + core_extent.max_lon) / 2.0;
+    let c_lat = f64::midpoint(core_extent.min_lat, core_extent.max_lat);
+    let c_lon = f64::midpoint(core_extent.min_lon, core_extent.max_lon);
     let coords = [
         ("NW", core_extent.max_lat, core_extent.min_lon),
         ("NE", core_extent.max_lat, core_extent.max_lon),
@@ -42567,7 +42570,7 @@ fn cell_geometry(
     SubplotGeometry {
         x_domain: vec![x0, x1],
         y_domain: vec![y0, y1],
-        title_x:  (x0 + x1) / 2.0,
+        title_x:  f64::midpoint(x0, x1),
         title_y:  (y1 + title_offset).min(1.0),
     }
 }

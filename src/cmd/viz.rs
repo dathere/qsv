@@ -36630,7 +36630,7 @@ impl<'a> SmartCtx<'a> {
             // order stays [count, rate, …] once the point map goes in at 0 below.
             let info = self.geo_dict_info();
             for mut panel in cp_panels.into_iter().rev() {
-                panel.dict_info = info.clone();
+                panel.dict_info.clone_from(&info);
                 self.panels.insert(0, panel);
             }
         } else if let Some((sc_panels, region_idx)) = self.summary_choros.take() {
@@ -36640,7 +36640,7 @@ impl<'a> SmartCtx<'a> {
             // leading Data Schematic order is [count, median, …].
             let info = dict_info_for_field(self.dict_icons(), &self.stats[region_idx].field);
             for mut panel in sc_panels.into_iter().rev() {
-                panel.dict_info = info.clone();
+                panel.dict_info.clone_from(&info);
                 self.panels.insert(0, panel);
             }
         }

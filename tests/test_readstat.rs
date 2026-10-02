@@ -1128,21 +1128,25 @@ fn readstat_sentinels_sas_embedded_subset() {
 #[test]
 fn readstat_sentinels_jobs_warns() {
     let wrk = Workdir::new("readstat_sentinels_jobs_warns");
-    // SAS & Stata read serially when tracking sentinels; SPSS does not
+    // every reader goes serial when tracking sentinels (SPSS decodes the whole
+    // file on one thread); at --jobs 1 there is nothing to warn about
     let files = [
-        (sentinels(&wrk, "sas7bdat"), true),
-        (wrk.load_test_file("readstat_stata_extmiss.dta"), true),
-        (sentinels(&wrk, "sav"), false),
+        sentinels(&wrk, "sas7bdat"),
+        wrk.load_test_file("readstat_stata_extmiss.dta"),
+        sentinels(&wrk, "sav"),
     ];
-    for (f, warns) in files {
-        let mut cmd = wrk.command("readstat");
-        cmd.args(["--sentinels-as", "value", "--jobs", "4"]).arg(&f);
-        let stderr = wrk.stderr_on_success(&mut cmd);
-        assert_eq!(
-            stderr.contains("--jobs has no effect"),
-            warns,
-            "{f}: {stderr}"
-        );
+    for f in files {
+        for (jobs, warns) in [("4", true), ("1", false)] {
+            let mut cmd = wrk.command("readstat");
+            cmd.args(["--sentinels-as", "value", "--jobs", jobs])
+                .arg(&f);
+            let stderr = wrk.stderr_on_success(&mut cmd);
+            assert_eq!(
+                stderr.contains("--jobs has no effect"),
+                warns,
+                "{f} --jobs {jobs}: {stderr}"
+            );
+        }
     }
 }
 

@@ -99,8 +99,9 @@ readstat options:
                            catalog, found as for --value-labels. For SPSS,
                            value cannot be combined with --value-labels.
                            Not supported for .xpt & .por files. Tracking
-                           sentinels makes SAS & Stata files read on a single
-                           thread, so --jobs has no effect on them.
+                           sentinels reads files on a single thread, so the
+                           option --jobs has no effect, and reads SPSS .sav
+                           & .zsav files whole (see --batch).
     --sentinels-embedded   Write each sentinel into its variable's own column
                            instead of a <name>_null column. Those columns then
                            mix numbers & sentinels. Requires --sentinels-as.
@@ -493,10 +494,10 @@ fn sentinel_opts(
         return Err(e.into());
     }
 
-    if args.flag_jobs.unwrap_or(1) > 1 && matches!(format, Format::Sas | Format::Stata) {
+    if args.flag_jobs.unwrap_or(1) > 1 {
         wwarn!(
-            "--jobs has no effect with --sentinels-as on SAS & Stata files: tracking sentinels \
-             reads them on a single thread."
+            "--jobs has no effect with --sentinels-as: tracking sentinels reads the file on a \
+             single thread."
         );
     }
 
@@ -537,7 +538,10 @@ fn watch_opts(args: &Args, path: &Path, format: Format) -> CliResult<Option<Info
         informative_nulls: Some(watch.clone()),
         ..ScanOptions::default()
     };
-    let schema = readstat_schema(path, Some(probe), Some(rs_format))?;
+    // a best-effort check: if the probe fails, the conversion goes ahead without it
+    let Ok(schema) = readstat_schema(path, Some(probe), Some(rs_format)) else {
+        return Ok(None);
+    };
     let eligible = schema.iter_names().any(|name| name.ends_with(PROBE_SUFFIX));
     Ok(eligible.then_some(watch))
 }

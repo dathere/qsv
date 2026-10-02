@@ -32105,7 +32105,7 @@ fn build_map_panel(
                         .map(|b| String::from_utf8_lossy(b).into_owned())
                         .unwrap_or_default()
                 };
-                let id_val = id_idx.map(&cell).unwrap_or_default();
+                let id_val = id_idx.map(cell).unwrap_or_default();
                 let extra: Vec<(String, String)> = extra_idxs
                     .iter()
                     .zip(&extra_labels)

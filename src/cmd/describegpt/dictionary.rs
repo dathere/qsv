@@ -3117,7 +3117,7 @@ pub(super) fn parse_llm_tour(llm_response: &str, field_names: &[String]) -> Opti
     let mut overrides = Vec::new();
     if let Some(raw) = tour.get("overrides").and_then(|v| v.as_object()) {
         for step_id in TOUR_STEP_IDS {
-            if let Some(prose) = raw.get(step_id).and_then(&prose_of) {
+            if let Some(prose) = raw.get(step_id).and_then(prose_of) {
                 overrides.push((step_id.to_string(), prose));
             }
         }
@@ -3126,7 +3126,7 @@ pub(super) fn parse_llm_tour(llm_response: &str, field_names: &[String]) -> Opti
     let mut panels = Vec::new();
     if let Some(raw) = tour.get("panels").and_then(|v| v.as_object()) {
         for field in field_names {
-            if let Some(prose) = raw.get(field).and_then(&prose_of) {
+            if let Some(prose) = raw.get(field).and_then(prose_of) {
                 panels.push((field.clone(), prose));
             }
         }

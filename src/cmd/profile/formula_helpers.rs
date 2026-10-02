@@ -45,7 +45,7 @@ fn first_some<T>(opts: [Option<T>; 2]) -> Option<T> {
 thread_local! {
     /// Per-thread handle to the SQL backend, set by `evaluate_spec`
     /// before rendering and cleared after. Thread-local (not static
-    /// RwLock) so concurrent tests / future parallel-profile runs can't
+    /// `RwLock`) so concurrent tests / future parallel-profile runs can't
     /// race each other when setting and clearing the backend.
     static SQL_BACKEND: RefCell<Option<SqlBackend>> = const { RefCell::new(None) };
 }

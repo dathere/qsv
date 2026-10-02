@@ -276,9 +276,9 @@ fn readstat_sas7bcat() {
     let f = wrk.load_test_file("readstat_catalog.sas7bdat");
     let cat = wrk.load_test_file("readstat_catalog.sas7bcat");
 
-    // --sas7bcat implies --value-labels
+    // --sas7bcat names the catalog for --value-labels
     let mut cmd = wrk.command("readstat");
-    cmd.args(["--sas7bcat", &cat]).arg(&f);
+    cmd.args(["--value-labels", "--sas7bcat", &cat]).arg(&f);
     let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     assert_eq!(got, catalog_rows());
     assert!(stderr.contains("Using SAS format catalog"), "{stderr}");
@@ -383,6 +383,69 @@ fn readstat_sas7bcat_sentinels() {
     assert_eq!(got[6], svec!["", ".A"]);
 }
 
+/// SAS sentinel labels need polars-readstat-rs 0.23.3: before it, the catalog
+/// reader dropped which sentinel (.A-.Z, ._) a label was for
+/// (`jrothbaum/polars_readstat#65`). pyreadstat reads `x` as 1-5, "Apple", "H",
+/// "Zebra"; an unlabeled sentinel keeps its code, as for Stata & SPSS.
+/// `--sentinels-as label` labels only the sentinels: the values stay codes
+/// unless `--value-labels`.
+#[test]
+fn readstat_sas7bcat_sentinel_labels() {
+    let wrk = Workdir::new("readstat_sas7bcat_sentinel_labels");
+    let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+
+    // the catalog is found beside the data file, as for --value-labels
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label"]).arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["x", "x_null"]);
+    assert_eq!(got[1], svec!["1.0", ""]);
+    assert_eq!(got[6], svec!["", "Apple"]);
+    assert_eq!(got[7], svec!["", ".H"]);
+    assert_eq!(got[8], svec!["", "Zebra"]);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-columns", "x"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[6], svec!["", "Apple"]);
+
+    // with --value-labels, the values are labeled too (x has none, so they
+    // lose their ".0" as labeled columns' unlabeled numbers do)
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--sentinels-as", "label"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", ""]);
+    assert_eq!(got[6], svec!["", "Apple"]);
+
+    // --sas7bcat names the catalog; --compress-numeric leaves labels alone
+    for embedded in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sas7bcat", &cat, "--sentinels-as", "label"])
+            .arg("--compress-numeric");
+        if embedded {
+            cmd.arg("--sentinels-embedded");
+        }
+        cmd.arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let last = got[0].len() - 1;
+        let col: Vec<&str> = got.iter().skip(1).map(|r| r[last].as_str()).collect();
+        assert_eq!(col[5..], ["Apple", ".H", "Zebra"], "embedded: {embedded}");
+        assert_eq!(got[1][0], "1", "embedded: {embedded}");
+    }
+
+    // a labeled value is not decoded without --value-labels
+    let f = wrk.load_test_file("readstat_catalog.sas7bdat");
+    wrk.load_test_file("readstat_catalog.sas7bcat");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label"]).arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0][2], "workshop");
+    assert_eq!(got[1][2], "1.0");
+}
+
 #[test]
 fn readstat_sas7bcat_compress_numeric() {
     let wrk = Workdir::new("readstat_sas7bcat_compress_numeric");
@@ -424,13 +487,16 @@ fn readstat_sas7bcat_metadata() {
     assert_eq!(got[2][at], r#"{"1":"R","2":"SAS"}"#);
     assert_eq!(got[1][at], "");
 
-    // XFMT labels only sentinels, whose tags the reader drops: no empty map
+    // XFMT labels only sentinels, keyed as the Stata metadata keys .a
     let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
     let cat = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
     let mut cmd = wrk.command("readstat");
     cmd.args(["--metadata", "json", "--sas7bcat", &cat]).arg(&f);
     let got: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
-    assert!(got["columns"][0].get("value_labels").is_none(), "{got}");
+    assert_eq!(
+        got["columns"][0]["value_labels"],
+        serde_json::json!({"MISSING_A": "Apple", "MISSING_Z": "Zebra"})
+    );
 }
 
 #[test]
@@ -453,9 +519,14 @@ fn readstat_sas7bcat_rejections() {
             "not supported for SAS transport (.xpt) files",
         ),
         (
-            vec!["--sas7bcat", "nope.sas7bcat"],
+            vec!["--value-labels", "--sas7bcat", "nope.sas7bcat"],
             &sas,
             "Cannot find the SAS format catalog \"nope.sas7bcat\"",
+        ),
+        (
+            vec!["--sas7bcat", &cat],
+            &sas,
+            "--sas7bcat only names the SAS format catalog",
         ),
     ];
     for (flags, file, expected) in cases {
@@ -468,7 +539,7 @@ fn readstat_sas7bcat_rejections() {
     // a catalog holding none of the file's formats warns & writes codes
     let other = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
     let mut cmd = wrk.command("readstat");
-    cmd.args(["--sas7bcat", &other]).arg(&sas);
+    cmd.args(["--value-labels", "--sas7bcat", &other]).arg(&sas);
     let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
     assert!(stderr.contains("None of the formats"), "{stderr}");
     assert_eq!(got[1][1..3], svec!["1.0", "f"]);
@@ -726,6 +797,144 @@ fn readstat_sentinels_spss_label() {
     );
 }
 
+/// Without --value-labels, `--sentinels-as label` labels only the sentinels:
+/// qsv looks each one up among its variable's value labels, as the SPSS reader
+/// labels sentinels only along with every value. `rating` labels 3, 4 & 8 and
+/// declares 8 & 9 missing, so 8 is "Refused", 9 keeps its code, and 3 & 4 stay
+/// codes. `income` (range 900-999 & 99) and `name` ("NA") have no labels.
+#[test]
+fn readstat_sentinels_spss_label_only() {
+    let wrk = Workdir::new("readstat_sentinels_spss_label_only");
+    let f = sentinels(&wrk, "sav");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label"]).arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec![
+            "id",
+            "income",
+            "income_null",
+            "rating",
+            "rating_null",
+            "name",
+            "name_null",
+            "plain"
+        ],
+        svec!["1.0", "1500.5", "", "3.0", "", "Ana", "", "1.0"],
+        svec!["2.0", "", "99", "", "Refused", "", "NA", "2.0"],
+        svec!["3.0", "", "950", "4.0", "", "Cy", "", "3.0"],
+        svec!["4.0", "", "", "", "9", "", "", "4.0"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-embedded"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let rating: Vec<&str> = got.iter().skip(1).map(|r| r[2].as_str()).collect();
+    assert_eq!(rating, ["3.0", "Refused", "4.0", "9"]);
+
+    // only the selected variables' sentinels are kept & labeled
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-columns", "rating"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got[0],
+        svec!["id", "income", "rating", "rating_null", "name", "plain"]
+    );
+    assert_eq!(got[2][3], "Refused");
+}
+
+// readstat_sentinels_labels.sav - written with pyreadstat 1.3.6: `score`
+// (1, 2, 950, 99) declares the range 900-999 & 99 missing and labels 1 "one",
+// 950 "Skipped" & 99 "1.0"; `code` ("a", "NA", "b", "a") declares "NA"
+// missing and labels "a" "Alpha" & "NA" "Not asked".
+
+/// Label-only sentinels from a missing range & a missing string, with a
+/// non-missing labeled value next to each that must stay a code.
+#[test]
+fn readstat_sentinels_spss_label_only_ranges_strings() {
+    let wrk = Workdir::new("readstat_sentinels_spss_label_only_ranges_strings");
+    let f = wrk.load_test_file("readstat_sentinels_labels.sav");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-embedded"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["score", "code"],
+        svec!["1.0", "a"],
+        svec!["2.0", "Not asked"],
+        svec!["Skipped", "b"],
+        svec!["1.0", "a"],
+    ];
+    assert_eq!(got, expected);
+
+    // the "1.0" label keeps every number of `score` its ".0", so it isn't
+    // rewritten to "1"; in a separate column it can't be mistaken for one
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-embedded"])
+        .arg("--compress-numeric")
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--compress-numeric"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "", "a", ""]);
+    assert_eq!(got[4], svec!["", "1.0", "a", ""]);
+
+    // only a tracked variable's labels hold back its ".0"
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label", "--sentinels-embedded"])
+        .args(["--sentinels-columns", "code", "--compress-numeric"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1], svec!["1", "a"]);
+}
+
+// readstat_sentinels_suffix.sav - written with pyreadstat 1.3.6: `rating`
+// (labels & declares missing 8) & `score` (9) sit next to variables of the
+// file named `rating_null` (text, holding "8") & `score_null` (numeric, 9).
+
+/// Sentinel labels go only into the `<name>_null` columns qsv adds. A variable
+/// of the file with such a name is left alone when its namesake isn't
+/// tracked; when it is, the collision check refuses the request instead.
+#[test]
+fn readstat_sentinels_label_leaves_suffix_named_variables() {
+    let wrk = Workdir::new("readstat_sentinels_label_leaves_suffix_named_variables");
+    let f = wrk.load_test_file("readstat_sentinels_suffix.sav");
+
+    for embedded in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sentinels-as", "label", "--sentinels-columns", "other"]);
+        if embedded {
+            cmd.arg("--sentinels-embedded");
+        }
+        cmd.arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(
+            got[1][..4],
+            svec!["3.0", "8", "1.0", "9.0"],
+            "embedded: {embedded}"
+        );
+        assert_eq!(
+            got[2][..4],
+            svec!["", "x", "", "2.0"],
+            "embedded: {embedded}"
+        );
+    }
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "label"]).arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("named \"rating_null\""), "{stderr}");
+}
+
 #[test]
 fn readstat_sentinels_spss_embedded() {
     let wrk = Workdir::new("readstat_sentinels_spss_embedded");
@@ -980,12 +1189,7 @@ fn readstat_sentinels_rejections() {
         (
             vec!["--sentinels-as", "label"],
             &sas,
-            "--sentinels-as label is not supported for SAS",
-        ),
-        (
-            vec!["--sentinels-as", "label"],
-            &sav,
-            "needs --value-labels on SPSS",
+            "--sentinels-as label on a SAS file needs its .sas7bcat format catalog",
         ),
         (
             vec!["--value-labels", "--sentinels-as", "value"],
@@ -1102,7 +1306,8 @@ fn readstat_compress_numeric_formats() {
             }
         }
     }
-    // xpt: its reader garbles projected columns, which pass 1 must avoid
+    // pass 1 reads only the float columns; xpt's reader garbled projected
+    // columns before polars-readstat-rs 0.23.3 (jrothbaum/polars_readstat#64)
     for ext in ["sav", "zsav", "dta", "xpt"] {
         let f = sample(&wrk, ext);
         let mut cmd = wrk.command("readstat");

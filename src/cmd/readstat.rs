@@ -36,8 +36,9 @@ data with --metadata.
   Keep them in the variables' own columns instead:
     qsv readstat --sentinels-as value --sentinels-embedded data.sas7bdat
 
-  Keep the sentinels of two SPSS variables, as their labels:
-    qsv readstat --value-labels --sentinels-as label --sentinels-columns q1,q2 survey.sav
+  Keep the sentinels of two SPSS variables as their labels, leaving the other
+  values as codes:
+    qsv readstat --sentinels-as label --sentinels-columns q1,q2 survey.sav
 
   Dump the variable dictionary of a Stata file:
     qsv readstat --metadata pretty-json panel.dta
@@ -65,8 +66,10 @@ readstat options:
                            formats.sas7bcat next to the data file. Not
                            supported for .xpt files.
     --sas7bcat <file>      The SAS format catalog (.sas7bcat) holding the
-                           value labels of a .sas7bdat file. Implies
-                           the option --value-labels.
+                           value labels of a .sas7bdat file, for use by
+                           the options --value-labels, --sentinels-as label
+                           & --metadata. It only names the catalog, so the
+                           data needs one of the first two.
     --compress-numeric     Write float variables that only ever hold whole
                            numbers as integers, without the ".0" (e.g. 3.0
                            becomes 3). SPSS stores every number as a float, so
@@ -85,11 +88,11 @@ readstat options:
                              value - the sentinel's code (e.g. .A or 99).
                              label - the sentinel's value label if it has one,
                                      else its code.
-                           SAS supports value only - the catalog reader does
-                           not yet tell which sentinel a label belongs to.
-                           SPSS takes its sentinel labels from the value
-                           labels, so for SPSS, label requires --value-labels
-                           & value rules it out.
+                           label labels only the sentinels: other values stay
+                           codes unless --value-labels is also given.
+                           SAS takes its sentinel labels from the format
+                           catalog, found as for --value-labels. For SPSS,
+                           value cannot be combined with --value-labels.
                            Not supported for .xpt & .por files. Tracking
                            sentinels makes SAS & Stata files read on a single
                            thread, so --jobs has no effect on them.
@@ -286,9 +289,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--value-labels is not supported for SAS transport (.xpt) files."
         );
     }
-    // before --output is created, so a rejected request leaves it untouched
-    let sas_labels = SasLabels::resolve(&args, input, path, format)?;
-
     let sentinels_as = SentinelsAs::parse(&args.flag_sentinels_as)?;
     if sentinels_as != SentinelsAs::None && metadata_mode != MetadataMode::None {
         return fail_incorrectusage_clierror!(
@@ -296,6 +296,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              each variable's missing-value codes."
         );
     }
+    let label_sentinels = sentinels_as == SentinelsAs::Label;
+    if args.flag_sas7bcat.is_some()
+        && metadata_mode == MetadataMode::None
+        && !args.flag_value_labels
+        && !label_sentinels
+    {
+        return fail_incorrectusage_clierror!(
+            "--sas7bcat only names the SAS format catalog. To use it, add --value-labels to label \
+             the values, or --sentinels-as label to label the sentinels."
+        );
+    }
+    // before --output is created, so a rejected request leaves it untouched
+    let sas_labels = SasLabels::resolve(&args, input, path, format, label_sentinels)?;
     if args.flag_compress_numeric && metadata_mode != MetadataMode::None {
         return fail_incorrectusage_clierror!(
             "--compress-numeric applies to the data, not to --metadata."
@@ -303,6 +316,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     // before --output is created, so a rejected request leaves it untouched
     let sentinels = sentinel_opts(&args, input, path, format, sentinels_as)?;
+    // the readers label only the sentinels themselves for Stata, and for SPSS
+    // they label sentinels only along with every value
+    let sentinel_labels = match format {
+        _ if sentinels.is_none() || !label_sentinels => None,
+        Format::Sas => sas_labels.as_ref().map(SentinelLabels::sas),
+        Format::Spss if !args.flag_value_labels => Some(SentinelLabels::spss(path)?),
+        _ => None,
+    };
 
     let mut delim = if let Some(delimiter) = args.flag_delimiter {
         delimiter.as_byte()
@@ -313,7 +334,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // The shared --output guard only sees command-line arguments, so it misses
-    // a catalog that --value-labels found on its own.
+    // a catalog that --value-labels or --sentinels-as label found on its own.
     if let (Some(out), Some(labels)) = (&args.flag_output, &sas_labels)
         && same_file::is_same_file(out, &labels.catalog).unwrap_or(false)
     {
@@ -338,7 +359,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             path,
             format,
             sentinels,
-            sas_labels.as_ref(),
+            sas_labels.as_ref().filter(|_| args.flag_value_labels),
+            sentinel_labels.as_ref(),
             delim,
             &mut w,
         )?;
@@ -394,30 +416,12 @@ fn sentinel_opts(
             );
         },
     };
-    match (format, sentinels_as) {
-        (Format::Sas, SentinelsAs::Label) => {
-            return fail_incorrectusage_clierror!(
-                "--sentinels-as label is not supported for SAS files yet: the .sas7bcat reader \
-                 does not tell which sentinel (.A-.Z, ._) a label belongs to \
-                 (https://github.com/jrothbaum/polars_readstat/issues/65). Use --sentinels-as \
-                 value to keep the sentinel codes."
-            );
-        },
-        // The SPSS reader labels sentinels exactly when it decodes value labels,
-        // whatever --sentinels-as asks for.
-        (Format::Spss, SentinelsAs::Label) if !args.flag_value_labels => {
-            return fail_incorrectusage_clierror!(
-                "--sentinels-as label needs --value-labels on SPSS files: the sentinels' labels \
-                 come from the variables' value labels."
-            );
-        },
-        (Format::Spss, SentinelsAs::Value) if args.flag_value_labels => {
-            return fail_incorrectusage_clierror!(
-                "--sentinels-as value cannot be combined with --value-labels on SPSS files, as \
-                 that writes the sentinels' labels. Use --sentinels-as label instead."
-            );
-        },
-        _ => {},
+    // The SPSS reader labels sentinels whenever it decodes value labels.
+    if format == Format::Spss && sentinels_as == SentinelsAs::Value && args.flag_value_labels {
+        return fail_incorrectusage_clierror!(
+            "--sentinels-as value cannot be combined with --value-labels on SPSS files, as that \
+             writes the sentinels' labels. Use --sentinels-as label instead."
+        );
     }
 
     let columns = match args.flag_sentinels_columns.as_deref() {
@@ -622,15 +626,12 @@ fn whole_number_columns(
     if scan.candidates.is_empty() {
         return Ok(Vec::new());
     }
-    // Only the float columns are read, except from XPT files: the XPT reader
-    // (polars-readstat-rs 0.23.2) decodes projected columns from the file's
-    // first columns' offsets (jrothbaum/polars_readstat#64), so it reads them all.
-    let columns = (!matches!(rs_format, ReadStatFormat::SasXpt)).then(|| scan.names());
+    // only the float columns are read
     let batches = readstat_batch_iter(
         path,
         Some(scan_opts),
         Some(rs_format),
-        columns,
+        Some(scan.names()),
         None,
         batch_size,
     )?;
@@ -713,6 +714,8 @@ struct FormatLabels {
     numeric_format: bool,
     numeric:        Vec<(f64, String)>,
     text:           HashMap<String, String>,
+    /// Keyed by the sentinel's code as the data reader writes it (`.A`, `._`).
+    sentinels:      HashMap<String, String>,
 }
 
 impl FormatLabels {
@@ -725,7 +728,8 @@ impl FormatLabels {
 
     /// A cell of a labeled column that is already text: a character variable,
     /// or a numeric one that `--sentinels-embedded` turned into text. In the
-    /// latter, a cell that isn't a number is a sentinel and is left alone.
+    /// latter, a cell that isn't a number is a sentinel and is left alone,
+    /// for [`SentinelLabels`] to label.
     fn text(&self, s: &str) -> String {
         if let Some(label) = self.text.get(s.trim_end()) {
             return label.clone();
@@ -763,10 +767,19 @@ struct SasLabels {
 
 impl SasLabels {
     /// The catalog is used when `--sas7bcat` names one, or when
-    /// `--value-labels` is given, in which case it is looked for next to the
-    /// data file as `<name>.sas7bcat`, then `formats.sas7bcat`.
-    fn resolve(args: &Args, input: &str, path: &Path, format: Format) -> CliResult<Option<Self>> {
-        if format != Format::Sas || !(args.flag_value_labels || args.flag_sas7bcat.is_some()) {
+    /// `--value-labels` or `--sentinels-as label` is given, in which case it
+    /// is looked for next to the data file as `<name>.sas7bcat`, then
+    /// `formats.sas7bcat`.
+    fn resolve(
+        args: &Args,
+        input: &str,
+        path: &Path,
+        format: Format,
+        label_sentinels: bool,
+    ) -> CliResult<Option<Self>> {
+        if format != Format::Sas
+            || !(args.flag_value_labels || args.flag_sas7bcat.is_some() || label_sentinels)
+        {
             return Ok(None);
         }
         let catalog = if let Some(named) = &args.flag_sas7bcat {
@@ -788,8 +801,13 @@ impl SasLabels {
                 Some(found) => found.clone(),
                 None => {
                     return fail_incorrectusage_clierror!(
-                        "--value-labels on a SAS file needs its .sas7bcat format catalog, and \
-                         there is none at \"{}\" or \"{}\". Pass it with --sas7bcat.",
+                        "{} on a SAS file needs its .sas7bcat format catalog, and there is none \
+                         at \"{}\" or \"{}\". Pass it with --sas7bcat.",
+                        if args.flag_value_labels {
+                            "--value-labels"
+                        } else {
+                            "--sentinels-as label"
+                        },
                         beside.display(),
                         shared.display()
                     );
@@ -813,8 +831,11 @@ impl SasLabels {
                     CatalogKey::Text(s) => {
                         labels.text.insert(s.trim_end().to_string(), label);
                     },
-                    // the reader drops which sentinel (.A-.Z, ._) a label is for
-                    CatalogKey::Missing(_) => {},
+                    CatalogKey::Missing(Some(tag)) => {
+                        labels.sentinels.insert(format!(".{tag}"), label);
+                    },
+                    // system missing `.` is an empty cell, never labeled
+                    CatalogKey::Missing(None) => {},
                 }
             }
         }
@@ -839,8 +860,8 @@ impl SasLabels {
 
         if columns.is_empty() {
             wwarn!(
-                "None of the formats of \"{input}\" are in the SAS format catalog \"{}\", so no \
-                 values were labeled.",
+                "None of the formats of \"{input}\" are in the SAS format catalog \"{}\", so \
+                 nothing was labeled.",
                 catalog.display()
             );
         } else {
@@ -900,8 +921,12 @@ impl SasLabels {
                 for (code, label) in text {
                     map.insert(code.clone(), label.clone().into());
                 }
-                // a format labeling only sentinels has nothing to show until
-                // the reader says which sentinel each label is for
+                // keyed MISSING_A for .A, as the Stata metadata keys .a
+                let mut sentinels: Vec<_> = labels.sentinels.iter().collect();
+                sentinels.sort();
+                for (code, label) in sentinels {
+                    map.insert(format!("MISSING_{}", &code[1..]), label.clone().into());
+                }
                 if !map.is_empty() {
                     col["value_labels"] = map.into();
                 }
@@ -920,6 +945,189 @@ fn format_key(format: &str) -> String {
         .to_ascii_uppercase()
 }
 
+/// Whether `--sentinels-columns` (or its default, every eligible variable)
+/// keeps the sentinels of `name`.
+fn tracked(columns: &InformativeNullColumns, name: &str) -> bool {
+    match columns {
+        InformativeNullColumns::All => true,
+        InformativeNullColumns::Selected(names) => names.iter().any(|n| n == name),
+    }
+}
+
+/// One variable's sentinel labels, keyed by the sentinel's code as the reader
+/// writes it: `.A` for SAS, `8` or `NA` for SPSS.
+#[derive(Default)]
+struct CodeLabels {
+    text:    HashMap<String, String>,
+    numeric: Vec<(f64, String)>,
+}
+
+impl CodeLabels {
+    fn get(&self, code: &str) -> Option<&String> {
+        self.text.get(code.trim_end()).or_else(|| {
+            let v = code.parse::<f64>().ok()?;
+            self.numeric
+                .iter()
+                .find(|(c, _)| *c == v)
+                .map(|(_, label)| label)
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty() && self.numeric.is_empty()
+    }
+}
+
+/// The sentinel labels qsv applies itself under `--sentinels-as label`, where
+/// the reader can't label only the sentinels: SAS (from the format catalog)
+/// and SPSS without `--value-labels` (from the variables' value labels).
+/// Other values are left alone, so they stay codes unless `--value-labels`.
+struct SentinelLabels {
+    columns: Vec<(PlSmallStr, CodeLabels)>,
+}
+
+impl SentinelLabels {
+    fn sas(catalog: &SasLabels) -> Self {
+        let columns = catalog
+            .columns
+            .iter()
+            .filter(|(_, labels)| labels.numeric_format && !labels.sentinels.is_empty())
+            .map(|(name, labels)| {
+                let codes = CodeLabels {
+                    text:    labels.sentinels.clone(),
+                    numeric: Vec::new(),
+                };
+                (name.clone(), codes)
+            })
+            .collect();
+        Self { columns }
+    }
+
+    /// An SPSS variable's sentinels are its declared missing values: discrete
+    /// codes, a range (the first two of `missing_doubles` when
+    /// `missing_range`) plus at most one code, or strings.
+    fn spss(path: &Path) -> CliResult<Self> {
+        let meta = readstat_metadata_json(path, Some(ReadStatFormat::Spss)).map_err(|e| {
+            crate::CliError::Other(format!(
+                "Could not read the metadata of \"{}\": {e}",
+                path.display()
+            ))
+        })?;
+        let meta: serde_json::Value = serde_json::from_str(&meta)?;
+        let mut columns = Vec::new();
+        for var in meta["variables"].as_array().into_iter().flatten() {
+            let (Some(name), Some(labels)) =
+                (var["name"].as_str(), var["value_labels"].as_object())
+            else {
+                continue;
+            };
+            let mut codes = CodeLabels::default();
+            if var["type"] == "Str" {
+                let missing: Vec<&str> = var["missing_strings"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim_end)
+                    .collect();
+                for (code, label) in labels {
+                    if let Some(label) = label.as_str()
+                        && missing.contains(&code.trim_end())
+                    {
+                        codes
+                            .text
+                            .insert(code.trim_end().to_string(), label.to_string());
+                    }
+                }
+            } else {
+                let missing: Vec<f64> = var["missing_doubles"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(serde_json::Value::as_f64)
+                    .collect();
+                let range = var["missing_range"].as_bool() == Some(true) && missing.len() >= 2;
+                let is_missing = |v: f64| {
+                    if range {
+                        (missing[0]..=missing[1]).contains(&v) || missing.get(2) == Some(&v)
+                    } else {
+                        missing.contains(&v)
+                    }
+                };
+                for (code, label) in labels {
+                    if let (Ok(v), Some(label)) = (code.parse::<f64>(), label.as_str())
+                        && is_missing(v)
+                    {
+                        codes.numeric.push((v, label.to_string()));
+                    }
+                }
+            }
+            if !codes.is_empty() {
+                columns.push((PlSmallStr::from(name), codes));
+            }
+        }
+        Ok(Self { columns })
+    }
+
+    /// The tracked variables with a sentinel label that the
+    /// `--compress-numeric` ".0" rewrite would change (e.g. "1.0"), were it
+    /// embedded among numbers.
+    fn numeric_looking<'a>(
+        &'a self,
+        columns: &'a InformativeNullColumns,
+    ) -> impl Iterator<Item = &'a PlSmallStr> {
+        self.columns
+            .iter()
+            .filter(|(name, _)| tracked(columns, name))
+            .filter(|(_, codes)| {
+                codes
+                    .text
+                    .values()
+                    .chain(codes.numeric.iter().map(|(_, l)| l))
+                    .any(|l| whole_number_text(l).is_some_and(|t| &t != l))
+            })
+            .map(|(name, _)| name)
+    }
+
+    /// Label the sentinels of the variables `columns` tracks: in their own
+    /// column if `embedded`, else in their `<name>_null` column. A variable of
+    /// the file that happens to be named `<name>_null` is never touched.
+    fn apply(
+        &self,
+        df: &mut DataFrame,
+        columns: &InformativeNullColumns,
+        embedded: bool,
+    ) -> PolarsResult<()> {
+        for (name, codes) in &self.columns {
+            if !tracked(columns, name) {
+                continue;
+            }
+            let target = if embedded {
+                name.clone()
+            } else {
+                PlSmallStr::from(format!("{name}_null"))
+            };
+            let Ok(col) = df.column(&target) else {
+                continue;
+            };
+            let col = col.as_materialized_series();
+            if col.dtype() != &DataType::String {
+                continue;
+            }
+            let labeled: StringChunked = col
+                .str()?
+                .iter()
+                .map(|v| v.map(|s| codes.get(s).map_or_else(|| s.to_string(), Clone::clone)))
+                .collect();
+            df.replace(
+                &target,
+                labeled.with_name(target.clone()).into_series().into(),
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
@@ -927,6 +1135,7 @@ fn write_data<W: Write>(
     format: Format,
     sentinels: Option<InformativeNullOpts>,
     sas_labels: Option<&SasLabels>,
+    sentinel_labels: Option<&SentinelLabels>,
     delim: u8,
     w: &mut W,
 ) -> CliResult<u64> {
@@ -942,9 +1151,11 @@ fn write_data<W: Write>(
     // chunk-interleaving path that is ordered only when `preserve_order` makes
     // it buffer chunks back into sequence. Defaulting to one thread therefore
     // also keeps memory flat; `--jobs` trades that for speed, still ordered.
-    let embedded_labels = sentinels
+    let embedded = sentinels
         .as_ref()
-        .is_some_and(|s| s.use_value_labels && matches!(s.mode, InformativeNullMode::MergedString));
+        .is_some_and(|s| matches!(s.mode, InformativeNullMode::MergedString));
+    let embedded_labels = embedded && sentinels.as_ref().is_some_and(|s| s.use_value_labels);
+    let sentinel_columns = sentinels.as_ref().map(|s| s.columns.clone());
     let opts = ScanOptions {
         threads: Some(args.flag_jobs.unwrap_or(1).max(1)),
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
@@ -990,6 +1201,10 @@ fn write_data<W: Write>(
             schema.get(name) != Some(&DataType::String) || !risky.iter().any(|r| r == name.as_str())
         });
     }
+    if embedded && let (Some(labels), Some(columns)) = (sentinel_labels, &sentinel_columns) {
+        let risky: Vec<&PlSmallStr> = labels.numeric_looking(columns).collect();
+        whole.retain(|name| !risky.contains(&name));
+    }
     if let Some(labels) = sas_labels {
         // labeled columns are text, their unlabeled numbers already without ".0"
         whole.retain(|name| labels.get(name).is_none());
@@ -1020,6 +1235,9 @@ fn write_data<W: Write>(
             let mut df = batch?;
             if let Some(labels) = sas_labels {
                 labels.apply(&mut df)?;
+            }
+            if let (Some(labels), Some(columns)) = (sentinel_labels, &sentinel_columns) {
+                labels.apply(&mut df, columns, embedded)?;
             }
             drop_whole_number_fraction(&mut df, &whole)?;
             rows += df.height() as u64;

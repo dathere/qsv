@@ -85,11 +85,12 @@ readstat options:
                              value - the sentinel's code (e.g. .A or 99).
                              label - the sentinel's value label if it has one,
                                      else its code.
-                           SAS supports value only - the catalog reader does
-                           not yet tell which sentinel a label belongs to.
-                           SPSS takes its sentinel labels from the value
-                           labels, so for SPSS, label requires --value-labels
-                           & value rules it out.
+                           SAS takes its sentinel labels from the format
+                           catalog, so for SAS, label needs a catalog: use
+                           the option --value-labels or --sas7bcat. SPSS
+                           takes them from the value labels, so for SPSS,
+                           label requires the option --value-labels & value
+                           rules it out.
                            Not supported for .xpt & .por files. Tracking
                            sentinels makes SAS & Stata files read on a single
                            thread, so --jobs has no effect on them.
@@ -395,12 +396,12 @@ fn sentinel_opts(
         },
     };
     match (format, sentinels_as) {
-        (Format::Sas, SentinelsAs::Label) => {
+        (Format::Sas, SentinelsAs::Label)
+            if !args.flag_value_labels && args.flag_sas7bcat.is_none() =>
+        {
             return fail_incorrectusage_clierror!(
-                "--sentinels-as label is not supported for SAS files yet: the .sas7bcat reader \
-                 does not tell which sentinel (.A-.Z, ._) a label belongs to \
-                 (https://github.com/jrothbaum/polars_readstat/issues/65). Use --sentinels-as \
-                 value to keep the sentinel codes."
+                "--sentinels-as label needs --value-labels or --sas7bcat on SAS files: the \
+                 sentinels' labels come from the .sas7bcat format catalog."
             );
         },
         // The SPSS reader labels sentinels exactly when it decodes value labels,
@@ -713,9 +714,18 @@ struct FormatLabels {
     numeric_format: bool,
     numeric:        Vec<(f64, String)>,
     text:           HashMap<String, String>,
+    /// Keyed by the sentinel's code as the data reader writes it (`.A`, `._`).
+    sentinels:      HashMap<String, String>,
 }
 
 impl FormatLabels {
+    /// A sentinel's label, else its code - like Stata's & SPSS's.
+    fn sentinel(&self, code: &str) -> String {
+        self.sentinels
+            .get(code)
+            .map_or_else(|| code.to_string(), Clone::clone)
+    }
+
     fn number(&self, v: f64) -> String {
         self.numeric
             .iter()
@@ -725,8 +735,12 @@ impl FormatLabels {
 
     /// A cell of a labeled column that is already text: a character variable,
     /// or a numeric one that `--sentinels-embedded` turned into text. In the
-    /// latter, a cell that isn't a number is a sentinel and is left alone.
-    fn text(&self, s: &str) -> String {
+    /// latter, a cell that isn't a number is a sentinel, labeled only when
+    /// `label_sentinels`.
+    fn text(&self, s: &str, label_sentinels: bool) -> String {
+        if label_sentinels && self.numeric_format && is_sas_sentinel(s) {
+            return self.sentinel(s);
+        }
         if let Some(label) = self.text.get(s.trim_end()) {
             return label.clone();
         }
@@ -737,6 +751,11 @@ impl FormatLabels {
         }
         s.to_string()
     }
+}
+
+/// A SAS sentinel's code as the data reader writes it: `.A` to `.Z`, or `._`.
+fn is_sas_sentinel(s: &str) -> bool {
+    matches!(s.as_bytes(), [b'.', b'A'..=b'Z' | b'_'])
 }
 
 /// How a number in a labeled column is written when it has no label: like the
@@ -813,8 +832,11 @@ impl SasLabels {
                     CatalogKey::Text(s) => {
                         labels.text.insert(s.trim_end().to_string(), label);
                     },
-                    // the reader drops which sentinel (.A-.Z, ._) a label is for
-                    CatalogKey::Missing(_) => {},
+                    CatalogKey::Missing(Some(tag)) => {
+                        labels.sentinels.insert(format!(".{tag}"), label);
+                    },
+                    // system missing `.` is an empty cell, never labeled
+                    CatalogKey::Missing(None) => {},
                 }
             }
         }
@@ -857,7 +879,9 @@ impl SasLabels {
     }
 
     /// Replace the labeled columns' codes with their labels. They become text.
-    fn apply(&self, df: &mut DataFrame) -> PolarsResult<()> {
+    /// With `label_sentinels`, their sentinels are labeled too, whether
+    /// embedded or in their `<name>_null` columns.
+    fn apply(&self, df: &mut DataFrame, label_sentinels: bool) -> PolarsResult<()> {
         for (name, labels) in &self.columns {
             let Ok(col) = df.column(name) else {
                 continue;
@@ -873,11 +897,29 @@ impl SasLabels {
                 DataType::String => col
                     .str()?
                     .iter()
-                    .map(|v| v.map(|s| labels.text(s)))
+                    .map(|v| v.map(|s| labels.text(s, label_sentinels)))
                     .collect(),
                 _ => continue,
             };
             df.replace(name, labeled.with_name(name.clone()).into_series().into())?;
+
+            if !label_sentinels || !labels.numeric_format || labels.sentinels.is_empty() {
+                continue;
+            }
+            let null_name = PlSmallStr::from(format!("{name}_null"));
+            let Ok(col) = df.column(&null_name) else {
+                continue;
+            };
+            let labeled: StringChunked = col
+                .as_materialized_series()
+                .str()?
+                .iter()
+                .map(|v| v.map(|s| labels.sentinel(s)))
+                .collect();
+            df.replace(
+                &null_name,
+                labeled.with_name(null_name.clone()).into_series().into(),
+            )?;
         }
         Ok(())
     }
@@ -900,8 +942,12 @@ impl SasLabels {
                 for (code, label) in text {
                     map.insert(code.clone(), label.clone().into());
                 }
-                // a format labeling only sentinels has nothing to show until
-                // the reader says which sentinel each label is for
+                // keyed MISSING_A for .A, as the Stata metadata keys .a
+                let mut sentinels: Vec<_> = labels.sentinels.iter().collect();
+                sentinels.sort();
+                for (code, label) in sentinels {
+                    map.insert(format!("MISSING_{}", &code[1..]), label.clone().into());
+                }
                 if !map.is_empty() {
                     col["value_labels"] = map.into();
                 }
@@ -942,9 +988,12 @@ fn write_data<W: Write>(
     // chunk-interleaving path that is ordered only when `preserve_order` makes
     // it buffer chunks back into sequence. Defaulting to one thread therefore
     // also keeps memory flat; `--jobs` trades that for speed, still ordered.
-    let embedded_labels = sentinels
-        .as_ref()
-        .is_some_and(|s| s.use_value_labels && matches!(s.mode, InformativeNullMode::MergedString));
+    let label_sentinels = sentinels.as_ref().is_some_and(|s| s.use_value_labels);
+    let embedded_labels = label_sentinels
+        && matches!(
+            sentinels.as_ref().map(|s| &s.mode),
+            Some(InformativeNullMode::MergedString)
+        );
     let opts = ScanOptions {
         threads: Some(args.flag_jobs.unwrap_or(1).max(1)),
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
@@ -1019,7 +1068,7 @@ fn write_data<W: Write>(
         for batch in batches {
             let mut df = batch?;
             if let Some(labels) = sas_labels {
-                labels.apply(&mut df)?;
+                labels.apply(&mut df, label_sentinels)?;
             }
             drop_whole_number_fraction(&mut df, &whole)?;
             rows += df.height() as u64;

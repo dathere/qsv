@@ -383,6 +383,43 @@ fn readstat_sas7bcat_sentinels() {
     assert_eq!(got[6], svec!["", ".A"]);
 }
 
+/// SAS sentinel labels need polars-readstat-rs 0.23.3: before it, the catalog
+/// reader dropped which sentinel (.A-.Z, ._) a label was for
+/// (`jrothbaum/polars_readstat#65`). pyreadstat reads `x` as 1-5, "Apple", "H",
+/// "Zebra"; an unlabeled sentinel keeps its code, as for Stata & SPSS.
+#[test]
+fn readstat_sas7bcat_sentinel_labels() {
+    let wrk = Workdir::new("readstat_sas7bcat_sentinel_labels");
+    let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
+    let cat = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--sentinels-as", "label"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["x", "x_null"]);
+    assert_eq!(got[1], svec!["1", ""]);
+    assert_eq!(got[6], svec!["", "Apple"]);
+    assert_eq!(got[7], svec!["", ".H"]);
+    assert_eq!(got[8], svec!["", "Zebra"]);
+
+    // --sas7bcat implies --value-labels; --compress-numeric leaves labels alone
+    for embedded in [false, true] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sas7bcat", &cat, "--sentinels-as", "label"])
+            .arg("--compress-numeric");
+        if embedded {
+            cmd.arg("--sentinels-embedded");
+        }
+        cmd.arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let last = got[0].len() - 1;
+        let col: Vec<&str> = got.iter().skip(1).map(|r| r[last].as_str()).collect();
+        assert_eq!(col[5..], ["Apple", ".H", "Zebra"], "embedded: {embedded}");
+        assert_eq!(got[1][0], "1", "embedded: {embedded}");
+    }
+}
+
 #[test]
 fn readstat_sas7bcat_compress_numeric() {
     let wrk = Workdir::new("readstat_sas7bcat_compress_numeric");
@@ -424,13 +461,16 @@ fn readstat_sas7bcat_metadata() {
     assert_eq!(got[2][at], r#"{"1":"R","2":"SAS"}"#);
     assert_eq!(got[1][at], "");
 
-    // XFMT labels only sentinels, whose tags the reader drops: no empty map
+    // XFMT labels only sentinels, keyed as the Stata metadata keys .a
     let f = wrk.load_test_file("readstat_catalog_tagged.sas7bdat");
     let cat = wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
     let mut cmd = wrk.command("readstat");
     cmd.args(["--metadata", "json", "--sas7bcat", &cat]).arg(&f);
     let got: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
-    assert!(got["columns"][0].get("value_labels").is_none(), "{got}");
+    assert_eq!(
+        got["columns"][0]["value_labels"],
+        serde_json::json!({"MISSING_A": "Apple", "MISSING_Z": "Zebra"})
+    );
 }
 
 #[test]
@@ -980,7 +1020,7 @@ fn readstat_sentinels_rejections() {
         (
             vec!["--sentinels-as", "label"],
             &sas,
-            "--sentinels-as label is not supported for SAS",
+            "--sentinels-as label needs --value-labels or --sas7bcat on SAS",
         ),
         (
             vec!["--sentinels-as", "label"],

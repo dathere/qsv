@@ -50,7 +50,7 @@
       {
         "flag": "--sentinels-as",
         "type": "string",
-        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. SAS supports value only - the catalog reader does not yet tell which sentinel a label belongs to. SPSS takes its sentinel labels from the value labels, so for SPSS, label requires --value-labels & value rules it out. Not supported for .xpt & .por files. Tracking sentinels makes SAS & Stata files read on a single thread, so --jobs has no effect on them.",
+        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. SAS takes its sentinel labels from the format catalog, so for SAS, label needs a catalog: use the option --value-labels or --sas7bcat. SPSS takes them from the value labels, so for SPSS, label requires the option --value-labels & value rules it out. Not supported for .xpt & .por files. Tracking sentinels makes SAS & Stata files read on a single thread, so --jobs has no effect on them.",
         "default": "none"
       },
       {

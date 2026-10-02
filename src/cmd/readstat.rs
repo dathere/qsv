@@ -18,9 +18,11 @@ finds next to the data file, or --sas7bcat names.
 User-defined missing values ("sentinels") - SAS's .A to .Z & ._, Stata's .a
 to .z, SPSS's declared missing codes - become empty cells by default, like any
 other missing value. Use --sentinels-as to keep them. Without it, a warning
-says how many sentinels were dropped & where. The check reads files on a
-single thread, so it is skipped when --jobs is above 1, and SPSS files whole
-(see --batch).
+says how many sentinels were dropped & where. Counting them reads files on a
+single thread, and SPSS files whole (see --batch), so it is skipped when the
+option --jobs is above 1, and for SPSS files holding over about 128 MB of
+data. As SPSS files declare their missing values, the warning then names the
+variables that do instead. SAS & Stata files don't, so they get no warning.
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
@@ -122,7 +124,8 @@ readstat options:
                            are tracked, which also reads them whole: with
                            the option --sentinels-as value or label, or by
                            the sentinel check when a variable declares
-                           missing values (see --sentinels-as none).
+                           missing values & the file holds at most about
+                           128 MB of data (see --sentinels-as none).
                            [default: 50000]
 
 Common options:
@@ -327,10 +330,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     // before --output is created, so a rejected request leaves it untouched
     let sentinels = sentinel_opts(&args, input, path, format, sentinels_as)?;
-    let watch = if metadata_mode == MetadataMode::None {
-        watch_opts(&args, path, format)?
+    let check = if metadata_mode == MetadataMode::None {
+        sentinel_check(&args, path, format)
     } else {
-        None
+        SentinelCheck::Off
     };
     // the readers label only the sentinels themselves for Stata, and for SPSS
     // they label sentinels only along with every value
@@ -370,7 +373,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut w = io::BufWriter::with_capacity(crate::config::DEFAULT_WTR_BUFFER_CAPACITY, w);
 
     if metadata_mode == MetadataMode::None {
-        let mut dropped = DroppedSentinels::new(format, args.flag_value_labels);
+        let (mut dropped, watch) = DroppedSentinels::new(format, args.flag_value_labels, check);
         let rows = write_data(
             &args,
             path,
@@ -504,28 +507,52 @@ fn sentinel_opts(
     Ok(Some(null_opts))
 }
 
-/// Reject --sentinels-columns names the reader would silently drop: names not
-/// in the file, and variables that cannot hold a sentinel.
-///
-/// Eligibility differs by format, so rather than restating the reader's rules
-/// this asks the reader itself: a name is eligible iff selecting it adds an
-/// indicator column to the schema.
-/// The options of the hidden sentinel check: with no --sentinels-as, the
-/// sentinels are still tracked, in indicator columns named with
-/// [`PROBE_SUFFIX`], so that dropping them can be reported. Not done where it
-/// would cost the reader its parallelism (`--jobs` above 1), nor for SPSS files
-/// that declare no missing values, nor for the XPT & POR readers, which don't
-/// report sentinels.
-fn watch_opts(args: &Args, path: &Path, format: Format) -> CliResult<Option<InformativeNullOpts>> {
-    if args.flag_sentinels_as.is_some() || args.flag_jobs.unwrap_or(1) > 1 {
-        return Ok(None);
+/// What the hidden sentinel check does when --sentinels-as is not given.
+enum SentinelCheck {
+    Off,
+    /// Track the sentinels, in indicator columns named with [`PROBE_SUFFIX`],
+    /// to count those written as empty cells.
+    Count(InformativeNullOpts),
+    /// Only name the SPSS variables that declare missing values, because
+    /// counting would cost the reader its parallelism or read too large a
+    /// file whole.
+    Declared {
+        variables: Vec<String>,
+        reason:    DeclaredOnly,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum DeclaredOnly {
+    Jobs,
+    TooLarge,
+}
+
+/// Above this much data (uncompressed), the SPSS sentinel check names the
+/// variables that declare missing values instead of counting the sentinels,
+/// as counting reads the file whole.
+const SPSS_COUNT_MAX_BYTES: u64 = 128 * 1024 * 1024;
+
+/// The hidden sentinel check. Counting is not done where it would cost the
+/// reader its parallelism (`--jobs` above 1), nor for SPSS files too large to
+/// read whole: SPSS files declare their missing values, so those are named
+/// instead, while SAS & Stata files don't, so they get no check. Nor is it
+/// done for files with no variable that can hold a sentinel, or for the XPT &
+/// POR readers, which don't report sentinels.
+fn sentinel_check(args: &Args, path: &Path, format: Format) -> SentinelCheck {
+    if args.flag_sentinels_as.is_some() {
+        return SentinelCheck::Off;
     }
     let Some(rs_format) = format
         .readstat_format()
         .filter(|_| format.honors_sentinels())
     else {
-        return Ok(None);
+        return SentinelCheck::Off;
     };
+    let jobs = args.flag_jobs.unwrap_or(1) > 1;
+    if jobs && format != Format::Spss {
+        return SentinelCheck::Off;
+    }
     let watch = InformativeNullOpts {
         columns:          InformativeNullColumns::All,
         mode:             InformativeNullMode::SeparateColumn {
@@ -540,16 +567,58 @@ fn watch_opts(args: &Args, path: &Path, format: Format) -> CliResult<Option<Info
     };
     // a best-effort check: if the probe fails, the conversion goes ahead without it
     let Ok(schema) = readstat_schema(path, Some(probe), Some(rs_format)) else {
-        return Ok(None);
+        return SentinelCheck::Off;
     };
-    let eligible = schema.iter_names().any(|name| name.ends_with(PROBE_SUFFIX));
-    Ok(eligible.then_some(watch))
+    let variables: Vec<String> = schema
+        .iter_names()
+        .filter_map(|name| name.strip_suffix(PROBE_SUFFIX))
+        .map(str::to_string)
+        .collect();
+    if variables.is_empty() {
+        return SentinelCheck::Off;
+    }
+    let reason = if format != Format::Spss {
+        None
+    } else if jobs {
+        Some(DeclaredOnly::Jobs)
+    } else if spss_data_bytes(path).is_none_or(|bytes| bytes > spss_count_max_bytes()) {
+        Some(DeclaredOnly::TooLarge)
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => SentinelCheck::Declared { variables, reason },
+        None => SentinelCheck::Count(watch),
+    }
+}
+
+fn spss_count_max_bytes() -> u64 {
+    std::env::var("QSV_TEST_READSTAT_SPSS_COUNT_MAX_BYTES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(SPSS_COUNT_MAX_BYTES)
+}
+
+/// The uncompressed size of an SPSS file's data, from its metadata: rows times
+/// the stored width of a row. None if the file doesn't record its row count.
+fn spss_data_bytes(path: &Path) -> Option<u64> {
+    let meta = readstat_metadata_json(path, Some(ReadStatFormat::Spss)).ok()?;
+    let meta: serde_json::Value = serde_json::from_str(&meta).ok()?;
+    let rows = meta["row_count"].as_u64()?;
+    let width: u64 = meta["variables"]
+        .as_array()?
+        .iter()
+        .filter_map(|var| var["storage_width_bytes"].as_u64())
+        .sum();
+    Some(rows.saturating_mul(width))
 }
 
 /// The sentinels the hidden check found, per variable: how many, and one of
 /// their codes (or labels, under --value-labels) as an example.
 struct DroppedSentinels {
     variables: Vec<(String, u64, String)>,
+    /// The SPSS variables declaring missing values, when they were not counted.
+    declared:  Option<(Vec<String>, DeclaredOnly)>,
     /// SAS reports an unrecognized missing as a bare ".", which is system
     /// missing, not a sentinel. In SPSS "." can be a declared missing string.
     skip_dot:  bool,
@@ -559,16 +628,29 @@ struct DroppedSentinels {
 }
 
 impl DroppedSentinels {
-    fn new(format: Format, value_labels: bool) -> Self {
-        Self {
+    /// Also returns the reader options the check counts the sentinels with,
+    /// if it does.
+    fn new(
+        format: Format,
+        value_labels: bool,
+        check: SentinelCheck,
+    ) -> (Self, Option<InformativeNullOpts>) {
+        let (watch, declared) = match check {
+            SentinelCheck::Off => (None, None),
+            SentinelCheck::Count(watch) => (Some(watch), None),
+            SentinelCheck::Declared { variables, reason } => (None, Some((variables, reason))),
+        };
+        let dropped = Self {
             variables: Vec::new(),
-            skip_dot:  format == Format::Sas,
-            keep:      if format == Format::Spss && value_labels {
+            declared,
+            skip_dot: format == Format::Sas,
+            keep: if format == Format::Spss && value_labels {
                 "label"
             } else {
                 "value"
             },
-        }
+        };
+        (dropped, watch)
     }
 
     /// Tally & remove the check's indicator columns from a batch.
@@ -603,33 +685,68 @@ impl DroppedSentinels {
     }
 
     fn warn(&self) {
+        const SHOWN: usize = 5;
+        let list = |names: &mut dyn Iterator<Item = &str>, len: usize| {
+            let mut list = names.take(SHOWN).collect::<Vec<_>>().join(", ");
+            if len > SHOWN {
+                list.push_str(", ...");
+            }
+            list
+        };
+        let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+        let advice = format!(
+            "Use --sentinels-as {} to keep them, or --sentinels-as none to skip this check.",
+            self.keep
+        );
+
+        if let Some((declared, reason)) = &self.declared {
+            let why = match reason {
+                DeclaredOnly::Jobs => {
+                    "Counting them reads the file on a single thread, so it is skipped when --jobs \
+                     is above 1."
+                },
+                DeclaredOnly::TooLarge => {
+                    "Counting them reads the file whole, so it is skipped for files holding over \
+                     about 128 MB of data."
+                },
+            };
+            let verb = if declared.len() == 1 {
+                "declares"
+            } else {
+                "declare"
+            };
+            wwarn!(
+                "{} ({}) {verb} user-defined missing values (sentinels); any in the data were \
+                 written as empty cells. {why} {advice}",
+                plural(declared.len(), "variable"),
+                list(&mut declared.iter().map(String::as_str), declared.len()),
+            );
+            return;
+        }
+
         let Some((var, _, example)) = self.variables.first() else {
             return;
         };
         let total: u64 = self.variables.iter().map(|(_, n, _)| n).sum();
-        const SHOWN: usize = 5;
-        let mut names = self
-            .variables
-            .iter()
-            .take(SHOWN)
-            .map(|(n, ..)| n.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        if self.variables.len() > SHOWN {
-            names.push_str(", ...");
-        }
-        let plural = |n: u64, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
         wwarn!(
-            "{} (user-defined missing values) in {} ({names}) were written as empty cells, e.g. \
-             {example} in {var}. Use --sentinels-as {} to keep them, or --sentinels-as none to \
-             skip this check.",
-            plural(total, "sentinel"),
-            plural(self.variables.len() as u64, "variable"),
-            self.keep,
+            "{total} sentinel{} (user-defined missing values) in {} ({}) were written as empty \
+             cells, e.g. {example} in {var}. {advice}",
+            if total == 1 { "" } else { "s" },
+            plural(self.variables.len(), "variable"),
+            list(
+                &mut self.variables.iter().map(|(n, ..)| n.as_str()),
+                self.variables.len()
+            ),
         );
     }
 }
 
+/// Reject --sentinels-columns names the reader would silently drop: names not
+/// in the file, and variables that cannot hold a sentinel.
+///
+/// Eligibility differs by format, so rather than restating the reader's rules
+/// this asks the reader itself: a name is eligible iff selecting it adds an
+/// indicator column to the schema.
 fn check_sentinel_columns(
     args: &Args,
     input: &str,

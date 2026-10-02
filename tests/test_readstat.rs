@@ -766,14 +766,20 @@ fn readstat_sentinel_check_leaves_output_alone() {
     wrk.load_test_file("readstat_catalog_tagged.sas7bcat");
     for file in files {
         let f = wrk.load_test_file(file);
-        for flags in [
-            vec![],
-            vec!["--value-labels"],
-            vec!["--compress-numeric"],
-            vec!["--batch", "1"],
+        for (flags, max_bytes) in [
+            (vec![], None),
+            (vec!["--value-labels"], None),
+            (vec!["--compress-numeric"], None),
+            (vec!["--batch", "1"], None),
+            (vec!["--jobs", "2"], None),
+            // the SPSS check names the declaring variables instead of counting
+            (vec![], Some("1")),
         ] {
             let run = |extra: &[&str]| {
                 let mut cmd = wrk.command("readstat");
+                if let Some(max) = max_bytes {
+                    cmd.env("QSV_TEST_READSTAT_SPSS_COUNT_MAX_BYTES", max);
+                }
                 cmd.args(extra).args(&flags).arg(&f);
                 cmd.output().unwrap()
             };
@@ -844,7 +850,8 @@ fn readstat_sentinel_check_warns() {
 }
 
 /// No warning without sentinels, when told not to check, when --jobs makes
-/// the check too costly, or for the readers that don't report sentinels.
+/// the check too costly for SAS & Stata (which, unlike SPSS, don't declare
+/// their sentinels), or for the readers that don't report sentinels.
 #[test]
 fn readstat_sentinel_check_quiet() {
     let wrk = Workdir::new("readstat_sentinel_check_quiet");
@@ -852,16 +859,79 @@ fn readstat_sentinel_check_quiet() {
         .into_iter()
         .map(|ext| (vec![], sample(&wrk, ext)))
         .collect();
+    for ext in ["sav", "zsav"] {
+        runs.push((vec!["--jobs", "2"], sample(&wrk, ext)));
+    }
     for f in [sentinels(&wrk, "sav"), sentinels(&wrk, "sas7bdat")] {
         runs.push((vec!["--sentinels-as", "none"], f.clone()));
-        runs.push((vec!["--jobs", "2"], f));
+        runs.push((vec!["--sentinels-as", "none", "--jobs", "2"], f));
     }
+    runs.push((vec!["--jobs", "2"], sentinels(&wrk, "sas7bdat")));
+    runs.push((
+        vec!["--jobs", "2"],
+        wrk.load_test_file("readstat_stata_extmiss.dta"),
+    ));
     for (flags, f) in runs {
         let mut cmd = wrk.command("readstat");
         cmd.args(&flags).arg(&f);
         let stderr = wrk.stderr_on_success(&mut cmd);
         assert!(!stderr.contains("sentinel"), "{flags:?} {f}: {stderr}");
     }
+}
+
+/// Where counting the SPSS sentinels would cost the reader its parallelism
+/// (--jobs above 1) or read too large a file whole, the warning names the
+/// variables that declare missing values instead. `id` & `plain` declare none.
+#[test]
+fn readstat_sentinel_check_spss_declared() {
+    let wrk = Workdir::new("readstat_sentinel_check_spss_declared");
+    let f = sentinels(&wrk, "sav");
+    let declared = "3 variables (income, rating, name) declare user-defined missing values";
+    let run = |flags: &[&str], max_bytes: Option<&str>| {
+        let mut cmd = wrk.command("readstat");
+        if let Some(max) = max_bytes {
+            cmd.env("QSV_TEST_READSTAT_SPSS_COUNT_MAX_BYTES", max);
+        }
+        cmd.args(flags).arg(&f);
+        wrk.stderr_on_success(&mut cmd)
+    };
+
+    let stderr = run(&["--jobs", "2"], None);
+    assert!(stderr.contains(declared), "{stderr}");
+    assert!(stderr.contains("--jobs is above 1"), "{stderr}");
+    assert!(!stderr.contains("5 sentinels"), "{stderr}");
+    assert!(
+        stderr.contains("Use --sentinels-as value to keep"),
+        "{stderr}"
+    );
+
+    // the advice is one qsv accepts: SPSS refuses `value` with --value-labels
+    let stderr = run(&["--jobs", "2", "--value-labels"], None);
+    assert!(stderr.contains(declared), "{stderr}");
+    assert!(
+        stderr.contains("Use --sentinels-as label to keep"),
+        "{stderr}"
+    );
+
+    // the file holds 160 bytes of data (4 rows of 5 8-byte variables): counted
+    // at that cutoff, named only above it
+    let stderr = run(&[], Some("160"));
+    assert!(stderr.contains("5 sentinels"), "{stderr}");
+    let stderr = run(&[], Some("159"));
+    assert!(stderr.contains(declared), "{stderr}");
+    assert!(stderr.contains("over about 128 MB of data"), "{stderr}");
+    assert!(!stderr.contains("5 sentinels"), "{stderr}");
+
+    // one declaring variable reads in the singular
+    let mut cmd = wrk.command("readstat");
+    cmd.env("QSV_TEST_READSTAT_SPSS_COUNT_MAX_BYTES", "1")
+        .args(["--jobs", "1"])
+        .arg(wrk.load_test_file("readstat_sentinels_dot.sav"));
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("1 variable (code) declares user-defined missing values"),
+        "{stderr}"
+    );
 }
 
 #[test]

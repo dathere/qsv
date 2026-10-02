@@ -403,6 +403,13 @@ fn readstat_sas7bcat_sentinel_labels() {
     assert_eq!(got[7], svec!["", ".H"]);
     assert_eq!(got[8], svec!["", "Zebra"]);
 
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--value-labels", "--sentinels-as", "label"])
+        .args(["--sentinels-columns", "x"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[6], svec!["", "Apple"]);
+
     // --sas7bcat implies --value-labels; --compress-numeric leaves labels alone
     for embedded in [false, true] {
         let mut cmd = wrk.command("readstat");

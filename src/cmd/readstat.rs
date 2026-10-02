@@ -876,9 +876,15 @@ impl SasLabels {
     }
 
     /// Replace the labeled columns' codes with their labels. They become text.
-    /// With `label_sentinels`, their sentinels are labeled too, whether
-    /// embedded or in their `<name>_null` columns.
-    fn apply(&self, df: &mut DataFrame, label_sentinels: bool) -> PolarsResult<()> {
+    /// With `label_sentinels`, their sentinels are labeled too: embedded, or
+    /// in the `<name>_null` columns of `null_columns`. A variable of the file
+    /// that happens to be named `<name>_null` is left alone.
+    fn apply(
+        &self,
+        df: &mut DataFrame,
+        label_sentinels: bool,
+        null_columns: Option<&InformativeNullColumns>,
+    ) -> PolarsResult<()> {
         for (name, labels) in &self.columns {
             let Ok(col) = df.column(name) else {
                 continue;
@@ -900,7 +906,14 @@ impl SasLabels {
             };
             df.replace(name, labeled.with_name(name.clone()).into_series().into())?;
 
-            if !label_sentinels || !labels.numeric_format || labels.sentinels.is_empty() {
+            let has_null_column = match null_columns {
+                Some(InformativeNullColumns::All) => true,
+                Some(InformativeNullColumns::Selected(names)) => {
+                    names.iter().any(|n| n.as_str() == name.as_str())
+                },
+                None => false,
+            };
+            if !has_null_column || !labels.numeric_format || labels.sentinels.is_empty() {
                 continue;
             }
             let null_name = PlSmallStr::from(format!("{name}_null"));
@@ -991,6 +1004,12 @@ fn write_data<W: Write>(
             sentinels.as_ref().map(|s| &s.mode),
             Some(InformativeNullMode::MergedString)
         );
+    let null_columns = sentinels
+        .as_ref()
+        .filter(|s| {
+            s.use_value_labels && matches!(s.mode, InformativeNullMode::SeparateColumn { .. })
+        })
+        .map(|s| s.columns.clone());
     let opts = ScanOptions {
         threads: Some(args.flag_jobs.unwrap_or(1).max(1)),
         chunk_size: (args.flag_batch > 0).then_some(args.flag_batch),
@@ -1065,7 +1084,7 @@ fn write_data<W: Write>(
         for batch in batches {
             let mut df = batch?;
             if let Some(labels) = sas_labels {
-                labels.apply(&mut df, label_sentinels)?;
+                labels.apply(&mut df, label_sentinels, null_columns.as_ref())?;
             }
             drop_whole_number_fraction(&mut df, &whole)?;
             rows += df.height() as u64;

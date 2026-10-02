@@ -2,7 +2,6 @@ extern crate log;
 extern crate serde;
 
 extern crate csv;
-extern crate filetime;
 extern crate quickcheck;
 extern crate rand;
 extern crate stats;

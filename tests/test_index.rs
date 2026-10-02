@@ -1,7 +1,5 @@
 use std::fs;
 
-use filetime::{FileTime, set_file_times};
-
 use crate::workdir::Workdir;
 
 #[test]
@@ -16,13 +14,7 @@ fn index_outdated_count() {
         ],
     );
 
-    let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
-        wrk.path("in.csv"),
-        future_time(FileTime::from_last_modification_time(&md)),
-        future_time(FileTime::from_last_access_time(&md)),
-    )
-    .unwrap();
+    make_index_stale(&wrk);
 
     let mut cmd = wrk.command("count");
     cmd.arg("in.csv");
@@ -48,13 +40,7 @@ fn index_outdated_stats() {
         ],
     );
 
-    let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
-        wrk.path("in.csv"),
-        future_time(FileTime::from_last_access_time(&md)),
-        future_time(FileTime::from_last_modification_time(&md)),
-    )
-    .unwrap();
+    make_index_stale(&wrk);
 
     std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -80,13 +66,7 @@ fn index_outdated_index() {
         ],
     );
 
-    let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
-        wrk.path("in.csv"),
-        future_time(FileTime::from_last_access_time(&md)),
-        future_time(FileTime::from_last_modification_time(&md)),
-    )
-    .unwrap();
+    make_index_stale(&wrk);
 
     // slice should NOT fail if the index is stale
     // as stale indexes are automatically updated
@@ -336,7 +316,14 @@ fn empty_csv_still_works_without_a_usable_index() {
     rassert_eq!(got, 0);
 }
 
-fn future_time(ft: FileTime) -> FileTime {
-    let secs = ft.unix_seconds();
-    FileTime::from_unix_time(secs + 10_000, 0)
+fn make_index_stale(wrk: &Workdir) {
+    let idx_mtime = fs::metadata(wrk.path("in.csv.idx"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    fs::set_times(
+        wrk.path("in.csv"),
+        fs::FileTimes::new().set_modified(idx_mtime + std::time::Duration::from_secs(10_000)),
+    )
+    .unwrap();
 }

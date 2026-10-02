@@ -657,7 +657,10 @@ fn tojsonl_4410_legacy_cache_missing_field_key() {
     // the `field` key entirely for an empty-named column. Such caches stay on disk and
     // still pass mtime validation after an upgrade, which is why `StatsData.field` is
     // `#[serde(default)]`. Without that default this fails with `missing field `field``.
-    use filetime::{FileTime, set_file_mtime};
+    use std::{
+        fs::{self, FileTimes},
+        time::{Duration, SystemTime},
+    };
 
     let wrk = Workdir::new("tojsonl_4410_legacy_cache_missing_field_key");
     wrk.create(
@@ -674,8 +677,8 @@ fn tojsonl_4410_legacy_cache_missing_field_key() {
     // land in the same tick, forcing a regeneration that would trip the reuse assertion
     // below - the same hazard documented in test_profile.rs. Backdate the input so it is
     // unambiguously older, which is deterministic and costs no wall-clock time.
-    let past = FileTime::from_unix_time(FileTime::now().unix_seconds() - 3600, 0);
-    set_file_mtime(wrk.path("in.csv"), past).unwrap();
+    let past = SystemTime::now() - Duration::from_secs(3600);
+    fs::set_times(wrk.path("in.csv"), FileTimes::new().set_modified(past)).unwrap();
 
     // prime a valid stats cache, then rewrite it the way a pre-fix qsv would have
     let mut prime = wrk.command("tojsonl");

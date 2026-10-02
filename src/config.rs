@@ -1210,6 +1210,14 @@ mod tests {
 
     use super::*;
 
+    fn set_mtime(p: &std::path::Path, t: std::time::SystemTime) {
+        std::fs::set_times(p, std::fs::FileTimes::new().set_modified(t)).unwrap();
+    }
+
+    fn mtime_of(p: &std::path::Path) -> std::time::SystemTime {
+        crate::util::mtime(&std::fs::metadata(p).unwrap())
+    }
+
     /// A special-format input must remain AUTOINDEXABLE at the Config level.
     ///
     /// Such an index is keyed to the CONVERTED TEMP file, so it is only usable by callers whose
@@ -1421,13 +1429,10 @@ mod tests {
 
         // push the DATA mtime into the future so the index looks stale to EVERY caller and
         // STAYS stale after a rebuild - the exact shape of test_index::index_outdated_stats
-        let future = filetime::FileTime::from_unix_time(
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
-                .unix_seconds()
-                + 86_400,
-            0,
+        set_mtime(
+            &csv_path,
+            mtime_of(&csv_path) + std::time::Duration::from_secs(86_400),
         );
-        filetime::set_file_mtime(&csv_path, future).unwrap();
 
         // first call: sees the stale index and rebuilds it
         assert!(
@@ -1436,8 +1441,8 @@ mod tests {
         );
 
         // stamp the index with a distinctive mtime; any FURTHER rebuild overwrites it
-        let marker = filetime::FileTime::from_unix_time(1_000_000, 0);
-        filetime::set_file_mtime(&idx_path, marker).unwrap();
+        let marker = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        set_mtime(&idx_path, marker);
 
         // later callers - the parallel workers - must reuse it rather than rebuild
         for i in 0..8 {
@@ -1447,8 +1452,7 @@ mod tests {
             );
         }
 
-        let after =
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&idx_path).unwrap());
+        let after = mtime_of(&idx_path);
         assert_eq!(
             after, marker,
             "the stale index was rebuilt again by a later caller; with parallel workers those \
@@ -1491,13 +1495,10 @@ mod tests {
         assert!(good_len > 0, "fixture index should be non-empty");
 
         // make the index look stale, permanently
-        let future = filetime::FileTime::from_unix_time(
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
-                .unix_seconds()
-                + 86_400,
-            0,
+        set_mtime(
+            &csv_path,
+            mtime_of(&csv_path) + std::time::Duration::from_secs(86_400),
         );
-        filetime::set_file_mtime(&csv_path, future).unwrap();
 
         // read-only directory => the sibling temp index cannot be created => rebuild fails
         let original_perms = std::fs::metadata(dir.path()).unwrap().permissions();
@@ -1527,14 +1528,13 @@ mod tests {
         );
 
         // and the failure must NOT have been memoized - a later caller retries and succeeds
-        let marker = filetime::FileTime::from_unix_time(1_000_000, 0);
-        filetime::set_file_mtime(&idx_path, marker).unwrap();
+        let marker = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        set_mtime(&idx_path, marker);
         assert!(
             Config::new(Some(&path_str)).indexed().unwrap().is_some(),
             "the retry must produce a usable index"
         );
-        let after =
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&idx_path).unwrap());
+        let after = mtime_of(&idx_path);
         assert_ne!(
             after, marker,
             "a failed rebuild poisoned the memo: the retry skipped the repair"
@@ -1591,13 +1591,10 @@ mod tests {
         // a REBUILD must not revert a deliberately-set mode
         let restrictive = 0o640;
         std::fs::set_permissions(&idx_path, std::fs::Permissions::from_mode(restrictive)).unwrap();
-        let future = filetime::FileTime::from_unix_time(
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(&csv_path).unwrap())
-                .unix_seconds()
-                + 86_400,
-            0,
+        set_mtime(
+            &csv_path,
+            mtime_of(&csv_path) + std::time::Duration::from_secs(86_400),
         );
-        filetime::set_file_mtime(&csv_path, future).unwrap();
 
         assert!(
             Config::new(Some(&path_str)).indexed().unwrap().is_some(),

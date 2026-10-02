@@ -3171,9 +3171,9 @@ mod rich {
             if need_write || !idx_dst.exists() {
                 let idx_bytes = read_zst(&idx_blob)?;
                 atomic_write(&idx_dst, &idx_bytes)?;
-                let _ = filetime::set_file_mtime(
+                let _ = fs::set_times(
                     &idx_dst,
-                    filetime::FileTime::from_system_time(SystemTime::now()),
+                    fs::FileTimes::new().set_modified(SystemTime::now()),
                 );
             }
         }
@@ -3203,10 +3203,8 @@ mod rich {
         // A sidecar is usable only if newer than the CSV — qsv's stats-cache
         // staleness rule (see `util::get_stats_records`).
         let sidecar_fresh = stats_sidecar.exists() && {
-            let s = fs::metadata(&stats_sidecar)
-                .map(|m| filetime::FileTime::from_last_modification_time(&m));
-            let c =
-                fs::metadata(csv_path).map(|m| filetime::FileTime::from_last_modification_time(&m));
+            let s = fs::metadata(&stats_sidecar).map(|m| util::mtime(&m));
+            let c = fs::metadata(csv_path).map(|m| util::mtime(&m));
             matches!((s, c), (Ok(s), Ok(c)) if s > c)
         };
 
@@ -3225,9 +3223,9 @@ mod rich {
             // Restore from the durable blob with a fresh mtime so it passes the
             // staleness check (written after the CSV, like the .idx above).
             let _ = atomic_write(&stats_sidecar, &bytes);
-            let _ = filetime::set_file_mtime(
+            let _ = fs::set_times(
                 &stats_sidecar,
-                filetime::FileTime::from_system_time(SystemTime::now()),
+                fs::FileTimes::new().set_modified(SystemTime::now()),
             );
         }
     }
@@ -3240,10 +3238,7 @@ mod rich {
         let sidecar = frequency_sidecar_path(csv_path);
         let blob = frequency_blob_path(root, &resolved.blake3, &resolved.ext);
         let fresh = match (fs::metadata(&sidecar), fs::metadata(csv_path)) {
-            (Ok(cache), Ok(csv)) => {
-                filetime::FileTime::from_last_modification_time(&cache)
-                    > filetime::FileTime::from_last_modification_time(&csv)
-            },
+            (Ok(cache), Ok(csv)) => util::mtime(&cache) > util::mtime(&csv),
             _ => false,
         };
 
@@ -3253,9 +3248,9 @@ mod rich {
             && let Ok(bytes) = read_zst(&blob)
         {
             let _ = atomic_write(&sidecar, &bytes);
-            let _ = filetime::set_file_mtime(
+            let _ = fs::set_times(
                 &sidecar,
-                filetime::FileTime::from_system_time(SystemTime::now()),
+                fs::FileTimes::new().set_modified(SystemTime::now()),
             );
         }
     }

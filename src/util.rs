@@ -21,7 +21,6 @@ use std::{
 use csv::ByteRecord;
 use csv_index::RandomAccessSimple;
 use docopt::{ArgvMap, Docopt, Value};
-use filetime::FileTime;
 use human_panic::setup_panic;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::ProgressDrawTarget;
@@ -1341,9 +1340,16 @@ pub const fn num_of_chunks(nitems: usize, chunk_size: usize) -> usize {
     n
 }
 
+/// A file's last-modification time. Falls back to `UNIX_EPOCH` on platforms that can't report
+/// one, keeping mtime comparisons infallible.
+pub fn mtime(md: &fs::Metadata) -> SystemTime {
+    md.modified().unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
 pub fn file_metadata(md: &fs::Metadata) -> (u64, u64) {
-    use filetime::FileTime;
-    let last_modified = FileTime::from_last_modification_time(md).unix_seconds() as u64;
+    let last_modified = mtime(md)
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     let fsize = md.len();
     (last_modified, fsize)
 }
@@ -3897,11 +3903,11 @@ fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&Path; 2]) ->
     let Ok(jsonl_meta) = std::fs::metadata(statsdata_path) else {
         return false;
     };
-    let jsonl_mtime = FileTime::from_last_modification_time(&jsonl_meta);
+    let jsonl_mtime = mtime(&jsonl_meta);
 
     bases.iter().any(|base| {
         std::fs::metadata(base.with_extension("stats.csv.json"))
-            .is_ok_and(|m| FileTime::from_last_modification_time(&m) > jsonl_mtime)
+            .is_ok_and(|m| mtime(&m) > jsonl_mtime)
     })
 }
 
@@ -4019,8 +4025,8 @@ pub fn get_stats_records_flexible(
 
         let input_metadata = std::fs::metadata(input_path)?;
 
-        let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
-        let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+        let statsdata_mtime = mtime(&statsdata_metadata);
+        let input_mtime = mtime(&input_metadata);
         // Does THIS mode actually infer dates? Mirrors the per-mode argv built below: Schema
         // and ProfileSchema always pass --infer-dates, PolarsSchema only when it has a
         // whitelist (i.e. sniff found date columns), and the Frequency modes never do.
@@ -4520,8 +4526,8 @@ pub fn get_stats_records_readonly(
     // the cache sidecar must exist AND be newer than the input file
     let statsdata_metadata = std::fs::metadata(&statsdata_path).ok()?;
     let input_metadata = std::fs::metadata(&input_path_owned).ok()?;
-    let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
-    let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+    let statsdata_mtime = mtime(&statsdata_metadata);
+    let input_mtime = mtime(&input_metadata);
     if statsdata_mtime <= input_mtime {
         return None;
     }
@@ -6587,14 +6593,22 @@ mod tests {
 
         // sidecar OLDER than the JSONL: exactly the `stats` then `moarstats` ordering, where
         // the JSONL is the later and richer artifact. Still not stale.
+        let set_mtime = |p: &Path, secs: u64| {
+            std::fs::set_times(
+                p,
+                std::fs::FileTimes::new()
+                    .set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs)),
+            )
+            .unwrap();
+        };
         std::fs::write(&sidecar, b"{}").unwrap();
-        filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(1_000, 0)).unwrap();
-        filetime::set_file_mtime(&jsonl, FileTime::from_unix_time(2_000, 0)).unwrap();
+        set_mtime(&sidecar, 1_000);
+        set_mtime(&jsonl, 2_000);
         assert!(!stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
 
         // sidecar NEWER than the JSONL: a recompute refreshed the stats and left the JSONL
         // behind. This is the case that silently poisoned consumers.
-        filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
+        set_mtime(&sidecar, 3_000);
         assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
     }
 

@@ -7097,7 +7097,6 @@ dependencies = [
  "fake",
  "fast-float2",
  "file-format",
- "filetime",
  "flate2",
  "flexi_logger",
  "foldhash 0.2.0",

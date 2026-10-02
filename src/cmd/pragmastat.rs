@@ -789,8 +789,6 @@ fn subsample_columns(col_values: &mut [Vec<f64>], max_n: usize, seed: u64) {
 fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usize, ColType)>> {
     use std::io::BufRead;
 
-    use filetime::FileTime;
-
     // Only attempt if we have a file path (not stdin)
     let input_path = args.arg_input.as_ref()?;
     let canonical = std::path::Path::new(input_path).canonicalize().ok()?;
@@ -800,8 +798,8 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
     if !cache_path.exists() {
         return None;
     }
-    let cache_mtime = FileTime::from_last_modification_time(&std::fs::metadata(&cache_path).ok()?);
-    let input_mtime = FileTime::from_last_modification_time(&std::fs::metadata(input_path).ok()?);
+    let cache_mtime = util::mtime(&std::fs::metadata(&cache_path).ok()?);
+    let input_mtime = util::mtime(&std::fs::metadata(input_path).ok()?);
     if cache_mtime <= input_mtime {
         return None;
     }

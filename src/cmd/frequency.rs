@@ -556,8 +556,6 @@ pub(crate) fn read_frequency_cache_view(
     no_headers: bool,
     delimiter: Option<Delimiter>,
 ) -> Option<FreqCacheView> {
-    use filetime::FileTime;
-
     let cache_path = Args::cache_path_for(path);
     if !cache_path.exists() {
         return None;
@@ -566,9 +564,7 @@ pub(crate) fn read_frequency_cache_view(
     // Cache must be newer than the source CSV, else it's stale.
     let csv_metadata = fs::metadata(path).ok()?;
     let cache_fs_metadata = fs::metadata(&cache_path).ok()?;
-    if FileTime::from_last_modification_time(&cache_fs_metadata)
-        <= FileTime::from_last_modification_time(&csv_metadata)
-    {
+    if util::mtime(&cache_fs_metadata) <= util::mtime(&csv_metadata) {
         log::info!("Frequency cache is stale; recomputing bar frequencies.");
         return None;
     }
@@ -2122,8 +2118,6 @@ impl Args {
         &self,
         rconfig: &Config,
     ) -> Option<(FrequencyCacheMetadata, Vec<FrequencyCacheEntry>)> {
-        use filetime::FileTime;
-
         let path = rconfig.path.as_ref()?;
         let cache_path = Self::cache_path_for(path);
 
@@ -2135,8 +2129,8 @@ impl Args {
         // Compare mtime: cache must be newer than source CSV
         let csv_metadata = fs::metadata(path).ok()?;
         let cache_metadata = fs::metadata(&cache_path).ok()?;
-        let csv_mtime = FileTime::from_last_modification_time(&csv_metadata);
-        let cache_mtime = FileTime::from_last_modification_time(&cache_metadata);
+        let csv_mtime = util::mtime(&csv_metadata);
+        let cache_mtime = util::mtime(&cache_metadata);
 
         if cache_mtime <= csv_mtime {
             winfo!(

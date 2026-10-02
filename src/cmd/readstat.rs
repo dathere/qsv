@@ -17,7 +17,10 @@ finds next to the data file, or --sas7bcat names.
 
 User-defined missing values ("sentinels") - SAS's .A to .Z & ._, Stata's .a
 to .z, SPSS's declared missing codes - become empty cells by default, like any
-other missing value. Use --sentinels-as to keep them.
+other missing value. Use --sentinels-as to keep them. Without it, a warning
+says how many sentinels were dropped & where. The check reads files on a
+single thread, so it is skipped when --jobs is above 1, and SPSS files whole
+(see --batch).
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
@@ -84,7 +87,9 @@ readstat options:
                            cells. Each eligible variable gets a <name>_null
                            column right after it, holding the sentinel of each
                            row that has one & empty otherwise.
-                           Valid values: none, value, label. [default: none]
+                           Valid values: none, value, label.
+                             none  - write them as empty cells, without the
+                                     check & its warning.
                              value - the sentinel's code (e.g. .A or 99).
                              label - the sentinel's value label if it has one,
                                      else its code.
@@ -94,8 +99,9 @@ readstat options:
                            catalog, found as for --value-labels. For SPSS,
                            value cannot be combined with --value-labels.
                            Not supported for .xpt & .por files. Tracking
-                           sentinels makes SAS & Stata files read on a single
-                           thread, so --jobs has no effect on them.
+                           sentinels reads files on a single thread, so the
+                           option --jobs has no effect, and reads SPSS .sav
+                           & .zsav files whole (see --batch).
     --sentinels-embedded   Write each sentinel into its variable's own column
                            instead of a <name>_null column. Those columns then
                            mix numbers & sentinels. Requires --sentinels-as.
@@ -111,7 +117,12 @@ readstat options:
     -b, --batch <size>     Number of rows to read into memory at a time.
                            Does not apply to SPSS portable (.por) files - they
                            have no chunked reader upstream, so they are read
-                           whole & memory scales with the file.
+                           whole & memory scales with the file. Nor does it
+                           apply to .sav & .zsav files while their sentinels
+                           are tracked, which also reads them whole: with
+                           the option --sentinels-as value or label, or by
+                           the sentinel check when a variable declares
+                           missing values (see --sentinels-as none).
                            [default: 50000]
 
 Common options:
@@ -147,7 +158,7 @@ struct Args {
     flag_value_labels:       bool,
     flag_compress_numeric:   bool,
     flag_sas7bcat:           Option<String>,
-    flag_sentinels_as:       String,
+    flag_sentinels_as:       Option<String>,
     flag_sentinels_embedded: bool,
     flag_sentinels_columns:  Option<String>,
     flag_jobs:               Option<usize>,
@@ -289,7 +300,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--value-labels is not supported for SAS transport (.xpt) files."
         );
     }
-    let sentinels_as = SentinelsAs::parse(&args.flag_sentinels_as)?;
+    let sentinels_as = SentinelsAs::parse(args.flag_sentinels_as.as_deref().unwrap_or("none"))?;
     if sentinels_as != SentinelsAs::None && metadata_mode != MetadataMode::None {
         return fail_incorrectusage_clierror!(
             "--sentinels-as applies to the data, not to --metadata. The metadata already lists \
@@ -316,6 +327,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     // before --output is created, so a rejected request leaves it untouched
     let sentinels = sentinel_opts(&args, input, path, format, sentinels_as)?;
+    let watch = if metadata_mode == MetadataMode::None {
+        watch_opts(&args, path, format)?
+    } else {
+        None
+    };
     // the readers label only the sentinels themselves for Stata, and for SPSS
     // they label sentinels only along with every value
     let sentinel_labels = match format {
@@ -354,11 +370,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut w = io::BufWriter::with_capacity(crate::config::DEFAULT_WTR_BUFFER_CAPACITY, w);
 
     if metadata_mode == MetadataMode::None {
+        let mut dropped = DroppedSentinels::new(format, args.flag_value_labels);
         let rows = write_data(
             &args,
             path,
             format,
             sentinels,
+            watch,
+            &mut dropped,
             sas_labels.as_ref().filter(|_| args.flag_value_labels),
             sentinel_labels.as_ref(),
             delim,
@@ -366,6 +385,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         )?;
         w.flush()?;
         winfo!("{rows} row{} exported.", if rows == 1 { "" } else { "s" });
+        dropped.warn();
     } else {
         write_metadata(
             path,
@@ -474,10 +494,10 @@ fn sentinel_opts(
         return Err(e.into());
     }
 
-    if args.flag_jobs.unwrap_or(1) > 1 && matches!(format, Format::Sas | Format::Stata) {
+    if args.flag_jobs.unwrap_or(1) > 1 {
         wwarn!(
-            "--jobs has no effect with --sentinels-as on SAS & Stata files: tracking sentinels \
-             reads them on a single thread."
+            "--jobs has no effect with --sentinels-as: tracking sentinels reads the file on a \
+             single thread."
         );
     }
 
@@ -490,6 +510,126 @@ fn sentinel_opts(
 /// Eligibility differs by format, so rather than restating the reader's rules
 /// this asks the reader itself: a name is eligible iff selecting it adds an
 /// indicator column to the schema.
+/// The options of the hidden sentinel check: with no --sentinels-as, the
+/// sentinels are still tracked, in indicator columns named with
+/// [`PROBE_SUFFIX`], so that dropping them can be reported. Not done where it
+/// would cost the reader its parallelism (`--jobs` above 1), nor for SPSS files
+/// that declare no missing values, nor for the XPT & POR readers, which don't
+/// report sentinels.
+fn watch_opts(args: &Args, path: &Path, format: Format) -> CliResult<Option<InformativeNullOpts>> {
+    if args.flag_sentinels_as.is_some() || args.flag_jobs.unwrap_or(1) > 1 {
+        return Ok(None);
+    }
+    let Some(rs_format) = format
+        .readstat_format()
+        .filter(|_| format.honors_sentinels())
+    else {
+        return Ok(None);
+    };
+    let watch = InformativeNullOpts {
+        columns:          InformativeNullColumns::All,
+        mode:             InformativeNullMode::SeparateColumn {
+            suffix: PROBE_SUFFIX.to_string(),
+        },
+        use_value_labels: false,
+    };
+    let probe = ScanOptions {
+        value_labels_as_strings: Some(args.flag_value_labels),
+        informative_nulls: Some(watch.clone()),
+        ..ScanOptions::default()
+    };
+    // a best-effort check: if the probe fails, the conversion goes ahead without it
+    let Ok(schema) = readstat_schema(path, Some(probe), Some(rs_format)) else {
+        return Ok(None);
+    };
+    let eligible = schema.iter_names().any(|name| name.ends_with(PROBE_SUFFIX));
+    Ok(eligible.then_some(watch))
+}
+
+/// The sentinels the hidden check found, per variable: how many, and one of
+/// their codes (or labels, under --value-labels) as an example.
+struct DroppedSentinels {
+    variables: Vec<(String, u64, String)>,
+    /// SAS reports an unrecognized missing as a bare ".", which is system
+    /// missing, not a sentinel. In SPSS "." can be a declared missing string.
+    skip_dot:  bool,
+    /// The --sentinels-as value that keeps them: SPSS refuses `value` with
+    /// --value-labels.
+    keep:      &'static str,
+}
+
+impl DroppedSentinels {
+    fn new(format: Format, value_labels: bool) -> Self {
+        Self {
+            variables: Vec::new(),
+            skip_dot:  format == Format::Sas,
+            keep:      if format == Format::Spss && value_labels {
+                "label"
+            } else {
+                "value"
+            },
+        }
+    }
+
+    /// Tally & remove the check's indicator columns from a batch.
+    fn take(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
+        let probes: Vec<PlSmallStr> = df
+            .get_column_names()
+            .into_iter()
+            .filter(|name| name.ends_with(PROBE_SUFFIX))
+            .cloned()
+            .collect();
+        for probe in probes {
+            let col = df.drop_in_place(&probe)?;
+            let name = probe.trim_end_matches(PROBE_SUFFIX);
+            let col = col.as_materialized_series();
+            let mut codes = col
+                .str()?
+                .iter()
+                .flatten()
+                .filter(|code| !(self.skip_dot && *code == "."));
+            let Some(first) = codes.next() else {
+                continue;
+            };
+            let found = 1 + codes.count() as u64;
+            if let Some(var) = self.variables.iter_mut().find(|(n, ..)| n == name) {
+                var.1 += found;
+            } else {
+                self.variables
+                    .push((name.to_string(), found, first.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    fn warn(&self) {
+        let Some((var, _, example)) = self.variables.first() else {
+            return;
+        };
+        let total: u64 = self.variables.iter().map(|(_, n, _)| n).sum();
+        const SHOWN: usize = 5;
+        let mut names = self
+            .variables
+            .iter()
+            .take(SHOWN)
+            .map(|(n, ..)| n.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        if self.variables.len() > SHOWN {
+            names.push_str(", ...");
+        }
+        let plural = |n: u64, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
+        wwarn!(
+            "{} (user-defined missing values) in {} ({names}) were written as empty cells, e.g. \
+             {example} in {var}. Use --sentinels-as {} to keep them, or --sentinels-as none to \
+             skip this check.",
+            plural(total, "sentinel"),
+            plural(self.variables.len() as u64, "variable"),
+            self.keep,
+        );
+    }
+}
+
 fn check_sentinel_columns(
     args: &Args,
     input: &str,
@@ -1134,6 +1274,8 @@ fn write_data<W: Write>(
     path: &Path,
     format: Format,
     sentinels: Option<InformativeNullOpts>,
+    watch: Option<InformativeNullOpts>,
+    dropped: &mut DroppedSentinels,
     sas_labels: Option<&SasLabels>,
     sentinel_labels: Option<&SentinelLabels>,
     delim: u8,
@@ -1229,10 +1371,27 @@ fn write_data<W: Write>(
 
     let mut rows = 0_u64;
     if let Some(rs_format) = rs_format {
-        let batches =
-            readstat_batch_iter(path, Some(opts), Some(rs_format), None, None, batch_size)?;
+        // the hidden sentinel check reads the data with its own indicator
+        // columns, which are tallied & dropped before anything else sees them
+        let read_opts = if watch.is_some() {
+            ScanOptions {
+                informative_nulls: watch,
+                ..opts
+            }
+        } else {
+            opts
+        };
+        let batches = readstat_batch_iter(
+            path,
+            Some(read_opts),
+            Some(rs_format),
+            None,
+            None,
+            batch_size,
+        )?;
         for batch in batches {
             let mut df = batch?;
+            dropped.take(&mut df)?;
             if let Some(labels) = sas_labels {
                 labels.apply(&mut df)?;
             }

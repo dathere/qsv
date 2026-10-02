@@ -1,7 +1,7 @@
 {
   "name": "qsv-readstat",
   "version": "23.0.1",
-  "description": "Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory.",
+  "description": "Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory, except SPSS `.sav`/`.zsav` files whose user-defined missing values are tracked (`--sentinels-as`, or the default check that warns when they are dropped).",
   "category": "conversion",
   "command": {
     "subcommand": "readstat",
@@ -17,7 +17,7 @@
       {
         "flag": "--batch",
         "type": "number",
-        "description": "Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file.",
+        "description": "Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values (see --sentinels-as none).",
         "default": 50000
       },
       {
@@ -50,8 +50,7 @@
       {
         "flag": "--sentinels-as",
         "type": "string",
-        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels makes SAS & Stata files read on a single thread, so --jobs has no effect on them.",
-        "default": "none"
+        "description": "Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. none  - write them as empty cells, without the check & its warning. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels reads files on a single thread, so the option --jobs has no effect, and reads SPSS .sav & .zsav files whole (see --batch)."
       },
       {
         "flag": "--sentinels-columns",

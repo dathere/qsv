@@ -2121,7 +2121,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     // graceful "no cache" path - detect an existing cache WITHOUT building one
     // (building a RedbCache would create an empty redb file as a side effect).
     // cached names the redb file after the cache name, so scan cache_dir for it.
-    let cache_exists = std::fs::read_dir(cache_dir).ok().is_some_and(|entries| {
+    let cache_exists = std::fs::read_dir(cache_dir).is_ok_and(|entries| {
         entries.flatten().any(|e| {
             e.file_name()
                 .to_string_lossy()

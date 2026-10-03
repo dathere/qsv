@@ -1288,6 +1288,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && args.flag_no_float.is_none()
         && !has_stats_filter;
 
+    // Size the rayon pool from --jobs/QSV_MAX_JOBS before any parallel work, including
+    // the parallel output ranking on a full cache hit or a sequential (unindexed) run.
+    util::njobs(args.flag_jobs);
+
     if can_use_freq_cache && args.try_output_from_cache(&rconfig, is_json)? {
         return Ok(());
     }
@@ -1414,22 +1418,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut value_str = String::with_capacity(100);
         let vis_whitespace = args.flag_vis_whitespace;
 
-        // Rank (and drop) each column's map in parallel; see emit_unweighted_csv_rows.
-        let processed: Vec<Vec<ProcessedFrequency>> = weighted
-            .into_par_iter()
-            .enumerate()
-            .map(|(i, weighted_map)| {
-                let mut processed_frequencies = Vec::new();
-                args.process_frequencies_weighted(
-                    unique_headers_vec.contains(&i),
-                    abs_dec_places,
-                    row_count,
-                    &weighted_map,
-                    &mut processed_frequencies,
-                );
-                processed_frequencies
-            })
-            .collect();
+        // Rank (and drop) each column's map in parallel; see rank_columns_in_batches.
+        let processed = rank_columns_in_batches(weighted, |(i, weighted_map)| {
+            let mut processed_frequencies = Vec::new();
+            args.process_frequencies_weighted(
+                unique_headers_vec.contains(&i),
+                abs_dec_places,
+                row_count,
+                &weighted_map,
+                &mut processed_frequencies,
+            );
+            processed_frequencies
+        });
 
         // Headers without a weighted map emit no rows, as before.
         for (i, (header, processed_frequencies)) in headers.iter().zip(processed).enumerate() {
@@ -1554,6 +1554,29 @@ fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> Weighte
             .for_each(|(left, right)| merge_pair(left, right));
     }
     a
+}
+
+/// Lazily ranks per-column tables in parallel batches of at most `--jobs` columns,
+/// yielding results in column order. Each worker drops its own table, so freeing the
+/// owned keys of high-cardinality columns doesn't run serially on the writer thread.
+/// The next batch is ranked only after the caller has consumed the previous one, which
+/// caps retained ranked rows at one batch (one column with `--jobs 1`, as before).
+fn rank_columns_in_batches<T, R, F>(tables: Vec<T>, rank: F) -> impl Iterator<Item = R>
+where
+    T: Send,
+    R: Send,
+    F: Fn((usize, T)) -> R + Sync + Send,
+{
+    let batch_size = rayon::current_num_threads().max(1);
+    let mut tables = tables.into_iter().enumerate();
+    std::iter::from_fn(move || {
+        let batch: Vec<(usize, T)> = tables.by_ref().take(batch_size).collect();
+        if batch.is_empty() {
+            return None;
+        }
+        Some(batch.into_par_iter().map(&rank).collect::<Vec<R>>())
+    })
+    .flatten()
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -2720,24 +2743,18 @@ impl Args {
         let mut rank_buffer = String::with_capacity(20);
         #[allow(unused_assignments)]
         let mut value_str = String::with_capacity(100);
-        // Rank each column in parallel; each worker also drops its own table, so
-        // freeing millions of owned keys on high-cardinality columns no longer
-        // runs serially on the writer thread. Rows are still written in column order.
-        let processed: Vec<Vec<ProcessedFrequency>> = tables
-            .into_par_iter()
-            .enumerate()
-            .map(|(i, ftab)| {
-                let mut processed_frequencies = Vec::new();
-                self.process_frequencies(
-                    unique_headers_vec.contains(&i),
-                    abs_dec_places,
-                    row_count,
-                    &ftab,
-                    &mut processed_frequencies,
-                );
-                processed_frequencies
-            })
-            .collect();
+        // Rank (and drop) each column's table in parallel; see rank_columns_in_batches.
+        let processed = rank_columns_in_batches(tables, |(i, ftab)| {
+            let mut processed_frequencies = Vec::new();
+            self.process_frequencies(
+                unique_headers_vec.contains(&i),
+                abs_dec_places,
+                row_count,
+                &ftab,
+                &mut processed_frequencies,
+            );
+            processed_frequencies
+        });
 
         for (i, (header, processed_frequencies)) in headers.iter().zip(processed).enumerate() {
             header_vec = if no_headers {
@@ -4207,29 +4224,24 @@ impl Args {
 
         if let Some(weighted) = weighted_tables {
             // Process weighted frequencies for JSON output.
-            // Rank (and drop) each column's map in parallel; see emit_unweighted_csv_rows.
-            let mut processed = weighted
-                .into_par_iter()
-                .enumerate()
-                .map(|(i, weighted_map)| {
-                    let all_unique_header = unique_headers_vec.contains(&i);
-                    let mut processed_frequencies = Vec::new();
-                    self.process_frequencies_weighted(
-                        all_unique_header,
-                        abs_dec_places,
-                        rowcount,
-                        &weighted_map,
-                        &mut processed_frequencies,
-                    );
-                    let cardinality = if all_unique_header {
-                        rowcount
-                    } else {
-                        weighted_map.len() as u64
-                    };
-                    (processed_frequencies, cardinality)
-                })
-                .collect::<Vec<_>>()
-                .into_iter();
+            // Rank (and drop) each column's map in parallel; see rank_columns_in_batches.
+            let mut processed = rank_columns_in_batches(weighted, |(i, weighted_map)| {
+                let all_unique_header = unique_headers_vec.contains(&i);
+                let mut processed_frequencies = Vec::new();
+                self.process_frequencies_weighted(
+                    all_unique_header,
+                    abs_dec_places,
+                    rowcount,
+                    &weighted_map,
+                    &mut processed_frequencies,
+                );
+                let cardinality = if all_unique_header {
+                    rowcount
+                } else {
+                    weighted_map.len() as u64
+                };
+                (processed_frequencies, cardinality)
+            });
 
             for (i, header) in headers.iter().enumerate() {
                 let field_name = if rconfig.no_headers {
@@ -4260,28 +4272,24 @@ impl Args {
             }
         } else {
             // Process unweighted frequencies for JSON output
-            // Rank (and drop) each column's table in parallel; see emit_unweighted_csv_rows.
-            let processed: Vec<(Vec<ProcessedFrequency>, u64)> = tables
-                .into_par_iter()
-                .enumerate()
-                .map(|(i, ftab)| {
-                    let all_unique_header = unique_headers_vec.contains(&i);
-                    let mut processed_frequencies = Vec::new();
-                    self.process_frequencies(
-                        all_unique_header,
-                        abs_dec_places,
-                        rowcount,
-                        &ftab,
-                        &mut processed_frequencies,
-                    );
-                    let cardinality = if all_unique_header {
-                        rowcount // For all-unique fields, cardinality == rowcount
-                    } else {
-                        ftab.len() as u64 // otherwise, cardinality == number of unique values
-                    };
-                    (processed_frequencies, cardinality)
-                })
-                .collect();
+            // Rank (and drop) each column's table in parallel; see rank_columns_in_batches.
+            let processed = rank_columns_in_batches(tables, |(i, ftab)| {
+                let all_unique_header = unique_headers_vec.contains(&i);
+                let mut processed_frequencies = Vec::new();
+                self.process_frequencies(
+                    all_unique_header,
+                    abs_dec_places,
+                    rowcount,
+                    &ftab,
+                    &mut processed_frequencies,
+                );
+                let cardinality = if all_unique_header {
+                    rowcount // For all-unique fields, cardinality == rowcount
+                } else {
+                    ftab.len() as u64 // otherwise, cardinality == number of unique values
+                };
+                (processed_frequencies, cardinality)
+            });
 
             for (i, (header, (mut processed_frequencies, cardinality))) in
                 headers.iter().zip(processed).enumerate()

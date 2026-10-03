@@ -64,6 +64,20 @@ fn help_format_rejects_unknown_formats() {
     assert!(stderr.contains("Valid formats: json, md"), "{stderr}");
 }
 
+/// After `--`, `--help --format=json` are operands: a pattern and a file literally named
+/// `--format=json`, not a request for a tool definition.
+#[test]
+fn help_format_ignores_operands_after_double_dash() {
+    let wrk = Workdir::new("tool_defs_double_dash");
+    fs::write(wrk.path("--format=json"), "h\n--help\nx\n").unwrap();
+    let mut cmd = wrk.command("search");
+    // the input has no file extension
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["--", "--help", "--format=json"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "h\n--help");
+}
+
 #[test]
 fn plain_help_is_unchanged() {
     let wrk = Workdir::new("tool_defs_plain_help");

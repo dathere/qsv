@@ -31,7 +31,10 @@ pub enum HelpFormat {
 /// `Some(format)` when the command's arguments ask for help (`-h`/`--help`) together with
 /// `--format json|md`. Plain `--help`, or `--format` without a help flag (several commands
 /// have a `--format` option of their own), returns `None` and is left to the command.
+/// Arguments after a `--` terminator are operands (docopt treats `-- --help` as a file named
+/// `--help`), so only those before it are scanned.
 pub fn help_format(args: &[&str]) -> CliResult<Option<HelpFormat>> {
+    let args = &args[..args.iter().position(|a| *a == "--").unwrap_or(args.len())];
     if !args.iter().any(|a| *a == "-h" || *a == "--help") {
         return Ok(None);
     }
@@ -210,6 +213,16 @@ mod tests {
         );
         assert!(help_format(&["-h", "--format", "yaml"]).is_err());
         assert!(help_format(&["-h", "--format"]).is_err());
+        // operands after `--`, e.g. `qsv search x -- --help --format=json` searching a file
+        // literally named `--format=json`
+        assert_eq!(
+            help_format(&["x", "--", "--help", "--format=json"]).unwrap(),
+            None
+        );
+        assert_eq!(
+            help_format(&["--help", "--", "--format", "json"]).unwrap(),
+            None
+        );
     }
 
     #[test]

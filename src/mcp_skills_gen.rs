@@ -889,6 +889,11 @@ impl UsageParser {
                  In map mode it returns the new column value/s; in filter mode, a boolean saying \
                  whether to keep the row."
             },
+            // undocumented in py's USAGE; with --no-headers the form without it is used
+            ("py", "new-column") => {
+                "Name of the new column to add, holding each record's result of <expression>. Not \
+                 used with --no-headers."
+            },
             // `log` is internal to the qsv MCP server and its USAGE has no argument section
             ("log", "tool-name") => "Name of the MCP tool being invoked.",
             ("log", "invocation-id") => {
@@ -1830,6 +1835,7 @@ const COMMAND_POSITIONAL_OVERRIDES: &[(&str, &str)] = &[
     ("extsort", "output"),
     ("extdedup", "output"),
     ("luau", "main-script"),
+    ("py", "new-column"),
     ("log", "tool-name"),
     ("log", "invocation-id"),
     ("log", "message"),

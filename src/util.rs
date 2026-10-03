@@ -3952,21 +3952,25 @@ fn stats_cache_parsing_opts_conflict(
     false
 }
 
-/// Keep the `.stats.csv.json` metadata sidecar beside the CANONICAL target in sync with the one
-/// beside the path as GIVEN.
+/// Keep the stats cache pair (`.stats.csv` + its `.stats.csv.json` metadata sidecar) beside the
+/// CANONICAL target in sync with the pair beside the path as GIVEN.
 ///
 /// Stats-cache readers look up `.stats.csv.data.jsonl` beside the canonicalized input, but `stats`
-/// and `moarstats` write their `<input>.stats.csv.json` beside the path they were given. Those
-/// coincide for an ordinary input and diverge for a symlink — and a divergence is not merely a
-/// missing sidecar: an earlier direct run on the target leaves a canonical sidecar that keeps
-/// describing itself as current while a run via the link replaces the canonical JSONL underneath
-/// it. A later direct run then reads stale-but-matching metadata and reuses a cache built with
-/// different parsing options. Callers that write the canonical JSONL call this so the sidecar
-/// that actually describes it sits beside it.
+/// and `moarstats` write their cache files beside the path they were given. Those coincide for an
+/// ordinary input and diverge for a symlink — and a divergence is not merely a missing sidecar:
+/// an earlier direct run on the target leaves a canonical sidecar that keeps describing itself as
+/// current while a run via the link replaces the canonical JSONL underneath it. A later direct run
+/// then reads stale-but-matching metadata and reuses a cache built with different parsing options.
 ///
-/// Best-effort: a stale sidecar is only a cache-reuse hint, so a copy failure is logged, not
-/// returned.
-pub fn sync_stats_metadata_to_canonical(input_path: &Path, canonical_input_path: &Path) {
+/// The `.stats.csv` travels WITH its sidecar: replacing only the metadata would let `stats` itself
+/// validate the canonical `.stats.csv` from a different run against the copied args and serve it.
+/// When there is no given-side `.stats.csv` to copy, the canonical one is removed instead.
+///
+/// Call this BEFORE writing the canonical JSONL: `stats_jsonl_predates_stats_cache` rejects a JSONL
+/// older than either sidecar, and `fs::copy` stamps a fresh mtime on Linux.
+///
+/// Best-effort: a stale sidecar is only a cache-reuse hint, so a failure is logged, not returned.
+pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &Path) {
     let given_metadata = input_path.with_extension("stats.csv.json");
     let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
     // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
@@ -3979,10 +3983,29 @@ pub fn sync_stats_metadata_to_canonical(input_path: &Path, canonical_input_path:
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     };
-    if !same_file
-        && given_metadata.exists()
-        && let Err(e) = std::fs::copy(&given_metadata, &canonical_metadata)
-    {
+    if same_file || !given_metadata.exists() {
+        return;
+    }
+
+    let given_stats = input_path.with_extension("stats.csv");
+    let canonical_stats = canonical_input_path.with_extension("stats.csv");
+    let stats_synced = if given_stats.exists() {
+        std::fs::copy(&given_stats, &canonical_stats).map(|_| ())
+    } else {
+        match std::fs::remove_file(&canonical_stats) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    };
+    if let Err(e) = stats_synced {
+        // leave the canonical metadata alone rather than pair it with a mismatched .stats.csv
+        log::warn!(
+            "could not sync stats cache to {}: {e}",
+            canonical_stats.display()
+        );
+        return;
+    }
+    if let Err(e) = std::fs::copy(&given_metadata, &canonical_metadata) {
         log::warn!(
             "could not sync stats cache metadata to {}: {e}",
             canonical_metadata.display()
@@ -3990,9 +4013,11 @@ pub fn sync_stats_metadata_to_canonical(input_path: &Path, canonical_input_path:
     }
 }
 
-/// For a symlinked input, also write the `.stats.csv.data.jsonl` cache (and sync its metadata
-/// sidecar) beside the CANONICAL target — the location every stats-cache reader looks it up —
-/// since `stats`/`moarstats` write their cache files beside the path as given (#4697).
+/// For a symlinked input, also write the `.stats.csv.data.jsonl` cache (and sync the stats cache
+/// pair it was built from) beside the CANONICAL target — the location every stats-cache reader
+/// looks it up — since `stats`/`moarstats` write their cache files beside the path as given
+/// (#4697). Only for the UNWEIGHTED cache: readers never consult `.stats.weighted.csv*`, so callers
+/// must not pass a weighted run.
 ///
 /// `jsonl_written` is the JSONL the caller just wrote beside `input_path`, converted from
 /// `stats_csv`; `permission_source` is passed through to `csv_to_jsonl`. A no-op when the two
@@ -4011,6 +4036,8 @@ pub fn mirror_stats_jsonl_to_canonical(
     if jsonl_written.canonicalize().ok().as_deref() == Some(canonical_jsonl.as_path()) {
         return;
     }
+    // sidecars first, so the JSONL written below is the newest of the trio
+    sync_stats_cache_to_canonical(input_path, &canonical_input);
     if let Err(e) = csv_to_jsonl(
         stats_csv,
         &crate::cmd::stats::STATSDATA_TYPES_MAP,
@@ -4022,9 +4049,7 @@ pub fn mirror_stats_jsonl_to_canonical(
             "could not write stats JSONL cache beside symlink target {}: {e}",
             canonical_jsonl.display()
         );
-        return;
     }
-    sync_stats_metadata_to_canonical(input_path, &canonical_input);
 }
 
 /// Get the stats records for `args`, reading or regenerating the stats cache as needed.
@@ -4467,6 +4492,10 @@ pub fn get_stats_records_flexible(
             }));
         }
 
+        // sync the canonical stats cache pair BEFORE writing the JSONL beside it, so the JSONL is
+        // not older than the sidecar `stats_jsonl_predates_stats_cache` compares it against
+        sync_stats_cache_to_canonical(Path::new(input_path), &canonical_input_path);
+
         // create a stats data jsonl from the output of the stats command
         // stats command always writes comma-delimited CSV to tempfile,
         // so b',' is correct here regardless of the original input delimiter
@@ -4477,8 +4506,6 @@ pub fn get_stats_records_flexible(
             b',',
             &canonical_input_path,
         )?;
-
-        sync_stats_metadata_to_canonical(Path::new(input_path), &canonical_input_path);
 
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);

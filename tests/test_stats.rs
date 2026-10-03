@@ -4784,6 +4784,68 @@ fn stats_weighted_mean_simple() {
 }
 
 #[test]
+fn stats_weighted_stats_jsonl_does_not_write_unweighted_cache() {
+    // REGRESSION (roborev 4985): the #4697 canonical-JSONL mirror targeted the UNWEIGHTED name,
+    // so a weighted run wrote weighted results into `<stem>.stats.csv.data.jsonl`, which readers
+    // then consumed as the unweighted cache.
+    let wrk = Workdir::new("stats_weighted_stats_jsonl_does_not_write_unweighted_cache");
+    wrk.create_from_string("data.csv", "a,w\n1,1\n2,2\n3,3\n");
+    let mut cmd = wrk.command("stats");
+    cmd.args([
+        "--weight",
+        "w",
+        "--stats-jsonl",
+        "--cache-threshold",
+        "1",
+        "data.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("data.stats.weighted.csv.data.jsonl").exists());
+    assert!(
+        !wrk.path("data.stats.csv.data.jsonl").exists(),
+        "a weighted run must not write the unweighted JSONL cache"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn stats_symlink_run_does_not_pair_canonical_cache_with_foreign_metadata() {
+    // REGRESSION (roborev 4985): syncing ONLY the metadata sidecar beside the symlink target left
+    // the target's `.stats.csv` from a different run paired with it, so a direct run with the
+    // symlink run's options validated the sidecar and served the stale CSV.
+    let wrk = Workdir::new("stats_symlink_run_does_not_pair_canonical_cache_with_foreign_metadata");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    wrk.create_from_string("sub/target.csv", "h1,h2\n1,2\n3,4\n5,6\n");
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let run = |args: &[&str]| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.args(args);
+        wrk.stdout::<String>(&mut cmd)
+    };
+    run(&["-E", "--cache-threshold", "1", "sub/target.csv"]);
+    let via_link = run(&[
+        "-E",
+        "--no-headers",
+        "--stats-jsonl",
+        "--cache-threshold",
+        "1",
+        "link.csv",
+    ]);
+    let direct = run(&[
+        "-E",
+        "--no-headers",
+        "--cache-threshold",
+        "1",
+        "sub/target.csv",
+    ]);
+    assert_eq!(
+        direct, via_link,
+        "a direct --no-headers run must not be served the headered canonical .stats.csv"
+    );
+}
+
+#[test]
 fn stats_weighted_mean_vs_unweighted() {
     let wrk = Workdir::new("stats_weighted_mean_vs_unweighted");
     // Same values, but with different weights

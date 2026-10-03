@@ -218,6 +218,42 @@ fn moarstats_auto_generate_stats() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn moarstats_symlinked_input_writes_enriched_canonical_jsonl() {
+    // REGRESSION (#4697): stats-cache readers look up `.stats.csv.data.jsonl` beside the
+    // CANONICALIZED input, but moarstats wrote its enriched JSONL only beside the symlink, so
+    // consumers (e.g. `viz smart --smarter`) never saw the moarstats columns.
+    let wrk = Workdir::new("moarstats_symlinked_input_writes_enriched_canonical_jsonl");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    let mut csv = String::from("cat,amount\n");
+    for i in 1..=60_u64 {
+        csv.push_str(&format!(
+            "{},{}\n",
+            ["a", "b", "c"][(i % 3) as usize],
+            i.pow(2)
+        ));
+    }
+    std::fs::write(wrk.path("sub/target.csv"), &csv).unwrap();
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.args(["--advanced", "link.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    let canonical_jsonl = wrk
+        .read_to_string("sub/target.stats.csv.data.jsonl")
+        .expect("JSONL cache must be written beside the symlink target");
+    assert!(
+        canonical_jsonl.contains("gini_coefficient"),
+        "canonical JSONL must carry moarstats' columns: {canonical_jsonl}"
+    );
+    assert!(
+        wrk.path("sub/target.stats.csv.json").exists(),
+        "the metadata sidecar must accompany the canonical JSONL"
+    );
+}
+
 #[test]
 fn moarstats_custom_output() {
     let wrk = Workdir::new("moarstats_custom_output");

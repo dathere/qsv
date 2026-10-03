@@ -2532,6 +2532,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     b',', // cache is always CSV (comma-delimited)
                     &path,
                 )?;
+                // readers look the (unweighted) JSONL up beside the canonicalized input (#4697)
+                if args.flag_weight.is_none() {
+                    util::mirror_stats_jsonl_to_canonical(
+                        &currstats_filename,
+                        &stats_jsonl_pathbuf,
+                        &path,
+                        &path,
+                    );
+                }
             }
         } else if compute_stats {
             // We just recomputed and installed a stats.csv but are NOT writing a sidecar
@@ -2605,6 +2614,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     b',', // cache is always CSV (comma-delimited)
                     &path,
                 )?;
+            }
+            // a cache hit through a symlink must prewarm the canonical JSONL too (#4697)
+            if args.flag_weight.is_none() {
+                util::mirror_stats_jsonl_to_canonical(
+                    &currstats_filename,
+                    &stats_jsonl_pathbuf,
+                    &path,
+                    &path,
+                );
             }
         }
     }

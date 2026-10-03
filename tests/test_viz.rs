@@ -16802,6 +16802,52 @@ fn viz_smart_symlinked_input_is_unaffected_by_a_prior_no_headers_run() {
 
 #[cfg(unix)]
 #[test]
+fn viz_smart_smarter_symlinked_input_keeps_moarstats_panels() {
+    // REGRESSION (#4697): stats/moarstats wrote their cache beside the SYMLINK while
+    // `get_stats_records` reads the JSONL beside the canonical TARGET, so `--smarter` never saw
+    // the moarstats enrichment, regenerated plain stats and silently dropped the moarstats-driven
+    // panels (Lorenz curves among them). A symlink must chart exactly what a copy charts.
+    let wrk = Workdir::new("viz_smart_smarter_symlinked_input_keeps_moarstats_panels");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    let mut csv = String::from("cat,amount\n");
+    for i in 1..=120_u64 {
+        csv.push_str(&format!(
+            "{},{}\n",
+            ["a", "b", "c", "d", "e"][(i % 5) as usize],
+            i.pow(3)
+        ));
+    }
+    std::fs::write(wrk.path("sub/target.csv"), &csv).unwrap();
+    std::fs::write(wrk.path("copy.csv"), &csv).unwrap();
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let render = |input: &str, name: &str| {
+        let out = wrk.path(name).to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", input, "--smarter", "-o", &out]);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(name).unwrap().matches("Lorenz").count()
+    };
+
+    let copy_lorenz = render("copy.csv", "copy.html");
+    assert!(
+        copy_lorenz > 0,
+        "fixture must yield a Lorenz panel for a regular file"
+    );
+    assert_eq!(
+        render("link.csv", "link.html"),
+        copy_lorenz,
+        "a symlinked input must chart the same moarstats panels as a copy"
+    );
+    let link_stats = wrk.read_to_string("link.stats.csv").unwrap();
+    assert!(
+        link_stats.contains("gini_coefficient"),
+        "the enriched .stats.csv beside the symlink must not be clobbered by plain stats"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn viz_smart_direct_read_is_unaffected_by_a_prior_symlink_no_headers_run() {
     // REGRESSION (roborev 3760): `get_stats_records` writes the JSONL cache at the CANONICAL path
     // but the `stats` subprocess writes its metadata sidecar beside the path it was GIVEN. Mixed

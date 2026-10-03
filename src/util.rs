@@ -3964,13 +3964,19 @@ fn stats_cache_parsing_opts_conflict(
 ///
 /// The `.stats.csv` travels WITH its sidecar: replacing only the metadata would let `stats` itself
 /// validate the canonical `.stats.csv` from a different run against the copied args and serve it.
-/// When there is no given-side `.stats.csv` to copy, the canonical one is removed instead.
+/// When there is no given-side `.stats.csv` to copy, the canonical one is removed instead. The
+/// canonical sidecar is removed FIRST, so a failure part-way leaves no metadata vouching for a
+/// mismatched `.stats.csv` (a sidecar-less cache is recomputed, never trusted). The `.stats.csv`
+/// copy goes through `DerivedFile`, like every other stats cache, so it never grants access the
+/// input does not.
 ///
 /// Call this BEFORE writing the canonical JSONL: `stats_jsonl_predates_stats_cache` rejects a JSONL
 /// older than either sidecar, and `fs::copy` stamps a fresh mtime on Linux.
 ///
-/// Best-effort: a stale sidecar is only a cache-reuse hint, so a failure is logged, not returned.
-pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &Path) {
+/// Returns whether the canonical pair now mirrors the given one (trivially `true` when there is
+/// nothing to sync). Never errors: a stale sidecar is only a cache-reuse hint, so a failure is
+/// logged and reported through the return value.
+pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &Path) -> bool {
     let given_metadata = input_path.with_extension("stats.csv.json");
     let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
     // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
@@ -3984,33 +3990,38 @@ pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &P
         _ => false,
     };
     if same_file || !given_metadata.exists() {
-        return;
+        return true;
     }
 
+    let remove_if_present = |p: &Path| match std::fs::remove_file(p) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(CliError::from(e)),
+        _ => Ok(()),
+    };
     let given_stats = input_path.with_extension("stats.csv");
     let canonical_stats = canonical_input_path.with_extension("stats.csv");
-    let stats_synced = if given_stats.exists() {
-        std::fs::copy(&given_stats, &canonical_stats).map(|_| ())
-    } else {
-        match std::fs::remove_file(&canonical_stats) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
-            _ => Ok(()),
-        }
-    };
-    if let Err(e) = stats_synced {
-        // leave the canonical metadata alone rather than pair it with a mismatched .stats.csv
+    let synced = remove_if_present(&canonical_metadata)
+        .and_then(|()| {
+            if given_stats.exists() {
+                let mut installed =
+                    DerivedFile::create(canonical_input_path, &canonical_stats, "statscache")?;
+                std::io::copy(&mut File::open(&given_stats)?, &mut installed)?;
+                installed.install()
+            } else {
+                remove_if_present(&canonical_stats)
+            }
+        })
+        .and_then(|()| {
+            std::fs::copy(&given_metadata, &canonical_metadata)?;
+            Ok(())
+        });
+    if let Err(e) = synced {
         log::warn!(
-            "could not sync stats cache to {}: {e}",
-            canonical_stats.display()
+            "could not sync stats cache beside {}: {e}",
+            canonical_input_path.display()
         );
-        return;
+        return false;
     }
-    if let Err(e) = std::fs::copy(&given_metadata, &canonical_metadata) {
-        log::warn!(
-            "could not sync stats cache metadata to {}: {e}",
-            canonical_metadata.display()
-        );
-    }
+    true
 }
 
 /// For a symlinked input, also write the `.stats.csv.data.jsonl` cache (and sync the stats cache
@@ -4036,8 +4047,13 @@ pub fn mirror_stats_jsonl_to_canonical(
     if jsonl_written.canonicalize().ok().as_deref() == Some(canonical_jsonl.as_path()) {
         return;
     }
-    // sidecars first, so the JSONL written below is the newest of the trio
-    sync_stats_cache_to_canonical(input_path, &canonical_input);
+    // sidecars first, so the JSONL written below is the newest of the trio. If they could not be
+    // synced, publish nothing beside the target — and drop a JSONL left there by an earlier run,
+    // which the now-removed sidecar can no longer vouch for.
+    if !sync_stats_cache_to_canonical(input_path, &canonical_input) {
+        let _ = std::fs::remove_file(&canonical_jsonl);
+        return;
+    }
     if let Err(e) = csv_to_jsonl(
         stats_csv,
         &crate::cmd::stats::STATSDATA_TYPES_MAP,

@@ -4845,6 +4845,44 @@ fn stats_symlink_run_does_not_pair_canonical_cache_with_foreign_metadata() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn stats_symlink_run_with_readonly_canonical_metadata_fails_closed() {
+    // REGRESSION (roborev 4986): when the canonical `.stats.csv` was replaced but the metadata copy
+    // over it failed (here: a read-only sidecar), the OLD metadata vouched for the NEW csv, so a
+    // later direct headered run was served the symlink run's --no-headers stats.
+    use std::os::unix::fs::PermissionsExt;
+    let wrk = Workdir::new("stats_symlink_run_with_readonly_canonical_metadata_fails_closed");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    wrk.create_from_string("sub/target.csv", "h1,h2\n1,2\n3,4\n5,6\n");
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let run = |args: &[&str]| -> String {
+        let mut cmd = wrk.command("stats");
+        cmd.args(args);
+        wrk.stdout::<String>(&mut cmd)
+    };
+    let before = run(&["-E", "--cache-threshold", "1", "sub/target.csv"]);
+    std::fs::set_permissions(
+        wrk.path("sub/target.stats.csv.json"),
+        std::fs::Permissions::from_mode(0o444),
+    )
+    .unwrap();
+    run(&[
+        "-E",
+        "--no-headers",
+        "--stats-jsonl",
+        "--cache-threshold",
+        "1",
+        "link.csv",
+    ]);
+    let after = run(&["-E", "--cache-threshold", "1", "sub/target.csv"]);
+    assert_eq!(
+        after, before,
+        "a direct headered run must not be served the symlink run's --no-headers stats"
+    );
+}
+
 #[test]
 fn stats_weighted_mean_vs_unweighted() {
     let wrk = Workdir::new("stats_weighted_mean_vs_unweighted");

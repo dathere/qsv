@@ -1974,9 +1974,9 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aeaf5f0042941874c9bf691c26904e8127e207a0b0e0698fde2be3ce24f7ea4"
+checksum = "d944b0378bac5a8b54be9c2b9491199b10545272affdda89a142c80bcdb7bb95"
 dependencies = [
  "bytecount",
  "chardetng",
@@ -7208,9 +7208,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-dateparser"
-version = "0.18.0"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63a71f85eeb0fcb88908f50a8dc612f16623a6d8d203616f187e54c03da4b5b9"
+checksum = "dc7e7ce31c22c49e1186b443636a08e072d8072d79bd4ab706ec16a1fc14a0aa"
 dependencies = [
  "anyhow",
  "chrono",

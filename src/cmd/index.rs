@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Creates an index of the given CSV data, which can make other operations like
 slicing, splitting and gathering statistics much faster.
 

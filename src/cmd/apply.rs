@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Apply a series of transformation functions to given CSV column/s. This can be used to
 perform typical data-wrangling tasks and/or to harmonize some values, etc.
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Analyze a SQL query against CSV file caches (stats, moarstats, frequency) to produce a
 performance score with actionable optimization suggestions BEFORE running the query.
 

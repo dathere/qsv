@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Quickly sniff the first n rows and infer CSV metadata (delimiter, header row, number of
 preamble rows, quote character, flexible, is_utf8, average record length, number of records,
 content length and estimated number of records if sniffing a URL, file size, number of fields,

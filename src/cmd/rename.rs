@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Rename the columns of a CSV efficiently. It has two modes of operation:
 
 Positional mode (default):

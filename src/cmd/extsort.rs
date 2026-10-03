@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Sort an arbitrarily large CSV/text file using a multithreaded external sort algorithm.
 
 This command has TWO modes of operation.

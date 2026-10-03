@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Pseudonymise the value of a given column by replacing it with an
 incremental identifier. See https://en.wikipedia.org/wiki/Pseudonymization
 

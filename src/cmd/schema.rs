@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Generate JSON Schema or Polars Schema (with the `--polars` option) from CSV data.
 
 JSON Schema Validation:

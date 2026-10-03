@@ -1,5 +1,5 @@
 #![allow(unused_assignments)]
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Send/Fetch data to/from web services for every row using HTTP Get.
 
 Fetch is integrated with `jaq` (a jq clone) to directly parse out values from an API JSON response.

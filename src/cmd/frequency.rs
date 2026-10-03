@@ -1,5 +1,5 @@
 #![allow(clippy::missing_asserts_for_indexing)]
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Compute a frequency distribution table on input data. It has CSV and JSON output modes.
 https://en.wikipedia.org/wiki/Frequency_(statistics)#Frequency_distribution_table
 

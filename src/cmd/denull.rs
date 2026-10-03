@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Detect null sentinels - literal text like "NULL" or "N/A" standing in for a missing
 value - that stop a numeric column from being recognized as numeric.
 

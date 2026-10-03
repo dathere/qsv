@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Find the difference between two CSVs with ludicrous speed.
 
 NOTE: diff does not support stdin. A file path is required for both arguments.

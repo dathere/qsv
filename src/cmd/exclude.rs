@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Removes a set of CSV data from another set based on the specified columns.
 
 Also can compute the intersection of two CSV sets with the -v flag.

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Replace the value of a cell specified by its row and column.
 
 Example:

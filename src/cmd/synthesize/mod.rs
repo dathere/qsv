@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Generates a synthetic CSV that is statistically faithful to a source CSV.
 
 `synthesize` analyzes <input> with `stats` and `frequency`, then emits N rows of

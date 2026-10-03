@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Select columns from CSV data efficiently.
 
 This command lets you manipulate the columns in CSV data. You can re-order,

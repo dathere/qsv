@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Geocodes a location in CSV data against an updatable local copy of the Geonames cities index
 and a local copy of the MaxMind GeoLite2 City database.
 

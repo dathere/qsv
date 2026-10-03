@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Compute cryptographic hashes of files using blake3.
 
 This command is functionally similar to b3sum, providing fast, parallel blake3 hashing

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Smartly converts CSV to a newline-delimited JSON (JSONL/NDJSON).
 
 By computing stats on the CSV first, it "smartly" infers the appropriate JSON data type

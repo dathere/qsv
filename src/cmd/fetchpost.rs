@@ -1,6 +1,6 @@
 #![allow(unused_assignments)]
 #![allow(clippy::fn_params_excessive_bools)]
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
 As opposed to fetch, which uses HTTP Get.
 

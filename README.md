@@ -308,6 +308,17 @@ There are five binary variants of qsv:
 [^3]: The `luau`feature is NOT enabled by default on the prebuilt binaries for musl platforms. This is because we cross-compile using GitHub Action Runners using Ubuntu 20.04 LTS with the [musl libc](https://musl.libc.org/) toolchain. However, Ubuntu is a glibc-based, not a musl-based distro. We get around this by [cross-compiling](https://blog.logrocket.com/guide-cross-compilation-rust/).   
 Unfortunately, this prevents us from cross-compiling binaries with the `luau` feature enabled as doing so requires statically linking the host OS libc library. If you need the `luau` feature on `musl`, you will need to compile from source on your own musl-based Linux Distro (e.g. Alpine, Void, [etc.](https://wiki.musl-libc.org/projects-using-musl)).  
 
+### Tool Definitions
+`qsv` and `qsvmcp` can describe their own commands in machine-readable form for agents and other tools. The definitions are generated from the binary's own usage text, so they always match your installed version and feature set:
+
+```bash
+qsv stats --help --format json   # one command's JSON tool definition
+qsv stats --help --format md     # its help as Markdown
+qsv --export-tool-definitions defs   # all installed commands, plus a manifest.json
+```
+
+`--export-tool-definitions <dir>` writes `tool-definitions/qsv-<command>.json`, `help/<command>.md` (with a `TableOfContents.md`) and a `manifest.json` that records the qsv version, the binary, its installed commands and which of them are in the MCP server's curated skill set.
+
 ### Shell Completion
 qsv has extensive, extendable [shell completion](https://en.wikipedia.org/wiki/Command-line_completion) support. It currently supports the following shells: `bash`, `zsh`, `powershell`, `fish`, `nushell`, `fig` & `elvish`. You may download a shell completions script for your shell by clicking one of the badges below:
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Add a new column enumerating the lines of a CSV file. This can be useful to keep
 track of a specific line order, give a unique identifier to each line or even
 make a copy of the contents of a column.

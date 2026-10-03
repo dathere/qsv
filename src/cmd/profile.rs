@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Profile a CSV (local path or URL) and emit a `.metadata.json` file carrying
 five top-level blocks:
 

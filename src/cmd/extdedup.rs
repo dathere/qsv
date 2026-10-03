@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Remove duplicate rows from an arbitrarily large CSV/text file using a memory-mapped,
 on-disk hash table.
 

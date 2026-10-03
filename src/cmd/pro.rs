@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Interact with qsv pro API. Learn more about qsv pro at: https://qsvpro.dathere.com.
 
 - qsv pro must be running for this command to work as described.

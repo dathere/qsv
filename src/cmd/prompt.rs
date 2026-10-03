@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Open a file dialog to pick a file as input or save to an output file.
 
 Examples:

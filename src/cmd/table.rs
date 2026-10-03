@@ -1,4 +1,4 @@
-static USAGE: &str = r##"
+pub(crate) static USAGE: &str = r##"
 Outputs CSV data as a table with columns in alignment.
 
 Though this command is primarily designed for DISPLAYING CSV data using

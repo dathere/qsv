@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Add dozens of additional statistics, including extended outlier, robust & bivariate
 statistics to an existing stats CSV file. It also maps the field type to the most specific
 W3C XML Schema Definition (XSD) datatype (https://www.w3.org/TR/xmlschema-2/).

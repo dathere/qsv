@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Splits the given CSV data into chunks. It has three modes: by size (rowcount),
 by number of chunks and by kb-size.
 

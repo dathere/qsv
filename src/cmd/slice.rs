@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Returns the rows in the range specified (starting at 0, half-open interval).
 The range does not include headers.
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Formats CSV data with a custom delimiter or CRLF line endings.
 
 Generally, all commands in qsv output CSV data in a default format, which is

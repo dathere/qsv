@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Prints the fields of the first row in the CSV data.
 
 These names can be used in commands like 'select' to refer to columns in the

@@ -13137,7 +13137,7 @@ const THIRD_PARTY_NOTICES_URL: &str =
 /// artifact. This comment (and `third_party_footer`) restore that visibility.
 fn third_party_comment(datatables: bool, driverjs: bool, basemap: bool) -> String {
     let datatables_line = if datatables {
-        "\n     DataTables 3.1.1 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
+        "\n     DataTables 3.1.3 + Buttons/ColumnControl/DateTime/SearchBuilder\n       (c) \
          SpryMedia Ltd - MIT"
     } else {
         ""
@@ -16213,9 +16213,9 @@ fn plotly_locale_suffix() -> String {
 const DATATABLES_JS: &str = include_str!("assets/datatables.min.js");
 const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 
-/// The download-builder combination the vendored bundle was built from: DataTables core 3.1.1 +
-/// Buttons 4.1.1 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.1.1 (the
-/// in-header per-column search widgets) + `DateTime` 2.1.1 + SearchBuilder 2.1.0, default
+/// The download-builder combination the vendored bundle was built from: DataTables core 3.1.3 +
+/// Buttons 4.1.2 (for the popover SearchBuilder "Filter" button) + `ColumnControl` 2.1.2 (the
+/// in-header per-column search widgets) + `DateTime` 2.1.2 + SearchBuilder 2.1.1, default
 /// DataTables styling. Also the path segment of the version-pinned CDN URLs.
 ///
 /// Two components are deliberately ABSENT and must not be added back when re-fetching:
@@ -16231,11 +16231,11 @@ const DATATABLES_CSS: &str = include_str!("assets/datatables.min.css");
 ///   the out-of-range index guard, and `__qsvDataPageTo` — while adding ~21 KB to the bundle and
 ///   re-testing the rows <-> map cross-link. Row selection therefore stays hand-rolled in
 ///   `DATA_DRAWER_SCRIPT`; revisit if Select grows a feature that seam needs.
-const DATATABLES_CDN_COMBO: &str = "dt-3.1.1/b-4.1.1/cc-2.1.1/date-2.1.1/sb-2.1.0";
+const DATATABLES_CDN_COMBO: &str = "dt-3.1.3/b-4.1.2/cc-2.1.2/date-2.1.2/sb-2.1.1";
 const DATATABLES_CDN_JS_SRI: &str =
-    "sha384-oTnxnLl129vXm/o8H8j3J/WGHwcevgKgg2Lb+UmfQLUVW9o711JLe6tIxnkIG7n+";
+    "sha384-lrZ3R3TIwZRywxf4o3vZT0gzuqvLi57OuwTwjm6jyvppZIwIyBVHw7jk80URF9y+";
 const DATATABLES_CDN_CSS_SRI: &str =
-    "sha384-7e6rWqenOsYWmIrfKMZYws50SnhhYm4KfVC0rJxyJN9wyA9ft2GMSUMVNxVna5zL";
+    "sha384-ocwhkdhxJhahyOR1uuhXjsfZRbwxcPXtVQM544ExdtdCD3tg+Z+aXD/Xm8oTwTpK";
 
 /// The DataTables bundle gzipped at max compression + base64 (~300 KB -> ~112 KB b64), computed
 /// once per process like `PLOTLY_GZ_B64`. Empty on (never-expected) gzip failure — callers then

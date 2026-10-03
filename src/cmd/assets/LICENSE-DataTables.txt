@@ -4,15 +4,15 @@ DataTables — license and attribution
 The files `datatables.min.js` and `datatables.min.css` in this directory are a
 vendored, unmodified copy of the DataTables download-builder bundle:
 
-    dt-3.1.1/b-4.1.1/cc-2.1.1/date-2.1.1/sb-2.1.0
+    dt-3.1.3/b-4.1.2/cc-2.1.2/date-2.1.2/sb-2.1.1
 
 comprising:
 
-    DataTables    3.1.1
-    Buttons       4.1.1
-    ColumnControl 2.1.1
-    DateTime      2.1.1
-    SearchBuilder 2.1.0
+    DataTables    3.1.3
+    Buttons       4.1.2
+    ColumnControl 2.1.2
+    DateTime      2.1.2
+    SearchBuilder 2.1.1
 
 All of the above are part of the freely-licensed DataTables suite and are
 distributed under the MIT license (DataTables 1.10 and newer). They are NOT

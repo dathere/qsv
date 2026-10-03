@@ -2532,6 +2532,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     b',', // cache is always CSV (comma-delimited)
                     &path,
                 )?;
+                // readers look the JSONL up beside the canonicalized input (#4697)
+                util::mirror_stats_jsonl_to_canonical(
+                    &currstats_filename,
+                    &stats_jsonl_pathbuf,
+                    &path,
+                    &path,
+                );
             }
         } else if compute_stats {
             // We just recomputed and installed a stats.csv but are NOT writing a sidecar

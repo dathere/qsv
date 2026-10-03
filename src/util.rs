@@ -3952,6 +3952,81 @@ fn stats_cache_parsing_opts_conflict(
     false
 }
 
+/// Keep the `.stats.csv.json` metadata sidecar beside the CANONICAL target in sync with the one
+/// beside the path as GIVEN.
+///
+/// Stats-cache readers look up `.stats.csv.data.jsonl` beside the canonicalized input, but `stats`
+/// and `moarstats` write their `<input>.stats.csv.json` beside the path they were given. Those
+/// coincide for an ordinary input and diverge for a symlink — and a divergence is not merely a
+/// missing sidecar: an earlier direct run on the target leaves a canonical sidecar that keeps
+/// describing itself as current while a run via the link replaces the canonical JSONL underneath
+/// it. A later direct run then reads stale-but-matching metadata and reuses a cache built with
+/// different parsing options. Callers that write the canonical JSONL call this so the sidecar
+/// that actually describes it sits beside it.
+///
+/// Best-effort: a stale sidecar is only a cache-reuse hint, so a copy failure is logged, not
+/// returned.
+pub fn sync_stats_metadata_to_canonical(input_path: &Path, canonical_input_path: &Path) {
+    let given_metadata = input_path.with_extension("stats.csv.json");
+    let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
+    // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
+    // file via a relative and an absolute path, and `fs::copy` onto itself truncates it —
+    // which corrupts the very metadata this is meant to keep trustworthy.
+    let same_file = match (
+        given_metadata.canonicalize(),
+        canonical_metadata.canonicalize(),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if !same_file
+        && given_metadata.exists()
+        && let Err(e) = std::fs::copy(&given_metadata, &canonical_metadata)
+    {
+        log::warn!(
+            "could not sync stats cache metadata to {}: {e}",
+            canonical_metadata.display()
+        );
+    }
+}
+
+/// For a symlinked input, also write the `.stats.csv.data.jsonl` cache (and sync its metadata
+/// sidecar) beside the CANONICAL target — the location every stats-cache reader looks it up —
+/// since `stats`/`moarstats` write their cache files beside the path as given (#4697).
+///
+/// `jsonl_written` is the JSONL the caller just wrote beside `input_path`, converted from
+/// `stats_csv`; `permission_source` is passed through to `csv_to_jsonl`. A no-op when the two
+/// locations resolve to the same file. Best-effort: a failure is logged, never returned, since the
+/// caller's own cache was written and the reader falls back to regenerating.
+pub fn mirror_stats_jsonl_to_canonical(
+    stats_csv: &str,
+    jsonl_written: &Path,
+    input_path: &Path,
+    permission_source: &Path,
+) {
+    let Ok(canonical_input) = input_path.canonicalize() else {
+        return;
+    };
+    let canonical_jsonl = canonical_input.with_extension("stats.csv.data.jsonl");
+    if jsonl_written.canonicalize().ok().as_deref() == Some(canonical_jsonl.as_path()) {
+        return;
+    }
+    if let Err(e) = csv_to_jsonl(
+        stats_csv,
+        &crate::cmd::stats::STATSDATA_TYPES_MAP,
+        &canonical_jsonl,
+        b',',
+        permission_source,
+    ) {
+        log::warn!(
+            "could not write stats JSONL cache beside symlink target {}: {e}",
+            canonical_jsonl.display()
+        );
+        return;
+    }
+    sync_stats_metadata_to_canonical(input_path, &canonical_input);
+}
+
 /// Get the stats records for `args`, reading or regenerating the stats cache as needed.
 ///
 /// `SchemaArgs` is `schema`'s own docopt target, so it cannot carry a `--flexible` field
@@ -4403,37 +4478,7 @@ pub fn get_stats_records_flexible(
             &canonical_input_path,
         )?;
 
-        // Keep the metadata sidecar beside the JSONL we just wrote in sync with it.
-        //
-        // We write the JSONL at the CANONICAL path, but the `stats` subprocess writes its
-        // `<input>.stats.csv.json` args sidecar beside the path it was GIVEN. Those coincide for
-        // an ordinary input and diverge for a symlink — and a divergence is not merely a missing
-        // sidecar: an earlier direct run on the target leaves a canonical sidecar that keeps
-        // describing itself as current while this run replaces the canonical JSONL underneath it.
-        // A later direct run then reads stale-but-matching metadata and reuses a cache built with
-        // different parsing options. Copy the sidecar that actually describes this JSONL over it.
-        let subprocess_metadata = Path::new(input_path).with_extension("stats.csv.json");
-        let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
-        // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
-        // file via a relative and an absolute path, and `fs::copy` onto itself truncates it —
-        // which corrupts the very metadata this is meant to keep trustworthy.
-        let same_file = match (
-            subprocess_metadata.canonicalize(),
-            canonical_metadata.canonicalize(),
-        ) {
-            (Ok(a), Ok(b)) => a == b,
-            _ => false,
-        };
-        if !same_file && subprocess_metadata.exists() {
-            // best-effort: a stale sidecar is only a cache-reuse hint, never required for
-            // correctness of THIS run, so a copy failure must not fail the stats load
-            if let Err(e) = std::fs::copy(&subprocess_metadata, &canonical_metadata) {
-                log::warn!(
-                    "could not sync stats cache metadata to {}: {e}",
-                    canonical_metadata.display()
-                );
-            }
-        }
+        sync_stats_metadata_to_canonical(Path::new(input_path), &canonical_input_path);
 
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);

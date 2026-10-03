@@ -7783,6 +7783,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ) {
             wwarn!("Failed to regenerate stats JSONL cache: {e}");
         }
+
+        // Stats-cache readers (`util::get_stats_records`, which `viz smart --smarter` feeds from
+        // this very run) look up the JSONL beside the CANONICALIZED input; for a symlink the
+        // enriched JSONL above would otherwise never be read (#4697). Only for the default
+        // cache location — an explicit --output or a --join-inputs run is not the input's cache.
+        if args.flag_output.is_none() && temp_joined_path.is_none() {
+            util::mirror_stats_jsonl_to_canonical(
+                output_path_str,
+                &jsonl_path,
+                input_path,
+                actual_input_path,
+            );
+        }
     } else {
         wwarn!(
             "Output path {:?} is not valid UTF-8, skipping JSONL cache regeneration",

@@ -3965,8 +3965,10 @@ fn stats_cache_parsing_opts_conflict(
 /// The `.stats.csv` travels WITH its sidecar: replacing only the metadata would let `stats` itself
 /// validate the canonical `.stats.csv` from a different run against the copied args and serve it.
 /// When there is no given-side `.stats.csv` to copy, the canonical one is removed instead. The
-/// canonical sidecar is removed FIRST, so a failure part-way leaves no metadata vouching for a
-/// mismatched `.stats.csv` (a sidecar-less cache is recomputed, never trusted). The `.stats.csv`
+/// canonical JSONL is invalidated FIRST (if that fails, nothing is touched and the old provenance
+/// stands), then the canonical sidecar, so a failure part-way leaves no metadata vouching for a
+/// mismatched `.stats.csv` and no JSONL whose provenance is gone. Callers write the canonical JSONL
+/// afterwards, and must not leave it published when this returns `false`. The `.stats.csv`
 /// copy goes through `DerivedFile`, like every other stats cache, so it never grants access the
 /// input does not.
 ///
@@ -3999,7 +4001,8 @@ pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &P
     };
     let given_stats = input_path.with_extension("stats.csv");
     let canonical_stats = canonical_input_path.with_extension("stats.csv");
-    let synced = remove_if_present(&canonical_metadata)
+    let synced = remove_if_present(&canonical_input_path.with_extension("stats.csv.data.jsonl"))
+        .and_then(|()| remove_if_present(&canonical_metadata))
         .and_then(|()| {
             if given_stats.exists() {
                 let mut installed =
@@ -4047,11 +4050,9 @@ pub fn mirror_stats_jsonl_to_canonical(
     if jsonl_written.canonicalize().ok().as_deref() == Some(canonical_jsonl.as_path()) {
         return;
     }
-    // sidecars first, so the JSONL written below is the newest of the trio. If they could not be
-    // synced, publish nothing beside the target — and drop a JSONL left there by an earlier run,
-    // which the now-removed sidecar can no longer vouch for.
+    // sidecars first, so the JSONL written below is the newest of the trio; if they could not be
+    // synced, publish nothing beside the target
     if !sync_stats_cache_to_canonical(input_path, &canonical_input) {
-        let _ = std::fs::remove_file(&canonical_jsonl);
         return;
     }
     if let Err(e) = csv_to_jsonl(
@@ -4510,7 +4511,8 @@ pub fn get_stats_records_flexible(
 
         // sync the canonical stats cache pair BEFORE writing the JSONL beside it, so the JSONL is
         // not older than the sidecar `stats_jsonl_predates_stats_cache` compares it against
-        sync_stats_cache_to_canonical(Path::new(input_path), &canonical_input_path);
+        let canonical_synced =
+            sync_stats_cache_to_canonical(Path::new(input_path), &canonical_input_path);
 
         // create a stats data jsonl from the output of the stats command
         // stats command always writes comma-delimited CSV to tempfile,
@@ -4546,6 +4548,12 @@ pub fn get_stats_records_flexible(
                 },
                 Err(e) => return Err(CliError::Other(format!("error parsing stats: {e}"))),
             }
+        }
+
+        // a failed sync removed the canonical sidecar: this run has its stats in memory, but a
+        // JSONL left beside the target would carry no provenance for the next run to check
+        if !canonical_synced {
+            let _ = std::fs::remove_file(statsdatajson_path);
         }
     }
 

@@ -53,18 +53,18 @@ Usage:
     qsv [options]
 
 Options:
-    --list               List all commands available.
-    --envlist            List all qsv-relevant environment variables.
-    -u, --update         Update qsv to the latest release from GitHub.
-    -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
-    --generate-help-md   Generate Markdown help files in docs/help/.
+    --list                           List all commands available.
+    --envlist                        List all qsv-relevant environment variables.
+    -u, --update                     Update qsv to the latest release from GitHub.
+    -U, --updatenow                  Update qsv to the latest release from GitHub w/o confirming.
+    --generate-help-md               Generate Markdown help files in docs/help/.
     --export-tool-definitions <dir>  Write JSON tool definitions, help Markdown and a
-                         manifest for every installed command to <dir>.
-                         For one command, use <command> --help --format json|md"#;
+                                     manifest for every installed command to <dir>.
+                                     For one command, use <command> --help --format json|md"#;
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
-    "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+    "    --update-mcp-skills              Regenerate MCP skills JSON files for Claude Desktop.";
 
 const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message

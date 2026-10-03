@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Filters CSV data by whether the given regex matches a row.
 
 The regex is applied to selected field in each row, and if any field matches,

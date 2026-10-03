@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Provide input from the clipboard or save output to the clipboard.
 
 Note when saving to clipboard on Windows, line breaks may be represented as \r\n (CRLF).

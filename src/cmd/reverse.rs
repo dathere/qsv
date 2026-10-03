@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Reverses rows of CSV data.
 
 Useful for cases when there is no column that can be used for sorting in reverse order,

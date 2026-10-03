@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Exports a specified Excel/ODS sheet to a CSV file.
 The first non-empty row of a sheet is assumed to be the header row.
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Explodes a row into multiple ones by splitting a column value based on the
 given separator.
 

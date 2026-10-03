@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Pivots or groups CSV data using the Polars engine.
 
 PIVOT MODE (with <on-cols>):

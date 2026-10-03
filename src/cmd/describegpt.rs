@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Create a "neuro-symbolic" Data Dictionary and/or infer Description & Tags about a Dataset
 using an OpenAI API-compatible Large Language Model (LLM).
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Drop a CSV file's header.
 
 See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#behead

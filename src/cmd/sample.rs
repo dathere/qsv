@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Randomly samples CSV data.
 
 It supports ten sampling methods:

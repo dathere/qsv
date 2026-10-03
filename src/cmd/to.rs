@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Convert CSV files to Parquet, PostgreSQL, SQLite, Excel XLSX, ODS and Data Package.
 
 PARQUET

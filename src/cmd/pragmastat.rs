@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Pragmatic statistical toolkit.
 
 Compute robust, median-of-pairwise statistics from the Pragmastat library.

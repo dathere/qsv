@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Run blazing-fast Polars SQL queries against several CSVs - replete with joins, aggregations,
 grouping, table functions, sorting, and more - working on larger than memory CSV files directly,
 without having to load it first into a database.

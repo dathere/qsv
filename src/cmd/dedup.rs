@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Deduplicates CSV rows. 
 
 This requires reading all of the CSV data into memory because because the rows need

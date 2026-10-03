@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Transpose the rows/columns of CSV data.
 
 Usage:

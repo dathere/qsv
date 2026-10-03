@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Formats recognized date fields (19 formats recognized) to a specified date format
 using strftime date format specifiers.
 

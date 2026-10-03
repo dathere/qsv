@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Joins two sets of CSV data on the specified columns.
 
 The default join operation is an 'inner' join. This corresponds to the

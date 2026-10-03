@@ -18,15 +18,29 @@ const MAX_ITERATIONS: usize = 100;
 const GITHUB_BASE: &str = "https://github.com/dathere/qsv/blob/master/";
 
 /// Information about a command extracted from README.md
-struct CommandInfo {
+#[derive(Clone)]
+pub struct CommandInfo {
     /// The invocation name (e.g. "enum", "py")
-    invocation_name: String,
+    pub invocation_name: String,
     /// The source file stem (e.g. "enumerate", "python")
-    source_file:     String,
+    pub source_file:     String,
     /// Short description from README table
-    description:     String,
+    description:         String,
     /// Emoji markers from README table
-    emoji_markers:   String,
+    emoji_markers:       String,
+}
+
+impl CommandInfo {
+    /// A command missing from the README command table: no description or emoji markers,
+    /// and a source file named after the command.
+    pub fn unlisted(invocation_name: &str) -> Self {
+        Self {
+            invocation_name: invocation_name.to_string(),
+            source_file:     invocation_name.to_string(),
+            description:     String::new(),
+            emoji_markers:   String::new(),
+        }
+    }
 }
 
 /// Extract all commands from the README.md command table.
@@ -35,7 +49,11 @@ fn extract_commands_from_readme(repo_root: &Path) -> Result<Vec<CommandInfo>, St
     let readme_path = repo_root.join("README.md");
     let readme_content =
         fs::read_to_string(&readme_path).map_err(|e| format!("Failed to read README.md: {e}"))?;
+    commands_from_readme(&readme_content)
+}
 
+/// Parse the README.md command table (or the build-time fragment of it) into `CommandInfo`s.
+pub fn commands_from_readme(readme_content: &str) -> Result<Vec<CommandInfo>, String> {
     let mut commands = Vec::new();
 
     // Match lines like: | [apply](/src/cmd/apply.rs#L2)...|...|
@@ -119,7 +137,7 @@ fn is_legend_end_marker(line: &str) -> bool {
 
 /// Parse the legend section from README.md into a vec of (`emoji_key`, description) pairs.
 /// Returns pairs sorted by key length descending for longest-match-first replacement.
-fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
+pub fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
     let mut legend = Vec::new();
     let Some(start) = readme_content.find("<a name=\"legend_deeplink\">") else {
         return legend;
@@ -408,21 +426,12 @@ fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
 }
 
 /// Extract a map of long-form flag → display-type label by parsing the `Args`
-/// struct in a command's source file.
+/// struct in a command's source.
 ///
-/// Returns an empty map if the file can't be read or no `Args` struct is found.
+/// Returns an empty map if no `Args` struct is found.
 /// Used to populate the "Type" column in the generated Options table — without
 /// this, docopt alone only tells us whether an option has an argument, not
 /// whether that argument is an integer, float, etc.
-fn extract_arg_types_from_file(file_path: &Path) -> HashMap<String, &'static str> {
-    match fs::read_to_string(file_path) {
-        Ok(content) => extract_arg_types_from_source(&content),
-        Err(_) => HashMap::new(),
-    }
-}
-
-/// Pure-function variant of `extract_arg_types_from_file` that operates on the
-/// source text directly. Public to the module so tests can exercise it.
 ///
 /// Strategy: locate `struct Args { ... }`, walk forward tracking brace depth
 /// to find the matching close, then per-line capture `flag_NAME: TYPE,` fields
@@ -556,23 +565,31 @@ fn heading_to_anchor(heading: &str) -> String {
     heading.to_lowercase().replace(' ', "-")
 }
 
+/// One command's help Markdown, byte-identical to what `--generate-help-md` writes to
+/// `docs/help/<invocation_name>.md`. `source_path` is repo-relative (`src/cmd/x.rs` or
+/// `src/cmd/x/mod.rs`); `cmd_src` only needs to hold the command's `struct Args`, whose field
+/// types fill the Options table's "Type" column.
+pub fn command_markdown(
+    usage_text: &str,
+    cmd_info: &CommandInfo,
+    source_path: &str,
+    legend: &[(String, String)],
+    cmd_src: &str,
+) -> String {
+    let arg_type_map = extract_arg_types_from_source(cmd_src);
+    generate_command_markdown(usage_text, cmd_info, source_path, legend, &arg_type_map)
+}
+
 /// Parse USAGE text and generate a Markdown help file.
 fn generate_command_markdown(
     usage_text: &str,
     cmd_info: &CommandInfo,
-    repo_root: &Path,
+    source_path: &str,
     legend: &[(String, String)],
     arg_type_map: &HashMap<String, &'static str>,
 ) -> String {
     let mut md = String::with_capacity(4096);
 
-    // Support both `src/cmd/<name>.rs` and module-dir `src/cmd/<name>/mod.rs`.
-    let flat_path = format!("src/cmd/{}.rs", cmd_info.source_file);
-    let source_path = if repo_root.join(&flat_path).exists() {
-        flat_path
-    } else {
-        format!("src/cmd/{}/mod.rs", cmd_info.source_file)
-    };
     let source_url = format!("{GITHUB_BASE}{source_path}");
 
     // Title
@@ -2291,7 +2308,7 @@ fn format_option_group_title(group_name: &str, _command_name: &str) -> String {
 }
 
 /// Generate the Table of Contents markdown file
-fn generate_table_of_contents(
+pub fn generate_table_of_contents(
     commands: &[CommandInfo],
     readme_content: &str,
     legend: &[(String, String)],
@@ -2489,14 +2506,13 @@ pub fn generate_help_markdown() -> CliResult<()> {
             },
         };
 
-        // Extract per-flag Rust types from the command's `Args` struct so the
-        // generated Options table's "Type" column reflects the real type
-        // (integer/float/string/flag) instead of always "string".
-        let arg_type_map = extract_arg_types_from_file(&cmd_file);
-
-        // Generate markdown
-        let markdown =
-            generate_command_markdown(&usage_text, cmd_info, &repo_root, &legend, &arg_type_map);
+        let source_path = cmd_file
+            .strip_prefix(&repo_root)
+            .unwrap_or(&cmd_file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let cmd_src = fs::read_to_string(&cmd_file).unwrap_or_default();
+        let markdown = command_markdown(&usage_text, cmd_info, &source_path, &legend, &cmd_src);
 
         // Write help file
         let output_file = output_dir.join(format!("{}.md", cmd_info.invocation_name));

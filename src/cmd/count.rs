@@ -1,5 +1,5 @@
 #![allow(clippy::cast_precision_loss)] // we're not worried about precision loss here
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Returns a count of the number of records in the CSV data.
 
 It has three modes of operation:

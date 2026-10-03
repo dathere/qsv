@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Renders a template using CSV data with the MiniJinja template engine.
 https://docs.rs/minijinja/latest/minijinja/
 

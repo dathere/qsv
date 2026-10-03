@@ -1,4 +1,4 @@
-static USAGE: &str = r##"
+pub(crate) static USAGE: &str = r##"
 Converts fixed-width text (fields at fixed byte-column positions, no
 delimiters) to CSV.
 

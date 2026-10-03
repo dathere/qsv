@@ -40,11 +40,11 @@ mod help_markdown_gen;
 mod index;
 mod llmutil;
 mod lookup;
-#[cfg(feature = "mcp")]
 mod mcp_skills_gen;
 mod minijinja_filters;
 mod odhtcache;
 mod select;
+mod tool_defs;
 mod util;
 
 const USAGE_COMMON: &str = r#"
@@ -53,15 +53,18 @@ Usage:
     qsv [options]
 
 Options:
-    --list               List all commands available.
-    --envlist            List all qsv-relevant environment variables.
-    -u, --update         Update qsv to the latest release from GitHub.
-    -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
-    --generate-help-md   Generate Markdown help files in docs/help/."#;
+    --list                           List all commands available.
+    --envlist                        List all qsv-relevant environment variables.
+    -u, --update                     Update qsv to the latest release from GitHub.
+    -U, --updatenow                  Update qsv to the latest release from GitHub w/o confirming.
+    --generate-help-md               Generate Markdown help files in docs/help/.
+    --export-tool-definitions <dir>  Write JSON tool definitions, help Markdown and a
+                                     manifest for every installed command to <dir>.
+                                     For one command, use <command> --help --format json|md"#;
 
 #[cfg(feature = "mcp")]
 const USAGE_MCP: &str =
-    "    --update-mcp-skills  Regenerate MCP skills JSON files for Claude Desktop.";
+    "    --update-mcp-skills              Regenerate MCP skills JSON files for Claude Desktop.";
 
 const USAGE_FOOTER: &str = "    -h, --help           Display this message
     <command> -h         Display the command help message
@@ -76,14 +79,15 @@ const USAGE: &str = const_format::concatcp!(USAGE_COMMON, "\n", USAGE_FOOTER);
 
 #[derive(Deserialize)]
 struct Args {
-    arg_command:            Option<Command>,
-    flag_list:              bool,
-    flag_envlist:           bool,
-    flag_update:            bool,
-    flag_updatenow:         bool,
-    flag_generate_help_md:  bool,
+    arg_command:                  Option<Command>,
+    flag_list:                    bool,
+    flag_envlist:                 bool,
+    flag_update:                  bool,
+    flag_updatenow:               bool,
+    flag_generate_help_md:        bool,
+    flag_export_tool_definitions: Option<String>,
     #[cfg(feature = "mcp")]
-    flag_update_mcp_skills: bool,
+    flag_update_mcp_skills:       bool,
 }
 
 fn main() -> QsvExitCode {
@@ -314,6 +318,16 @@ fn main() -> QsvExitCode {
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
     }
+    if let Some(dir) = args.flag_export_tool_definitions {
+        util::log_end(qsv_args, now);
+        return match tool_defs::export(&dir) {
+            Ok(()) => QsvExitCode::Good,
+            Err(e) => {
+                werr!("Tool definition export error: {e}");
+                QsvExitCode::Bad
+            },
+        };
+    }
     if args.flag_generate_help_md {
         match help_markdown_gen::generate_help_markdown() {
             Ok(()) => {
@@ -441,8 +455,9 @@ fn main() -> QsvExitCode {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, strum_macros::VariantNames)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 enum Command {
     #[cfg(all(feature = "apply", feature = "feature_capable"))]
     Apply,
@@ -553,6 +568,118 @@ enum Command {
 }
 
 impl Command {
+    /// This command's docopt USAGE text; `None` for `help`, which has none.
+    fn usage(&self) -> Option<&'static str> {
+        match self {
+            Command::Behead => Some(cmd::behead::USAGE),
+            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+            Command::Blake3 => Some(cmd::blake3::USAGE),
+            #[cfg(all(feature = "apply", feature = "feature_capable"))]
+            Command::Apply => Some(cmd::apply::USAGE),
+            Command::Cat => Some(cmd::cat::USAGE),
+            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+            Command::Clean => Some(cmd::clean::USAGE),
+            #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
+            Command::Clipboard => Some(cmd::clipboard::USAGE),
+            #[cfg(all(feature = "color", feature = "feature_capable"))]
+            Command::Color => Some(cmd::color::USAGE),
+            Command::Count => Some(cmd::count::USAGE),
+            Command::Datefmt => Some(cmd::datefmt::USAGE),
+            Command::Dedup => Some(cmd::dedup::USAGE),
+            #[cfg(feature = "feature_capable")]
+            Command::Denull => Some(cmd::denull::USAGE),
+            Command::Describegpt => Some(cmd::describegpt::USAGE),
+            Command::Diff => Some(cmd::diff::USAGE),
+            Command::Edit => Some(cmd::edit::USAGE),
+            Command::Enum => Some(cmd::enumerate::USAGE),
+            Command::Excel => Some(cmd::excel::USAGE),
+            Command::Exclude => Some(cmd::exclude::USAGE),
+            Command::Explode => Some(cmd::explode::USAGE),
+            Command::ExtDedup => Some(cmd::extdedup::USAGE),
+            Command::ExtSort => Some(cmd::extsort::USAGE),
+            #[cfg(all(feature = "fetch", feature = "feature_capable"))]
+            Command::Fetch => Some(cmd::fetch::USAGE),
+            #[cfg(all(feature = "fetch", feature = "feature_capable"))]
+            Command::FetchPost => Some(cmd::fetchpost::USAGE),
+            #[cfg(all(feature = "foreach", not(feature = "lite")))]
+            Command::ForEach => Some(cmd::foreach::USAGE),
+            Command::Fill => Some(cmd::fill::USAGE),
+            Command::FixedWidth => Some(cmd::fixedwidth::USAGE),
+            Command::FixLengths => Some(cmd::fixlengths::USAGE),
+            Command::Flatten => Some(cmd::flatten::USAGE),
+            Command::Fmt => Some(cmd::fmt::USAGE),
+            Command::Frequency => Some(cmd::frequency::USAGE),
+            #[cfg(all(feature = "get", feature = "feature_capable"))]
+            Command::Get => Some(cmd::get::USAGE),
+            #[cfg(all(feature = "geocode", feature = "feature_capable"))]
+            Command::Geocode => Some(cmd::geocode::USAGE),
+            #[cfg(all(feature = "geocode", feature = "feature_capable"))]
+            Command::Geoconvert => Some(cmd::geoconvert::USAGE),
+            Command::Headers => Some(cmd::headers::USAGE),
+            Command::Help => None,
+            Command::Implode => Some(cmd::implode::USAGE),
+            Command::Index => Some(cmd::index::USAGE),
+            Command::Input => Some(cmd::input::USAGE),
+            Command::Join => Some(cmd::join::USAGE),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::JoinP => Some(cmd::joinp::USAGE),
+            Command::Json => Some(cmd::json::USAGE),
+            Command::Jsonl => Some(cmd::jsonl::USAGE),
+            #[cfg(all(feature = "lens", feature = "feature_capable"))]
+            Command::Lens => Some(cmd::lens::USAGE),
+            #[cfg(all(feature = "luau", feature = "feature_capable"))]
+            Command::Luau => Some(cmd::luau::USAGE),
+            #[cfg(feature = "mcp")]
+            Command::Log => Some(cmd::log::USAGE),
+            Command::Partition => Some(cmd::partition::USAGE),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::PivotP => Some(cmd::pivotp::USAGE),
+            Command::Pragmastat => Some(cmd::pragmastat::USAGE),
+            Command::Pro => Some(cmd::pro::USAGE),
+            #[cfg(feature = "profile")]
+            Command::Profile => Some(cmd::profile::USAGE),
+            #[cfg(all(feature = "prompt", feature = "feature_capable"))]
+            Command::Prompt => Some(cmd::prompt::USAGE),
+            Command::Pseudo => Some(cmd::pseudo::USAGE),
+            #[cfg(all(feature = "python", feature = "feature_capable"))]
+            Command::Py => Some(cmd::python::USAGE),
+            #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+            Command::Readstat => Some(cmd::readstat::USAGE),
+            Command::Rename => Some(cmd::rename::USAGE),
+            Command::Replace => Some(cmd::replace::USAGE),
+            Command::Reverse => Some(cmd::reverse::USAGE),
+            Command::Safenames => Some(cmd::safenames::USAGE),
+            Command::Sample => Some(cmd::sample::USAGE),
+            Command::Schema => Some(cmd::schema::USAGE),
+            Command::Search => Some(cmd::search::USAGE),
+            Command::SearchSet => Some(cmd::searchset::USAGE),
+            Command::Select => Some(cmd::select::USAGE),
+            Command::Slice => Some(cmd::slice::USAGE),
+            Command::Snappy => Some(cmd::snappy::USAGE),
+            Command::Sniff => Some(cmd::sniff::USAGE),
+            Command::Sort => Some(cmd::sort::USAGE),
+            Command::SortCheck => Some(cmd::sortcheck::USAGE),
+            Command::Split => Some(cmd::split::USAGE),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::ScoreSql => Some(cmd::scoresql::USAGE),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::SqlP => Some(cmd::sqlp::USAGE),
+            Command::Stats => Some(cmd::stats::USAGE),
+            #[cfg(all(feature = "synthesize", feature = "feature_capable"))]
+            Command::Synthesize => Some(cmd::synthesize::USAGE),
+            Command::Moarstats => Some(cmd::moarstats::USAGE),
+            Command::Table => Some(cmd::table::USAGE),
+            Command::Template => Some(cmd::template::USAGE),
+            Command::Transpose => Some(cmd::transpose::USAGE),
+            #[cfg(all(feature = "to", feature = "feature_capable"))]
+            Command::To => Some(cmd::to::USAGE),
+            Command::Tojsonl => Some(cmd::tojsonl::USAGE),
+            Command::Validate => Some(cmd::validate::USAGE),
+            #[cfg(all(feature = "viz", feature = "feature_capable"))]
+            Command::Viz => Some(cmd::viz::USAGE),
+        }
+    }
+
     fn run(self) -> CliResult<()> {
         let argv: Vec<_> = env::args().collect();
         let argv: Vec<_> = argv.iter().map(|s| &**s).collect();
@@ -570,6 +697,12 @@ impl Command {
         }
 
         CURRENT_COMMAND.get_or_init(|| argv[1].to_lowercase());
+        if let Some(format) = tool_defs::help_format(&argv[2..])? {
+            let Some(usage) = self.usage() else {
+                return fail_incorrectusage_clierror!("`{}` has no tool definition", argv[1]);
+            };
+            return tool_defs::print(argv[1], usage, format);
+        }
         match self {
             Command::Behead => cmd::behead::run(argv),
             #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]

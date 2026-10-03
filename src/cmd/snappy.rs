@@ -1,5 +1,5 @@
 #![allow(clippy::cast_precision_loss)]
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Does streaming compression/decompression of the input using the Snappy framing format.
 https://github.com/google/snappy/blob/main/framing_format.txt
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Replace occurrences of a pattern across a CSV file.
 
 You can of course match groups using parentheses and use those in

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Execute a shell command once per record in a given CSV file.
 
 NOTE: Windows users are recommended to use Git Bash as their terminal when

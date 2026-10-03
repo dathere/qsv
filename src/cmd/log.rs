@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Logs an MCP tool invocation entry to qsvmcp.log. Only intended for internal use by the
 qsv MCP server, not for general CLI use and only available from the qsvmcp binary variant.
 

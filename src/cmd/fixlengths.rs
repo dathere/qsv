@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Transforms CSV data so that all records have the same length. The length is
 the length of the longest record in the data (not counting trailing empty fields,
 but at least 1). Records with smaller lengths are padded with empty fields.

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Check if a CSV is sorted. The check is done on a streaming basis (i.e. constant memory).
 With the --json options, also retrieve record count, sort breaks & duplicate count.
 

@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Convert JSON to CSV.
 
 The JSON data is expected to be non-empty and non-nested as either:

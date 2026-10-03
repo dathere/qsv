@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Create a new computed column or filter rows by evaluating a Python expression on 
 every row of a CSV file.
 

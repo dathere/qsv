@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Convert newline-delimited JSON (JSONL/NDJSON) to CSV.
 
 The command tries to do its best but since it is not possible to

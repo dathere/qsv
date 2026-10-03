@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Read CSV data with special commenting, quoting, trimming, line-skipping &
 non UTF-8 encoding rules and transforms it to a "normalized", UTF-8 encoded CSV.
 

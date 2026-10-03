@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Implodes multiple rows into one by grouping on key column(s) and joining the
 values of another column with the given separator. The inverse of `explode`.
 

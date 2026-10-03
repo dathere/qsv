@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Generate charts/maps from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart - the plotly.js runtime is embedded, so

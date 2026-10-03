@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Convert between various spatial formats and CSV/SVG including GeoJSON, SHP, and more.
 
 For example to convert a GeoJSON file into CSV data:

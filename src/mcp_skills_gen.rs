@@ -6,14 +6,18 @@
 //
 // Uses qsv-docopt Parser for robust USAGE text parsing.
 
+#[cfg(feature = "mcp")]
 use std::{fs, path::Path};
 
 use foldhash::{HashMap, HashMapExt};
 use qsv_docopt::parse::{Argument as DocoptArgument, Atom, Parser};
 use serde::{Deserialize, Serialize};
 
-use crate::{CliResult, regex_oncelock};
+#[cfg(feature = "mcp")]
+use crate::CliResult;
+use crate::regex_oncelock;
 
+#[cfg(feature = "mcp")]
 const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,6 +90,9 @@ struct UsageParser {
     /// the generator always supplies a populated map, and `parse_with_docopt`
     /// refuses to type an option against an empty one.
     field_types:  HashMap<String, String>,
+    /// README.md content (or the build-time fragment of it holding the command table), for
+    /// the short description and behavioral hints. Empty when unavailable.
+    readme:       String,
 }
 
 impl UsageParser {
@@ -94,7 +101,13 @@ impl UsageParser {
             usage_text,
             command_name,
             field_types: HashMap::new(),
+            readme: String::new(),
         }
+    }
+
+    fn with_readme(mut self, readme: &str) -> Self {
+        self.readme = readme.to_string();
+        self
     }
 
     fn with_field_types(mut self, field_types: HashMap<String, String>) -> Self {
@@ -167,14 +180,15 @@ impl UsageParser {
     fn parse(&self) -> Result<SkillDefinition, String> {
         // Extract concise description from README.md command table
         // Falls back to first sentence of USAGE text if not found in README
-        let description = Self::extract_short_description_from_readme(&self.command_name)
-            .unwrap_or_else(|| {
-                // Fallback: extract first sentence from USAGE text
-                self.extract_description().map_or_else(
-                    |_| format!("{} command", self.command_name),
-                    |d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".",
-                )
-            });
+        let description =
+            Self::extract_short_description_from_readme(&self.readme, &self.command_name)
+                .unwrap_or_else(|| {
+                    // Fallback: extract first sentence from USAGE text
+                    self.extract_description().map_or_else(
+                        |_| format!("{} command", self.command_name),
+                        |d| d.split('.').next().unwrap_or(&d).trim().to_string() + ".",
+                    )
+                });
 
         // Use qsv-docopt Parser to parse USAGE text
         let (args, options) = self.parse_with_docopt()?;
@@ -868,6 +882,28 @@ impl UsageParser {
                  to a .csv path becomes comma-delimited, and stdout uses QSV_DEFAULT_DELIMITER \
                  (\",\" by default). In LINE MODE the input lines are written through unchanged."
             },
+            // documented only in the "Luau arguments" prose, not in a `<name>  description` line
+            ("luau", "main-script") => {
+                "The MAIN Luau script, executed for EACH ROW: the Luau code itself or, if it \
+                 starts with \"file:\" or ends with \".luau\"/\".lua\", the file to load it from. \
+                 In map mode it returns the new column value/s; in filter mode, a boolean saying \
+                 whether to keep the row."
+            },
+            // undocumented in py's USAGE; with --no-headers the form without it is used
+            ("py", "new-column") => {
+                "Name of the new column to add, holding each record's result of <expression>. Not \
+                 used with --no-headers."
+            },
+            // `log` is internal to the qsv MCP server and its USAGE has no argument section
+            ("log", "tool-name") => "Name of the MCP tool being invoked.",
+            ("log", "invocation-id") => {
+                "The invocation's UUID, prefixed \"s-\" for its start entry or \"e-\" for its end \
+                 entry."
+            },
+            ("log", "message") => {
+                "Context to log: the agent's reason (start entry) or the result (end entry). \
+                 Multiple words are joined with spaces."
+            },
             _ => return None,
         })
     }
@@ -1322,7 +1358,7 @@ impl UsageParser {
 
         // If not found in usage text, check README.md command table
         let (readme_indexed, readme_memory_intensive, readme_proportional_memory) =
-            Self::extract_hints_from_readme(&self.command_name);
+            Self::extract_hints_from_readme(&self.readme, &self.command_name);
 
         // Prefer usage text markers, fallback to README markers
         let has_indexed = has_indexed_in_usage || readme_indexed;
@@ -1346,44 +1382,37 @@ impl UsageParser {
 
     /// Extract hints from README.md command table
     /// Returns (indexed, `memory_intensive`, `proportional_memory`)
-    fn extract_hints_from_readme(command_name: &str) -> (bool, bool, bool) {
-        // Try to find the README.md in the repo root
-        let readme_paths = ["README.md", "../README.md", "../../README.md"];
+    fn extract_hints_from_readme(readme_content: &str, command_name: &str) -> (bool, bool, bool) {
+        // Find the line for this command in the table
+        // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
+        // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
+        // Note: The #L2 line number varies, so we need to match more flexibly
+        let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+        let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
 
-        for readme_path in &readme_paths {
-            if let Ok(readme_content) = fs::read_to_string(readme_path) {
-                // Find the line for this command in the table
-                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇🚀🧠🤖🔣👆| Description |
-                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
-                // Note: The #L2 line number varies, so we need to match more flexibly
-                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
-                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
-
-                if let Some(line) = readme_content
-                    .lines()
-                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
-                {
-                    // Extract only the emoji marker section (between <br> and the next |)
-                    // to avoid matching emojis in the description text (e.g., "index" has 📇 in
-                    // description)
-                    let emoji_section = if let Some(br_pos) = line.find("<br>") {
-                        if let Some(pipe_pos) = line[br_pos..].find('|') {
-                            &line[br_pos..br_pos + pipe_pos]
-                        } else {
-                            &line[br_pos..]
-                        }
-                    } else {
-                        // No <br> marker means no emoji markers for this command
-                        ""
-                    };
-
-                    let indexed = emoji_section.contains("📇");
-                    let memory_intensive = emoji_section.contains("🤯");
-                    let proportional_memory = emoji_section.contains("😣");
-
-                    return (indexed, memory_intensive, proportional_memory);
+        if let Some(line) = readme_content
+            .lines()
+            .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
+        {
+            // Extract only the emoji marker section (between <br> and the next |)
+            // to avoid matching emojis in the description text (e.g., "index" has 📇 in
+            // description)
+            let emoji_section = if let Some(br_pos) = line.find("<br>") {
+                if let Some(pipe_pos) = line[br_pos..].find('|') {
+                    &line[br_pos..br_pos + pipe_pos]
+                } else {
+                    &line[br_pos..]
                 }
-            }
+            } else {
+                // No <br> marker means no emoji markers for this command
+                ""
+            };
+
+            let indexed = emoji_section.contains("📇");
+            let memory_intensive = emoji_section.contains("🤯");
+            let proportional_memory = emoji_section.contains("😣");
+
+            return (indexed, memory_intensive, proportional_memory);
         }
 
         // Fallback: no hints found
@@ -1392,43 +1421,40 @@ impl UsageParser {
 
     /// Extract short description from README.md command table
     /// Returns concise description suitable for MCP tool listing
-    fn extract_short_description_from_readme(command_name: &str) -> Option<String> {
-        let readme_paths = ["README.md", "../README.md", "../../README.md"];
+    fn extract_short_description_from_readme(
+        readme_content: &str,
+        command_name: &str,
+    ) -> Option<String> {
+        // Find the line for this command in the table
+        // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
+        // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
+        let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
+        let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
 
-        for readme_path in &readme_paths {
-            if let Ok(readme_content) = fs::read_to_string(readme_path) {
-                // Find the line for this command in the table
-                // Format: | [command](/src/cmd/command.rs#L2)✨<br>📇| Description |
-                // Also handles updated format: | [command](docs/help/command.md)✨<br>📇|...
-                let src_pattern = format!("| [{command_name}](/src/cmd/{command_name}.rs#");
-                let help_pattern = format!("| [{command_name}](docs/help/{command_name}.md)");
+        if let Some(line) = readme_content
+            .lines()
+            .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
+        {
+            // Handle escaped pipes in markdown table (e.g., \| in code examples)
+            // Replace escaped pipes with placeholder before splitting
+            let placeholder = "\x00PIPE\x00";
+            let line_escaped = line.replace(r"\|", placeholder);
 
-                if let Some(line) = readme_content
-                    .lines()
-                    .find(|l| l.contains(&src_pattern) || l.contains(&help_pattern))
-                {
-                    // Handle escaped pipes in markdown table (e.g., \| in code examples)
-                    // Replace escaped pipes with placeholder before splitting
-                    let placeholder = "\x00PIPE\x00";
-                    let line_escaped = line.replace(r"\|", placeholder);
+            // Extract description: everything after the second | and before trailing |
+            // The format is: | command_cell | description |
+            let parts: Vec<&str> = line_escaped.split('|').collect();
+            if parts.len() >= 3 {
+                // Restore escaped pipes in description
+                let description = parts[2].trim().replace(placeholder, "|");
 
-                    // Extract description: everything after the second | and before trailing |
-                    // The format is: | command_cell | description |
-                    let parts: Vec<&str> = line_escaped.split('|').collect();
-                    if parts.len() >= 3 {
-                        // Restore escaped pipes in description
-                        let description = parts[2].trim().replace(placeholder, "|");
+                // Clean up the description:
+                // 1. Remove markdown links: [text](url) -> text
+                // 2. Remove HTML tags like <br>, <a name=...>
+                // 3. Remove deeplink anchors
+                let cleaned = Self::clean_readme_description(&description);
 
-                        // Clean up the description:
-                        // 1. Remove markdown links: [text](url) -> text
-                        // 2. Remove HTML tags like <br>, <a name=...>
-                        // 3. Remove deeplink anchors
-                        let cleaned = Self::clean_readme_description(&description);
-
-                        if !cleaned.is_empty() {
-                            return Some(cleaned);
-                        }
-                    }
+                if !cleaned.is_empty() {
+                    return Some(cleaned);
                 }
             }
         }
@@ -1664,8 +1690,9 @@ fn extract_arg_field_types(
     cmd_src: &str,
     util_src: &str,
 ) -> Result<HashMap<String, String>, String> {
-    let get_args_re =
-        regex_oncelock!(r"let\s+(?:mut\s+)?\w+\s*:\s*(?:util::)?(\w+)\s*=\s*util::get_args\s*\(");
+    let get_args_re = regex_oncelock!(
+        r"let\s+(?:mut\s+)?\w+\s*:\s*(?:util::)?(\w+)\s*=\s*(?:crate::)?util::get_args\s*\("
+    );
     let struct_name = get_args_re
         .captures(cmd_src)
         .map(|c| c[1].to_string())
@@ -1723,6 +1750,49 @@ fn struct_body<'a>(src: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
+/// Build one command's skill definition. `cmd_src` and `util_src` only need to hold the
+/// command's `util::get_args` line and its args struct (see `extract_arg_field_types`), so the
+/// full source files and the fragments `build.rs` embeds give the same result.
+fn build_skill(
+    invocation_name: &str,
+    usage_text: &str,
+    readme: &str,
+    cmd_src: &str,
+    util_src: &str,
+) -> Result<SkillDefinition, String> {
+    // the deserialized args struct decides every option's type (#4596)
+    let field_types = extract_arg_field_types(cmd_src, util_src)
+        .map_err(|e| format!("Failed to resolve args struct: {e}"))?;
+    UsageParser::new(usage_text.to_string(), invocation_name.to_string())
+        .with_field_types(field_types)
+        .with_readme(readme)
+        .parse()
+        .map_err(|e| format!("Failed to parse: {e}"))
+}
+
+/// The on-disk form of a skill: pretty JSON with a trailing newline.
+fn skill_json(skill: &SkillDefinition) -> serde_json::Result<String> {
+    Ok(serde_json::to_string_pretty(skill)? + "\n")
+}
+
+/// One command's tool definition JSON, byte-identical to what `--update-mcp-skills` writes to
+/// `.claude/skills/qsv/qsv-<invocation_name>.json`.
+pub fn tool_definition_json(
+    invocation_name: &str,
+    usage_text: &str,
+    readme: &str,
+    args_src: &str,
+) -> Result<String, String> {
+    let skill = build_skill(invocation_name, usage_text, readme, args_src, args_src)?;
+    skill_json(&skill).map_err(|e| e.to_string())
+}
+
+/// The curated MCP skill set, by source-file name (`enumerate`, not `enum`).
+pub fn mcp_skill_commands() -> &'static [&'static str] {
+    MCP_SKILL_COMMANDS
+}
+
+#[cfg(feature = "mcp")]
 fn extract_usage_from_file(file_path: &Path) -> Result<String, String> {
     let content = fs::read_to_string(file_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
@@ -1764,6 +1834,11 @@ const COMMAND_POSITIONAL_OVERRIDES: &[(&str, &str)] = &[
     ("extdedup", "input"),
     ("extsort", "output"),
     ("extdedup", "output"),
+    ("luau", "main-script"),
+    ("py", "new-column"),
+    ("log", "tool-name"),
+    ("log", "invocation-id"),
+    ("log", "message"),
 ];
 
 const MCP_SKILL_COMMANDS: &[&str] = &[
@@ -1825,6 +1900,7 @@ const MCP_SKILL_COMMANDS: &[&str] = &[
     "viz",
 ];
 
+#[cfg(feature = "mcp")]
 pub fn generate_mcp_skills() -> CliResult<()> {
     // Get all commands from src/cmd/*.rs (excluding mod.rs and duplicates)
     // Note: "enumerate" command is invoked as "enum" in qsv
@@ -1909,6 +1985,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // some commands deserialize into an args struct declared in util.rs
     // (`schema` uses `util::SchemaArgs`) rather than in their own source
     let util_src = fs::read_to_string(repo_root.join("src/util.rs")).unwrap_or_default();
+    let readme = fs::read_to_string(repo_root.join("README.md")).unwrap_or_default();
 
     let mut success_count = 0;
     let mut error_count = 0;
@@ -1951,21 +2028,10 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         // the deserialized args struct decides every option's type (#4596)
         let cmd_src = fs::read_to_string(&cmd_file)
             .map_err(|e| format!("Failed to read {}: {e}", cmd_file.display()))?;
-        let field_types = match extract_arg_field_types(&cmd_src, &util_src) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("  ❌ Failed to resolve args struct: {e}");
-                error_count += 1;
-                continue;
-            },
-        };
-
-        let parser =
-            UsageParser::new(usage_text, invocation_name.to_string()).with_field_types(field_types);
-        let skill = match parser.parse() {
+        let skill = match build_skill(invocation_name, &usage_text, &readme, &cmd_src, &util_src) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("  ❌ Failed to parse: {e}");
+                eprintln!("  ❌ {e}");
                 error_count += 1;
                 continue;
             },
@@ -1973,8 +2039,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
 
         // Write JSON file
         let output_file = output_dir.join(format!("{}.json", skill.name));
-        let json = serde_json::to_string_pretty(&skill)?;
-        fs::write(&output_file, json + "\n")?;
+        fs::write(&output_file, skill_json(&skill)?)?;
 
         eprintln!("  ✅ Generated: {}", output_file.display());
         eprintln!("     - {} argument/s", skill.command.args.len());
@@ -2584,16 +2649,23 @@ mod tests {
     /// fallback ships silently.
     #[test]
     fn command_positional_overrides_are_live() {
+        // every command gets a definition (`--help --format json`), not just the MCP set,
+        // so an override is live when it names a command. Overrides are keyed on INVOCATION
+        // names, which differ from the source file for enum and py - an override written as
+        // `enumerate` would be dead code at generation time.
+        let cmd_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cmd");
         for (cmd, arg) in COMMAND_POSITIONAL_OVERRIDES {
-            // `MCP_SKILL_COMMANDS` holds SOURCE-FILE names while the overrides
-            // are keyed on INVOCATION names, and the two differ for enumerate.
-            // Map here rather than loosening the check - an override written
-            // as `enumerate` would be dead code at generation time.
+            let source = match *cmd {
+                "enum" => "enumerate",
+                "py" => "python",
+                c => c,
+            };
             assert!(
-                MCP_SKILL_COMMANDS
-                    .iter()
-                    .any(|c| if *c == "enumerate" { "enum" } else { c } == *cmd),
-                "override keyed on <{arg}> of unknown/ungenerated command `{cmd}`"
+                *cmd != "enumerate"
+                    && *cmd != "python"
+                    && (cmd_dir.join(format!("{source}.rs")).exists()
+                        || cmd_dir.join(source).join("mod.rs").exists()),
+                "override keyed on <{arg}> of unknown command `{cmd}`"
             );
             assert!(
                 UsageParser::command_positional_description(cmd, arg).is_some(),

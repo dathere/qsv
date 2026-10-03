@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Create multiple new computed columns, filter rows or compute aggregations by
 executing a Luau 0.736 script for every row (SEQUENTIAL MODE) or for
 specified rows (RANDOM ACCESS MODE) of a CSV file.

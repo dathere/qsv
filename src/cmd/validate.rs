@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Validates CSV data using two main modes:
 
 JSON SCHEMA VALIDATION MODE:

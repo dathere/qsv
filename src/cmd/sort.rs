@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Sorts CSV data in lexicographical, natural, numerical, reverse, unique or random order.
 
 Note that this requires reading all of the CSV data into memory. If

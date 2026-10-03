@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Outputs tabular data as a pretty, colorized table that always fits into the
 terminal.
 

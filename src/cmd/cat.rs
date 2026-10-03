@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Concatenate CSV files by row or by column.
 
 When concatenating by column, the columns will be written in the same order as

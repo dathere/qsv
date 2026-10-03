@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Convert SAS, Stata & SPSS files to CSV.
 
 EXPERIMENTAL: the readers this command is built on are young. Spot-check the

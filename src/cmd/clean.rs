@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Removes qsv-generated cache files to reduce clutter and simplify data packaging.
 
 By default, clean removes the three auto-regenerable CACHES qsv writes next to a

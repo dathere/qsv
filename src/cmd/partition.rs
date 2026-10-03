@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Partitions the given CSV data into chunks based on the value of a column.
 
 See `split` command to split a CSV data by row count, by number of chunks or

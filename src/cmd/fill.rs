@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Fill empty fields in selected columns of a CSV.
 
 This command fills empty fields in the selected column

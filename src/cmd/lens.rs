@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Explore tabular data files interactively using the csvlens (https://github.com/YS-L/csvlens) engine.
 
 If the polars feature is enabled, lens can browse tabular data in Arrow, Avro/IPC, Parquet, JSON (JSON Array)

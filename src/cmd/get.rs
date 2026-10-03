@@ -1,4 +1,4 @@
-static USAGE: &str = r#"
+pub(crate) static USAGE: &str = r#"
 Get tabular data from various sources into a managed, queryable disk cache.
 
 `get` fetches a resource once, stores it compressed (zstd) and content-addressed

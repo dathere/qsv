@@ -2667,23 +2667,47 @@ impl Args {
         Ok(true)
     }
 
-    /// Helper to move "Other" category to end if not sorted
-    fn move_other_to_end_if_needed<T>(&self, counts: &mut [(Vec<u8>, T, f64, f64)]) {
-        let other_prefix = format!("{} (", self.flag_other_text);
-        let other_prefix_bytes = other_prefix.as_bytes();
-        if !self.flag_other_sorted
-            && counts
-                .first()
-                .is_some_and(|(value, _, _, _)| value.starts_with(other_prefix_bytes))
-        {
-            counts.rotate_left(1);
+    /// Positions the "Other" row. `counts()` / `counts_weighted()` always push it last, which is
+    /// the default placement. With --other-sorted it is slotted among the other rows by count
+    /// (ties broken by value), for every output format. It runs before
+    /// `move_null_to_end_if_needed`; rows are in count order, so where Other lands relative to a
+    /// NULL that is later moved to the end does not change the order of the remaining rows.
+    fn place_other_row<T: PartialOrd>(&self, counts: &mut Vec<(Vec<u8>, T, f64, f64)>) {
+        if !self.flag_other_sorted {
+            return;
         }
+        let other_prefix = format!("{} (", self.flag_other_text);
+        // rank 0 tells Other apart from a data value that happens to start with the prefix
+        let is_other = counts.last().is_some_and(|(value, _, _, rank)| {
+            *rank == 0.0 && value.starts_with(other_prefix.as_bytes())
+        });
+        if !is_other {
+            return;
+        }
+        // safety: is_other implies a last element
+        let other = counts.pop().unwrap();
+        let pos = counts
+            .iter()
+            .position(|(value, count, _, _)| {
+                // Other goes before the first row it outranks by count, then by value
+                let ord = if self.flag_asc {
+                    other.1.partial_cmp(count)
+                } else {
+                    count.partial_cmp(&other.1)
+                };
+                match ord {
+                    Some(std::cmp::Ordering::Less) => true,
+                    Some(std::cmp::Ordering::Equal) => other.0 < *value,
+                    _ => false,
+                }
+            })
+            .unwrap_or(counts.len());
+        counts.insert(pos, other);
     }
 
     /// Helper to move NULL category to end if not sorted.
-    /// Unlike `move_other_to_end_if_needed()` which only checks position 0 (since "Other" always
-    /// has rank 0 and appears first in ascending sort), NULL can appear anywhere based on its
-    /// count, so we need to search the entire list.
+    /// Unlike the "Other" row, which `counts()` always pushes last, NULL can appear anywhere based
+    /// on its count, so we need to search the entire list.
     /// This function handles multiple NULL entries (e.g., when literal "(NULL)" values exist
     /// in the data alongside empty strings that are converted to "(NULL)").
     fn move_null_to_end_if_needed<T: Copy>(&self, counts: &mut Vec<(Vec<u8>, T, f64, f64)>) {
@@ -2742,7 +2766,7 @@ impl Args {
 
         // For non-all-unique columns, process individual weighted values
         let mut counts_to_process = self.counts_weighted(weighted_map);
-        self.move_other_to_end_if_needed(&mut counts_to_process);
+        self.place_other_row(&mut counts_to_process);
         self.move_null_to_end_if_needed(&mut counts_to_process);
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
@@ -2785,7 +2809,7 @@ impl Args {
         } else {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
-            self.move_other_to_end_if_needed(&mut counts_to_process);
+            self.place_other_row(&mut counts_to_process);
             self.move_null_to_end_if_needed(&mut counts_to_process);
 
             // Convert to processed frequencies
@@ -4198,50 +4222,6 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // With --other-sorted, slot "Other" (rank 0), and NULL rows moved to the end, back
-            // into order, breaking ties by value for deterministic output. The ranked rows keep
-            // their established order: inside a weighted tie each row reports its own rounded
-            // total, which can differ by one, so re-sorting them by count would reorder a tie.
-            // For the same reason a ranked NULL goes back by rank, not by count. With
-            // --null-sorted, NULL rows were never moved, so they stay where they are.
-            if self.flag_other_sorted {
-                // safety: NULL_VAL is set in run()
-                let null_val = NULL_VAL.get().unwrap();
-                let by_count = |a: &ProcessedFrequency, b: &ProcessedFrequency| {
-                    if self.flag_asc {
-                        a.count.cmp(&b.count)
-                    } else {
-                        b.count.cmp(&a.count)
-                    }
-                    .then_with(|| a.value.cmp(&b.value))
-                };
-                let (mut floating, mut placed): (Vec<_>, Vec<_>) =
-                    processed_frequencies.drain(..).partition(|f| {
-                        f.rank <= 0.0 || (!self.flag_null_sorted && f.value == *null_val)
-                    });
-                // Ranked NULLs go back first, so Other and suppressed NULLs are then placed by
-                // count against the complete ranked sequence.
-                floating.sort_unstable_by(|a, b| {
-                    (b.rank > 0.0)
-                        .cmp(&(a.rank > 0.0))
-                        .then_with(|| by_count(a, b))
-                });
-                for f in floating {
-                    let pos = if f.rank > 0.0 {
-                        placed.iter().position(|r| {
-                            r.rank > f.rank || (r.rank == f.rank && f.value < r.value)
-                        })
-                    } else {
-                        placed
-                            .iter()
-                            .position(|r| by_count(&f, r) == std::cmp::Ordering::Less)
-                    }
-                    .unwrap_or(placed.len());
-                    placed.insert(pos, f);
-                }
-                *processed_frequencies = placed;
-            }
-
             // Get stats record for this field by output-column POSITION (not name), so
             // duplicate-named columns each get their own stats.
             let stats_record = STATS_RECORDS_BY_POS

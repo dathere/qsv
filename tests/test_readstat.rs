@@ -2093,3 +2093,37 @@ fn readstat_selection_refusals() {
         );
     }
 }
+
+/// Without --sentinels-columns, sentinels are kept for the selected variables
+/// only, so an unselected `<name>_null` clash doesn't block them.
+#[test]
+fn readstat_select_ignores_unselected_sentinel_clash() {
+    let wrk = Workdir::new("readstat_select_ignores_unselected_sentinel_clash");
+    let f = wrk.load_test_file("readstat_sentinels_suffix.sav");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--select", "other"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["other", "other_null"],
+        svec!["1.0", ""],
+        svec!["", "5"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--select", "other"]).arg(&f);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("1 sentinel (user-defined missing values) in 1 variable (other)"),
+        "{stderr}"
+    );
+
+    // a clash among the selected variables is still refused
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--select", "rating,other"])
+        .arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("named \"rating_null\""), "{stderr}");
+}

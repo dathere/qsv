@@ -664,7 +664,11 @@ fn sentinel_opts(
     }
 
     let columns = match args.flag_sentinels_columns.as_deref() {
-        None => InformativeNullColumns::All,
+        // the reader leaves out the selected variables that can't hold one,
+        // and unselected ones can't clash with a sentinel column
+        None => selection.map_or(InformativeNullColumns::All, |sel| {
+            InformativeNullColumns::Selected(sel.to_vec())
+        }),
         Some(list) => {
             let mut names: Vec<String> = Vec::new();
             for name in list.split(',').map(str::trim) {

@@ -505,6 +505,40 @@ fn frequency_limit_threshold_null_counted() {
     assert_eq!(got, expected);
 }
 
+// With a NULL set aside, the weighted "Other" row must still account for the values
+// past --limit; NULL was subtracted from the unique count twice, dropping `b` entirely.
+#[test]
+fn frequency_weighted_other_with_null() {
+    let wrk = Workdir::new("frequency_weighted_other_with_null");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["b", "1"],
+        svec!["", "1"],
+    ];
+    wrk.create("in.csv", rows);
+
+    for threshold in ["0", "1"] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--select", "v,w"])
+            .args(["--weight", "w"])
+            .args(["--limit", "1"])
+            .args(["--lmt-threshold", threshold]);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["v", "a", "3", "75", "1"],
+            svec!["v", "Other (1)", "1", "25", "0"],
+            svec!["v", "(NULL)", "1", "", ""],
+        ];
+        assert_eq!(got, expected, "--lmt-threshold {threshold}");
+    }
+}
+
 // Locks the top_n/bottom_n tie-break used by the --limit fast path: on a count
 // tie at the cutoff, the lexicographically SMALLEST values are kept (matching
 // par_frequent). Guards against a regression in qsv-stats top_n's tie-break.

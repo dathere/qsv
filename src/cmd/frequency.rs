@@ -2935,7 +2935,8 @@ impl Args {
             // Subtract null_weight from other_weight since NULL is handled separately
             (
                 total_weight - count_sum - null_weight,
-                unique_counts_len.saturating_sub(1), // NULL was removed from counts
+                // unlike counts(), unique_counts_len was taken after NULL left `counts`
+                unique_counts_len,
             )
         } else {
             (total_weight - count_sum, unique_counts_len)

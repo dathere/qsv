@@ -216,6 +216,26 @@ jobs:
             codegen-units:
             # sequential build keeps the #4372 dependency sharing, worth more here than parallelism
             split-mcp: false
+          - os: ubuntu-24.04-arm
+            os-name: linux
+            target: aarch64-unknown-linux-musl
+            architecture: aarch64
+            # Build natively and use musl-tools for the static ARM64 artifact.
+            use-cross: false
+            musl-prep: true
+            # Keep the reduced feature set used by the existing x86_64 musl release.
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize
+            # tikv-jemalloc does not build with the native ARM64 musl toolchain.
+            default-features: --no-default-features
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+            pgo: false
+            pgo-train-flags:
+            pgo-lto:
+            lto:
+            codegen-units:
+            split-mcp: false
           # - os: ubuntu-20.04
           #   os-name: linux
           #   target: arm-unknown-linux-gnueabihf

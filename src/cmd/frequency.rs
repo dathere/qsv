@@ -396,11 +396,6 @@ pub struct Args {
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 
-// Name-keyed stats records. Retained ONLY for lookups that legitimately address a
-// column by its user-specified name: the `--weight` column's tolerance scale and
-// `--stats-filter`. NOT used for per-output-column JSON stats (see STATS_RECORDS_BY_POS),
-// which must be positional so duplicate-named columns don't collapse onto one record.
-static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
 // Per-output-column stats for JSON/TOON output, aligned positionally to the FINAL
 // selected columns (index = output column position). Positional — not name-keyed — so
 // duplicate-named columns each report their own stats.
@@ -1930,23 +1925,39 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
     count_groups
 }
 
-/// Group weighted frequency values by weight (with tolerance).
+/// Relative tolerance under which two weighted totals count as the same weight.
 ///
-/// # Arguments
+/// Parallel runs add each value's weights in chunk-arrival order, and f64 addition is not
+/// associative, so totals that are equal in exact arithmetic can differ in their last bits
+/// from run to run (and even a sequential sum like 10.1 + 10.2 lands one ulp off 20.3). That
+/// rounding error grows with the size of the sum, so the tolerance has to be relative to it:
+/// an absolute one is either below one ulp of a large sum (ties split) or wider than the gap
+/// between small, distinct totals (and merges them).
 ///
-/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string and `weight` is
-///   the numeric weight used for grouping. The vector is expected to be ordered by `weight` so that
-///   equal (or near-equal) weights are adjacent.
-/// * `tolerance` - The maximum absolute difference between consecutive weights for them to be
-///   treated as belonging to the same group.
-fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec<Vec<u8>>)> {
+/// Trade-off: summing n positive weights has a worst-case relative error of ~n·ε, which only
+/// reaches 1e-9 around n = 1e7 rows for ONE value (typical error grows like √n·ε and is far
+/// smaller). In the other direction, distinct totals that differ by less than 1e-9 of their
+/// size are reported as one tie, e.g. integer totals above ~1e9 that differ by 1.
+const WEIGHT_REL_TOLERANCE: f64 = 1e-9;
+
+#[inline]
+fn weights_tied(a: f64, b: f64) -> bool {
+    (a - b).abs() <= WEIGHT_REL_TOLERANCE * a.abs().max(b.abs())
+}
+
+/// Group weighted frequency values by weight, treating totals within
+/// [`WEIGHT_REL_TOLERANCE`] of each other as ties.
+///
+/// `counts` is a list of `(value, weight)` pairs, expected to be ordered by `weight` so that
+/// equal (or near-equal) weights are adjacent.
+fn group_by_weight(counts: Vec<(Vec<u8>, f64)>) -> Vec<(f64, Vec<Vec<u8>>)> {
     let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
     let mut current_weight: Option<f64> = None;
     let mut current_group: Vec<Vec<u8>> = Vec::new();
 
     for (byte_string, weight) in counts {
         if let Some(prev_weight) = current_weight
-            && (prev_weight - weight).abs() > tolerance
+            && !weights_tied(prev_weight, weight)
         {
             weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
         }
@@ -2959,30 +2970,8 @@ impl Args {
             0.0_f64
         };
 
-        // Compute tolerance once before the loop (outside hot path)
-        // Use stats cache if available to determine weight scale for more accurate tolerance
-        let weight_tolerance = if let Some(ref weight_col) = self.flag_weight {
-            STATS_RECORDS
-                .get()
-                .and_then(|records| records.get(weight_col))
-                .and_then(|stats| {
-                    // Prefer stddev as it represents the scale of variation
-                    // Fall back to range or mean if stddev not available
-                    stats
-                        .stddev
-                        .or(stats.range)
-                        .or(stats.mean_f64())
-                        .filter(|&s| s > 0.0)
-                })
-                // Use a scale-aware tolerance with a minimum absolute epsilon to handle
-                // both small and large weight scales robustly.
-                .map_or(f64::EPSILON, |scale| (scale * 1e-6).max(1e-10))
-        } else {
-            f64::EPSILON
-        };
-
         // Group by weight to handle ties
-        let weight_groups = group_by_weight(counts, weight_tolerance);
+        let weight_groups = group_by_weight(counts);
 
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
@@ -4017,9 +4006,9 @@ impl Args {
     /// original CSV column position. An empty cardinality vector signals "no stats
     /// cache available" (compute frequencies for all columns).
     ///
-    /// Also stores the stats records in a hashmap for use when producing JSON output
-    /// and computes the Float / `--stats-filter` skip lists (both still name-keyed,
-    /// as those features index by selected-header name).
+    /// Also returns the per-column stats records for JSON output and computes the Float /
+    /// `--stats-filter` skip lists (both still name-keyed, as those features index by
+    /// selected-header name).
     fn get_unique_headers(
         &self,
         sel: &Selection,
@@ -4047,24 +4036,14 @@ impl Args {
         };
         let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
 
-        // What positional/name-keyed structures each feature needs, so we only pay for
-        // what's requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV
-        // column position) so duplicate-named columns are each classified on their own data
-        // — the lone exception is the name-keyed hashmap below, which exists solely for the
-        // --weight tolerance lookup (it addresses ONE column by the user-supplied name).
-        let needs_weight_records = is_json && self.flag_weight.is_some();
+        // What positional structures each feature needs, so we only pay for what's
+        // requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV column
+        // position) so duplicate-named columns are each classified on their own data.
         let needs_float_types = self.flag_no_float.is_some();
         #[cfg(feature = "luau")]
         let needs_stats_by_pos = is_json || self.flag_stats_filter.is_some();
         #[cfg(not(feature = "luau"))]
         let needs_stats_by_pos = is_json;
-
-        // initialize the name-keyed stats records hashmap (used only by --weight tolerance)
-        let mut stats_records_hashmap = if needs_weight_records {
-            HashMap::with_capacity(headers.len())
-        } else {
-            HashMap::new()
-        };
 
         // pass --flexible through to the stats subprocess so a `frequency --flexible` run
         // doesn't die inside the stats-cache child on the ragged file it was told to accept
@@ -4101,17 +4080,7 @@ impl Args {
             Vec::new()
         };
 
-        for (i, stats_record) in csv_stats.iter().enumerate() {
-            if needs_weight_records {
-                // Name-keyed record for the --weight tolerance lookup (addresses the weight
-                // column by user-supplied name). safety: csv_fields and csv_stats are equal
-                // length, so index i is valid for csv_fields.
-                let col_name = csv_fields.get(i).unwrap();
-                let col_name_str = simdutf8::basic::from_utf8(col_name)
-                    .unwrap_or(NON_UTF8_ERR)
-                    .to_string();
-                stats_records_hashmap.insert(col_name_str, stats_record.clone());
-            }
+        for stats_record in &csv_stats {
             if needs_float_types {
                 col_type_by_pos.push(stats_record.r#type.clone());
             }
@@ -4186,13 +4155,6 @@ impl Args {
                     );
                 }
             }
-        }
-
-        if is_json && self.flag_weight.is_some() {
-            // Only the weighted-JSON tolerance path reads STATS_RECORDS; set it just for
-            // that case (addresses the weight column by name). Non-weighted JSON never
-            // populated the hashmap above, so there is nothing to store.
-            STATS_RECORDS.set(stats_records_hashmap).unwrap();
         }
 
         // COL_CARDINALITY_VEC and STATS_RECORDS_BY_POS are set by the caller (sel_headers)

@@ -2789,6 +2789,136 @@ fn frequency_weight_fractional_weights() {
     assert_eq!(got, expected);
 }
 
+// 10.1 + 10.2 sums to 20.299999999999997, one ulp below 20.3 (and more than
+// f64::EPSILON away), so "a" and "b" only tie under a relative tolerance (#4719).
+#[test]
+fn frequency_weight_ulp_apart_totals_tie() {
+    let wrk = Workdir::new("frequency_weight_ulp_apart_totals_tie");
+    let rows = vec![
+        svec!["value", "weight"],
+        svec!["a", "10.1"],
+        svec!["a", "10.2"],
+        svec!["b", "20.3"],
+        svec!["c", "5"],
+        svec!["c", "5"],
+    ];
+    wrk.create("in.csv", rows);
+    for json in [false, true] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--limit", "0"])
+            .args(["--weight", "weight"]);
+        let got: Vec<(String, f64)> = if json {
+            cmd.arg("--json");
+            let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+            v["fields"][0]["frequencies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| {
+                    (
+                        f["value"].as_str().unwrap().to_string(),
+                        f["rank"].as_f64().unwrap(),
+                    )
+                })
+                .collect()
+        } else {
+            let rows: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+            rows.into_iter()
+                .skip(1)
+                .map(|r| (r[1].clone(), r[4].parse().unwrap()))
+                .collect()
+        };
+        let expected = vec![
+            ("a".to_string(), 1.0),
+            ("b".to_string(), 1.0),
+            ("c".to_string(), 2.0),
+        ];
+        assert_eq!(got, expected, "json={json}");
+    }
+}
+
+// Distinct totals must never be merged into one rank group. The old JSON-only tolerance
+// was stddev(weight) * 1e-6 in ABSOLUTE terms (~11.5 here), which tied 20000001 with
+// 20000003 and reported 20000001 for both (#4719).
+#[test]
+fn frequency_weight_large_distinct_totals_not_merged() {
+    let wrk = Workdir::new("frequency_weight_large_distinct_totals_not_merged");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["a", "20000000"],
+        svec!["a", "1"],
+        svec!["b", "20000003"],
+        svec!["c", "1"],
+        svec!["d", "1"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut stats = wrk.command("stats");
+    stats
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--weight", "w"])
+        .arg("--json");
+    let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    let got: Vec<(String, u64, f64)> = v["fields"][0]["frequencies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["value"].as_str().unwrap().to_string(),
+                f["count"].as_u64().unwrap(),
+                f["rank"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    let expected = vec![
+        ("b".to_string(), 20_000_003, 1.0),
+        ("a".to_string(), 20_000_001, 2.0),
+        ("c".to_string(), 1, 3.0),
+        ("d".to_string(), 1, 3.0),
+    ];
+    assert_eq!(got, expected);
+}
+
+// Parallel runs merge per-chunk weight sums in arrival order, so equal totals can differ
+// in their last bits from run to run. Ranks and order must not (#4719).
+#[test]
+fn frequency_weight_fractional_parallel_deterministic() {
+    let wrk = Workdir::new("frequency_weight_fractional_parallel_deterministic");
+    let mut rows = vec![svec!["v", "w"]];
+    // every value repeats one weight, so the 1,000 values fall into exactly 10 tie groups
+    for i in 0..200_000_usize {
+        rows.push(vec![
+            format!("v{}", i % 1000),
+            (((i * 7) % 10 + 1) as f64 / 10.0).to_string(),
+        ]);
+    }
+    wrk.create_indexed("in.csv", rows);
+
+    let run = |jobs: &str| {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--limit", "0"])
+            .args(["--weight", "w"])
+            .args(["--jobs", jobs]);
+        wrk.read_stdout::<Vec<Vec<String>>>(&mut cmd)
+    };
+    let sequential = run("1");
+    let ranks: std::collections::HashSet<&str> =
+        sequential.iter().skip(1).map(|r| r[4].as_str()).collect();
+    assert_eq!(ranks.len(), 10, "expected 10 tie groups");
+    for attempt in 0..5 {
+        assert_eq!(run("16"), sequential, "attempt {attempt}");
+    }
+}
+
 #[test]
 fn frequency_weight_all_unique() {
     let wrk = Workdir::new("frequency_weight_all_unique");

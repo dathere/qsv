@@ -34,9 +34,11 @@ kept under "x-qsv". It has the shape 'qsv describegpt --dictionary' writes, so
 'qsv validate' & 'qsv viz smart --dictionary' read it - without an LLM.
 
 Only part of a file can be read: --select picks variables, which the readers
-skip over without decoding, and --offset, --limit & --sample pick rows. Rows
-before the --offset are still read through, so skipping far into a large file
-takes time, but stops early once --limit is reached.
+skip over without decoding, and --offset, --limit & --sample pick rows. Stata,
+uncompressed SPSS & SAS transport files jump straight to the --offset. SAS
+datasets & compressed SPSS files still pass over the rows before it (decoding
+them, for a SAS dataset at --jobs > 1), and .por files are read whole. Reading
+stops once --limit is reached.
 
   Convert a SAS dataset to CSV:
     qsv readstat data.sas7bdat > data.csv
@@ -204,7 +206,7 @@ use polars::prelude::{
 };
 use polars_readstat_rs::{
     CatalogKey, InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat,
-    ScanOptions, readstat_batch_iter, readstat_metadata_json, readstat_schema,
+    ScanOptions, readstat_batch_iter_with_offset, readstat_metadata_json, readstat_schema,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
@@ -609,14 +611,23 @@ fn row_count(path: &Path, format: Format) -> CliResult<Option<u64>> {
 /// file (the `--compress-numeric` check, then the write) keeps the same rows.
 #[derive(Clone, Default)]
 struct RowWindow {
-    offset: u64,
-    end:    Option<u64>,
+    offset:        u64,
+    end:           Option<u64>,
     /// Sorted positions, all within `offset..end`.
-    sample: Option<Vec<u64>>,
+    sample:        Option<Vec<u64>>,
+    /// Whether the reader itself starts at the --offset. Not for a SAS
+    /// dataset at --jobs > 1: upstream reads any offset serially, so starting
+    /// at row 0 keeps its parallel decode, & the rows before are sliced off.
+    reader_offset: bool,
+}
+
+/// See [`RowWindow::reader_offset`].
+fn reader_starts_at_offset(rs_format: Option<ReadStatFormat>, jobs: usize) -> bool {
+    !(matches!(rs_format, Some(ReadStatFormat::Sas)) && jobs > 1)
 }
 
 impl RowWindow {
-    fn new(args: &Args) -> Self {
+    fn new(args: &Args, rs_format: Option<ReadStatFormat>) -> Self {
         let offset = args.flag_offset as u64;
         Self {
             offset,
@@ -624,6 +635,7 @@ impl RowWindow {
                 .flag_limit
                 .map(|limit| offset.saturating_add(limit as u64)),
             sample: None,
+            reader_offset: reader_starts_at_offset(rs_format, args.flag_jobs.unwrap_or(1)),
         }
     }
 
@@ -652,13 +664,24 @@ impl RowWindow {
         self.offset == 0 && self.end.is_none() && self.sample.is_none()
     }
 
-    /// How many rows the reader has to read: up to the last row kept.
-    fn n_rows(&self) -> Option<usize> {
+    /// The rows the reader has to read: from its first row (the --offset, or
+    /// row 0 without `reader_offset`) up to the last row kept.
+    fn read_range(&self) -> (usize, Option<usize>) {
         let last = match &self.sample {
             Some(sample) => Some(sample.last().map_or(0, |&p| p + 1)),
             None => self.end,
         };
-        last.map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+        let offset = if self.reader_offset {
+            usize::try_from(self.offset).unwrap_or(usize::MAX)
+        } else {
+            0
+        };
+        let n_rows = last.map(|n| {
+            usize::try_from(n)
+                .unwrap_or(usize::MAX)
+                .saturating_sub(offset)
+        });
+        (offset, n_rows)
     }
 
     /// Keep the rows of a batch whose first row is at position `start`.
@@ -1212,15 +1235,17 @@ fn label_collisions(
         Ok(())
     };
     if let Some(rs_format) = rs_format {
-        let batches = readstat_batch_iter(
+        let (window_offset, window_rows) = window.read_range();
+        let batches = readstat_batch_iter_with_offset(
             path,
             Some(scan_opts),
             Some(rs_format),
             Some(names),
-            window.n_rows(),
+            window_offset,
+            window_rows,
             batch_size,
         )?;
-        let mut start = 0_u64;
+        let mut start = window_offset as u64;
         for batch in batches {
             let batch = batch?;
             let height = batch.height() as u64;
@@ -1268,15 +1293,17 @@ fn whole_number_columns(
         return Ok(Vec::new());
     }
     // only the float columns are read
-    let batches = readstat_batch_iter(
+    let (window_offset, window_rows) = window.read_range();
+    let batches = readstat_batch_iter_with_offset(
         path,
         Some(scan_opts),
         Some(rs_format),
         Some(scan.names()),
-        window.n_rows(),
+        window_offset,
+        window_rows,
         batch_size,
     )?;
-    let mut start = 0_u64;
+    let mut start = window_offset as u64;
     for batch in batches {
         let mut batch = batch?;
         durations_as_seconds(&mut batch)?;
@@ -1864,7 +1891,7 @@ fn write_data<W: Write>(
     // written exactly once even when the file has no rows at all.
     let rs_format = format.readstat_format();
     let batch_size = (args.flag_batch > 0).then_some(args.flag_batch);
-    let mut window = RowWindow::new(args);
+    let mut window = RowWindow::new(args, rs_format);
     let (mut schema, por_df) = if let Some(rs_format) = rs_format {
         if args.flag_sample.is_some() {
             let Some(rows) = row_count(path, format)? else {
@@ -2022,15 +2049,17 @@ fn write_data<W: Write>(
         } else {
             opts
         };
-        let batches = readstat_batch_iter(
+        let (window_offset, window_rows) = window.read_range();
+        let batches = readstat_batch_iter_with_offset(
             path,
             Some(read_opts),
             Some(rs_format),
             selection.map(<[String]>::to_vec),
-            window.n_rows(),
+            window_offset,
+            window_rows,
             batch_size,
         )?;
-        let mut start = 0_u64;
+        let mut start = window_offset as u64;
         for batch in batches {
             let mut df = batch?;
             durations_as_seconds(&mut df)?;
@@ -2263,4 +2292,48 @@ fn metadata_to_csv<W: Write>(json: &str, delim: u8, w: &mut W) -> CliResult<()> 
     }
     wtr.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn window(offset: u64, end: Option<u64>, reader_offset: bool) -> RowWindow {
+        RowWindow {
+            offset,
+            end,
+            sample: None,
+            reader_offset,
+        }
+    }
+
+    #[test]
+    fn read_range_starts_the_reader_at_the_offset() {
+        assert_eq!(window(10, Some(15), true).read_range(), (10, Some(5)));
+        assert_eq!(window(10, None, true).read_range(), (10, None));
+        assert_eq!(window(10, Some(10), true).read_range(), (10, Some(0)));
+        let mut sampled = window(10, None, true);
+        sampled.sample = Some(vec![12, 20]);
+        assert_eq!(sampled.read_range(), (10, Some(11)));
+    }
+
+    #[test]
+    fn read_range_without_reader_offset_reads_from_row_0() {
+        assert_eq!(window(10, Some(15), false).read_range(), (0, Some(15)));
+        assert_eq!(window(10, None, false).read_range(), (0, None));
+    }
+
+    #[test]
+    fn only_a_sas_dataset_at_jobs_over_1_reads_from_row_0() {
+        assert!(!reader_starts_at_offset(Some(ReadStatFormat::Sas), 4));
+        assert!(reader_starts_at_offset(Some(ReadStatFormat::Sas), 1));
+        for format in [
+            ReadStatFormat::SasXpt,
+            ReadStatFormat::Stata,
+            ReadStatFormat::Spss,
+        ] {
+            assert!(reader_starts_at_offset(Some(format), 4));
+        }
+        assert!(reader_starts_at_offset(None, 4));
+    }
 }

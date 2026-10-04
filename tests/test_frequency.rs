@@ -753,41 +753,43 @@ fn frequency_custom_other_text() {
     assert_eq!(got, expected);
 }
 
+// Output order is asserted unsorted: --limit 1 keeps z (3) in h2 while Other holds y, Y, x (4),
+// so --other-sorted must put Other FIRST there. In h1, Other (3) stays after a (4). These tests
+// used to sort their output, which let CSV ignore --other-sorted unnoticed (#4724).
 #[test]
 fn frequency_custom_other_text_sorted() {
     let (wrk, mut cmd) = setup("frequency_custom_other_text_sorted");
-    cmd.args(["--limit", "-4"])
-        .args(["--lmt-threshold", "4"])
+    cmd.args(["--limit", "1"])
         .args(["--other-text", "Ibang halaga"])
         .arg("--other-sorted")
         .arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_unstable();
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h1", "Ibang halaga (3)", "3", "42.85714", "0"],
         svec!["h1", "a", "4", "57.14286", "1"],
-        svec!["h2", "Ibang halaga (4)", "7", "100", "0"],
+        svec!["h1", "Ibang halaga (3)", "3", "42.85714", "0"],
+        svec!["h2", "Ibang halaga (3)", "4", "57.14286", "0"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
 
+// See frequency_custom_other_text_sorted: asserted unsorted, Other outranks z in h2.
 #[test]
 fn frequency_other_sorted() {
     let (wrk, mut cmd) = setup("frequency_other_sorted");
-    cmd.args(["--limit", "-4"])
-        .args(["--lmt-threshold", "4"])
+    cmd.args(["--limit", "1"])
         .arg("--other-sorted")
         .arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_unstable();
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h1", "Other (3)", "3", "42.85714", "0"],
         svec!["h1", "a", "4", "57.14286", "1"],
-        svec!["h2", "Other (4)", "7", "100", "0"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h2", "Other (3)", "4", "57.14286", "0"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }

@@ -1407,67 +1407,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Handle weighted vs unweighted frequencies
     if let Some(weighted) = weighted_tables {
-        // Process weighted frequencies — the inline loop differs from the
-        // unweighted helper because process_frequencies_weighted takes the
-        // weighted column map, not the FTable.
-        let mut header_vec: Vec<u8>;
-        let mut itoa_buffer = itoa::Buffer::new();
-        let mut zmij_buffer = zmij::Buffer::new();
-        let mut rank_buffer = String::with_capacity(20);
-        #[allow(unused_assignments)]
-        let mut value_str = String::with_capacity(100);
-        let vis_whitespace = args.flag_vis_whitespace;
-
-        // Rank (and drop) each column's map in parallel; see rank_columns_in_batches.
-        let processed = rank_columns_in_batches(weighted, |(i, weighted_map)| {
-            let mut processed_frequencies = Vec::new();
-            args.process_frequencies_weighted(
-                unique_headers_vec.contains(&i),
-                abs_dec_places,
-                row_count,
-                &weighted_map,
-                &mut processed_frequencies,
-            );
-            processed_frequencies
-        });
-
-        // Headers without a weighted map emit no rows, as before.
-        for (i, (header, processed_frequencies)) in headers.iter().zip(processed).enumerate() {
-            header_vec = if rconfig.no_headers {
-                (i + 1).to_string().into_bytes()
-            } else {
-                header.to_vec()
-            };
-
-            for processed_freq in &processed_frequencies {
-                // Format rank: show as integer if whole number, otherwise with decimals
-                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank)
-                rank_buffer.clear();
-                if processed_freq.rank >= 0.0 {
-                    if processed_freq.rank.fract() == 0.0 {
-                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                    } else {
-                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
-                    }
-                }
-
-                let value_bytes: &[u8] = if vis_whitespace {
-                    value_str =
-                        util::visualize_whitespace(&util::bytes_to_cow_str(&processed_freq.value));
-                    value_str.as_bytes()
-                } else {
-                    &processed_freq.value
+        let no_headers = rconfig.no_headers;
+        for_each_ranked_column(
+            weighted,
+            args.ranking_window(),
+            |(i, weighted_map)| {
+                let mut processed_frequencies = Vec::new();
+                args.process_frequencies_weighted(
+                    unique_headers_vec.contains(&i),
+                    abs_dec_places,
+                    row_count,
+                    &weighted_map,
+                    &mut processed_frequencies,
+                );
+                processed_frequencies
+            },
+            // Headers without a weighted map emit no rows, as before.
+            |i, processed_frequencies| {
+                let Some(header) = headers.get(i) else {
+                    return Ok(());
                 };
-
-                wtr.write_record([
-                    &*header_vec,
-                    value_bytes,
-                    itoa_buffer.format(processed_freq.count).as_bytes(),
-                    processed_freq.formatted_percentage.as_bytes(),
-                    rank_buffer.as_bytes(),
-                ])?;
-            }
-        }
+                let header_vec = if no_headers {
+                    (i + 1).to_string().into_bytes()
+                } else {
+                    header.to_vec()
+                };
+                args.write_csv_column_rows(&mut wtr, &header_vec, &processed_frequencies)
+            },
+        )?;
     } else {
         args.emit_unweighted_csv_rows(
             &mut wtr,
@@ -1556,27 +1523,71 @@ fn merge_weighted_ftables(mut a: WeightedFTables, b: WeightedFTables) -> Weighte
     a
 }
 
-/// Lazily ranks per-column tables in parallel batches of at most `--jobs` columns,
-/// yielding results in column order. Each worker drops its own table, so freeing the
+/// Ranks per-column tables in parallel and hands each result to `emit`, in column
+/// order, on the calling thread. At most `window` columns are in flight (being ranked,
+/// or ranked but not yet emitted) at once, which caps how many ranked columns are
+/// retained; see `Args::ranking_window`. Each worker drops its own table, so freeing the
 /// owned keys of high-cardinality columns doesn't run serially on the writer thread.
-/// The next batch is ranked only after the caller has consumed the previous one, which
-/// caps retained ranked rows at one batch (one column with `--jobs 1`, as before).
-fn rank_columns_in_batches<T, R, F>(tables: Vec<T>, rank: F) -> impl Iterator<Item = R>
+fn for_each_ranked_column<T, R, F, E>(
+    tables: Vec<T>,
+    window: usize,
+    rank: F,
+    mut emit: E,
+) -> CliResult<()>
 where
     T: Send,
     R: Send,
-    F: Fn((usize, T)) -> R + Sync + Send,
+    F: Fn((usize, T)) -> R + Sync,
+    E: FnMut(usize, R) -> CliResult<()>,
 {
-    let batch_size = rayon::current_num_threads().max(1);
-    let mut tables = tables.into_iter().enumerate();
-    std::iter::from_fn(move || {
-        let batch: Vec<(usize, T)> = tables.by_ref().take(batch_size).collect();
-        if batch.is_empty() {
-            return None;
+    let window = window.max(1);
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let mut pending = tables.into_iter().enumerate();
+    let rank = &rank;
+    rayon::in_place_scope(|scope| {
+        let mut spawn_next = || {
+            let Some((i, table)) = pending.next() else {
+                return false;
+            };
+            let tx = tx.clone();
+            scope.spawn(move |_| {
+                // Hand a panic to the writer, which would otherwise block forever on a
+                // result that never arrives (dev/test builds unwind).
+                let ranked =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rank((i, table))));
+                let _ = tx.send((i, ranked));
+            });
+            true
+        };
+
+        let mut in_flight = 0_usize;
+        while in_flight < window && spawn_next() {
+            in_flight += 1;
         }
-        Some(batch.into_par_iter().map(&rank).collect::<Vec<R>>())
+        let mut ready = std::collections::BTreeMap::new();
+        let mut next = 0_usize;
+        while in_flight > 0 {
+            let ranked = if let Some(ranked) = ready.remove(&next) {
+                ranked
+            } else {
+                // this thread holds `tx`, so the channel can't disconnect
+                let (i, ranked) = rx.recv().expect("ranking channel disconnected");
+                if i != next {
+                    ready.insert(i, ranked);
+                    continue;
+                }
+                ranked
+            };
+            let ranked = ranked.unwrap_or_else(|payload| std::panic::resume_unwind(payload));
+            in_flight -= 1;
+            emit(next, ranked)?;
+            next += 1;
+            if spawn_next() {
+                in_flight += 1;
+            }
+        }
+        Ok(())
     })
-    .flatten()
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -2736,61 +2747,89 @@ impl Args {
         row_count: u64,
         no_headers: bool,
     ) -> CliResult<()> {
+        for_each_ranked_column(
+            tables,
+            self.ranking_window(),
+            |(i, ftab)| {
+                let mut processed_frequencies = Vec::new();
+                self.process_frequencies(
+                    unique_headers_vec.contains(&i),
+                    abs_dec_places,
+                    row_count,
+                    &ftab,
+                    &mut processed_frequencies,
+                );
+                processed_frequencies
+            },
+            |i, processed_frequencies| {
+                let Some(header) = headers.get(i) else {
+                    return Ok(());
+                };
+                let header_vec = if no_headers {
+                    (i + 1).to_string().into_bytes()
+                } else {
+                    header.to_vec()
+                };
+                self.write_csv_column_rows(wtr, &header_vec, &processed_frequencies)
+            },
+        )
+    }
+
+    /// How many columns may be ranked ahead of the CSV/JSON writer (see
+    /// `for_each_ranked_column`). With a positive `--limit` that always applies, a ranked
+    /// column keeps at most limit + 2 rows (top N, NULL, Other) once its table is dropped,
+    /// so every column can be in flight at once. Otherwise a column's output is unbounded
+    /// (e.g. `--limit 0`, a negative limit, or a column under `--lmt-threshold`), so cap
+    /// retained columns at `--jobs`.
+    fn ranking_window(&self) -> usize {
+        if self.flag_limit > 0 && self.flag_lmt_threshold == 0 {
+            usize::MAX
+        } else {
+            rayon::current_num_threads()
+        }
+    }
+
+    /// Write one column's ranked frequencies as `field,value,count,percentage,rank` rows.
+    fn write_csv_column_rows<W: io::Write>(
+        &self,
+        wtr: &mut csv::Writer<W>,
+        header: &[u8],
+        processed_frequencies: &[ProcessedFrequency],
+    ) -> CliResult<()> {
         let vis_whitespace = self.flag_vis_whitespace;
-        let mut header_vec: Vec<u8>;
         let mut itoa_buffer = itoa::Buffer::new();
         let mut zmij_buffer = zmij::Buffer::new();
         let mut rank_buffer = String::with_capacity(20);
         #[allow(unused_assignments)]
-        let mut value_str = String::with_capacity(100);
-        // Rank (and drop) each column's table in parallel; see rank_columns_in_batches.
-        let processed = rank_columns_in_batches(tables, |(i, ftab)| {
-            let mut processed_frequencies = Vec::new();
-            self.process_frequencies(
-                unique_headers_vec.contains(&i),
-                abs_dec_places,
-                row_count,
-                &ftab,
-                &mut processed_frequencies,
-            );
-            processed_frequencies
-        });
+        let mut value_str = String::new();
 
-        for (i, (header, processed_frequencies)) in headers.iter().zip(processed).enumerate() {
-            header_vec = if no_headers {
-                (i + 1).to_string().into_bytes()
+        for processed_freq in processed_frequencies {
+            // Format rank: show as integer if whole number, otherwise with decimals.
+            // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank).
+            rank_buffer.clear();
+            if processed_freq.rank >= 0.0 {
+                if processed_freq.rank.fract() == 0.0 {
+                    rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
+                } else {
+                    rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
+                }
+            }
+
+            let value_bytes: &[u8] = if vis_whitespace {
+                value_str =
+                    util::visualize_whitespace(&util::bytes_to_cow_str(&processed_freq.value));
+                value_str.as_bytes()
             } else {
-                header.to_vec()
+                &processed_freq.value
             };
 
-            for processed_freq in &processed_frequencies {
-                // Format rank: show as integer if whole number, otherwise with decimals.
-                // Sentinel value -1.0 indicates NULL entry with --pct-nulls=false (empty rank).
-                rank_buffer.clear();
-                if processed_freq.rank >= 0.0 {
-                    if processed_freq.rank.fract() == 0.0 {
-                        rank_buffer.push_str(itoa_buffer.format(processed_freq.rank as u64));
-                    } else {
-                        rank_buffer.push_str(zmij_buffer.format(processed_freq.rank));
-                    }
-                }
-
-                let value_bytes: &[u8] = if vis_whitespace {
-                    value_str =
-                        util::visualize_whitespace(&util::bytes_to_cow_str(&processed_freq.value));
-                    value_str.as_bytes()
-                } else {
-                    &processed_freq.value
-                };
-
-                wtr.write_record([
-                    &*header_vec,
-                    value_bytes,
-                    itoa_buffer.format(processed_freq.count).as_bytes(),
-                    processed_freq.formatted_percentage.as_bytes(),
-                    rank_buffer.as_bytes(),
-                ])?;
-            }
+            wtr.write_record([
+                header,
+                value_bytes,
+                itoa_buffer.format(processed_freq.count).as_bytes(),
+                processed_freq.formatted_percentage.as_bytes(),
+                rank_buffer.as_bytes(),
+            ])?;
         }
         Ok(())
     }
@@ -4222,93 +4261,106 @@ impl Args {
             }
         };
 
+        let json_field_name = |i: usize, header: &[u8]| {
+            if rconfig.no_headers {
+                (i + 1).to_string()
+            } else {
+                util::bytes_to_cow_str(header).into_owned()
+            }
+        };
+
         if let Some(weighted) = weighted_tables {
             // Process weighted frequencies for JSON output.
-            // Rank (and drop) each column's map in parallel; see rank_columns_in_batches.
-            let mut processed = rank_columns_in_batches(weighted, |(i, weighted_map)| {
-                let all_unique_header = unique_headers_vec.contains(&i);
-                let mut processed_frequencies = Vec::new();
-                self.process_frequencies_weighted(
-                    all_unique_header,
-                    abs_dec_places,
-                    rowcount,
-                    &weighted_map,
-                    &mut processed_frequencies,
-                );
-                let cardinality = if all_unique_header {
+            let weighted_len = weighted.len();
+            for_each_ranked_column(
+                weighted,
+                self.ranking_window(),
+                |(i, weighted_map)| {
+                    let all_unique_header = unique_headers_vec.contains(&i);
+                    let mut processed_frequencies = Vec::new();
+                    self.process_frequencies_weighted(
+                        all_unique_header,
+                        abs_dec_places,
+                        rowcount,
+                        &weighted_map,
+                        &mut processed_frequencies,
+                    );
+                    let cardinality = if all_unique_header {
+                        rowcount
+                    } else {
+                        weighted_map.len() as u64
+                    };
+                    (processed_frequencies, cardinality)
+                },
+                |i, (mut processed_frequencies, cardinality)| {
+                    let Some(header) = headers.get(i) else {
+                        return Ok(());
+                    };
+                    fields.push(build_frequency_field(
+                        json_field_name(i, header),
+                        i,
+                        cardinality,
+                        &mut processed_frequencies,
+                        &mut field_stats,
+                        true, // Skip stats for weighted mode
+                    ));
+                    Ok(())
+                },
+            )?;
+
+            // A header without a weighted map still gets an (empty) field entry.
+            for (i, header) in headers.iter().enumerate().skip(weighted_len) {
+                let cardinality = if unique_headers_vec.contains(&i) {
                     rowcount
                 } else {
-                    weighted_map.len() as u64
+                    0
                 };
-                (processed_frequencies, cardinality)
-            });
-
-            for (i, header) in headers.iter().enumerate() {
-                let field_name = if rconfig.no_headers {
-                    (i + 1).to_string()
-                } else {
-                    util::bytes_to_cow_str(header).into_owned()
-                };
-
-                // A header without a weighted map still gets an (empty) field entry.
-                let (mut processed_frequencies, cardinality) =
-                    processed.next().unwrap_or_else(|| {
-                        let cardinality = if unique_headers_vec.contains(&i) {
-                            rowcount
-                        } else {
-                            0
-                        };
-                        (Vec::new(), cardinality)
-                    });
-
                 fields.push(build_frequency_field(
-                    field_name,
+                    json_field_name(i, header),
                     i,
                     cardinality,
-                    &mut processed_frequencies,
+                    &mut Vec::new(),
                     &mut field_stats,
                     true, // Skip stats for weighted mode
                 ));
             }
         } else {
             // Process unweighted frequencies for JSON output
-            // Rank (and drop) each column's table in parallel; see rank_columns_in_batches.
-            let processed = rank_columns_in_batches(tables, |(i, ftab)| {
-                let all_unique_header = unique_headers_vec.contains(&i);
-                let mut processed_frequencies = Vec::new();
-                self.process_frequencies(
-                    all_unique_header,
-                    abs_dec_places,
-                    rowcount,
-                    &ftab,
-                    &mut processed_frequencies,
-                );
-                let cardinality = if all_unique_header {
-                    rowcount // For all-unique fields, cardinality == rowcount
-                } else {
-                    ftab.len() as u64 // otherwise, cardinality == number of unique values
-                };
-                (processed_frequencies, cardinality)
-            });
-
-            for (i, (header, (mut processed_frequencies, cardinality))) in
-                headers.iter().zip(processed).enumerate()
-            {
-                let field_name = if rconfig.no_headers {
-                    (i + 1).to_string()
-                } else {
-                    util::bytes_to_cow_str(header).into_owned()
-                };
-
-                fields.push(build_frequency_field(
-                    field_name,
-                    i,
-                    cardinality,
-                    &mut processed_frequencies,
-                    &mut field_stats,
-                    false, // Include stats for non-weighted mode
-                ));
-            }
+            for_each_ranked_column(
+                tables,
+                self.ranking_window(),
+                |(i, ftab)| {
+                    let all_unique_header = unique_headers_vec.contains(&i);
+                    let mut processed_frequencies = Vec::new();
+                    self.process_frequencies(
+                        all_unique_header,
+                        abs_dec_places,
+                        rowcount,
+                        &ftab,
+                        &mut processed_frequencies,
+                    );
+                    let cardinality = if all_unique_header {
+                        rowcount // For all-unique fields, cardinality == rowcount
+                    } else {
+                        ftab.len() as u64 // otherwise, cardinality == number of unique values
+                    };
+                    (processed_frequencies, cardinality)
+                },
+                |i, (mut processed_frequencies, cardinality)| {
+                    let Some(header) = headers.get(i) else {
+                        return Ok(());
+                    };
+                    fields.push(build_frequency_field(
+                        json_field_name(i, header),
+                        i,
+                        cardinality,
+                        &mut processed_frequencies,
+                        &mut field_stats,
+                        false, // Include stats for non-weighted mode
+                    ));
+                    Ok(())
+                },
+            )?;
         }
 
         let output = FrequencyOutput {

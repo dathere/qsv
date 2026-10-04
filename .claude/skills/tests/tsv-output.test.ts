@@ -432,9 +432,44 @@ test(
   },
 );
 
+test(
+  "writestat requires an output_file (its output is a binary file)",
+  { skip: !QSV_AVAILABLE },
+  async () => {
+    const testDir = await createTestDir("qsv-writestat-output");
+    const loader = new SkillLoader();
+    const executor = new SkillExecutor();
+
+    try {
+      await loader.loadAll();
+      const csvPath = await createTestCSV(testDir, "test.csv", "x\n1\n");
+
+      const result = await handleToolCall(
+        "qsv_writestat",
+        { input_file: csvPath, format: "sav" },
+        executor,
+        loader,
+      );
+
+      assert.ok(result.isError, "writestat without output_file should error");
+      const text = result.content?.[0]?.text ?? "";
+      assert.ok(
+        /output_file/.test(text) && /\.sav/.test(text),
+        `Error should ask for an output_file, got: ${text}`,
+      );
+    } finally {
+      await cleanupTestDir(testDir);
+    }
+  },
+);
+
 // ============================================================================
 // Binary format guard tests (isBinaryOutputFormat helper)
 // ============================================================================
+
+test("isBinaryOutputFormat returns true for writestat", () => {
+  assert.strictEqual(isBinaryOutputFormat("writestat", {}), true);
+});
 
 test("isBinaryOutputFormat returns true for sqlp with parquet format", () => {
   assert.strictEqual(

@@ -280,6 +280,8 @@ fn main() -> QsvExitCode {
     #[cfg(all(feature = "viz", feature = "feature_capable"))]
     enabled_commands
         .push_str("\n    viz         Generate charts & dashboards from CSV data using plotly");
+    #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+    enabled_commands.push_str("\n    writestat   Write CSV as SPSS, Stata or SAS transport files");
     let num_commands = enabled_commands.split('\n').count();
 
     let now = Instant::now();
@@ -565,6 +567,8 @@ enum Command {
     Validate,
     #[cfg(all(feature = "viz", feature = "feature_capable"))]
     Viz,
+    #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+    Writestat,
 }
 
 impl Command {
@@ -677,6 +681,8 @@ impl Command {
             Command::Validate => Some(cmd::validate::USAGE),
             #[cfg(all(feature = "viz", feature = "feature_capable"))]
             Command::Viz => Some(cmd::viz::USAGE),
+            #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+            Command::Writestat => Some(cmd::writestat::USAGE),
         }
     }
 
@@ -814,6 +820,8 @@ impl Command {
             Command::Validate => cmd::validate::run(argv),
             #[cfg(all(feature = "viz", feature = "feature_capable"))]
             Command::Viz => cmd::viz::run(argv),
+            #[cfg(all(feature = "readstat", feature = "feature_capable"))]
+            Command::Writestat => cmd::writestat::run(argv),
         }
     }
 }

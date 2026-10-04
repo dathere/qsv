@@ -5,6 +5,11 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **New `qsv-writestat` skill** ([#4728](https://github.com/dathere/qsv/issues/4728)). Exposes the new `writestat` command, the inverse of `qsv-readstat`: it writes a CSV as an SPSS (`.sav`, `.por`), Stata (`.dta`) or SAS transport (`.xpt`) file, restoring variable labels, value labels and missing values from the JSON Schema data dictionary `readstat --dictionary` wrote. Categorized as `conversion`, alongside `readstat`. As its output is a binary file, a call without an `output_file` is refused with a message naming the extensions, rather than writing into the auto-created text temp file other commands use. Skill count 56 -> 57 (qsvmcp 69 -> 70 commands, full qsv 79 -> 80).
+
 ## [23.0.1] - 2026-09-13
 
 Companion release to qsv 23.0.1, "The Context is King Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 23.0.0 because the regenerated skill JSONs advertise flags that only exist in the new binary (`--tour-steps`, `readstat`). The headline for MCP/Cowork users is the new **`qsv-readstat`** skill - SAS, Stata and SPSS files become queryable without a licence - which takes the skill count to **56**. Beyond that, this is largely a *correctness* release for the agent-facing surface: six generator defects that had been quietly shipping mangled or generic `<input>` descriptions are fixed, and `visual-data-dictionary` is caught up with 23.0.0's Census geo work, where its Stage 3 had been actively steering users away from a working map.

@@ -183,6 +183,8 @@ mod test_viz_geocode_auto;
 // bit-rot on a dev machine; it SKIPS at runtime where /dev/full is absent (macOS). See module docs.
 #[cfg(unix)]
 mod test_write_failure;
+#[cfg(all(feature = "readstat", feature = "feature_capable"))]
+mod test_writestat;
 
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.

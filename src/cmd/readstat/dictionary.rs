@@ -28,17 +28,24 @@ const UNIQUE_SLICE: usize = 65_536;
 /// values, as text.
 #[derive(Default)]
 pub(super) struct Tallies {
-    rows:      u64,
-    nulls:     HashMap<String, u64>,
+    rows:       u64,
+    nulls:      HashMap<String, u64>,
     /// `None` once the column held more than [`MAX_DISTINCT`] values.
-    distinct:  HashMap<String, Option<BTreeSet<String>>>,
+    distinct:   HashMap<String, Option<BTreeSet<String>>>,
     /// The sentinels seen in each `--sentinels-embedded` column. Kept apart
     /// from `distinct`, as a column of many values usually has only a few -
     /// but an SPSS missing range can match many, so this is capped too.
-    sentinels: HashMap<String, SentinelTally>,
+    sentinels:  HashMap<String, SentinelTally>,
+    /// The labels written for text codes that are also ordinary values of
+    /// their column, from [`written_text_labels`].
+    collisions: HashMap<String, BTreeSet<String>>,
 }
 
 impl Tallies {
+    pub(super) fn set_collisions(&mut self, collisions: HashMap<String, BTreeSet<String>>) {
+        self.collisions = collisions;
+    }
+
     pub(super) fn new(
         distinct: impl IntoIterator<Item = String>,
         sentinels: impl IntoIterator<Item = (String, SentinelMatcher)>,
@@ -421,55 +428,65 @@ fn declared_missing(missing: Option<&Value>, n: f64) -> bool {
     discrete || in_range
 }
 
-/// SPSS records a variable's display format as a numeric type code, width &
-/// decimals; this names it the way SPSS (and pyreadstat) write it, e.g.
-/// `F8.2`, `DTIME23.2`, `A3`.
 fn spss_format(var: &Value) -> Option<String> {
-    let name = match var["format_type"].as_u64()? {
-        1 => "A",
-        2 => "AHEX",
-        3 => "COMMA",
-        4 => "DOLLAR",
-        5 => "F",
-        6 => "IB",
-        7 => "PIBHEX",
-        8 => "P",
-        9 => "PIB",
-        10 => "PK",
-        11 => "RB",
-        12 => "RBHEX",
-        15 => "Z",
-        16 => "N",
-        17 => "E",
-        20 => "DATE",
-        21 => "TIME",
-        22 => "DATETIME",
-        23 => "ADATE",
-        24 => "JDATE",
-        25 => "DTIME",
-        26 => "WKDAY",
-        27 => "MONTH",
-        28 => "MOYR",
-        29 => "QYR",
-        30 => "WKYR",
-        31 => "PCT",
-        32 => "DOT",
-        33 => "CCA",
-        34 => "CCB",
-        35 => "CCC",
-        36 => "CCD",
-        37 => "CCE",
-        38 => "EDATE",
-        39 => "SDATE",
-        40 => "MTIME",
-        41 => "YMDHMS",
-        _ => return None,
-    };
+    let code = u8::try_from(var["format_type"].as_u64()?).ok()?;
+    let name = SPSS_FORMATS.iter().find(|(c, _)| *c == code)?.1;
     let width = var["format_width"].as_u64().unwrap_or_default();
     match var["format_decimals"].as_u64().unwrap_or_default() {
         0 => Some(format!("{name}{width}")),
         decimals => Some(format!("{name}{width}.{decimals}")),
     }
+}
+
+/// SPSS's display format type codes & their names.
+const SPSS_FORMATS: &[(u8, &str)] = &[
+    (1, "A"),
+    (2, "AHEX"),
+    (3, "COMMA"),
+    (4, "DOLLAR"),
+    (5, "F"),
+    (6, "IB"),
+    (7, "PIBHEX"),
+    (8, "P"),
+    (9, "PIB"),
+    (10, "PK"),
+    (11, "RB"),
+    (12, "RBHEX"),
+    (15, "Z"),
+    (16, "N"),
+    (17, "E"),
+    (20, "DATE"),
+    (21, "TIME"),
+    (22, "DATETIME"),
+    (23, "ADATE"),
+    (24, "JDATE"),
+    (25, "DTIME"),
+    (26, "WKDAY"),
+    (27, "MONTH"),
+    (28, "MOYR"),
+    (29, "QYR"),
+    (30, "WKYR"),
+    (31, "PCT"),
+    (32, "DOT"),
+    (33, "CCA"),
+    (34, "CCB"),
+    (35, "CCC"),
+    (36, "CCD"),
+    (37, "CCE"),
+    (38, "EDATE"),
+    (39, "SDATE"),
+    (40, "MTIME"),
+    (41, "YMDHMS"),
+];
+
+/// The reverse of [`spss_format`]: `DTIME23.2` -> (type code 25, width 23,
+/// decimals 2), as `qsv writestat` hands SPSS formats back to the writer.
+pub(crate) fn parse_spss_format(format: &str) -> Option<(u8, u8, u8)> {
+    let split = format.find(|c: char| c.is_ascii_digit())?;
+    let (name, rest) = format.split_at(split);
+    let code = SPSS_FORMATS.iter().find(|(_, n)| *n == name)?.0;
+    let (width, decimals) = rest.split_once('.').unwrap_or((rest, "0"));
+    Some((code, width.parse().ok()?, decimals.parse().ok()?))
 }
 
 fn role(measure: Option<&str>) -> Option<&'static str> {
@@ -543,6 +560,48 @@ pub(super) fn sentinel_matchers(
         .collect()
 }
 
+/// The text columns whose codes readstat writes as labels, each with those
+/// labels by code: the value labels of ordinary values under
+/// `--value-labels`, & the sentinels' labels in the `embedded_labels`
+/// columns. An ordinary value that is also one of these labels can't be
+/// told apart from it, so they are checked against the raw data.
+pub(super) fn written_text_labels(
+    schema: &Schema,
+    meta: &Value,
+    decoded: bool,
+    embedded_labels: &[String],
+) -> Vec<(String, HashMap<String, String>)> {
+    let vars = variables(meta);
+    schema
+        .iter()
+        .filter(|(_, dtype)| **dtype == DataType::String)
+        .filter_map(|(name, _)| {
+            let var = vars.get(name.as_str())?;
+            if is_numeric_variable(var) {
+                return None;
+            }
+            let missing: Vec<&str> = var["missing_strings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let embeds = embedded_labels.iter().any(|e| e == name.as_str());
+            let labels: HashMap<String, String> = var["value_labels"]
+                .as_object()?
+                .iter()
+                .filter_map(|(code, label)| {
+                    let label = label.as_str()?;
+                    let sentinel = missing.contains(&code.as_str());
+                    ((decoded && !sentinel) || (embeds && sentinel))
+                        .then(|| (code.clone(), label.to_string()))
+                })
+                .collect();
+            (!labels.is_empty()).then(|| (name.to_string(), labels))
+        })
+        .collect()
+}
+
 /// Build the dictionary of the CSV written with `schema`.
 pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &Written) -> Value {
     let vars = variables(meta);
@@ -605,6 +664,12 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             }
             if let Some(missing) = missing_values(var) {
                 x_qsv.insert("missing_values".into(), missing);
+            }
+            if let Some(labels) = tallies.collisions.get(name)
+                && !labels.is_empty()
+            {
+                // a cell holding one of these can't be turned back into its code
+                x_qsv.insert("label_collisions".into(), json!(labels));
             }
             if let Some(tally) = tallies.sentinels(name)
                 && !tally.seen.is_empty()
@@ -696,6 +761,11 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             written.file_name
         )),
     );
+    // the title falls back to a generic one, so a real file label is kept
+    // apart too (qsv writestat writes it back)
+    if let Some(label) = file_label {
+        top.insert("file_label".into(), json!(label));
+    }
     top.insert("source_file".into(), json!(written.file_name));
     top.insert("source_format".into(), json!(written.source));
     for (out, key) in [

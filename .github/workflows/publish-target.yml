@@ -285,9 +285,9 @@ jobs:
         cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsvlite --features=lite,self_update,${{ inputs.addl_qsvlite_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvdp
       # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
-      # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link OOM-kills the hosted
+      # Linux. Skip the aarch64 Linux targets (the Polars fat-LTO link OOM-kills the hosted
       # ARM runner — qsvmcp is already excluded there too) and all non-Linux targets.
-      if: ${{ matrix.part != 'mcp' && inputs.target != 'aarch64-unknown-linux-gnu' && inputs.os_name == 'linux' }}
+      if: ${{ matrix.part != 'mcp' && !startsWith(inputs.target, 'aarch64-unknown-linux-') && inputs.os_name == 'linux' }}
       # Deliberately NO `addl_rustflags` (i.e. no -C target-cpu=x86-64-v3): qsvdp stays on the
       # portable x86-64 baseline. DataPusher+ servers often run on VMs with conservative CPU
       # models (kvm64/qemu64) that lack AVX2, and a SIGILLing qsvdp can't `--update` itself back.
@@ -296,7 +296,7 @@ jobs:
         # shellcheck disable=SC2086
         cargo +${{ inputs.rust }} build --profile "$BIN_PROFILE" $PROFILE_TUNING --timings --locked --bin qsvdp --features=datapusher_plus,${{ inputs.addl_qsvdp_features }} --target ${{ inputs.target }} ${{ inputs.default_features }}
     - name: Build qsvmcp
-      if: ${{ matrix.part != 'main' && inputs.target != 'x86_64-unknown-linux-musl' && inputs.target != 'aarch64-unknown-linux-gnu' }}
+      if: ${{ matrix.part != 'main' && !endsWith(inputs.target, '-unknown-linux-musl') && inputs.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: ${{ inputs.addl_rustflags }}
       shell: bash

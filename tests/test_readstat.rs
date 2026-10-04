@@ -1678,3 +1678,29 @@ fn readstat_compress_numeric_rejects_metadata() {
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains("not to --metadata"), "{stderr}");
 }
+
+/// `readstat_vls_collide.sav` was written by the polars-readstat 0.23.3 writer, which named
+/// the continuation records of the very long string `S35r1` `S35R11`..`S35R14` - so the
+/// next variable, itself a very long string with short name `S35R11`, collides with one.
+/// Readers before 0.24.0 (`jrothbaum/polars_readstat#68`) attached its width to the ghost and
+/// split it into 255-byte pieces; pyreadstat reads the 4 columns below.
+#[test]
+fn readstat_spss_very_long_string_name_collision() {
+    let wrk = Workdir::new("readstat_spss_very_long_string_name_collision");
+    let f = wrk.load_test_file("readstat_vls_collide.sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(f);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let long = "x".repeat(1000);
+    let expected = vec![
+        svec!["S35r1", "S35r11", "S35r12", "n"],
+        vec![
+            format!("{long}A"),
+            format!("{long}B"),
+            "short".to_string(),
+            "1.0".to_string(),
+        ],
+    ];
+    assert_eq!(got, expected);
+}

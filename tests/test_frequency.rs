@@ -2874,6 +2874,70 @@ fn frequency_weight_tie_keeps_own_counts_and_limits_by_value() {
         run(&["--limit", "1", "--other-text", "<NONE>"]),
         vec![("a".to_string(), "20".to_string(), "1".to_string())]
     );
+
+    // JSON --other-sorted must not re-sort the tie by its members' (different) rounded counts
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--weight", "w"])
+        .args(["--limit", "0"])
+        .args(["--rank-strategy", "ordinal"])
+        .arg("--other-sorted")
+        .arg("--json");
+    let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    let got: Vec<(String, u64, f64)> = v["fields"][0]["frequencies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["value"].as_str().unwrap().to_string(),
+                f["count"].as_u64().unwrap(),
+                f["rank"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![("a".to_string(), 20, 1.0), ("b".to_string(), 21, 2.0)]
+    );
+}
+
+// A negative weighted limit keeps totals >= the cutoff AND totals tied with it: y's 100 x 0.1
+// sums to 9.99999999999998, which is 10 in exact arithmetic. z (9.9) is below the cutoff by
+// far more than the tolerance and goes into Other with w.
+#[test]
+fn frequency_weight_negative_limit_keeps_tied_cutoff() {
+    let wrk = Workdir::new("frequency_weight_negative_limit_keeps_tied_cutoff");
+    let mut rows = vec![
+        svec!["v", "w"],
+        svec!["x", "10"],
+        svec!["z", "9.9"],
+        svec!["w", "4"],
+    ];
+    for _ in 0..100 {
+        rows.push(svec!["y", "0.1"]);
+    }
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "-10"])
+        .args(["--weight", "w"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<(String, String, String)> = got
+        .into_iter()
+        .skip(1)
+        .map(|r| (r[1].clone(), r[2].clone(), r[4].clone()))
+        .collect();
+    let row = |v: &str, c: &str, r: &str| (v.to_string(), c.to_string(), r.to_string());
+    assert_eq!(
+        got,
+        vec![
+            row("x", "10", "1"),
+            row("y", "10", "1"),
+            // 9.9 + 4 = 13.9, rounded
+            row("Other (2)", "14", "0"),
+        ]
+    );
 }
 
 // Ties are measured against the group's first total, so neighbors within tolerance of

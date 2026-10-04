@@ -4198,18 +4198,33 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // Sort frequencies by count if flag_other_sorted,
-            // breaking ties by value for deterministic output
+            // With --other-sorted, slot "Other" (rank 0), and NULL rows moved to the end, into
+            // count order, breaking ties by value for deterministic output. The ranked rows keep
+            // their established order: inside a weighted tie each row reports its own rounded
+            // total, which can differ by one, so re-sorting them by count would reorder a tie.
             if self.flag_other_sorted {
-                if self.flag_asc {
-                    processed_frequencies.sort_unstable_by(|a, b| {
-                        a.count.cmp(&b.count).then_with(|| a.value.cmp(&b.value))
-                    });
-                } else {
-                    processed_frequencies.sort_unstable_by(|a, b| {
-                        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
-                    });
+                // safety: NULL_VAL is set in run()
+                let null_val = NULL_VAL.get().unwrap();
+                let by_count = |a: &ProcessedFrequency, b: &ProcessedFrequency| {
+                    if self.flag_asc {
+                        a.count.cmp(&b.count)
+                    } else {
+                        b.count.cmp(&a.count)
+                    }
+                    .then_with(|| a.value.cmp(&b.value))
+                };
+                let (mut floating, mut placed): (Vec<_>, Vec<_>) = processed_frequencies
+                    .drain(..)
+                    .partition(|f| f.rank <= 0.0 || f.value == *null_val);
+                floating.sort_unstable_by(by_count);
+                for f in floating {
+                    let pos = placed
+                        .iter()
+                        .position(|r| by_count(&f, r) == std::cmp::Ordering::Less)
+                        .unwrap_or(placed.len());
+                    placed.insert(pos, f);
                 }
+                *processed_frequencies = placed;
             }
 
             // Get stats record for this field by output-column POSITION (not name), so

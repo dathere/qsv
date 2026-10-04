@@ -1463,9 +1463,35 @@ const MERGE_PARALLEL_THRESHOLD: usize = 8;
 // output is bounded by a positive --limit; see `Args::ranking_window`.
 const RANKED_ROWS_IN_FLIGHT_BUDGET: usize = 100_000;
 
-// Pairwise merge of two FTables. Empty acts as identity so this composes with
-// rayon `reduce(Vec::new, ...)`. Per-column Frequencies merges run in parallel
-// across the rayon pool when there are enough columns to amortize the overhead.
+// Capacity for each column's fold accumulator in parallel_ftables: its stats-cache
+// cardinality, except 0 for columns that stay empty because counting skips them —
+// columns served from the frequency cache and, unweighted only, all-unique columns
+// (weighted counting tallies all-unique columns too). Mirrors ftables_unweighted.
+fn presized_capacities(
+    col_cardinality: &[u64],
+    skip_all_unique: bool,
+) -> impl Iterator<Item = usize> + '_ {
+    let unique_columns = if skip_all_unique {
+        UNIQUE_COLUMNS_VEC.get().map_or(&[][..], Vec::as_slice)
+    } else {
+        &[][..]
+    };
+    let cache_skip = FREQ_CACHE_SKIP.get().map_or(&[][..], Vec::as_slice);
+    col_cardinality
+        .iter()
+        .enumerate()
+        .map(move |(i, &cardinality)| {
+            if unique_columns.contains(&i) || cache_skip.get(i).copied().unwrap_or(false) {
+                0
+            } else {
+                cardinality as usize
+            }
+        })
+}
+
+// Merge chunk `b` into accumulator `a` (empty acts as identity). Per-column
+// Frequencies merges run in parallel across the rayon pool when there are enough
+// columns to amortize the overhead.
 fn merge_ftables(mut a: FTables, b: FTables) -> FTables {
     if a.is_empty() {
         return b;
@@ -3411,15 +3437,22 @@ impl Args {
                 });
             }
             drop(send);
-            // Parallel reduce of partial WeightedFTables. Use `par_bridge` so
-            // the reducer can consume chunks as they arrive instead of
-            // materializing all of them — peak memory is bounded by the
-            // rayon pool's working set, not by `nchunks` (which can grow
-            // large when memory-aware chunking picks small chunks).
-            let merged = recv
-                .into_iter()
-                .par_bridge()
-                .reduce(Vec::new, merge_weighted_ftables);
+            // Fold chunks into one map per column as they arrive; see the unweighted
+            // branch below.
+            let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+            let mut merged: WeightedFTables = Vec::new();
+            for chunk in recv {
+                if merged.is_empty() {
+                    if col_cardinality.len() != chunk.len() {
+                        merged = chunk;
+                        continue;
+                    }
+                    merged = presized_capacities(col_cardinality, false)
+                        .map(HashMap::with_capacity)
+                        .collect();
+                }
+                merged = merge_weighted_ftables(merged, chunk);
+            }
             if let Some(e) = read_err.get() {
                 return fail_clierror!("{e}");
             }
@@ -3470,14 +3503,25 @@ impl Args {
                 });
             }
             drop(send);
-            // Parallel reduce of partial FTables. Use `par_bridge` so the
-            // reducer can consume chunks as they arrive instead of
-            // materializing all of them — peak memory is bounded by the
-            // rayon pool's working set, not by `nchunks`.
-            let merged = recv
-                .into_iter()
-                .par_bridge()
-                .reduce(Vec::new, merge_ftables);
+            // Fold each chunk into one table per column as it arrives. Every key is
+            // inserted once (a pairwise tree reduce reinserts it at every level), and
+            // when the stats cache knows a column's cardinality its table is sized once
+            // up front, so it never rehashes. Columns still merge in parallel, and
+            // merging overlaps with the chunks that are still being counted.
+            let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+            let mut merged: FTables = Vec::new();
+            for chunk in recv {
+                if merged.is_empty() {
+                    if col_cardinality.len() != chunk.len() {
+                        merged = chunk;
+                        continue;
+                    }
+                    merged = presized_capacities(col_cardinality, true)
+                        .map(Frequencies::with_capacity)
+                        .collect();
+                }
+                merged = merge_ftables(merged, chunk);
+            }
             if let Some(e) = read_err.get() {
                 return fail_clierror!("{e}");
             }

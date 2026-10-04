@@ -2838,6 +2838,81 @@ fn frequency_weight_ulp_apart_totals_tie() {
     }
 }
 
+// a's weights sum to 20.499999999999996, b's to 20.5: a tie, but on opposite sides of the
+// count's rounding boundary. Tie detection must not change either count (b used to inherit
+// a's weight and report 20), and limits must act on the value-ordered tie, so --limit 1
+// keeps "a" even though b's total sorts first by weight.
+#[test]
+fn frequency_weight_tie_keeps_own_counts_and_limits_by_value() {
+    let wrk = Workdir::new("frequency_weight_tie_keeps_own_counts_and_limits_by_value");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["a", "20"],
+        svec!["a", "0.15"],
+        svec!["a", "0.15"],
+        svec!["a", "0.15"],
+        svec!["a", "0.05"],
+        svec!["b", "20.5"],
+    ];
+    wrk.create("in.csv", rows);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv").args(["--weight", "w"]).args(extra);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        got.into_iter()
+            .skip(1)
+            .map(|r| (r[1].clone(), r[2].clone(), r[4].clone()))
+            .collect::<Vec<_>>()
+    };
+    let both = vec![
+        ("a".to_string(), "20".to_string(), "1".to_string()),
+        ("b".to_string(), "21".to_string(), "1".to_string()),
+    ];
+    assert_eq!(run(&["--limit", "0"]), both);
+    assert_eq!(run(&["--limit", "0", "--asc"]), both);
+    assert_eq!(
+        run(&["--limit", "1", "--other-text", "<NONE>"]),
+        vec![("a".to_string(), "20".to_string(), "1".to_string())]
+    );
+}
+
+// Ties are measured against the group's first total, so neighbors within tolerance of
+// each other can't chain: 1000000002 ~ 1000000001 (diff 1 <= 1e-9 * 1000000002), but
+// 1000000000 is 2 away from the group's first total and starts a new rank.
+#[test]
+fn frequency_weight_ties_do_not_chain() {
+    let wrk = Workdir::new("frequency_weight_ties_do_not_chain");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["a", "1000000000"],
+        svec!["b", "1000000001"],
+        svec!["c", "1000000002"],
+        svec!["d", "5"],
+        svec!["d", "5"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "0"])
+        .args(["--weight", "w"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<(String, String, String)> = got
+        .into_iter()
+        .skip(1)
+        .map(|r| (r[1].clone(), r[2].clone(), r[4].clone()))
+        .collect();
+    let row = |v: &str, c: &str, r: &str| (v.to_string(), c.to_string(), r.to_string());
+    assert_eq!(
+        got,
+        vec![
+            row("b", "1000000001", "1"),
+            row("c", "1000000002", "1"),
+            row("a", "1000000000", "2"),
+            row("d", "10", "3"),
+        ]
+    );
+}
+
 // Distinct totals must never be merged into one rank group. The old JSON-only tolerance
 // was stddev(weight) * 1e-6 in ABSOLUTE terms (~11.5 here), which tied 20000001 with
 // 20000003 and reported 20000001 for both (#4719).

@@ -1729,14 +1729,19 @@ fn apply_ranking_strategy_unweighted(
 
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_weighted(
-    groups: Vec<(f64, Vec<Vec<u8>>)>,
+    groups: Vec<WeightGroup>,
     strategy: RankStrategy,
     pct_factor: f64,
     null_val: &[u8],
     pct_nulls: bool,
 ) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64, f64) {
-    let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> =
-        Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
+    let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> = Vec::with_capacity(
+        groups
+            .iter()
+            .map(|(_, members)| members.len())
+            .sum::<usize>()
+            + 1,
+    );
     let mut current_rank = 1.0_f64;
     let mut count_sum = 0.0_f64;
     let mut pct_sum = 0.0_f64;
@@ -1769,9 +1774,8 @@ fn apply_ranking_strategy_weighted(
         match strategy {
             RankStrategy::Dense => {
                 // Dense ranking (1223)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
-                    for byte_string in group {
+                for (_, group) in groups {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, current_rank);
                     }
                     current_rank += 1.0;
@@ -1779,10 +1783,9 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Min => {
                 // Standard competition ranking (1224)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, current_rank);
                     }
                     current_rank += group_len as f64;
@@ -1790,11 +1793,10 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Max => {
                 // Modified competition ranking (1334)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
                     let max_rank = current_rank + group_len as f64 - 1.0;
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, max_rank);
                     }
                     current_rank += group_len as f64;
@@ -1803,9 +1805,8 @@ fn apply_ranking_strategy_weighted(
             RankStrategy::Ordinal => {
                 // Ordinal ranking (1234). Sentinel-suppressed nulls do NOT
                 // consume a rank slot, matching the other strategies.
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
-                    for byte_string in group {
+                for (_, group) in groups {
+                    for (byte_string, weight) in group {
                         let suppressed = emit(byte_string, weight, current_rank);
                         if !suppressed {
                             current_rank += 1.0;
@@ -1815,11 +1816,10 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Average => {
                 // Fractional ranking (1 2.5 2.5 4)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, avg_rank);
                     }
                     current_rank += group_len as f64;
@@ -1831,27 +1831,42 @@ fn apply_ranking_strategy_weighted(
     (counts_final, count_sum, pct_sum)
 }
 
-/// Apply limits to weighted frequency counts
+/// Apply limits to weighted frequency tie groups
 ///
 /// # Arguments
-/// * `counts` - Mutable reference to vector of `(value, weight)` pairs
+/// * `groups` - Mutable reference to the tie groups from [`group_by_weight`]. Limits act on the
+///   groups' value-ordered members, so a limit that cuts through a tie keeps the same values on
+///   every run.
 /// * `limit` - Limit value; if positive, keep only the top N weighted values; if negative, keep
-///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
-///   limits are applied
+///   only values with weight greater than or equal to (or tied with) the absolute value of this
+///   limit; if zero, no limits are applied
 /// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
 ///   is 0 or when the number of unique values is greater than or equal to it; a column with fewer
 ///   unique values than a positive threshold is returned in full.
-fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
-    let unique_counts_len = counts.len();
+fn apply_limits_weighted(groups: &mut Vec<WeightGroup>, limit: isize, lmt_threshold: usize) {
+    let unique_counts_len: usize = groups.iter().map(|(_, members)| members.len()).sum();
     if lmt_threshold == 0 || unique_counts_len >= lmt_threshold {
         let abs_limit = limit.unsigned_abs();
 
         #[allow(clippy::cast_precision_loss)]
         if limit > 0 {
-            counts.truncate(abs_limit);
+            let mut remaining = abs_limit;
+            groups.retain_mut(|(_, members)| {
+                if remaining == 0 {
+                    return false;
+                }
+                members.truncate(remaining);
+                remaining -= members.len();
+                true
+            });
         } else if limit < 0 {
             let count_limit = abs_limit as f64;
-            counts.retain(|(_, weight)| *weight >= count_limit);
+            for (_, members) in groups.iter_mut() {
+                members.retain(|(_, weight)| {
+                    *weight >= count_limit || weights_tied(*weight, count_limit)
+                });
+            }
+            groups.retain(|(_, members)| !members.is_empty());
         }
     }
 }
@@ -1945,31 +1960,37 @@ fn weights_tied(a: f64, b: f64) -> bool {
     (a - b).abs() <= WEIGHT_REL_TOLERANCE * a.abs().max(b.abs())
 }
 
-/// Group weighted frequency values by weight, treating totals within
-/// [`WEIGHT_REL_TOLERANCE`] of each other as ties.
+/// A tie group of weighted values: the group's anchor weight (its first member in sort
+/// order) and its `(value, weight)` members, ordered by value. Each member keeps its OWN
+/// total, so tie detection never changes a reported count or percentage.
+type WeightGroup = (f64, Vec<(Vec<u8>, f64)>);
+
+/// Group weighted frequency values into ties: every member of a group is within
+/// [`WEIGHT_REL_TOLERANCE`] of the group's anchor.
 ///
 /// `counts` is a list of `(value, weight)` pairs, expected to be ordered by `weight` so that
 /// equal (or near-equal) weights are adjacent.
-fn group_by_weight(counts: Vec<(Vec<u8>, f64)>) -> Vec<(f64, Vec<Vec<u8>>)> {
-    let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
-    let mut current_weight: Option<f64> = None;
-    let mut current_group: Vec<Vec<u8>> = Vec::new();
+fn group_by_weight(counts: Vec<(Vec<u8>, f64)>) -> Vec<WeightGroup> {
+    let mut groups: Vec<WeightGroup> = Vec::new();
 
     for (byte_string, weight) in counts {
-        if let Some(prev_weight) = current_weight
-            && !weights_tied(prev_weight, weight)
-        {
-            weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
+        // Compare against the group's FIRST weight, not the previous one, so that a run of
+        // totals each within tolerance of its neighbor cannot chain into one tie whose ends
+        // are further apart than the tolerance.
+        match groups.last_mut() {
+            Some((anchor, members)) if weights_tied(*anchor, weight) => {
+                members.push((byte_string, weight));
+            },
+            _ => groups.push((weight, vec![(byte_string, weight)])),
         }
-
-        current_weight = Some(weight);
-        current_group.push(byte_string);
     }
-    if let Some(prev_weight) = current_weight {
-        weight_groups.push((prev_weight, current_group));
+    // Members of a tie can differ in their last bits from run to run, so order them by value
+    // (keys are unique) to make the order, and any limit cutting through the tie, deterministic.
+    for (_, members) in &mut groups {
+        members.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     }
 
-    weight_groups
+    groups
 }
 
 /// Implementation of helper methods for frequency command arguments.
@@ -2958,9 +2979,11 @@ impl Args {
         // Calculate NULL weight for adjusted percentage
         let null_weight = null_entry.as_ref().map_or(0.0, |(_, w)| *w);
 
-        // Apply limits
+        // Group ties BEFORE applying limits, so a limit that cuts through a tie keeps the
+        // same (value-ordered) members on every run
         let unique_counts_len = counts.len();
-        apply_limits_weighted(&mut counts, self.flag_limit, self.flag_lmt_threshold);
+        let mut weight_groups = group_by_weight(counts);
+        apply_limits_weighted(&mut weight_groups, self.flag_limit, self.flag_lmt_threshold);
 
         // Calculate pct_factor: when --pct-nulls is false, exclude NULLs from denominator
         let adjusted_total = total_weight - null_weight;
@@ -2970,8 +2993,25 @@ impl Args {
             0.0_f64
         };
 
-        // Group by weight to handle ties
-        let weight_groups = group_by_weight(counts);
+        // Where the NULL entry goes back when --pct-nulls is false: after every tie group
+        // that sorts ahead of it. Placed by group anchor rather than by a search over row
+        // weights, because rows inside a tie are ordered by value, not weight. A group tied
+        // with NULL's weight goes before it in descending order and after it in ascending
+        // order (NULL sorts after equal weights, then before them).
+        let null_insert_pos = null_entry.as_ref().map(|(_, null_weight_val)| {
+            weight_groups
+                .iter()
+                .take_while(|(anchor, _)| {
+                    let tied = weights_tied(*anchor, *null_weight_val);
+                    if self.flag_asc {
+                        *anchor < *null_weight_val && !tied
+                    } else {
+                        *anchor > *null_weight_val || tied
+                    }
+                })
+                .map(|(_, members)| members.len())
+                .sum::<usize>()
+        });
 
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
@@ -2986,40 +3026,8 @@ impl Args {
         );
 
         // Add NULL entry back with sentinel values when --pct-nulls is false
-        // Insert at the correct sorted position based on weight to preserve sort order
-        if let Some((_, null_weight_val)) = null_entry {
-            let null_entry_final = (null_val.to_vec(), null_weight_val, -1.0, -1.0);
-            // Find the correct insertion position using binary search (O(log n))
-            // since counts_final is already sorted by weight.
-            // safety: partition_point requires the slice to be partitioned by the predicate,
-            // which holds because counts_final is sorted and all weights are finite
-            // (NaN/Inf/non-positive weights are filtered out during accumulation).
-            debug_assert!(
-                null_weight_val.is_finite(),
-                "null_weight_val must be finite for partition_point"
-            );
-            debug_assert!(
-                counts_final.iter().all(|(_, w, _, _)| w.is_finite()),
-                "all weights must be finite for partition_point"
-            );
-            debug_assert!(
-                if self.flag_asc {
-                    counts_final.array_windows::<2>().all(|[a, b]| a.1 <= b.1)
-                } else {
-                    counts_final.array_windows::<2>().all(|[a, b]| a.1 >= b.1)
-                },
-                "counts_final must be sorted by weight for partition_point"
-            );
-            let insert_pos = if self.flag_asc {
-                // Ascending: find first position where weight >= null_weight
-                // (places null before entries with equal weight)
-                counts_final.partition_point(|(_, w, _, _)| *w < null_weight_val)
-            } else {
-                // Descending: find first position where weight < null_weight
-                // (places null after entries with equal weight)
-                counts_final.partition_point(|(_, w, _, _)| *w >= null_weight_val)
-            };
-            counts_final.insert(insert_pos, null_entry_final);
+        if let (Some((_, null_weight_val)), Some(insert_pos)) = (null_entry, null_insert_pos) {
+            counts_final.insert(insert_pos, (null_val.to_vec(), null_weight_val, -1.0, -1.0));
         }
 
         // Calculate "Other" category

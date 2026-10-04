@@ -4975,6 +4975,44 @@ fn frequency_other_sorted_csv_matches_json() {
     }
 }
 
+// Weighted --other-sorted must compare Other with tolerance: A = 7.35 + 0.55 =
+// 7.8999999999999995, while Other = total - shown = 7.900000000000001 in every summation order
+// (both are 7.9 exactly). As a tie, it is broken by value, so "A" goes first; a raw f64 compare
+// put Other first, and on inputs whose Other lands on either side it flipped run to run.
+#[test]
+fn frequency_weight_other_sorted_ties_with_tolerance() {
+    let wrk = Workdir::new("frequency_weight_other_sorted_ties_with_tolerance");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["A", "7.35"],
+        svec!["A", "0.55"],
+        svec!["b", "4.45"],
+        svec!["c", "3.45"],
+    ];
+    wrk.create("in.csv", rows);
+    for json in [false, true] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--weight", "w"])
+            .args(["--limit", "1"])
+            .arg("--other-sorted");
+        let values: Vec<String> = if json {
+            cmd.arg("--json");
+            let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+            v["fields"][0]["frequencies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["value"].as_str().unwrap().to_string())
+                .collect()
+        } else {
+            let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+            got.into_iter().skip(1).map(|r| r[1].clone()).collect()
+        };
+        assert_eq!(values, vec!["A", "Other (2)"], "json={json}");
+    }
+}
+
 #[test]
 fn frequency_null_sorted_asc() {
     // With --null-sorted and --asc, NULL should be sorted in ascending order

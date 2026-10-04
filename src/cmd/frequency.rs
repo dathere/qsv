@@ -2672,7 +2672,15 @@ impl Args {
     /// (ties broken by value), for every output format. It runs before
     /// `move_null_to_end_if_needed`; rows are in count order, so where Other lands relative to a
     /// NULL that is later moved to the end does not change the order of the remaining rows.
-    fn place_other_row<T: PartialOrd>(&self, counts: &mut Vec<(Vec<u8>, T, f64, f64)>) {
+    ///
+    /// `tied` decides when Other's count equals a row's: exact for unweighted counts, and
+    /// [`weights_tied`] for weighted totals, whose last bits depend on summation order (Other is
+    /// `total - shown`, and the total is summed in hash-map order).
+    fn place_other_row<T: PartialOrd>(
+        &self,
+        counts: &mut Vec<(Vec<u8>, T, f64, f64)>,
+        tied: impl Fn(&T, &T) -> bool,
+    ) {
         if !self.flag_other_sorted {
             return;
         }
@@ -2690,15 +2698,13 @@ impl Args {
             .iter()
             .position(|(value, count, _, _)| {
                 // Other goes before the first row it outranks by count, then by value
-                let ord = if self.flag_asc {
-                    other.1.partial_cmp(count)
+                if tied(&other.1, count) {
+                    return other.0 < *value;
+                }
+                if self.flag_asc {
+                    other.1 < *count
                 } else {
-                    count.partial_cmp(&other.1)
-                };
-                match ord {
-                    Some(std::cmp::Ordering::Less) => true,
-                    Some(std::cmp::Ordering::Equal) => other.0 < *value,
-                    _ => false,
+                    other.1 > *count
                 }
             })
             .unwrap_or(counts.len());
@@ -2766,7 +2772,7 @@ impl Args {
 
         // For non-all-unique columns, process individual weighted values
         let mut counts_to_process = self.counts_weighted(weighted_map);
-        self.place_other_row(&mut counts_to_process);
+        self.place_other_row(&mut counts_to_process, |a, b| weights_tied(*a, *b));
         self.move_null_to_end_if_needed(&mut counts_to_process);
 
         // Convert to processed frequencies (count is f64, convert to u64 for display)
@@ -2809,7 +2815,7 @@ impl Args {
         } else {
             // Process regular frequencies
             let mut counts_to_process = self.counts(ftab);
-            self.place_other_row(&mut counts_to_process);
+            self.place_other_row(&mut counts_to_process, |a, b| a == b);
             self.move_null_to_end_if_needed(&mut counts_to_process);
 
             // Convert to processed frequencies

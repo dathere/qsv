@@ -434,6 +434,7 @@ test(
 
 test(
   "writestat requires an output_file (its output is a binary file)",
+  { skip: !QSV_AVAILABLE },
   async () => {
     const testDir = await createTestDir("qsv-writestat-output");
     const loader = new SkillLoader();

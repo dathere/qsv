@@ -396,11 +396,6 @@ pub struct Args {
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 
-// Name-keyed stats records. Retained ONLY for lookups that legitimately address a
-// column by its user-specified name: the `--weight` column's tolerance scale and
-// `--stats-filter`. NOT used for per-output-column JSON stats (see STATS_RECORDS_BY_POS),
-// which must be positional so duplicate-named columns don't collapse onto one record.
-static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
 // Per-output-column stats for JSON/TOON output, aligned positionally to the FINAL
 // selected columns (index = output column position). Positional — not name-keyed — so
 // duplicate-named columns each report their own stats.
@@ -1734,14 +1729,19 @@ fn apply_ranking_strategy_unweighted(
 
 #[allow(clippy::cast_precision_loss)]
 fn apply_ranking_strategy_weighted(
-    groups: Vec<(f64, Vec<Vec<u8>>)>,
+    groups: Vec<WeightGroup>,
     strategy: RankStrategy,
     pct_factor: f64,
     null_val: &[u8],
     pct_nulls: bool,
 ) -> (Vec<(Vec<u8>, f64, f64, f64)>, f64, f64) {
-    let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> =
-        Vec::with_capacity(groups.iter().map(|(_, group)| group.len()).sum::<usize>() + 1);
+    let mut counts_final: Vec<(Vec<u8>, f64, f64, f64)> = Vec::with_capacity(
+        groups
+            .iter()
+            .map(|(_, members)| members.len())
+            .sum::<usize>()
+            + 1,
+    );
     let mut current_rank = 1.0_f64;
     let mut count_sum = 0.0_f64;
     let mut pct_sum = 0.0_f64;
@@ -1774,9 +1774,8 @@ fn apply_ranking_strategy_weighted(
         match strategy {
             RankStrategy::Dense => {
                 // Dense ranking (1223)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
-                    for byte_string in group {
+                for (_, group) in groups {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, current_rank);
                     }
                     current_rank += 1.0;
@@ -1784,10 +1783,9 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Min => {
                 // Standard competition ranking (1224)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, current_rank);
                     }
                     current_rank += group_len as f64;
@@ -1795,11 +1793,10 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Max => {
                 // Modified competition ranking (1334)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
                     let max_rank = current_rank + group_len as f64 - 1.0;
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, max_rank);
                     }
                     current_rank += group_len as f64;
@@ -1808,9 +1805,8 @@ fn apply_ranking_strategy_weighted(
             RankStrategy::Ordinal => {
                 // Ordinal ranking (1234). Sentinel-suppressed nulls do NOT
                 // consume a rank slot, matching the other strategies.
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
-                    for byte_string in group {
+                for (_, group) in groups {
+                    for (byte_string, weight) in group {
                         let suppressed = emit(byte_string, weight, current_rank);
                         if !suppressed {
                             current_rank += 1.0;
@@ -1820,11 +1816,10 @@ fn apply_ranking_strategy_weighted(
             },
             RankStrategy::Average => {
                 // Fractional ranking (1 2.5 2.5 4)
-                for (weight, mut group) in groups {
-                    group.sort_unstable();
+                for (_, group) in groups {
                     let group_len = group.len();
                     let avg_rank = current_rank + (group_len as f64 - 1.0) / 2.0;
-                    for byte_string in group {
+                    for (byte_string, weight) in group {
                         emit(byte_string, weight, avg_rank);
                     }
                     current_rank += group_len as f64;
@@ -1836,27 +1831,42 @@ fn apply_ranking_strategy_weighted(
     (counts_final, count_sum, pct_sum)
 }
 
-/// Apply limits to weighted frequency counts
+/// Apply limits to weighted frequency tie groups
 ///
 /// # Arguments
-/// * `counts` - Mutable reference to vector of `(value, weight)` pairs
+/// * `groups` - Mutable reference to the tie groups from [`group_by_weight`]. Limits act on the
+///   groups' value-ordered members, so a limit that cuts through a tie keeps the same values on
+///   every run.
 /// * `limit` - Limit value; if positive, keep only the top N weighted values; if negative, keep
-///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
-///   limits are applied
+///   only values with weight greater than or equal to (or tied with) the absolute value of this
+///   limit; if zero, no limits are applied
 /// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
 ///   is 0 or when the number of unique values is greater than or equal to it; a column with fewer
 ///   unique values than a positive threshold is returned in full.
-fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
-    let unique_counts_len = counts.len();
+fn apply_limits_weighted(groups: &mut Vec<WeightGroup>, limit: isize, lmt_threshold: usize) {
+    let unique_counts_len: usize = groups.iter().map(|(_, members)| members.len()).sum();
     if lmt_threshold == 0 || unique_counts_len >= lmt_threshold {
         let abs_limit = limit.unsigned_abs();
 
         #[allow(clippy::cast_precision_loss)]
         if limit > 0 {
-            counts.truncate(abs_limit);
+            let mut remaining = abs_limit;
+            groups.retain_mut(|(_, members)| {
+                if remaining == 0 {
+                    return false;
+                }
+                members.truncate(remaining);
+                remaining -= members.len();
+                true
+            });
         } else if limit < 0 {
             let count_limit = abs_limit as f64;
-            counts.retain(|(_, weight)| *weight >= count_limit);
+            for (_, members) in groups.iter_mut() {
+                members.retain(|(_, weight)| {
+                    *weight >= count_limit || weights_tied(*weight, count_limit)
+                });
+            }
+            groups.retain(|(_, members)| !members.is_empty());
         }
     }
 }
@@ -1930,35 +1940,57 @@ fn group_by_count(counts: Vec<(Vec<u8>, u64)>) -> Vec<(u64, Vec<Vec<u8>>)> {
     count_groups
 }
 
-/// Group weighted frequency values by weight (with tolerance).
+/// Relative tolerance under which two weighted totals count as the same weight.
 ///
-/// # Arguments
+/// Parallel runs add each value's weights in chunk-arrival order, and f64 addition is not
+/// associative, so totals that are equal in exact arithmetic can differ in their last bits
+/// from run to run (and even a sequential sum like 10.1 + 10.2 lands one ulp off 20.3). That
+/// rounding error grows with the size of the sum, so the tolerance has to be relative to it:
+/// an absolute one is either below one ulp of a large sum (ties split) or wider than the gap
+/// between small, distinct totals (and merges them).
 ///
-/// * `counts` - A list of `(value, weight)` pairs, where `value` is a byte string and `weight` is
-///   the numeric weight used for grouping. The vector is expected to be ordered by `weight` so that
-///   equal (or near-equal) weights are adjacent.
-/// * `tolerance` - The maximum absolute difference between consecutive weights for them to be
-///   treated as belonging to the same group.
-fn group_by_weight(counts: Vec<(Vec<u8>, f64)>, tolerance: f64) -> Vec<(f64, Vec<Vec<u8>>)> {
-    let mut weight_groups: Vec<(f64, Vec<Vec<u8>>)> = Vec::new();
-    let mut current_weight: Option<f64> = None;
-    let mut current_group: Vec<Vec<u8>> = Vec::new();
+/// Trade-off: summing n positive weights has a worst-case relative error of ~n·ε, which only
+/// reaches 1e-9 around n = 1e7 rows for ONE value (typical error grows like √n·ε and is far
+/// smaller). In the other direction, distinct totals that differ by less than 1e-9 of their
+/// size are reported as one tie, e.g. integer totals above ~1e9 that differ by 1.
+const WEIGHT_REL_TOLERANCE: f64 = 1e-9;
+
+#[inline]
+fn weights_tied(a: f64, b: f64) -> bool {
+    (a - b).abs() <= WEIGHT_REL_TOLERANCE * a.abs().max(b.abs())
+}
+
+/// A tie group of weighted values: the group's anchor weight (its first member in sort
+/// order) and its `(value, weight)` members, ordered by value. Each member keeps its OWN
+/// total, so tie detection never changes a reported count or percentage.
+type WeightGroup = (f64, Vec<(Vec<u8>, f64)>);
+
+/// Group weighted frequency values into ties: every member of a group is within
+/// [`WEIGHT_REL_TOLERANCE`] of the group's anchor.
+///
+/// `counts` is a list of `(value, weight)` pairs, expected to be ordered by `weight` so that
+/// equal (or near-equal) weights are adjacent.
+fn group_by_weight(counts: Vec<(Vec<u8>, f64)>) -> Vec<WeightGroup> {
+    let mut groups: Vec<WeightGroup> = Vec::new();
 
     for (byte_string, weight) in counts {
-        if let Some(prev_weight) = current_weight
-            && (prev_weight - weight).abs() > tolerance
-        {
-            weight_groups.push((prev_weight, std::mem::take(&mut current_group)));
+        // Compare against the group's FIRST weight, not the previous one, so that a run of
+        // totals each within tolerance of its neighbor cannot chain into one tie whose ends
+        // are further apart than the tolerance.
+        match groups.last_mut() {
+            Some((anchor, members)) if weights_tied(*anchor, weight) => {
+                members.push((byte_string, weight));
+            },
+            _ => groups.push((weight, vec![(byte_string, weight)])),
         }
-
-        current_weight = Some(weight);
-        current_group.push(byte_string);
     }
-    if let Some(prev_weight) = current_weight {
-        weight_groups.push((prev_weight, current_group));
+    // Members of a tie can differ in their last bits from run to run, so order them by value
+    // (keys are unique) to make the order, and any limit cutting through the tie, deterministic.
+    for (_, members) in &mut groups {
+        members.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     }
 
-    weight_groups
+    groups
 }
 
 /// Implementation of helper methods for frequency command arguments.
@@ -2947,9 +2979,11 @@ impl Args {
         // Calculate NULL weight for adjusted percentage
         let null_weight = null_entry.as_ref().map_or(0.0, |(_, w)| *w);
 
-        // Apply limits
+        // Group ties BEFORE applying limits, so a limit that cuts through a tie keeps the
+        // same (value-ordered) members on every run
         let unique_counts_len = counts.len();
-        apply_limits_weighted(&mut counts, self.flag_limit, self.flag_lmt_threshold);
+        let mut weight_groups = group_by_weight(counts);
+        apply_limits_weighted(&mut weight_groups, self.flag_limit, self.flag_lmt_threshold);
 
         // Calculate pct_factor: when --pct-nulls is false, exclude NULLs from denominator
         let adjusted_total = total_weight - null_weight;
@@ -2959,30 +2993,25 @@ impl Args {
             0.0_f64
         };
 
-        // Compute tolerance once before the loop (outside hot path)
-        // Use stats cache if available to determine weight scale for more accurate tolerance
-        let weight_tolerance = if let Some(ref weight_col) = self.flag_weight {
-            STATS_RECORDS
-                .get()
-                .and_then(|records| records.get(weight_col))
-                .and_then(|stats| {
-                    // Prefer stddev as it represents the scale of variation
-                    // Fall back to range or mean if stddev not available
-                    stats
-                        .stddev
-                        .or(stats.range)
-                        .or(stats.mean_f64())
-                        .filter(|&s| s > 0.0)
+        // Where the NULL entry goes back when --pct-nulls is false: after every tie group
+        // that sorts ahead of it. Placed by group anchor rather than by a search over row
+        // weights, because rows inside a tie are ordered by value, not weight. A group tied
+        // with NULL's weight goes before it in descending order and after it in ascending
+        // order (NULL sorts after equal weights, then before them).
+        let null_insert_pos = null_entry.as_ref().map(|(_, null_weight_val)| {
+            weight_groups
+                .iter()
+                .take_while(|(anchor, _)| {
+                    let tied = weights_tied(*anchor, *null_weight_val);
+                    if self.flag_asc {
+                        *anchor < *null_weight_val && !tied
+                    } else {
+                        *anchor > *null_weight_val || tied
+                    }
                 })
-                // Use a scale-aware tolerance with a minimum absolute epsilon to handle
-                // both small and large weight scales robustly.
-                .map_or(f64::EPSILON, |scale| (scale * 1e-6).max(1e-10))
-        } else {
-            f64::EPSILON
-        };
-
-        // Group by weight to handle ties
-        let weight_groups = group_by_weight(counts, weight_tolerance);
+                .map(|(_, members)| members.len())
+                .sum::<usize>()
+        });
 
         // safety: NULL_VAL is set in the main function
         let null_val = NULL_VAL.get().unwrap();
@@ -2997,40 +3026,8 @@ impl Args {
         );
 
         // Add NULL entry back with sentinel values when --pct-nulls is false
-        // Insert at the correct sorted position based on weight to preserve sort order
-        if let Some((_, null_weight_val)) = null_entry {
-            let null_entry_final = (null_val.to_vec(), null_weight_val, -1.0, -1.0);
-            // Find the correct insertion position using binary search (O(log n))
-            // since counts_final is already sorted by weight.
-            // safety: partition_point requires the slice to be partitioned by the predicate,
-            // which holds because counts_final is sorted and all weights are finite
-            // (NaN/Inf/non-positive weights are filtered out during accumulation).
-            debug_assert!(
-                null_weight_val.is_finite(),
-                "null_weight_val must be finite for partition_point"
-            );
-            debug_assert!(
-                counts_final.iter().all(|(_, w, _, _)| w.is_finite()),
-                "all weights must be finite for partition_point"
-            );
-            debug_assert!(
-                if self.flag_asc {
-                    counts_final.array_windows::<2>().all(|[a, b]| a.1 <= b.1)
-                } else {
-                    counts_final.array_windows::<2>().all(|[a, b]| a.1 >= b.1)
-                },
-                "counts_final must be sorted by weight for partition_point"
-            );
-            let insert_pos = if self.flag_asc {
-                // Ascending: find first position where weight >= null_weight
-                // (places null before entries with equal weight)
-                counts_final.partition_point(|(_, w, _, _)| *w < null_weight_val)
-            } else {
-                // Descending: find first position where weight < null_weight
-                // (places null after entries with equal weight)
-                counts_final.partition_point(|(_, w, _, _)| *w >= null_weight_val)
-            };
-            counts_final.insert(insert_pos, null_entry_final);
+        if let (Some((_, null_weight_val)), Some(insert_pos)) = (null_entry, null_insert_pos) {
+            counts_final.insert(insert_pos, (null_val.to_vec(), null_weight_val, -1.0, -1.0));
         }
 
         // Calculate "Other" category
@@ -4017,9 +4014,9 @@ impl Args {
     /// original CSV column position. An empty cardinality vector signals "no stats
     /// cache available" (compute frequencies for all columns).
     ///
-    /// Also stores the stats records in a hashmap for use when producing JSON output
-    /// and computes the Float / `--stats-filter` skip lists (both still name-keyed,
-    /// as those features index by selected-header name).
+    /// Also returns the per-column stats records for JSON output and computes the Float /
+    /// `--stats-filter` skip lists (both still name-keyed, as those features index by
+    /// selected-header name).
     fn get_unique_headers(
         &self,
         sel: &Selection,
@@ -4047,24 +4044,14 @@ impl Args {
         };
         let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
 
-        // What positional/name-keyed structures each feature needs, so we only pay for
-        // what's requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV
-        // column position) so duplicate-named columns are each classified on their own data
-        // — the lone exception is the name-keyed hashmap below, which exists solely for the
-        // --weight tolerance lookup (it addresses ONE column by the user-supplied name).
-        let needs_weight_records = is_json && self.flag_weight.is_some();
+        // What positional structures each feature needs, so we only pay for what's
+        // requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV column
+        // position) so duplicate-named columns are each classified on their own data.
         let needs_float_types = self.flag_no_float.is_some();
         #[cfg(feature = "luau")]
         let needs_stats_by_pos = is_json || self.flag_stats_filter.is_some();
         #[cfg(not(feature = "luau"))]
         let needs_stats_by_pos = is_json;
-
-        // initialize the name-keyed stats records hashmap (used only by --weight tolerance)
-        let mut stats_records_hashmap = if needs_weight_records {
-            HashMap::with_capacity(headers.len())
-        } else {
-            HashMap::new()
-        };
 
         // pass --flexible through to the stats subprocess so a `frequency --flexible` run
         // doesn't die inside the stats-cache child on the ragged file it was told to accept
@@ -4101,17 +4088,7 @@ impl Args {
             Vec::new()
         };
 
-        for (i, stats_record) in csv_stats.iter().enumerate() {
-            if needs_weight_records {
-                // Name-keyed record for the --weight tolerance lookup (addresses the weight
-                // column by user-supplied name). safety: csv_fields and csv_stats are equal
-                // length, so index i is valid for csv_fields.
-                let col_name = csv_fields.get(i).unwrap();
-                let col_name_str = simdutf8::basic::from_utf8(col_name)
-                    .unwrap_or(NON_UTF8_ERR)
-                    .to_string();
-                stats_records_hashmap.insert(col_name_str, stats_record.clone());
-            }
+        for stats_record in &csv_stats {
             if needs_float_types {
                 col_type_by_pos.push(stats_record.r#type.clone());
             }
@@ -4188,13 +4165,6 @@ impl Args {
             }
         }
 
-        if is_json && self.flag_weight.is_some() {
-            // Only the weighted-JSON tolerance path reads STATS_RECORDS; set it just for
-            // that case (addresses the weight column by name). Non-weighted JSON never
-            // populated the hashmap above, so there is nothing to store.
-            STATS_RECORDS.set(stats_records_hashmap).unwrap();
-        }
-
         // COL_CARDINALITY_VEC and STATS_RECORDS_BY_POS are set by the caller (sel_headers)
         // once the FINAL selection is known, so they can be aligned positionally to the
         // final columns.
@@ -4228,18 +4198,48 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // Sort frequencies by count if flag_other_sorted,
-            // breaking ties by value for deterministic output
+            // With --other-sorted, slot "Other" (rank 0), and NULL rows moved to the end, back
+            // into order, breaking ties by value for deterministic output. The ranked rows keep
+            // their established order: inside a weighted tie each row reports its own rounded
+            // total, which can differ by one, so re-sorting them by count would reorder a tie.
+            // For the same reason a ranked NULL goes back by rank, not by count. With
+            // --null-sorted, NULL rows were never moved, so they stay where they are.
             if self.flag_other_sorted {
-                if self.flag_asc {
-                    processed_frequencies.sort_unstable_by(|a, b| {
-                        a.count.cmp(&b.count).then_with(|| a.value.cmp(&b.value))
+                // safety: NULL_VAL is set in run()
+                let null_val = NULL_VAL.get().unwrap();
+                let by_count = |a: &ProcessedFrequency, b: &ProcessedFrequency| {
+                    if self.flag_asc {
+                        a.count.cmp(&b.count)
+                    } else {
+                        b.count.cmp(&a.count)
+                    }
+                    .then_with(|| a.value.cmp(&b.value))
+                };
+                let (mut floating, mut placed): (Vec<_>, Vec<_>) =
+                    processed_frequencies.drain(..).partition(|f| {
+                        f.rank <= 0.0 || (!self.flag_null_sorted && f.value == *null_val)
                     });
-                } else {
-                    processed_frequencies.sort_unstable_by(|a, b| {
-                        b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value))
-                    });
+                // Ranked NULLs go back first, so Other and suppressed NULLs are then placed by
+                // count against the complete ranked sequence.
+                floating.sort_unstable_by(|a, b| {
+                    (b.rank > 0.0)
+                        .cmp(&(a.rank > 0.0))
+                        .then_with(|| by_count(a, b))
+                });
+                for f in floating {
+                    let pos = if f.rank > 0.0 {
+                        placed.iter().position(|r| {
+                            r.rank > f.rank || (r.rank == f.rank && f.value < r.value)
+                        })
+                    } else {
+                        placed
+                            .iter()
+                            .position(|r| by_count(&f, r) == std::cmp::Ordering::Less)
+                    }
+                    .unwrap_or(placed.len());
+                    placed.insert(pos, f);
                 }
+                *processed_frequencies = placed;
             }
 
             // Get stats record for this field by output-column POSITION (not name), so

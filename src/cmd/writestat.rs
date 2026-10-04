@@ -251,8 +251,12 @@ impl Dictionary {
     /// Whether readstat wrote the sentinels of `name` as their labels, in
     /// its own column.
     fn embeds_sentinel_labels(&self, name: &str) -> bool {
+        self.sentinel_labels && self.embeds_sentinels(name)
+    }
+
+    /// Whether readstat wrote the sentinels of `name` in its own column.
+    fn embeds_sentinels(&self, name: &str) -> bool {
         self.embedded
-            && self.sentinel_labels
             && self
                 .sentinel_columns
                 .as_ref()
@@ -446,7 +450,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let empty = Dictionary::default();
     let dict = dict.as_ref().unwrap_or(&empty);
     // before anything is checked, as a sentinel may be ambiguous
-    let (df, pairs) = merge_string_sentinels(df, dict, &pairs)?;
+    let (df, pairs) = merge_string_sentinels(df, dict, &pairs, &mut losses)?;
 
     // everything is checked before the writer creates --output
     check_names(&df, format, &pairs, &mut losses)?;
@@ -663,7 +667,11 @@ fn type_column(
             .map(|cell| {
                 let cell = cell.filter(|c| !c.is_empty())?;
                 if let Some(codes) = by_label.get(cell) {
-                    if let Some(why) = ambiguity(cell, codes, dict.embedded) {
+                    if let Some(why) = ambiguity(
+                        cell,
+                        codes,
+                        dict.family != Some(Family::Spss) && dict.embeds_sentinels(&name),
+                    ) {
                         ambiguous.get_or_insert_with(|| (cell.to_string(), why));
                         return None;
                     }
@@ -719,15 +727,13 @@ fn type_column(
         if !by_label.is_empty() {
             // the codes readstat wrote as they are: labeled ones it didn't
             // decode, & the embedded sentinels it didn't label
-            let embedded = if dict.embedded {
-                Some(col.missing_texts())
-            } else {
-                None
-            };
+            // (elsewhere a declared missing value is written empty)
+            let embedded = dict.embeds_sentinels(&name);
             let raw: Vec<&str> = col
                 .text_labels()
                 .map(|(code, _)| code)
-                .chain(embedded.into_iter().flatten())
+                .filter(|code| embedded || !col.declares_missing_text(code))
+                .chain(col.missing_texts().filter(|_| embedded))
                 .filter(|code| !by_label.values().flatten().any(|c| c == code))
                 .collect();
             let mut ambiguous: Option<(String, String)> = None;
@@ -1272,6 +1278,7 @@ fn merge_string_sentinels(
     mut df: DataFrame,
     dict: &Dictionary,
     pairs: &HashMap<String, String>,
+    losses: &mut Losses,
 ) -> CliResult<(DataFrame, HashMap<String, String>)> {
     let mut numeric = HashMap::with_capacity(pairs.len());
     for (base, indicator) in pairs {
@@ -1282,6 +1289,14 @@ fn merge_string_sentinels(
         // under --sentinels-as label, a sentinel with a label is written as
         // its label; the others, & all under --sentinels-as value, as codes
         let col = dict.columns.get(base);
+        if col.is_none_or(|c| c.missing_texts().next().is_none()) {
+            // nothing to merge into: the sentinels are left out
+            losses.add(format!(
+                "the sentinels of \"{base}\": the dictionary declares no missing values"
+            ));
+            df.drop_in_place(indicator)?;
+            continue;
+        }
         let mut by_label: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut raw: Vec<&str> = Vec::new();
         if let Some(col) = col {

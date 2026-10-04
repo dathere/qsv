@@ -584,6 +584,65 @@ fn writestat_datetime_nanoseconds_refused() {
     );
 }
 
+// A <name>_null column for a variable whose missing values the dictionary
+// doesn't declare: its sentinels have nothing to become, so they're a loss.
+#[test]
+fn writestat_sav_text_sentinels_without_missing_values() {
+    let wrk = Workdir::new("writestat_sav_text_sentinels_without_missing_values");
+    to_csv(&wrk, "readstat_sentinels.sav", &["--sentinels-as", "value"]);
+    let mut dict: Value = serde_json::from_str(&wrk.read_to_string("dict.json").unwrap()).unwrap();
+    dict["properties"]["name"]["x-qsv"]
+        .as_object_mut()
+        .unwrap()
+        .remove("missing_values");
+    wrk.create_from_string("dict.json", &dict.to_string());
+
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["--dictionary", "dict.json", "orig.csv", "-o", "rt.sav"]);
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("the sentinels of \"name\": the dictionary declares no missing values"),
+        "{err}"
+    );
+    writestat(&wrk, "rt.sav", &["--lossy"]);
+    // left out, not written as the value "NA"
+    assert!(!read_back(&wrk, "rt.sav", &[]).contains("NA"));
+}
+
+// SPSS has no tagged missing values, so its label ".A" is just a label
+// (code 1, written with pyreadstat 1.3.6)
+#[test]
+fn writestat_sav_tag_shaped_label() {
+    let flags = [
+        "--value-labels",
+        "--sentinels-as",
+        "label",
+        "--sentinels-embedded",
+    ];
+    let (_wrk, orig) = sav_round_trip(
+        "writestat_sav_tag_shaped_label",
+        "writestat_spss_tag_shaped_label.sav",
+        &flags,
+    );
+    assert_eq!(orig, "q\n.A\nRefused\n2\n");
+}
+
+// Code a is labeled "NA", which is also a missing code - written empty under
+// --value-labels alone, so "NA" can only be a.
+#[test]
+fn writestat_sav_label_is_a_dropped_missing_code() {
+    let wrk = Workdir::new("writestat_sav_label_is_a_dropped_missing_code");
+    let orig = to_csv(
+        &wrk,
+        "writestat_label_is_missing_code.sav",
+        &["--value-labels"],
+    );
+    assert_eq!(orig, "s\nNA\n\nb\n");
+    // text value labels can't be written to an SPSS file
+    writestat(&wrk, "rt.sav", &["--lossy"]);
+    assert_eq!(read_back(&wrk, "rt.sav", &[]), "s\na\n\nb\n");
+}
+
 const DTA_KEYS: &[&str] = &["label", "value_labels", "format"];
 
 fn dta_round_trip(name: &str, fixture: &str, flags: &[&str]) -> (Workdir, String) {

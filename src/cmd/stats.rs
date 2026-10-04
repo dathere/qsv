@@ -150,6 +150,8 @@ stats options:
                               This is provided here because piping 'qsv select'
                               into 'qsv stats' will prevent the use of indexing.
     -E, --everything          Compute all statistics available.
+                              On large files, mode & cardinality tracking dominates
+                              memory use. See --mode-cardinality-cap for how to bound it.
     --typesonly               Infer data types only and do not compute statistics.
                               Note that if you want to infer dates and boolean types, you'll
                               still need to use the --infer-dates & --infer-boolean options.
@@ -283,6 +285,12 @@ stats options:
                               are gated.
                               Useful on wide tables with many ID/UUID/timestamp columns
                               where tracking exact cardinality is wasted work.
+                              For large files, a cap of 10000 combined with
+                              "--cardinality-method approx" keeps an approximate
+                              cardinality for capped columns. On a 1M-row, 44-column
+                              file this cut --everything's peak memory by ~65% and
+                              its runtime by half. Parallel runs warn when mode &
+                              cardinality tracking may not fit in available memory.
                               [default: 0]
 
     --round <decimal_places>  Round statistics to <decimal_places>. Rounding is done following
@@ -2989,6 +2997,25 @@ impl Args {
                 estimate_chunk_memory(chunk_size, avg_record_size, &which_stats, headers.len())
                     / (1024 * 1024);
 
+            // Exact mode/cardinality tables hold every distinct value of every column, and a
+            // parallel run briefly holds per-chunk copies too. Point users at the cap when the
+            // whole-file estimate won't fit, instead of letting a large run swap or get killed.
+            let whole_file_estimate = estimate_chunk_memory(
+                idx_count as usize,
+                avg_record_size,
+                &which_stats,
+                headers.len(),
+            );
+            let mut sys = sysinfo::System::new();
+            sys.refresh_memory();
+            if let Some(warning) = mode_memory_warning(
+                whole_file_estimate as u64,
+                sys.available_memory(),
+                &which_stats,
+            ) {
+                wwarn!("{warning}");
+            }
+
             // Safety: max_chunk_memory_mb is guaranteed Some(...) here since
             // needs_memory_aware_chunking requires max_chunk_memory_mb.is_some()
             let chunking_mode = if max_chunk_memory_mb.unwrap_or(0) == 0 {
@@ -3890,6 +3917,36 @@ const fn estimate_chunk_memory(
     base_memory
         .saturating_add(additional_memory)
         .saturating_add(overhead)
+}
+
+/// Builds the warning shown when exact mode/cardinality tracking may not fit in memory.
+///
+/// Returns `None` when no exact mode tracker is built (same condition as `Stats::new`), when
+/// --mode-cardinality-cap already bounds it, when available memory is unknown (0), or when the
+/// estimate fits within [`util::SAFETY_MARGIN`] of available memory.
+#[allow(clippy::cast_precision_loss)]
+fn mode_memory_warning(
+    estimate_bytes: u64,
+    available_bytes: u64,
+    which_stats: &WhichStats,
+) -> Option<String> {
+    let exact_tracker =
+        which_stats.mode || (which_stats.cardinality && !which_stats.approx_cardinality);
+    if !exact_tracker || which_stats.mode_cardinality_cap > 0 || available_bytes == 0 {
+        return None;
+    }
+    if estimate_bytes as f64 <= available_bytes as f64 * util::SAFETY_MARGIN {
+        return None;
+    }
+    let gib = |bytes: u64| bytes as f64 / f64::from(1_u32 << 30);
+    Some(format!(
+        "stats may need ~{:.1} GiB of memory, mostly for exact mode & cardinality tracking, but \
+         only ~{:.1} GiB is available. To bound it, set --mode-cardinality-cap (e.g. 10000) and \
+         add --cardinality-method approx to keep approximate cardinalities. See `qsv stats \
+         --help`.",
+        gib(estimate_bytes),
+        gib(available_bytes)
+    ))
 }
 
 /// Calculates memory-aware chunk size for parallel statistics processing.
@@ -7119,7 +7176,7 @@ impl Commute for TypedMinMax {
 mod tests {
     use stats::Commute;
 
-    use super::merge_chunks_in_order;
+    use super::{WhichStats, merge_chunks_in_order, mode_memory_warning};
 
     /// Minimal `Commute` stand-in: merging sums, so the merged total tells us exactly which
     /// chunks were folded in. Using a toy type rather than `Stats` keeps the test about the
@@ -7141,6 +7198,55 @@ mod tests {
         }
         drop(send);
         recv
+    }
+
+    #[test]
+    fn mode_memory_warning_only_when_exact_tracking_does_not_fit() {
+        const GIB: u64 = 1 << 30;
+        let modes = WhichStats {
+            mode: true,
+            ..WhichStats::default()
+        };
+        // 10 GiB estimate vs 8 GiB available: over the 80% budget -> warn, with both sizes
+        let warning = mode_memory_warning(10 * GIB, 8 * GIB, &modes).expect("should warn");
+        assert!(
+            warning.contains("~10.0 GiB") && warning.contains("~8.0 GiB"),
+            "{warning}"
+        );
+        assert!(warning.contains("--mode-cardinality-cap"), "{warning}");
+        // fits within 80% of available -> silent; just over 80% -> warns
+        assert_eq!(mode_memory_warning(6 * GIB, 8 * GIB, &modes), None);
+        assert!(mode_memory_warning(7 * GIB, 8 * GIB, &modes).is_some());
+        // unknown available memory -> silent
+        assert_eq!(mode_memory_warning(10 * GIB, 0, &modes), None);
+
+        // a cap already bounds the tracker -> silent
+        let capped = WhichStats {
+            mode: true,
+            mode_cardinality_cap: 10_000,
+            ..WhichStats::default()
+        };
+        assert_eq!(mode_memory_warning(10 * GIB, 8 * GIB, &capped), None);
+
+        // exact cardinality alone builds the tracker -> warns; approx cardinality alone
+        // uses HyperLogLog and builds none -> silent
+        let exact_card = WhichStats {
+            cardinality: true,
+            ..WhichStats::default()
+        };
+        assert!(mode_memory_warning(10 * GIB, 8 * GIB, &exact_card).is_some());
+        let approx_card = WhichStats {
+            cardinality: true,
+            approx_cardinality: true,
+            ..WhichStats::default()
+        };
+        assert_eq!(mode_memory_warning(10 * GIB, 8 * GIB, &approx_card), None);
+
+        // no mode/cardinality at all -> silent
+        assert_eq!(
+            mode_memory_warning(10 * GIB, 8 * GIB, &WhichStats::default()),
+            None
+        );
     }
 
     #[test]

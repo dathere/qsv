@@ -2957,6 +2957,54 @@ fn frequency_weight_other_sorted_keeps_ranked_null_tie_order() {
     }
 }
 
+// Other must be placed by count against the COMPLETE ranked sequence, i.e. after the ranked
+// NULL is back in place: Other (21) sorts before NULL (20), even though it ties A's count.
+#[test]
+fn frequency_weight_other_sorted_places_other_after_ranked_null() {
+    let wrk = Workdir::new("frequency_weight_other_sorted_places_other_after_ranked_null");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["", "20"],
+        svec!["", "0.15"],
+        svec!["", "0.15"],
+        svec!["", "0.15"],
+        svec!["", "0.05"],
+        svec!["A", "20.5"],
+        svec!["x", "10"],
+        svec!["y", "11"],
+    ];
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--weight", "w"])
+        .args(["--limit", "2"])
+        .args(["--rank-strategy", "ordinal"])
+        .arg("--pct-nulls")
+        .arg("--other-sorted")
+        .arg("--json");
+    let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    let got: Vec<(String, u64, f64)> = v["fields"][0]["frequencies"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| {
+            (
+                f["value"].as_str().unwrap().to_string(),
+                f["count"].as_u64().unwrap(),
+                f["rank"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("Other (2)".to_string(), 21, 0.0),
+            ("(NULL)".to_string(), 20, 1.0),
+            ("A".to_string(), 21, 2.0),
+        ]
+    );
+}
+
 // A negative weighted limit keeps totals >= the cutoff AND totals tied with it: y's 100 x 0.1
 // sums to 9.99999999999998, which is 10 in exact arithmetic. z (9.9) is below the cutoff by
 // far more than the tolerance and goes into Other with w.

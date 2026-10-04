@@ -4219,7 +4219,13 @@ impl Args {
                     processed_frequencies.drain(..).partition(|f| {
                         f.rank <= 0.0 || (!self.flag_null_sorted && f.value == *null_val)
                     });
-                floating.sort_unstable_by(by_count);
+                // Ranked NULLs go back first, so Other and suppressed NULLs are then placed by
+                // count against the complete ranked sequence.
+                floating.sort_unstable_by(|a, b| {
+                    (b.rank > 0.0)
+                        .cmp(&(a.rank > 0.0))
+                        .then_with(|| by_count(a, b))
+                });
                 for f in floating {
                     let pos = if f.rank > 0.0 {
                         placed.iter().position(|r| {

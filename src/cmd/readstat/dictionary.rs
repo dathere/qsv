@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use polars::prelude::{AnyValue, DataFrame, DataType, PolarsResult, Schema};
+use polars::prelude::{AnyValue, ChunkCompareEq, DataFrame, DataType, PolarsResult, Schema};
 use serde_json::{Map, Value, json};
 
 use super::{F64_WHOLE_LIMIT, is_whole};
@@ -59,9 +59,9 @@ impl Tallies {
                 DataType::String => col
                     .as_materialized_series()
                     .str()?
-                    .iter()
-                    .filter(|v| v.is_some_and(str::is_empty))
-                    .count(),
+                    .equal("")
+                    .sum()
+                    .unwrap_or_default() as usize,
                 _ => 0,
             };
             *self.nulls.entry(name.to_string()).or_default() += (col.null_count() + empty) as u64;
@@ -80,8 +80,9 @@ impl Tallies {
             let Some(set) = slot else {
                 continue;
             };
-            let series = col.as_materialized_series();
-            for value in series.iter() {
+            // a batch's distinct values, not its rows: labeled columns hold few
+            let unique = col.as_materialized_series().unique()?;
+            for value in unique.iter() {
                 let Some(text) = value_text(&value) else {
                     continue;
                 };

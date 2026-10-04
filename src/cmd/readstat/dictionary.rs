@@ -18,9 +18,10 @@ use super::{F64_WHOLE_LIMIT, is_whole};
 const MAX_DISTINCT: usize = 1000;
 
 /// Rows deduplicated at a time, so a column of many values is given up on
-/// after a few slices rather than after deduplicating a whole batch - which,
-/// for a `.por` file, is the whole file.
-const UNIQUE_SLICE: usize = 10_000;
+/// after a slice rather than after deduplicating a whole batch - which, for a
+/// `.por` file, is the whole file. Above the default --batch (50000), so a
+/// streamed batch is one slice: smaller slices cost ~45% more (measured).
+const UNIQUE_SLICE: usize = 65_536;
 
 /// What the batches written held, per column: its nulls, and - for the
 /// columns whose `enum` or `null_values` depend on them - its distinct

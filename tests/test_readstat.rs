@@ -2398,8 +2398,33 @@ fn readstat_dictionary_follows_the_options() {
 fn readstat_dictionary_validates_its_csv() {
     let wrk = Workdir::new("readstat_dictionary_validates_its_csv");
     wrk.load_test_file("readstat_catalog.sas7bcat");
-    let cases: [(&str, &[&str]); 16] = [
+    let cases: [(&str, &[&str]); 20] = [
         ("readstat_sample.sav", &[]),
+        (
+            "readstat_sentinels.sav",
+            &[
+                "--compress-numeric",
+                "--sentinels-as",
+                "value",
+                "--sentinels-embedded",
+                "--limit",
+                "1",
+            ],
+        ),
+        (
+            "readstat_sentinels_labels.sav",
+            &[
+                "--value-labels",
+                "--sentinels-as",
+                "label",
+                "--sentinels-embedded",
+            ],
+        ),
+        ("readstat_measure.sav", &[]),
+        (
+            "readstat_sentinels.sav",
+            &["--sentinels-as", "label", "--value-labels"],
+        ),
         (
             "readstat_sample.sav",
             &["--value-labels", "--compress-numeric"],
@@ -2461,6 +2486,65 @@ fn readstat_dictionary_refusals() {
             "would overwrite the input file",
         ),
     ];
+    // an absolute & a relative spelling, before either file exists
+    let abs = wrk.path("fresh.csv");
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--dictionary",
+        abs.to_str().unwrap(),
+        "--output",
+        "fresh.csv",
+    ])
+    .arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("name the same file"), "{stderr}");
+    assert!(!abs.exists(), "refused before --output is created");
+
+    // the SAS format catalog being read is never overwritten
+    let data = wrk.load_test_file("readstat_catalog.sas7bdat");
+    let catalog = wrk.load_test_file("readstat_catalog.sas7bcat");
+    let catalog_before = std::fs::read(&catalog).unwrap();
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--value-labels",
+        "--dictionary",
+        catalog.as_str(),
+        "--output",
+        "c.csv",
+    ])
+    .arg(&data);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("is the SAS format catalog being read"),
+        "{stderr}"
+    );
+    assert_eq!(std::fs::read(&catalog).unwrap(), catalog_before);
+
+    // ./same.csv & same.csv, before either exists
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--dictionary", "./same.csv", "--output", "same.csv"])
+        .arg(&f);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("name the same file"), "{stderr}");
+    assert!(!wrk.path("same.csv").exists());
+
+    // a link to an --output not yet written resolves only once it is: caught
+    // then, before the dictionary truncates the CSV
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("linked.csv", wrk.path("link.json")).unwrap();
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--dictionary", "link.json", "--output", "linked.csv"])
+            .arg(&f);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains("name the same file"), "{stderr}");
+        assert!(
+            std::fs::read_to_string(wrk.path("linked.csv"))
+                .unwrap()
+                .starts_with("id,name,score,sex,visited"),
+            "the CSV written must survive"
+        );
+    }
     for (args, expected) in cases {
         let mut cmd = wrk.command("readstat");
         cmd.args(args).arg(&f);
@@ -2468,4 +2552,133 @@ fn readstat_dictionary_refusals() {
         assert!(stderr.contains(expected), "{args:?}: {stderr}");
     }
     assert_eq!(std::fs::read(&f).unwrap(), input_before);
+}
+
+/// SPSS records its formats as type codes; the dictionary names them as SPSS
+/// does, and maps SPSS's measure to the role viz charts by.
+#[test]
+fn readstat_dictionary_spss_formats_and_measures() {
+    let wrk = Workdir::new("readstat_dictionary_spss_formats_and_measures");
+    // pyreadstat original_variable_types: F8.2, DTIME23.2, DTIME11, TIME8
+    let dict = dictionary_of(&wrk, &wrk.load_test_file("readstat_dtime.sav"), &[]);
+    for (name, format) in [
+        ("id", "F8.2"),
+        ("dur", "DTIME23.2"),
+        ("whole", "DTIME11"),
+        ("t", "TIME8"),
+    ] {
+        assert_eq!(
+            dict["properties"][name]["x-qsv"]["source_format"], format,
+            "{name}"
+        );
+    }
+    // ... A6 & DATE11, likewise
+    let dict = dictionary_of(&wrk, &sample(&wrk, "sav"), &[]);
+    assert_eq!(dict["properties"]["name"]["x-qsv"]["source_format"], "A6");
+    assert_eq!(
+        dict["properties"]["visited"]["x-qsv"]["source_format"],
+        "DATE11"
+    );
+
+    // readstat_measure.sav - written with pyreadstat 1.3.6, variable_measure
+    // a scale, b nominal, c ordinal, d unset
+    let dict = dictionary_of(&wrk, &wrk.load_test_file("readstat_measure.sav"), &[]);
+    let props = &dict["properties"];
+    for (name, measure, role) in [
+        ("a", "Scale", "measure"),
+        ("b", "Nominal", "dimension"),
+        ("c", "Ordinal", "dimension"),
+    ] {
+        assert_eq!(props[name]["x-qsv"]["measure"], measure, "{name}");
+        assert_eq!(props[name]["x-qsv"]["role"], role, "{name}");
+    }
+    assert!(props["d"]["x-qsv"].get("role").is_none());
+    assert!(props["d"]["x-qsv"].get("measure").is_none());
+}
+
+/// Under --sentinels-embedded, `null_values` lists the sentinels a column
+/// holds, told apart by the variable's metadata: not decoded labels, & not
+/// lost in a column of many values.
+#[test]
+fn readstat_dictionary_embedded_null_values() {
+    let wrk = Workdir::new("readstat_dictionary_embedded_null_values");
+    // readstat_sentinels_labels.sav: score declares 950 ("Skipped") & 99
+    // ("1.0"), labels 1 "one"; code declares "NA" ("Not asked")
+    let dict = dictionary_of(
+        &wrk,
+        &wrk.load_test_file("readstat_sentinels_labels.sav"),
+        &[
+            "--value-labels",
+            "--sentinels-as",
+            "label",
+            "--sentinels-embedded",
+        ],
+    );
+    let props = &dict["properties"];
+    assert_eq!(
+        props["score"]["x-qsv"]["null_values"],
+        serde_json::json!(["1.0", "Skipped"])
+    );
+    assert_eq!(
+        props["code"]["x-qsv"]["null_values"],
+        serde_json::json!(["Not asked"])
+    );
+
+    // y holds over 1000 distinct values, beyond what enum tracking keeps
+    let dict = dictionary_of(
+        &wrk,
+        &sentinels(&wrk, "sas7bdat"),
+        &["--sentinels-as", "value", "--sentinels-embedded"],
+    );
+    let y = &dict["properties"]["y"]["x-qsv"];
+    assert!(y.get("cardinality").is_none(), "{y}");
+    let tags = y["null_values"].as_array().unwrap();
+    assert!(
+        tags.len() > 5 && tags.iter().all(|t| t.as_str().unwrap().starts_with('.')),
+        "{y}"
+    );
+    // x is numeric, so it can't hold a sentinel
+    assert!(
+        dict["properties"]["x"]["x-qsv"]
+            .get("null_values")
+            .is_none()
+    );
+}
+
+/// A numeric enum only where the CSV holds the codes as numbers.
+#[test]
+fn readstat_dictionary_numeric_enum_only_as_written() {
+    let wrk = Workdir::new("readstat_dictionary_numeric_enum_only_as_written");
+    // embedded, rating is text: "3", never the number 3
+    let dict = dictionary_of(
+        &wrk,
+        &sentinels(&wrk, "sav"),
+        &[
+            "--compress-numeric",
+            "--sentinels-as",
+            "value",
+            "--sentinels-embedded",
+            "--limit",
+            "1",
+        ],
+    );
+    assert!(dict["properties"]["rating"].get("enum").is_none());
+
+    // readstat_measure.sav: e labels 1.25 & 2.5
+    let f = wrk.load_test_file("readstat_measure.sav");
+    let dict = dictionary_of(&wrk, &f, &[]);
+    assert_eq!(
+        dict["properties"]["e"]["enum"],
+        serde_json::json!([1.25, 2.5])
+    );
+    // rounded on output, they may no longer equal their codes
+    let out = wrk.path("dict.schema.json");
+    let mut cmd = wrk.command("readstat");
+    cmd.env("QSV_POLARS_FLOAT_PRECISION", "1")
+        .args(["--dictionary", out.to_str().unwrap(), "--output", "out.csv"])
+        .arg(&f);
+    wrk.assert_success(&mut cmd);
+    let dict: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(out).unwrap()).unwrap();
+    assert!(dict["properties"]["e"].get("enum").is_none());
 }

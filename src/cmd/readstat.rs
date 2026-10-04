@@ -405,7 +405,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--dictionary describes the data written, so it doesn't apply to --metadata."
             );
         }
-        let same = |a: &Path, b: &Path| a == b || same_file::is_same_file(a, b).unwrap_or(false);
+        // a file that doesn't exist yet can't be compared by identity, so also
+        // compare where the paths point: ./out.csv & /abs/out.csv are one file
+        let located = |p: &Path| {
+            let parent = p.parent().filter(|d| !d.as_os_str().is_empty());
+            std::fs::canonicalize(parent.unwrap_or_else(|| Path::new(".")))
+                .ok()
+                .zip(p.file_name())
+                .map(|(dir, name)| dir.join(name))
+        };
+        let same = |a: &Path, b: &Path| {
+            a == b
+                || same_file::is_same_file(a, b).unwrap_or(false)
+                || located(a).is_some_and(|la| located(b).is_some_and(|lb| la == lb))
+        };
         let dict = Path::new(dict);
         if same(dict, path) {
             return fail_incorrectusage_clierror!("--dictionary would overwrite the input file.");
@@ -466,6 +479,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "--output ({out}) is the SAS format catalog being read ({}). Pass a different \
              --output.",
+            labels.catalog.display()
+        );
+    }
+    if let (Some(dict), Some(labels)) = (&args.flag_dictionary, &sas_labels)
+        && same_file::is_same_file(dict, &labels.catalog).unwrap_or(false)
+    {
+        return fail_incorrectusage_clierror!(
+            "--dictionary ({dict}) is the SAS format catalog being read ({}). Pass a different \
+             --dictionary.",
             labels.catalog.display()
         );
     }
@@ -1873,9 +1895,12 @@ fn write_data<W: Write>(
                 Some(InformativeNullColumns::Selected(names)) => names.clone(),
                 _ => schema.iter_names().map(ToString::to_string).collect(),
             };
-            let tallies =
-                dictionary::Tallies::new(dictionary::tracked(&schema, &meta, &embedded_columns));
-            Some((dict_path, catalog, meta, embedded_columns, tallies))
+            let label_sentinels = args.flag_sentinels_as.as_deref() == Some("label");
+            let tallies = dictionary::Tallies::new(
+                dictionary::tracked(&schema, &meta),
+                dictionary::sentinel_matchers(&schema, &meta, &embedded_columns, label_sentinels),
+            );
+            Some((dict_path, catalog, meta, tallies))
         },
         None => None,
     };
@@ -1951,7 +1976,7 @@ fn write_data<W: Write>(
     // writes the header if no batch did
     wtr.finish()?;
 
-    if let Some((dict_path, catalog, meta, embedded, tallies)) = dict {
+    if let Some((dict_path, catalog, meta, tallies)) = dict {
         let file_name = path.file_name().map_or_else(
             || path.display().to_string(),
             |f| f.to_string_lossy().into_owned(),
@@ -1984,10 +2009,21 @@ fn write_data<W: Write>(
             file_name: &file_name,
             source: &format!("{family} (.{ext})"),
             value_labels: args.flag_value_labels,
-            embedded,
+            float_precision,
             flags,
         };
         let doc = dictionary::build(&schema, &meta, &tallies, &written);
+        // the paths were compared up front; now that both files exist, catch two
+        // spellings of the same one (./out.csv & out.csv) before truncating it
+        if args
+            .flag_output
+            .as_deref()
+            .is_some_and(|out| same_file::is_same_file(dict_path, out).unwrap_or(false))
+        {
+            return fail_incorrectusage_clierror!(
+                "--dictionary & --output name the same file. Pass a different --dictionary."
+            );
+        }
         let mut out = io::BufWriter::new(File::create(dict_path)?);
         serde_json::to_writer_pretty(&mut out, &doc)?;
         out.write_all(b"\n")?;

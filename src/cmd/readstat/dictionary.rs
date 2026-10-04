@@ -6,7 +6,7 @@
 //! read it as they read describegpt's: per-property `title`, `description`,
 //! `type` & `enum`, with qsv's annotations under `x-qsv`.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use polars::prelude::{AnyValue, DataFrame, DataType, PolarsResult, Schema};
 use serde_json::{Map, Value, json};
@@ -22,18 +22,28 @@ const MAX_DISTINCT: usize = 1000;
 /// values, as text.
 #[derive(Default)]
 pub(super) struct Tallies {
-    rows:     u64,
-    nulls:    HashMap<String, u64>,
+    rows:      u64,
+    nulls:     HashMap<String, u64>,
     /// `None` once the column held more than [`MAX_DISTINCT`] values.
-    distinct: HashMap<String, Option<BTreeSet<String>>>,
+    distinct:  HashMap<String, Option<BTreeSet<String>>>,
+    /// The sentinels seen in each `--sentinels-embedded` column. Kept apart
+    /// from `distinct`, as a column of many values still has only a few.
+    sentinels: HashMap<String, (SentinelMatcher, BTreeSet<String>)>,
 }
 
 impl Tallies {
-    pub(super) fn new(distinct: impl IntoIterator<Item = String>) -> Self {
+    pub(super) fn new(
+        distinct: impl IntoIterator<Item = String>,
+        sentinels: impl IntoIterator<Item = (String, SentinelMatcher)>,
+    ) -> Self {
         Self {
             distinct: distinct
                 .into_iter()
                 .map(|name| (name, Some(BTreeSet::new())))
+                .collect(),
+            sentinels: sentinels
+                .into_iter()
+                .map(|(name, matcher)| (name, (matcher, BTreeSet::new())))
                 .collect(),
             ..Self::default()
         }
@@ -55,6 +65,15 @@ impl Tallies {
                 _ => 0,
             };
             *self.nulls.entry(name.to_string()).or_default() += (col.null_count() + empty) as u64;
+            if let Some((matcher, seen)) = self.sentinels.get_mut(name)
+                && *col.dtype() == DataType::String
+            {
+                for text in col.as_materialized_series().str()?.iter().flatten() {
+                    if matcher.matches(text) {
+                        seen.insert(text.to_string());
+                    }
+                }
+            }
             let Some(slot) = self.distinct.get_mut(name) else {
                 continue;
             };
@@ -82,6 +101,77 @@ impl Tallies {
 
     fn distinct(&self, name: &str) -> Option<&BTreeSet<String>> {
         self.distinct.get(name).and_then(Option::as_ref)
+    }
+
+    fn sentinels(&self, name: &str) -> Option<&BTreeSet<String>> {
+        self.sentinels.get(name).map(|(_, seen)| seen)
+    }
+}
+
+/// Tells the sentinels apart from the values in a `--sentinels-embedded`
+/// column, from the variable's metadata rather than from what the text looks
+/// like: a decoded value label is not a sentinel, and a sentinel's own label
+/// can be any text.
+pub(super) struct SentinelMatcher {
+    /// Codes & labels written verbatim.
+    exact:    HashSet<String>,
+    /// SAS & Stata write an unlabeled sentinel as its tag, `.A` or `.a`.
+    tags:     bool,
+    /// SPSS's declared missing numbers, written as numbers.
+    declared: Option<Value>,
+}
+
+impl SentinelMatcher {
+    fn new(var: &Value, label_sentinels: bool) -> Self {
+        let declared = missing_values(var);
+        let mut exact = HashSet::new();
+        let labels = var["value_labels"].as_object();
+        for (key, label) in labels.into_iter().flatten() {
+            let label = label.as_str().unwrap_or_default();
+            let sentinel = if let Some(code) = sentinel_code(key) {
+                exact.insert(code);
+                true
+            } else {
+                key.parse::<f64>()
+                    .is_ok_and(|n| declared_missing(declared.as_ref(), n))
+            };
+            if sentinel && label_sentinels {
+                exact.insert(label.to_string());
+            }
+        }
+        for code in var["missing_strings"].as_array().into_iter().flatten() {
+            let Some(code) = code.as_str() else {
+                continue;
+            };
+            exact.insert(code.to_string());
+            if label_sentinels
+                && let Some(label) = labels.and_then(|l| l.get(code)).and_then(Value::as_str)
+            {
+                exact.insert(label.to_string());
+            }
+        }
+        Self {
+            exact,
+            tags: is_numeric_variable(var) && var.get("format_type").is_none(),
+            declared,
+        }
+    }
+
+    fn matches(&self, text: &str) -> bool {
+        let text = text.trim_end();
+        let tag = |t: &str| {
+            let mut chars = t.chars();
+            chars.next() == Some('.')
+                && chars
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && chars.next().is_none()
+        };
+        self.exact.contains(text)
+            || (self.tags && tag(text))
+            || text
+                .parse::<f64>()
+                .is_ok_and(|n| declared_missing(self.declared.as_ref(), n))
     }
 }
 
@@ -124,13 +214,13 @@ fn number_json(n: f64) -> Value {
 
 /// How the CSV was written, as the dictionary records it.
 pub(super) struct Written<'a> {
-    pub file_name:    &'a str,
-    pub source:       &'a str,
-    pub value_labels: bool,
-    /// The variables whose sentinels are written into their own column.
-    pub embedded:     Vec<String>,
+    pub file_name:       &'a str,
+    pub source:          &'a str,
+    pub value_labels:    bool,
+    /// Set when `QSV_POLARS_FLOAT_PRECISION` rounds the floats written.
+    pub float_precision: Option<usize>,
     /// The flags in effect, recorded under `x-qsv.readstat_flags`.
-    pub flags:        Value,
+    pub flags:           Value,
 }
 
 /// The `qsv stats`-style type of a column as written, & its JSON Schema type.
@@ -211,6 +301,9 @@ fn labeled_enum(
                 (label.clone(), Value::String(label.clone()))
             } else {
                 match code {
+                    // a numeric variable written as text (its sentinels embedded
+                    // among its numbers): no enum, so None below
+                    Value::Number(_) if *dtype == DataType::String => (String::new(), Value::Null),
                     Value::Number(n) => {
                         let n = n.as_f64().unwrap_or_default();
                         let value = if dtype.is_float() {
@@ -228,7 +321,10 @@ fn labeled_enum(
             }
         })
         .collect();
-    if allowed.is_empty() || !held.iter().all(|h| allowed.iter().any(|(t, _)| t == h)) {
+    if allowed.is_empty()
+        || allowed.iter().any(|(_, v)| v.is_null())
+        || !held.iter().all(|h| allowed.iter().any(|(t, _)| t == h))
+    {
         return None;
     }
     let mut seen = BTreeSet::new();
@@ -272,10 +368,6 @@ fn missing_values(var: &Value) -> Option<Value> {
     }
 }
 
-/// Under `--sentinels-embedded`, the sentinels a column was seen to hold:
-/// for a numeric variable, its text that isn't a number (`.A`, or a label)
-/// & its declared SPSS missing numbers; for a text variable, its declared
-/// SPSS missing strings.
 /// Whether SPSS declares `n` a missing value, discretely or by range.
 fn declared_missing(missing: Option<&Value>, n: f64) -> bool {
     let Some(missing) = missing else {
@@ -291,24 +383,55 @@ fn declared_missing(missing: Option<&Value>, n: f64) -> bool {
     discrete || in_range
 }
 
-fn embedded_sentinels(var: &Value, held: &BTreeSet<String>) -> Vec<Value> {
-    let declared = missing_values(var);
-    let declared_number = |n: f64| declared_missing(declared.as_ref(), n);
-    let declared_strings: Vec<&str> = declared
-        .as_ref()
-        .and_then(|m| m["strings"].as_array())
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    held.iter()
-        .filter(|text| {
-            if is_numeric_variable(var) {
-                text.parse::<f64>().map_or(true, declared_number)
-            } else {
-                declared_strings.contains(&text.trim_end())
-            }
-        })
-        .map(|text| Value::String(text.clone()))
-        .collect()
+/// SPSS records a variable's display format as a numeric type code, width &
+/// decimals; this names it the way SPSS (and pyreadstat) write it, e.g.
+/// `F8.2`, `DTIME23.2`, `A3`.
+fn spss_format(var: &Value) -> Option<String> {
+    let name = match var["format_type"].as_u64()? {
+        1 => "A",
+        2 => "AHEX",
+        3 => "COMMA",
+        4 => "DOLLAR",
+        5 => "F",
+        6 => "IB",
+        7 => "PIBHEX",
+        8 => "P",
+        9 => "PIB",
+        10 => "PK",
+        11 => "RB",
+        12 => "RBHEX",
+        15 => "Z",
+        16 => "N",
+        17 => "E",
+        20 => "DATE",
+        21 => "TIME",
+        22 => "DATETIME",
+        23 => "ADATE",
+        24 => "JDATE",
+        25 => "DTIME",
+        26 => "WKDAY",
+        27 => "MONTH",
+        28 => "MOYR",
+        29 => "QYR",
+        30 => "WKYR",
+        31 => "PCT",
+        32 => "DOT",
+        33 => "CCA",
+        34 => "CCB",
+        35 => "CCC",
+        36 => "CCD",
+        37 => "CCE",
+        38 => "EDATE",
+        39 => "SDATE",
+        40 => "MTIME",
+        41 => "YMDHMS",
+        _ => return None,
+    };
+    let width = var["format_width"].as_u64().unwrap_or_default();
+    match var["format_decimals"].as_u64().unwrap_or_default() {
+        0 => Some(format!("{name}{width}")),
+        decimals => Some(format!("{name}{width}.{decimals}")),
+    }
 }
 
 fn role(measure: Option<&str>) -> Option<&'static str> {
@@ -333,26 +456,52 @@ fn variables(meta: &Value) -> HashMap<&str, &Value> {
         .collect()
 }
 
+/// Whether `--sentinels-embedded` can have put sentinels in this column: a
+/// numeric variable turned into text, or a text variable with declared SPSS
+/// missing strings.
+fn holds_sentinel_text(var: &Value, dtype: &DataType) -> bool {
+    *dtype == DataType::String
+        && (is_numeric_variable(var)
+            || var["missing_strings"]
+                .as_array()
+                .is_some_and(|a| !a.is_empty()))
+}
+
 /// The columns whose distinct values the dictionary needs: labeled variables
-/// (for `enum`), sentinel columns (their `enum`) & `embedded` ones (their
-/// `null_values`).
-pub(super) fn tracked(schema: &Schema, meta: &Value, embedded: &[String]) -> Vec<String> {
+/// (for `enum`) & sentinel columns (their `enum`).
+pub(super) fn tracked(schema: &Schema, meta: &Value) -> Vec<String> {
     let vars = variables(meta);
     schema
         .iter_names()
-        .map(|n| n.as_str())
-        .filter(|name| match vars.get(name) {
-            Some(var) => {
-                var["value_labels"]
-                    .as_object()
-                    .is_some_and(|l| !l.is_empty())
-                    || embedded.iter().any(|e| e == name)
-            },
+        .filter(|name| match vars.get(name.as_str()) {
+            Some(var) => var["value_labels"]
+                .as_object()
+                .is_some_and(|l| !l.is_empty()),
             None => name
                 .strip_suffix("_null")
                 .is_some_and(|base| vars.contains_key(base)),
         })
         .map(ToString::to_string)
+        .collect()
+}
+
+/// The `embedded` columns that can hold sentinel text, each with what tells
+/// its sentinels apart (for `null_values`).
+pub(super) fn sentinel_matchers(
+    schema: &Schema,
+    meta: &Value,
+    embedded: &[String],
+    label_sentinels: bool,
+) -> Vec<(String, SentinelMatcher)> {
+    let vars = variables(meta);
+    schema
+        .iter()
+        .filter(|(name, _)| embedded.iter().any(|e| e == name.as_str()))
+        .filter_map(|(name, dtype)| {
+            let var = vars.get(name.as_str())?;
+            holds_sentinel_text(var, dtype)
+                .then(|| (name.to_string(), SentinelMatcher::new(var, label_sentinels)))
+        })
         .collect()
 }
 
@@ -395,7 +544,9 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             let held = tallies.distinct(name);
             if !labels.is_empty() {
                 let decoded = written.value_labels && !dtype.is_primitive_numeric();
-                if let Some(held) = held
+                // rounded floats may no longer equal their codes
+                let rounded = dtype.is_float() && written.float_precision.is_some();
+                if let Some(held) = held.filter(|_| !rounded)
                     && let Some(mut values) =
                         labeled_enum(&labels, missing_values(var).as_ref(), decoded, dtype, held)
                 {
@@ -417,13 +568,13 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             if let Some(missing) = missing_values(var) {
                 x_qsv.insert("missing_values".into(), missing);
             }
-            if written.embedded.iter().any(|e| e == name)
-                && let Some(held) = held
+            if let Some(seen) = tallies.sentinels(name)
+                && !seen.is_empty()
             {
-                let sentinels = embedded_sentinels(var, held);
-                if !sentinels.is_empty() {
-                    x_qsv.insert("null_values".into(), Value::Array(sentinels));
-                }
+                x_qsv.insert(
+                    "null_values".into(),
+                    Value::Array(seen.iter().map(|s| Value::String(s.clone())).collect()),
+                );
             }
             if let Some(held) = held {
                 x_qsv.insert("cardinality".into(), json!(held.len()));
@@ -431,7 +582,10 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             if let Some(t) = non_empty(&var["type"]) {
                 x_qsv.insert("storage_type".into(), json!(t));
             }
-            if let Some(f) = non_empty(&var["format"]) {
+            let source_format = non_empty(&var["format"])
+                .map(ToString::to_string)
+                .or_else(|| spss_format(var));
+            if let Some(f) = source_format {
                 x_qsv.insert("source_format".into(), json!(f));
             }
             let measure = non_empty(&var["measure"]).filter(|m| !m.eq_ignore_ascii_case("unknown"));

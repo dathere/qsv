@@ -53,8 +53,11 @@ takes time, but stops early once --limit is reached.
   Read three variables & the first 1000 rows of a wide SPSS file:
     qsv readstat --select id,age,income --limit 1000 survey.sav
 
-  Read every variable from "q1" to "q20", except "q7", by name range:
-    qsv readstat --select 'q1-q20,!q7' survey.sav
+  Read every variable from "q1" to "q20", in file order:
+    qsv readstat --select q1-q20 survey.sav
+
+  Read every variable except two (a leading ! excludes those listed):
+    qsv readstat --select '!notes,comments' survey.sav
 
   Take a reproducible random sample of 500 rows, in file order:
     qsv readstat --sample 500 --seed 42 data.sas7bdat
@@ -130,7 +133,8 @@ readstat options:
                            Stata, those with declared missing values for SPSS.
     --select <cols>        The variables to read, in the order given, using
                            qsv's select syntax: names, 1-based indices,
-                           ranges (q1-q20), /regex/ & ! to exclude. See
+                           ranges (q1-q20) & /regex/, or a leading ! to
+                           read every variable except those listed. See
                            'qsv select --help' for the full syntax. Variables
                            left out are skipped by the reader. Also applies
                            to the option --metadata, which then lists only
@@ -436,8 +440,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if metadata_mode == MetadataMode::None {
         let (mut dropped, watch) = DroppedSentinels::new(format, args.flag_value_labels, check);
         let seed = args.flag_seed.unwrap_or_else(rand::random);
-        if args.flag_sample.is_some() {
-            log::info!("--sample seed: {seed}");
+        if args.flag_sample.is_some() && args.flag_seed.is_none() {
+            winfo!("--sample drew its rows with --seed {seed}; pass it to draw them again.");
         }
         let rows = write_data(
             &args,
@@ -490,7 +494,13 @@ fn resolve_selection(args: &Args, path: &Path, format: Format) -> CliResult<Opti
     let header: csv::ByteRecord = variables.iter().map(String::as_bytes).collect();
     let picked = match select.selection(&header, true) {
         Ok(picked) => picked,
-        Err(e) => return fail_incorrectusage_clierror!("--select: {e}"),
+        Err(e) => {
+            let e = e.replace(
+                "does not exist as a named header in the given CSV data",
+                &format!("is not a variable of \"{}\"", path.display()),
+            );
+            return fail_incorrectusage_clierror!("--select: {e}");
+        },
     };
     if picked.is_empty() {
         return fail_incorrectusage_clierror!("--select picks no variables.");

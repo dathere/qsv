@@ -86,9 +86,15 @@ qsv readstat --select id,age,income --limit 1000 survey.sav
 ```
 
 
-Read every variable from "q1" to "q20", except "q7", by name range:  
+Read every variable from "q1" to "q20", in file order:  
 ```console
-qsv readstat --select 'q1-q20,!q7' survey.sav
+qsv readstat --select q1-q20 survey.sav
+```
+
+
+Read every variable except two (a leading ! excludes those listed):  
+```console
+qsv readstat --select '!notes,comments' survey.sav
 ```
 
 
@@ -141,7 +147,7 @@ qsv readstat --help
 | &nbsp;`‑‑sentinels‑as`&nbsp; | string | Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. none  - write them as empty cells, without the check & its warning. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels reads files on a single thread, so the option --jobs has no effect, and reads SPSS .sav & .zsav files whole (see --batch). |  |
 | &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a <name>_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |
 | &nbsp;`‑‑sentinels‑columns`&nbsp; | string | Comma-separated variables to keep sentinels for. Requires --sentinels-as. By default, every eligible variable: the numeric ones for SAS & Stata, those with declared missing values for SPSS. |  |
-| &nbsp;`‑‑select`&nbsp; | string | The variables to read, in the order given, using qsv's select syntax: names, 1-based indices, ranges (q1-q20), /regex/ & ! to exclude. See 'qsv select --help' for the full syntax. Variables left out are skipped by the reader. Also applies to the option --metadata, which then lists only these variables. |  |
+| &nbsp;`‑‑select`&nbsp; | string | The variables to read, in the order given, using qsv's select syntax: names, 1-based indices, ranges (q1-q20) & /regex/, or a leading ! to read every variable except those listed. See 'qsv select --help' for the full syntax. Variables left out are skipped by the reader. Also applies to the option --metadata, which then lists only these variables. |  |
 | &nbsp;`‑‑offset`&nbsp; | integer | Skip the first <n> rows. | `0` |
 | &nbsp;`‑‑limit`&nbsp; | integer | Write at most <n> rows, counted after the rows skipped by --offset. |  |
 | &nbsp;`‑‑sample`&nbsp; | integer | Write a random sample of <n> rows, in file order, drawn from the rows --offset & --limit select. If there are no more than <n> such rows, all of them are written. |  |

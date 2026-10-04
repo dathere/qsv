@@ -1721,11 +1721,13 @@ fn project(rows: &[Vec<String>], cols: &[&str]) -> Vec<Vec<String>> {
 fn readstat_select_names_ranges_negation() {
     let wrk = Workdir::new("readstat_select_names_ranges_negation");
     let all = expected_rows();
-    let cases: [(&str, &str, &[&str]); 6] = [
+    let cases: [(&str, &str, &[&str]); 7] = [
         // order follows --select, not the file
         ("sav", "score,id", &["score", "id"]),
         ("zsav", "2-3", &["name", "score"]),
         ("dta", "!name", &["id", "score", "sex", "visited"]),
+        // a leading ! excludes every variable listed after it
+        ("sav", "!name,sex", &["id", "score", "visited"]),
         ("dta", "/^s/", &["score", "sex"]),
         // XPT's reader decoded projected columns from the wrong variable
         // before polars-readstat-rs 0.23.3 (jrothbaum/polars_readstat#64)
@@ -1928,6 +1930,26 @@ fn readstat_select_sentinel_columns() {
         "{stderr}"
     );
 
+    // every reader adds the sentinel columns of the projected variables
+    for (f, select, header) in [
+        (
+            wrk.load_test_file("readstat_stata_extmiss.dta"),
+            "d,id",
+            svec!["d", "d_null", "id", "id_null"],
+        ),
+        (
+            sentinels(&wrk, "sas7bdat"),
+            "y,x",
+            svec!["y", "y_null", "x", "x_null"],
+        ),
+    ] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sentinels-as", "value", "--select", select])
+            .arg(&f);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got[0], header, "{f}");
+    }
+
     // a variable of the file named `<name>_null` is selected like any other,
     // and is not taken for its neighbour's sentinel column
     let mut cmd = wrk.command("readstat");
@@ -1980,6 +2002,12 @@ fn readstat_sentinel_warning_counts_only_rows_and_variables_written() {
             None => assert!(!stderr.contains("sentinel"), "{args:?}: {stderr}"),
         }
     }
+
+    // SAS: z's sentinels are left out with z
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--select", "y"]).arg(sentinels(&wrk, "sas7bdat"));
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("in 1 variable (y)"), "{stderr}");
 }
 
 #[test]
@@ -2043,7 +2071,10 @@ fn readstat_selection_refusals() {
             "picks the variable \"id\" more than once",
         ),
         (&["--select", "!1-5"], "--select picks no variables"),
-        (&["--select", "nope"], "--select:"),
+        (
+            &["--select", "nope"],
+            "Selector name 'nope' is not a variable of",
+        ),
     ];
     for (args, expected) in cases {
         let out = wrk.path("refused.csv");

@@ -71,7 +71,7 @@
       {
         "flag": "--select",
         "type": "string",
-        "description": "The variables to read, in the order given, using qsv's select syntax: names, 1-based indices, ranges (q1-q20), /regex/ & ! to exclude. See 'qsv select --help' for the full syntax. Variables left out are skipped by the reader. Also applies to the option --metadata, which then lists only these variables."
+        "description": "The variables to read, in the order given, using qsv's select syntax: names, 1-based indices, ranges (q1-q20) & /regex/, or a leading ! to read every variable except those listed. See 'qsv select --help' for the full syntax. Variables left out are skipped by the reader. Also applies to the option --metadata, which then lists only these variables."
       },
       {
         "flag": "--sentinels-as",

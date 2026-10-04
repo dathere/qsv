@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **New `qsv-writestat` skill** ([#4728](https://github.com/dathere/qsv/issues/4728)). Exposes the new `writestat` command, the inverse of `qsv-readstat`: it writes a CSV as an SPSS (`.sav`, `.por`), Stata (`.dta`) or SAS transport (`.xpt`) file, restoring variable labels, value labels and missing values from the JSON Schema data dictionary `readstat --dictionary` wrote. Categorized as `conversion`, alongside `readstat`. Skill count 56 -> 57 (qsvmcp 69 -> 70 commands, full qsv 79 -> 80).
+- **New `qsv-writestat` skill** ([#4728](https://github.com/dathere/qsv/issues/4728)). Exposes the new `writestat` command, the inverse of `qsv-readstat`: it writes a CSV as an SPSS (`.sav`, `.por`), Stata (`.dta`) or SAS transport (`.xpt`) file, restoring variable labels, value labels and missing values from the JSON Schema data dictionary `readstat --dictionary` wrote. Categorized as `conversion`, alongside `readstat`. As its output is a binary file, a call without an `output_file` is refused with a message naming the extensions, rather than writing into the auto-created text temp file other commands use. Skill count 56 -> 57 (qsvmcp 69 -> 70 commands, full qsv 79 -> 80).
 
 ## [23.0.1] - 2026-09-13
 

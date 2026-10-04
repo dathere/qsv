@@ -273,6 +273,186 @@ fn writestat_por_invalid_names_refused() {
     );
 }
 
+// Written by readstat with --sentinels-as value: the codes are in the CSV, so
+// the value 1.0 stays 1.0 though the sentinel 99 is labeled "1.0".
+#[test]
+fn writestat_sav_embedded_codes_not_labels() {
+    let wrk = Workdir::new("writestat_sav_embedded_codes_not_labels");
+    let flags = [
+        "--select",
+        "score",
+        "--sentinels-as",
+        "value",
+        "--sentinels-embedded",
+    ];
+    let orig = to_csv(&wrk, "readstat_sentinels_labels.sav", &flags);
+    assert_eq!(orig, "score\n1.0\n2.0\n950\n99\n");
+    writestat(&wrk, "rt.sav", &[]);
+    assert_eq!(read_back(&wrk, "rt.sav", &flags), orig);
+}
+
+/// writestat refuses the CSV: the code a label stands for can't be told.
+fn refused_as_ambiguous(wrk: &Workdir, out: &str, expected: &str) {
+    for lossy in [false, true] {
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["--dictionary", "dict.json", "orig.csv", "-o", out]);
+        if lossy {
+            cmd.arg("--lossy");
+        }
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            err.contains(expected) && err.contains("Write the CSV again with 'qsv readstat'"),
+            "{err}"
+        );
+    }
+    assert!(!wrk.path(out).exists());
+}
+
+// codes 1 & 2 are both labeled "Yes" (written with pyreadstat 1.3.6)
+#[test]
+fn writestat_duplicate_labels_refused() {
+    let wrk = Workdir::new("writestat_duplicate_labels_refused");
+    let orig = to_csv(&wrk, "writestat_dup_labels.sav", &["--value-labels"]);
+    assert_eq!(orig, "q\nYes\nYes\nNo\n");
+    refused_as_ambiguous(
+        &wrk,
+        "rt.sav",
+        "Column \"q\" holds \"Yes\", which is the label of 1, 2,",
+    );
+}
+
+// Embedded sentinel labels that read as numbers: .b's "1.0" can't be told
+// from the value 1.0, so the CSV is refused, even with --lossy.
+#[test]
+fn writestat_numeric_sentinel_labels_refused() {
+    let wrk = Workdir::new("writestat_numeric_sentinel_labels_refused");
+    to_csv(
+        &wrk,
+        "readstat_stata_numeric_labels.dta",
+        &["--sentinels-as", "label", "--sentinels-embedded"],
+    );
+    refused_as_ambiguous(
+        &wrk,
+        "rt.dta",
+        "Column \"v\" holds \"1.0\", which is both a number and the label of .b,",
+    );
+}
+
+// An embedded label of an SPSS string sentinel goes back to its code, & so
+// is a declared missing value again.
+#[test]
+fn writestat_sav_embedded_string_sentinel_label() {
+    let wrk = Workdir::new("writestat_sav_embedded_string_sentinel_label");
+    let flags = [
+        "--sentinels-as",
+        "label",
+        "--sentinels-embedded",
+        "--sentinels-columns",
+        "code",
+    ];
+    let orig = to_csv(&wrk, "readstat_sentinels_labels.sav", &flags);
+    assert!(orig.contains(",Not asked\n"), "{orig}");
+    // its text value labels can't be written to an SPSS file, so the
+    // sentinel comes back as its code
+    writestat(&wrk, "rt.sav", &["--lossy"]);
+    assert_eq!(
+        read_back(&wrk, "rt.sav", &flags),
+        orig.replace("Not asked", "NA")
+    );
+    assert_eq!(
+        read_back(&wrk, "rt.sav", &[]),
+        "score,code\n1.0,a\n2.0,\n,b\n,a\n"
+    );
+}
+
+/// A datetime with microseconds.
+fn microsecond_datetime(wrk: &Workdir) {
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties": {"ts": {"x-qsv": {"qsv_type": "DateTime"}}}}"#,
+    );
+    wrk.create_from_string(
+        "orig.csv",
+        "ts\n2024-01-02T03:04:05.123456\n2024-01-02T03:04:06\n",
+    );
+}
+
+// SAS transport files hold microseconds
+#[test]
+fn writestat_xpt_datetime_microseconds() {
+    let wrk = Workdir::new("writestat_xpt_datetime_microseconds");
+    microsecond_datetime(&wrk);
+    writestat(&wrk, "out.xpt", &[]);
+    assert_eq!(
+        read_back(&wrk, "out.xpt", &[]),
+        "ts\n2024-01-02T03:04:05.123456\n2024-01-02T03:04:06.000000\n"
+    );
+}
+
+// SPSS & Stata files hold milliseconds, SPSS portable files whole seconds
+#[test]
+fn writestat_datetime_precision_refused() {
+    let wrk = Workdir::new("writestat_datetime_precision_refused");
+    microsecond_datetime(&wrk);
+    for (out, what) in [
+        ("out.sav", "the microseconds of the datetimes in \"ts\""),
+        ("out.dta", "the microseconds of the datetimes in \"ts\""),
+        (
+            "out.por",
+            "the fractions of a second of the datetimes in \"ts\"",
+        ),
+    ] {
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["--dictionary", "dict.json", "orig.csv", "-o", out]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(err.contains(what), "{out}: {err}");
+    }
+    let mut cmd = wrk.command("writestat");
+    cmd.args([
+        "--lossy",
+        "--dictionary",
+        "dict.json",
+        "orig.csv",
+        "-o",
+        "out.por",
+    ]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.por", &[]),
+        "TS\n2024-01-02T03:04:05.000\n2024-01-02T03:04:06.000\n"
+    );
+}
+
+// Inferred datetimes are microseconds, which the SPSS portable writer would
+// take for milliseconds.
+#[test]
+fn writestat_por_inferred_datetime() {
+    let wrk = Workdir::new("writestat_por_inferred_datetime");
+    wrk.create_from_string("in.csv", "ts\n2024-01-02T03:04:05\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.por"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.por", &[]),
+        "TS\n2024-01-02T03:04:05.000\n"
+    );
+}
+
+// A 60-byte SPSS name is valid, though its <name>_null column's 65 bytes
+// aren't: that column becomes the variable's missing values, not a variable.
+#[test]
+fn writestat_sav_long_name_with_sentinels() {
+    let (_wrk, orig) = sav_round_trip(
+        "writestat_sav_long_name_with_sentinels",
+        "writestat_long_name.sav",
+        &["--sentinels-as", "value"],
+    );
+    assert!(
+        orig.starts_with(&format!("{0},{0}_null\n", "v".repeat(60))),
+        "{orig}"
+    );
+}
+
 const DTA_KEYS: &[&str] = &["label", "value_labels", "format"];
 
 fn dta_round_trip(name: &str, fixture: &str, flags: &[&str]) -> (Workdir, String) {

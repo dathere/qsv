@@ -797,6 +797,16 @@ export async function handleToolCall(
       }
     }
 
+    // writestat writes a binary SPSS/Stata/SAS file, chosen by the output
+    // extension; it can't be returned inline or through an auto-created temp
+    // file, so the caller has to name the file.
+    if (commandName === "writestat" && !outputFile && !isHelpRequest) {
+      return errorResult(
+        "writestat writes a binary file, so it needs an output_file naming it, with the " +
+          "extension of the format to write: .sav or .por (SPSS), .dta (Stata) or .xpt (SAS transport).",
+      );
+    }
+
     // Prevent overwriting reserved cache files (output_file and file-path output options)
     if (outputFile && isReservedCachePath(outputFile)) {
       return errorResult(reservedCachePathError(outputFile));

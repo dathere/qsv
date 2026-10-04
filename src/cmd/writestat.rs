@@ -19,8 +19,10 @@ a dictionary, the column types are inferred from the CSV.
 
 The dictionary also says how readstat wrote the CSV, and that is undone: the
 values decoded by the option --value-labels go back to their codes, and the
-SPSS sentinel columns of --sentinels-as (<name>_null) become declared missing
-values again.
+SPSS sentinels of --sentinels-as become declared missing values again, whether
+in <name>_null columns or embedded. A label that can't be turned back into one
+code - shared by two codes, or reading as a number that isn't its code - is an
+error: write the CSV again with readstat without the label.
 
 Metadata the output format can't hold is refused rather than dropped silently:
 value labels & missing values in SAS transport & SPSS portable files, missing
@@ -175,6 +177,36 @@ impl Column {
         })
     }
 
+    /// Whether `code` is one of the SPSS missing values the variable declares.
+    fn declares_missing(&self, code: f64) -> bool {
+        let Some(missing) = &self.missing else {
+            return false;
+        };
+        let discrete = missing["discrete"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|v| v.as_f64() == Some(code));
+        let range = match missing["range"].as_array().map(Vec::as_slice) {
+            Some([lo, hi]) => lo
+                .as_f64()
+                .zip(hi.as_f64())
+                .is_some_and(|(lo, hi)| (lo..=hi).contains(&code)),
+            _ => false,
+        };
+        discrete || range
+    }
+
+    fn declares_missing_text(&self, code: &str) -> bool {
+        self.missing.as_ref().is_some_and(|m| {
+            m["strings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .any(|v| v.as_str() == Some(code))
+        })
+    }
+
     fn text_labels(&self) -> impl Iterator<Item = (&str, &str)> {
         self.value_labels.iter().filter_map(|(code, label)| {
             code.as_str()
@@ -186,15 +218,32 @@ impl Column {
 
 #[derive(Default)]
 struct Dictionary {
-    columns:    HashMap<String, Column>,
-    order:      Vec<String>,
-    file_label: Option<String>,
-    table_name: Option<String>,
-    family:     Option<Family>,
+    columns:          HashMap<String, Column>,
+    order:            Vec<String>,
+    file_label:       Option<String>,
+    table_name:       Option<String>,
+    family:           Option<Family>,
     /// readstat --value-labels: the CSV holds labels, not codes
-    decoded:    bool,
+    decoded:          bool,
     /// readstat --sentinels-embedded: sentinels are in the variables' columns
-    embedded:   bool,
+    embedded:         bool,
+    /// readstat --sentinels-as label: sentinels are written as their labels
+    sentinel_labels:  bool,
+    /// readstat --sentinels-columns: the variables whose sentinels were kept
+    sentinel_columns: Option<Vec<String>>,
+}
+
+impl Dictionary {
+    /// Whether readstat wrote the sentinels of `name` as their labels, in
+    /// its own column.
+    fn embeds_sentinel_labels(&self, name: &str) -> bool {
+        self.embedded
+            && self.sentinel_labels
+            && self
+                .sentinel_columns
+                .as_ref()
+                .is_none_or(|cols| cols.iter().any(|c| c == name))
+    }
 }
 
 fn text(value: &Value) -> Option<String> {
@@ -237,6 +286,10 @@ impl Dictionary {
             family,
             decoded: flags["value_labels"].as_bool() == Some(true),
             embedded: flags["sentinels_embedded"].as_bool() == Some(true),
+            sentinel_labels: flags["sentinels_as"].as_str() == Some("label"),
+            sentinel_columns: flags["sentinels_columns"]
+                .as_str()
+                .map(|list| list.split(',').map(|n| n.trim().to_string()).collect()),
             ..Self::default()
         };
         for (name, prop) in properties {
@@ -369,11 +422,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         df
     };
+    let df = fit_datetimes(df, format, &mut losses)?;
     let empty = Dictionary::default();
     let dict = dict.as_ref().unwrap_or(&empty);
 
     // everything is checked before the writer creates --output
-    check_names(&df, format, &mut losses)?;
+    check_names(&df, format, &pairs, &mut losses)?;
     let meta = Metadata::collect(&df, dict, format, &pairs, &mut losses);
     if !losses.0.is_empty() {
         if !args.flag_lossy {
@@ -458,6 +512,81 @@ fn apply_dictionary(
     Ok((df, pairs))
 }
 
+/// A value label's code, as readstat recorded it.
+enum Code<'a> {
+    Number(f64),
+    /// a SAS or Stata tagged missing value (.a)
+    Tag(&'a str),
+}
+
+impl std::fmt::Display for Code<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Code::Number(n) => write!(f, "{n}"),
+            Code::Tag(t) => f.write_str(t),
+        }
+    }
+}
+
+/// The labels readstat wrote for a numeric variable's codes: all of them
+/// under --value-labels; under --sentinels-as label, those of its sentinels
+/// (an SPSS declared missing value or a SAS/Stata tag), if it kept them.
+fn numeric_reverse_labels<'a>(
+    name: &str,
+    col: &'a Column,
+    dict: &Dictionary,
+) -> HashMap<&'a str, Vec<Code<'a>>> {
+    let sentinels = dict.embeds_sentinel_labels(name);
+    let mut map: HashMap<&str, Vec<Code>> = HashMap::new();
+    for (code, label) in &col.value_labels {
+        let code = if let Some(n) = code.as_f64() {
+            if !(dict.decoded || (sentinels && col.declares_missing(n))) {
+                continue;
+            }
+            Code::Number(n)
+        } else if let Some(tag) = code.as_str().filter(|c| c.starts_with('.')) {
+            if !sentinels {
+                continue;
+            }
+            Code::Tag(tag)
+        } else {
+            continue;
+        };
+        map.entry(label.as_str()).or_default().push(code);
+    }
+    map
+}
+
+/// Why a cell holding `label` can't be turned back into one code, if it
+/// can't: two codes share the label, or the label reads as a number that
+/// isn't its code - and so can't be told apart from that number.
+fn ambiguity(label: &str, codes: &[Code]) -> Option<String> {
+    if codes.len() > 1 {
+        let list = codes.iter().map(ToString::to_string).collect::<Vec<_>>();
+        return Some(format!("the label of {}", list.join(", ")));
+    }
+    let n = label.parse::<f64>().ok()?;
+    match codes.first()? {
+        Code::Number(code) if *code == n => None,
+        code => Some(format!("both a number and the label of {code}")),
+    }
+}
+
+fn ambiguous_cell<T>(name: &str, cell: &str, why: &str) -> CliResult<T> {
+    fail_incorrectusage_clierror!(
+        "Column \"{name}\" holds \"{cell}\", which is {why}, so the code it stands for can't be \
+         told. Write the CSV again with 'qsv readstat' without --value-labels, or with \
+         --sentinels-as value."
+    )
+}
+
+/// Keep the first few distinct cells, for a message.
+fn note(cells: &mut Vec<String>, cell: &str) {
+    if cells.len() < 3 && !cells.iter().any(|c| c == cell) {
+        cells.push(cell.to_string());
+    }
+}
+
 /// One column as written by readstat (text) -> the type the dictionary says.
 fn type_column(
     series: &Series,
@@ -485,62 +614,103 @@ fn type_column(
         && col.qsv_type.as_deref() == Some("String")
         && (dict.decoded || dict.embedded);
     if text_numeric {
-        let by_label: HashMap<&str, f64> = col
-            .numeric_labels()
-            .map(|(code, label)| (label, code))
-            .collect();
+        let by_label = numeric_reverse_labels(&name, col, dict);
+        let mut tagged: Vec<String> = Vec::new();
         let mut unreadable: Vec<String> = Vec::new();
+        let mut ambiguous: Option<(String, String)> = None;
         let values: Float64Chunked = strings
             .iter()
             .map(|cell| {
                 let cell = cell.filter(|c| !c.is_empty())?;
-                if let Some(code) = by_label.get(cell) {
-                    return Some(*code);
+                if let Some(codes) = by_label.get(cell) {
+                    if let Some(why) = ambiguity(cell, codes) {
+                        ambiguous.get_or_insert_with(|| (cell.to_string(), why));
+                        return None;
+                    }
+                    return match codes[0] {
+                        Code::Number(n) => Some(n),
+                        // no writer can store a tagged missing value (.a)
+                        Code::Tag(_) => {
+                            note(&mut tagged, cell);
+                            None
+                        },
+                    };
                 }
                 if let Ok(n) = cell.parse::<f64>() {
                     return Some(n);
                 }
-                // a sentinel tag (.a) or its label: no writer can store those
-                if unreadable.len() < 3 && !unreadable.iter().any(|u| u == cell) {
-                    unreadable.push(cell.to_string());
+                if cell.starts_with('.') {
+                    note(&mut tagged, cell);
+                } else {
+                    note(&mut unreadable, cell);
                 }
                 None
             })
             .collect();
-        if !unreadable.is_empty() {
-            let tags = col
-                .sentinel_labels()
-                .any(|(c, l)| unreadable.iter().any(|u| u == c || u == l))
-                || unreadable.iter().any(|u| u.starts_with('.'));
-            if tags {
-                losses.add(format!(
-                    "the sentinels of \"{name}\" (e.g. \"{}\"): {} can't hold SAS & Stata tagged \
-                     missing values, so they would be written as missing",
-                    unreadable[0],
-                    format.name()
-                ));
-            } else {
-                return fail_clierror!(
-                    "Column \"{name}\" holds \"{}\", which is neither a number nor one of its \
-                     value labels.",
-                    unreadable[0]
-                );
-            }
+        if let Some((cell, why)) = ambiguous {
+            return ambiguous_cell(&name, &cell, &why);
+        }
+        if let Some(cell) = unreadable.first() {
+            return fail_clierror!(
+                "Column \"{name}\" holds \"{cell}\", which is neither a number nor one of its \
+                 value labels."
+            );
+        }
+        if let Some(cell) = tagged.first() {
+            losses.add(format!(
+                "the sentinels of \"{name}\" (e.g. \"{cell}\"): {} can't hold SAS & Stata tagged \
+                 missing values, so they would be written as missing",
+                format.name()
+            ));
         }
         return Ok(values.into_series());
     }
 
-    // a text variable with its labels decoded: back to its codes
-    if dict.decoded && !col.numeric_variable() && col.text_labels().next().is_some() {
-        let by_label: HashMap<&str, &str> = col
-            .text_labels()
-            .map(|(code, label)| (label, code))
-            .collect();
-        let values: StringChunked = strings
-            .iter()
-            .map(|cell| cell.map(|c| by_label.get(c).copied().unwrap_or(c)))
-            .collect();
-        return Ok(values.into_series());
+    // a text variable with its labels written for its codes: back to them
+    if !col.numeric_variable() {
+        let sentinels = dict.embeds_sentinel_labels(&name);
+        let mut by_label: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (code, label) in col.text_labels() {
+            if dict.decoded || (sentinels && col.declares_missing_text(code)) {
+                by_label.entry(label).or_default().push(code);
+            }
+        }
+        if !by_label.is_empty() {
+            // the labeled codes readstat wrote as they are
+            let raw: Vec<&str> = col
+                .text_labels()
+                .map(|(code, _)| code)
+                .filter(|code| !by_label.values().flatten().any(|c| c == code))
+                .collect();
+            let mut ambiguous: Option<(String, String)> = None;
+            let values: StringChunked = strings
+                .iter()
+                .map(|cell| {
+                    cell.map(|c| {
+                        let Some(codes) = by_label.get(c) else {
+                            return c;
+                        };
+                        if codes.len() > 1 {
+                            ambiguous.get_or_insert_with(|| {
+                                (c.to_string(), format!("the label of {}", codes.join(", ")))
+                            });
+                        } else if raw.contains(&c) {
+                            ambiguous.get_or_insert_with(|| {
+                                (
+                                    c.to_string(),
+                                    format!("both a code and the label of {}", codes[0]),
+                                )
+                            });
+                        }
+                        codes[0]
+                    })
+                })
+                .collect();
+            if let Some((cell, why)) = ambiguous {
+                return ambiguous_cell(&name, &cell, &why);
+            }
+            return Ok(values.into_series());
+        }
     }
 
     let target = match col.qsv_type.as_deref() {
@@ -606,21 +776,21 @@ fn parse_temporal(strings: &StringChunked, kind: Temporal) -> CliResult<Series> 
             days?.into_series().cast(&DataType::Date)?
         },
         Temporal::DateTime => {
-            let millis: CliResult<Int64Chunked> = cells
+            let micros: CliResult<Int64Chunked> = cells
                 .map(|c| {
                     c.map(|c| {
                         ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"]
                             .iter()
                             .find_map(|f| chrono::NaiveDateTime::parse_from_str(c, f).ok())
-                            .map(|dt| dt.and_utc().timestamp_millis())
+                            .map(|dt| dt.and_utc().timestamp_micros())
                             .ok_or_else(|| bad(c))
                     })
                     .transpose()
                 })
                 .collect();
-            millis?
+            micros?
                 .into_series()
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?
+                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))?
         },
         Temporal::Time => {
             let nanos: CliResult<Int64Chunked> = cells
@@ -679,13 +849,62 @@ fn integer_labeled_columns(mut df: DataFrame, dict: Option<&Dictionary>) -> CliR
     Ok(df)
 }
 
-/// Names the format can't hold are an error (or, for Stata, a loss): the
-/// writers would otherwise fail midway or rename columns silently.
-fn check_names(df: &DataFrame, format: Format, losses: &mut Losses) -> CliResult<()> {
+/// Datetimes go to each writer in the unit it reads: microseconds for SAS
+/// transport files, milliseconds for the others - the SPSS portable writer
+/// takes them as milliseconds whatever their unit, & keeps whole seconds.
+fn fit_datetimes(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliResult<DataFrame> {
     let names: Vec<String> = df
         .get_column_names()
         .iter()
         .map(ToString::to_string)
+        .collect();
+    for name in names {
+        let series = df.column(&name)?.as_materialized_series().clone();
+        if !matches!(series.dtype(), DataType::Datetime(..)) {
+            continue;
+        }
+        let micros = series.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
+        let fitted = if matches!(format, Format::Xpt(_)) {
+            micros
+        } else {
+            let (step, what, held) = if format == Format::Por {
+                (1_000_000, "fractions of a second", "whole seconds")
+            } else {
+                (1_000, "microseconds", "milliseconds")
+            };
+            if micros
+                .cast(&DataType::Int64)?
+                .i64()?
+                .iter()
+                .flatten()
+                .any(|v| v % step != 0)
+            {
+                losses.add(format!(
+                    "the {what} of the datetimes in \"{name}\": a {} file holds {held}",
+                    format.name()
+                ));
+            }
+            micros.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?
+        };
+        df.replace(&name, fitted.into_column())?;
+    }
+    Ok(df)
+}
+
+/// Names the format can't hold are an error (or, for Stata, a loss): the
+/// writers would otherwise fail midway or rename columns silently.
+fn check_names(
+    df: &DataFrame,
+    format: Format,
+    pairs: &HashMap<String, String>,
+    losses: &mut Losses,
+) -> CliResult<()> {
+    // the <name>_null columns are merged into their variables, not written
+    let names: Vec<String> = df
+        .get_column_names()
+        .iter()
+        .map(ToString::to_string)
+        .filter(|n| !pairs.values().any(|p| p == n))
         .collect();
     let max = match format {
         Format::Sav => 64,
@@ -957,6 +1176,7 @@ fn merge_string_sentinels(
             .get(base)
             .map(|col| {
                 col.text_labels()
+                    .filter(|(code, _)| col.declares_missing_text(code))
                     .map(|(code, label)| (label, code))
                     .collect()
             })

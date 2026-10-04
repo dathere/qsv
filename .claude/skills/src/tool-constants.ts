@@ -118,9 +118,11 @@ export const FILE_PATH_OUTPUT_OPTIONS = new Set([
 /**
  * Check if the command+params produce binary output (not tabular text).
  * Used to skip auto temp file creation and prevent .tsv extensions for
- * binary formats (parquet/arrow/avro) that can't be read back as UTF-8.
+ * binary formats (parquet/arrow/avro, and writestat's SPSS/Stata/SAS files)
+ * that can't be read back as UTF-8.
  */
 export function isBinaryOutputFormat(commandName: string, params: Record<string, unknown>): boolean {
+  if (commandName === "writestat") return true;
   return commandName === "sqlp" &&
     BINARY_OUTPUT_FORMATS.has(String(params.format ?? "").toLowerCase());
 }

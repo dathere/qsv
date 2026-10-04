@@ -21,8 +21,9 @@ The dictionary also says how readstat wrote the CSV, and that is undone: the
 values decoded by the option --value-labels go back to their codes, and the
 SPSS sentinels of --sentinels-as become declared missing values again, whether
 in <name>_null columns or embedded. A label that can't be turned back into one
-code - shared by two codes, or reading as a number that isn't its code - is an
-error: write the CSV again with readstat without the label.
+code - shared by two codes, reading as a number that isn't its code, or also
+an ordinary value - is an error: write the CSV again with readstat without
+the label.
 
 Metadata the output format can't hold is refused rather than dropped silently:
 value labels & missing values in SAS transport & SPSS portable files, missing
@@ -142,17 +143,19 @@ enum Family {
 /// One property of the data dictionary.
 #[derive(Default)]
 struct Column {
-    title:         Option<String>,
-    qsv_type:      Option<String>,
-    json_format:   Option<String>,
-    value_labels:  Vec<(Value, String)>,
-    missing:       Option<Value>,
-    measure:       Option<String>,
-    alignment:     Option<String>,
-    display_width: Option<i64>,
-    source_format: Option<String>,
-    storage_type:  Option<String>,
-    indicator_for: Option<String>,
+    title:            Option<String>,
+    qsv_type:         Option<String>,
+    json_format:      Option<String>,
+    value_labels:     Vec<(Value, String)>,
+    missing:          Option<Value>,
+    measure:          Option<String>,
+    alignment:        Option<String>,
+    display_width:    Option<i64>,
+    source_format:    Option<String>,
+    storage_type:     Option<String>,
+    indicator_for:    Option<String>,
+    /// labels readstat wrote that are also ordinary values of the variable
+    label_collisions: Vec<String>,
 }
 
 impl Column {
@@ -169,10 +172,13 @@ impl Column {
             .filter_map(|(code, label)| Some((code.as_f64()?, label.as_str())))
     }
 
+    /// The labels of SAS & Stata tagged missing values (.a): numeric
+    /// variables only, as an SPSS text code may start with a dot too.
     fn sentinel_labels(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.value_labels.iter().filter_map(|(code, label)| {
+        let numeric = self.numeric_variable();
+        self.value_labels.iter().filter_map(move |(code, label)| {
             code.as_str()
-                .filter(|c| c.starts_with('.'))
+                .filter(|c| numeric && c.starts_with('.'))
                 .map(|c| (c, label.as_str()))
         })
     }
@@ -208,11 +214,19 @@ impl Column {
     }
 
     fn text_labels(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.value_labels.iter().filter_map(|(code, label)| {
+        let numeric = self.numeric_variable();
+        self.value_labels.iter().filter_map(move |(code, label)| {
             code.as_str()
-                .filter(|c| !c.starts_with('.'))
+                .filter(|c| !numeric || !c.starts_with('.'))
                 .map(|c| (c, label.as_str()))
         })
+    }
+
+    fn missing_texts(&self) -> impl Iterator<Item = &str> {
+        self.missing
+            .iter()
+            .flat_map(|m| m["strings"].as_array().into_iter().flatten())
+            .filter_map(Value::as_str)
     }
 }
 
@@ -315,6 +329,12 @@ impl Dictionary {
                     source_format: text(&x["source_format"]),
                     storage_type: text(&x["storage_type"]),
                     indicator_for: text(&x["indicator_for"]),
+                    label_collisions: x["label_collisions"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect(),
                 },
             );
         }
@@ -422,9 +442,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         df
     };
-    let df = fit_datetimes(df, format, &mut losses)?;
+    let df = fit_temporal(df, format, &mut losses)?;
     let empty = Dictionary::default();
     let dict = dict.as_ref().unwrap_or(&empty);
+    // before anything is checked, as a sentinel may be ambiguous
+    let (df, pairs) = merge_string_sentinels(df, dict, &pairs)?;
 
     // everything is checked before the writer creates --output
     check_names(&df, format, &pairs, &mut losses)?;
@@ -540,7 +562,10 @@ fn numeric_reverse_labels<'a>(
     let mut map: HashMap<&str, Vec<Code>> = HashMap::new();
     for (code, label) in &col.value_labels {
         let code = if let Some(n) = code.as_f64() {
-            if !(dict.decoded || (sentinels && col.declares_missing(n))) {
+            // a declared missing value's label is written only where its
+            // sentinels are embedded as labels; elsewhere the cell is empty
+            let missing = col.declares_missing(n);
+            if !((dict.decoded && !missing) || (sentinels && missing)) {
                 continue;
             }
             Code::Number(n)
@@ -559,16 +584,31 @@ fn numeric_reverse_labels<'a>(
 
 /// Why a cell holding `label` can't be turned back into one code, if it
 /// can't: two codes share the label, or the label reads as a number that
-/// isn't its code - and so can't be told apart from that number.
-fn ambiguity(label: &str, codes: &[Code]) -> Option<String> {
+/// isn't its code - and so can't be told apart from that number - or, where
+/// `raw_tags` may be written as they are, it reads as a tag (.a).
+fn ambiguity(label: &str, codes: &[Code], raw_tags: bool) -> Option<String> {
     if codes.len() > 1 {
         let list = codes.iter().map(ToString::to_string).collect::<Vec<_>>();
         return Some(format!("the label of {}", list.join(", ")));
     }
-    let n = label.parse::<f64>().ok()?;
-    match codes.first()? {
-        Code::Number(code) if *code == n => None,
-        code => Some(format!("both a number and the label of {code}")),
+    let code = codes.first()?;
+    if let Ok(n) = label.parse::<f64>() {
+        return match code {
+            Code::Number(c) if *c == n => None,
+            code => Some(format!("both a number and the label of {code}")),
+        };
+    }
+    let tag = label.len() == 2
+        && label.starts_with('.')
+        && label[1..]
+            .bytes()
+            .all(|b| b.is_ascii_alphabetic() || b == b'_');
+    match code {
+        Code::Tag(t) if *t == label => None,
+        code if raw_tags && tag => Some(format!(
+            "both a tagged missing value and the label of {code}"
+        )),
+        _ => None,
     }
 }
 
@@ -623,7 +663,7 @@ fn type_column(
             .map(|cell| {
                 let cell = cell.filter(|c| !c.is_empty())?;
                 if let Some(codes) = by_label.get(cell) {
-                    if let Some(why) = ambiguity(cell, codes) {
+                    if let Some(why) = ambiguity(cell, codes, dict.embedded) {
                         ambiguous.get_or_insert_with(|| (cell.to_string(), why));
                         return None;
                     }
@@ -671,15 +711,23 @@ fn type_column(
         let sentinels = dict.embeds_sentinel_labels(&name);
         let mut by_label: HashMap<&str, Vec<&str>> = HashMap::new();
         for (code, label) in col.text_labels() {
-            if dict.decoded || (sentinels && col.declares_missing_text(code)) {
+            let missing = col.declares_missing_text(code);
+            if (dict.decoded && !missing) || (sentinels && missing) {
                 by_label.entry(label).or_default().push(code);
             }
         }
         if !by_label.is_empty() {
-            // the labeled codes readstat wrote as they are
+            // the codes readstat wrote as they are: labeled ones it didn't
+            // decode, & the embedded sentinels it didn't label
+            let embedded = if dict.embedded {
+                Some(col.missing_texts())
+            } else {
+                None
+            };
             let raw: Vec<&str> = col
                 .text_labels()
                 .map(|(code, _)| code)
+                .chain(embedded.into_iter().flatten())
                 .filter(|code| !by_label.values().flatten().any(|c| c == code))
                 .collect();
             let mut ambiguous: Option<(String, String)> = None;
@@ -701,6 +749,13 @@ fn type_column(
                                     format!("both a code and the label of {}", codes[0]),
                                 )
                             });
+                        } else if col.label_collisions.iter().any(|l| l == c) {
+                            ambiguous.get_or_insert_with(|| {
+                                (
+                                    c.to_string(),
+                                    format!("both a value and the label of {}", codes[0]),
+                                )
+                            });
                         }
                         codes[0]
                     })
@@ -718,7 +773,17 @@ fn type_column(
         Some("Float") => DataType::Float64,
         Some("Boolean") => DataType::Boolean,
         Some("Date") => return parse_temporal(strings, Temporal::Date),
-        Some("DateTime") => return parse_temporal(strings, Temporal::DateTime),
+        Some("DateTime") => {
+            let series = parse_temporal(strings, Temporal::DateTime)?;
+            if strings.iter().flatten().any(has_nanoseconds) {
+                losses.add(format!(
+                    "the nanoseconds of the datetimes in \"{name}\": a {} file holds {}",
+                    format.name(),
+                    unit_name(temporal_precision(format).0).1
+                ));
+            }
+            return Ok(series);
+        },
         Some("NULL") => DataType::Float64,
         Some("String") if time => return parse_temporal(strings, Temporal::Time),
         Some("String") => return Ok(series.clone()),
@@ -738,6 +803,13 @@ fn type_column(
              CSV's dictionary?"
         ))
     })
+}
+
+/// A datetime written finer than microseconds (more than 6 fraction digits
+/// that aren't all zero), which is parsed to microseconds.
+fn has_nanoseconds(cell: &str) -> bool {
+    cell.rsplit_once('.')
+        .is_some_and(|(_, fraction)| fraction.len() > 6 && fraction[6..].bytes().any(|b| b != b'0'))
 }
 
 enum Temporal {
@@ -849,10 +921,31 @@ fn integer_labeled_columns(mut df: DataFrame, dict: Option<&Dictionary>) -> CliR
     Ok(df)
 }
 
+/// The finest unit each writer keeps, in nanoseconds, of a datetime & of a
+/// time of day: SAS transport keeps microseconds (times as float seconds),
+/// Stata milliseconds, and both SPSS writers whole seconds.
+const fn temporal_precision(format: Format) -> (i64, i64) {
+    match format {
+        Format::Xpt(_) => (1_000, 1),
+        Format::Dta => (1_000_000, 1_000_000),
+        Format::Sav | Format::Por => (1_000_000_000, 1_000_000_000),
+    }
+}
+
+fn unit_name(step_ns: i64) -> (&'static str, &'static str) {
+    match step_ns {
+        1_000_000_000 => ("fractions of a second", "whole seconds"),
+        1_000_000 => ("microseconds", "milliseconds"),
+        _ => ("nanoseconds", "microseconds"),
+    }
+}
+
+/// Datetimes & times more precise than the writer keeps are a loss.
 /// Datetimes go to each writer in the unit it reads: microseconds for SAS
 /// transport files, milliseconds for the others - the SPSS portable writer
-/// takes them as milliseconds whatever their unit, & keeps whole seconds.
-fn fit_datetimes(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliResult<DataFrame> {
+/// takes them as milliseconds whatever their unit.
+fn fit_temporal(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliResult<DataFrame> {
+    let (datetime_step, time_step) = temporal_precision(format);
     let names: Vec<String> = df
         .get_column_names()
         .iter()
@@ -860,33 +953,48 @@ fn fit_datetimes(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliR
         .collect();
     for name in names {
         let series = df.column(&name)?.as_materialized_series().clone();
-        if !matches!(series.dtype(), DataType::Datetime(..)) {
-            continue;
-        }
-        let micros = series.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
-        let fitted = if matches!(format, Format::Xpt(_)) {
-            micros
-        } else {
-            let (step, what, held) = if format == Format::Por {
-                (1_000_000, "fractions of a second", "whole seconds")
-            } else {
-                (1_000, "microseconds", "milliseconds")
-            };
-            if micros
+        let (step, kind) = match series.dtype() {
+            DataType::Datetime(TimeUnit::Nanoseconds, _) => (datetime_step, "datetimes"),
+            DataType::Datetime(unit, _) => {
+                // in the column's own unit
+                let per = match unit {
+                    TimeUnit::Microseconds => 1_000,
+                    _ => 1_000_000,
+                };
+                (datetime_step / per, "datetimes")
+            },
+            DataType::Time => (time_step, "times"),
+            _ => continue,
+        };
+        let lossy = step > 1
+            && series
+                .to_physical_repr()
                 .cast(&DataType::Int64)?
                 .i64()?
                 .iter()
                 .flatten()
-                .any(|v| v % step != 0)
-            {
-                losses.add(format!(
-                    "the {what} of the datetimes in \"{name}\": a {} file holds {held}",
-                    format.name()
-                ));
-            }
-            micros.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?
-        };
-        df.replace(&name, fitted.into_column())?;
+                .any(|v| v % step != 0);
+        if lossy {
+            let full = match series.dtype() {
+                DataType::Datetime(TimeUnit::Microseconds, _) => step * 1_000,
+                DataType::Datetime(TimeUnit::Milliseconds, _) => step * 1_000_000,
+                _ => step,
+            };
+            let (what, held) = unit_name(full);
+            losses.add(format!(
+                "the {what} of the {kind} in \"{name}\": a {} file holds {held}",
+                format.name()
+            ));
+        }
+        if kind == "datetimes" {
+            let unit = if matches!(format, Format::Xpt(_)) {
+                TimeUnit::Microseconds
+            } else {
+                TimeUnit::Milliseconds
+            };
+            let fitted = series.cast(&DataType::Datetime(unit, None))?;
+            df.replace(&name, fitted.into_column())?;
+        }
     }
     Ok(df)
 }
@@ -1171,16 +1279,23 @@ fn merge_string_sentinels(
             numeric.insert(base.clone(), indicator.clone());
             continue;
         }
-        let codes: HashMap<&str, &str> = dict
-            .columns
-            .get(base)
-            .map(|col| {
-                col.text_labels()
-                    .filter(|(code, _)| col.declares_missing_text(code))
-                    .map(|(code, label)| (label, code))
-                    .collect()
-            })
-            .unwrap_or_default();
+        // under --sentinels-as label, a sentinel with a label is written as
+        // its label; the others, & all under --sentinels-as value, as codes
+        let col = dict.columns.get(base);
+        let mut by_label: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut raw: Vec<&str> = Vec::new();
+        if let Some(col) = col {
+            for code in col.missing_texts() {
+                let label = col.text_labels().find(|(c, _)| *c == code).map(|(_, l)| l);
+                match label {
+                    Some(label) if dict.sentinel_labels => {
+                        by_label.entry(label).or_default().push(code);
+                    },
+                    _ => raw.push(code),
+                }
+            }
+        }
+        let mut ambiguous: Option<(String, String)> = None;
         let merged: StringChunked = {
             let values = df.column(base)?.str()?;
             let sentinels = df.column(indicator)?.str()?;
@@ -1188,10 +1303,32 @@ fn merge_string_sentinels(
                 .iter()
                 .zip(sentinels.iter())
                 .map(|(value, sentinel)| {
-                    value.or_else(|| sentinel.map(|s| codes.get(s).copied().unwrap_or(s)))
+                    value.or_else(|| {
+                        sentinel.map(|s| {
+                            let Some(codes) = by_label.get(s) else {
+                                return s;
+                            };
+                            if codes.len() > 1 {
+                                ambiguous.get_or_insert_with(|| {
+                                    (s.to_string(), format!("the label of {}", codes.join(", ")))
+                                });
+                            } else if raw.contains(&s) {
+                                ambiguous.get_or_insert_with(|| {
+                                    (
+                                        s.to_string(),
+                                        format!("both a code and the label of {}", codes[0]),
+                                    )
+                                });
+                            }
+                            codes[0]
+                        })
+                    })
                 })
                 .collect()
         };
+        if let Some((cell, why)) = ambiguous {
+            return ambiguous_cell(indicator, &cell, &why);
+        }
         df.replace(base, merged.with_name(base.as_str().into()).into_column())?;
         df.drop_in_place(indicator)?;
     }
@@ -1223,12 +1360,12 @@ fn write(
                     (name, map)
                 })
                 .collect();
-            // the <name>_null columns become declared missing values again
-            let (df, pairs) = merge_string_sentinels(df, dict, pairs)?;
+            // the numeric <name>_null columns become declared missing values
+            // again (the text ones already have)
             let df = if pairs.is_empty() {
                 df
             } else {
-                merge_informative_null_columns(df, Some(&labels), Some(&pairs))
+                merge_informative_null_columns(df, Some(&labels), Some(pairs))
                     .map_err(|e| err(&e))?
             };
             SpssWriter::new(path)
@@ -1299,5 +1436,24 @@ fn write(
             },
         )
         .map_err(|e| err(&e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Code, ambiguity};
+
+    #[test]
+    fn ambiguity_of_tag_shaped_labels() {
+        // a value labeled ".A", where raw tags (.A) may be written too
+        assert!(ambiguity(".A", &[Code::Number(1.0)], true).is_some());
+        assert!(ambiguity(".A", &[Code::Number(1.0)], false).is_none());
+        // a tag labeled as itself is no ambiguity
+        assert!(ambiguity(".a", &[Code::Tag(".a")], true).is_none());
+        assert!(ambiguity("Refused", &[Code::Tag(".a")], true).is_none());
+        // numbers & shared labels
+        assert!(ambiguity("1.0", &[Code::Tag(".b")], false).is_some());
+        assert!(ambiguity("1", &[Code::Number(1.0)], false).is_none());
+        assert!(ambiguity("Yes", &[Code::Number(1.0), Code::Number(2.0)], false).is_some());
     }
 }

@@ -1165,6 +1165,84 @@ impl WholeNumberScan {
     }
 }
 
+/// For `--dictionary`: the labels written for text codes that are also
+/// ordinary values of their variable, in the rows written. A cell holding
+/// one can't be turned back into its code, which `writestat` needs to know.
+/// The labels are compared with the file's raw values, so the labeled text
+/// columns are read a second time, as `--compress-numeric` reads its own.
+fn label_collisions(
+    path: &Path,
+    rs_format: Option<ReadStatFormat>,
+    opts: &ScanOptions,
+    batch_size: Option<usize>,
+    window: &RowWindow,
+    written: &[(String, HashMap<String, String>)],
+) -> CliResult<HashMap<String, std::collections::BTreeSet<String>>> {
+    // raw values: no labels, & sentinels as nulls, in file order for the window
+    let scan_opts = ScanOptions {
+        informative_nulls: None,
+        value_labels_as_strings: Some(false),
+        preserve_order: Some(!window.is_all()),
+        ..opts.clone()
+    };
+    let names: Vec<String> = written.iter().map(|(name, _)| name.clone()).collect();
+    let label_sets: Vec<std::collections::HashSet<&str>> = written
+        .iter()
+        .map(|(_, labels)| labels.values().map(String::as_str).collect())
+        .collect();
+    let mut found: HashMap<String, std::collections::BTreeSet<String>> = HashMap::new();
+    let mut check = |df: &DataFrame| -> CliResult<()> {
+        for ((name, labels), label_set) in written.iter().zip(&label_sets) {
+            let Ok(col) = df.column(name) else {
+                continue;
+            };
+            let Ok(values) = col.as_materialized_series().str() else {
+                continue;
+            };
+            for value in values.iter().flatten() {
+                let value = value.trim_end();
+                if label_set.contains(value) && !labels.contains_key(value) {
+                    found
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(value.to_string());
+                }
+            }
+        }
+        Ok(())
+    };
+    if let Some(rs_format) = rs_format {
+        let batches = readstat_batch_iter(
+            path,
+            Some(scan_opts),
+            Some(rs_format),
+            Some(names),
+            window.n_rows(),
+            batch_size,
+        )?;
+        let mut start = 0_u64;
+        for batch in batches {
+            let batch = batch?;
+            let height = batch.height() as u64;
+            if window.is_all() {
+                check(&batch)?;
+            } else {
+                check(&window.apply(&batch, start)?)?;
+            }
+            start += height;
+        }
+    } else {
+        let df = polars_readstat_rs::scan_por(path, scan_opts)?.collect()?;
+        let df = df.select(names.iter().map(String::as_str))?;
+        if window.is_all() {
+            check(&df)?;
+        } else {
+            check(&window.apply(&df, 0)?)?;
+        }
+    }
+    Ok(found)
+}
+
 fn whole_number_columns(
     path: &Path,
     rs_format: ReadStatFormat,
@@ -1900,10 +1978,26 @@ fn write_data<W: Write>(
                 .flag_sentinels_as
                 .as_deref()
                 .is_some_and(|s| s.eq_ignore_ascii_case("label"));
-            let tallies = dictionary::Tallies::new(
+            let mut tallies = dictionary::Tallies::new(
                 dictionary::tracked(&schema, &meta),
                 dictionary::sentinel_matchers(&schema, &meta, &embedded_columns, label_sentinels),
             );
+            let embedded_labels: &[String] = if label_sentinels {
+                &embedded_columns
+            } else {
+                &[]
+            };
+            let written = dictionary::written_text_labels(
+                &schema,
+                &meta,
+                args.flag_value_labels,
+                embedded_labels,
+            );
+            if !written.is_empty() {
+                tallies.set_collisions(label_collisions(
+                    path, rs_format, &opts, batch_size, &window, &written,
+                )?);
+            }
             Some((dict_path, catalog, meta, tallies))
         },
         None => None,

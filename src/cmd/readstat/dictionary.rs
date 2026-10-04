@@ -28,17 +28,24 @@ const UNIQUE_SLICE: usize = 65_536;
 /// values, as text.
 #[derive(Default)]
 pub(super) struct Tallies {
-    rows:      u64,
-    nulls:     HashMap<String, u64>,
+    rows:       u64,
+    nulls:      HashMap<String, u64>,
     /// `None` once the column held more than [`MAX_DISTINCT`] values.
-    distinct:  HashMap<String, Option<BTreeSet<String>>>,
+    distinct:   HashMap<String, Option<BTreeSet<String>>>,
     /// The sentinels seen in each `--sentinels-embedded` column. Kept apart
     /// from `distinct`, as a column of many values usually has only a few -
     /// but an SPSS missing range can match many, so this is capped too.
-    sentinels: HashMap<String, SentinelTally>,
+    sentinels:  HashMap<String, SentinelTally>,
+    /// The labels written for text codes that are also ordinary values of
+    /// their column, from [`written_text_labels`].
+    collisions: HashMap<String, BTreeSet<String>>,
 }
 
 impl Tallies {
+    pub(super) fn set_collisions(&mut self, collisions: HashMap<String, BTreeSet<String>>) {
+        self.collisions = collisions;
+    }
+
     pub(super) fn new(
         distinct: impl IntoIterator<Item = String>,
         sentinels: impl IntoIterator<Item = (String, SentinelMatcher)>,
@@ -553,6 +560,48 @@ pub(super) fn sentinel_matchers(
         .collect()
 }
 
+/// The text columns whose codes readstat writes as labels, each with those
+/// labels by code: the value labels of ordinary values under
+/// `--value-labels`, & the sentinels' labels in the `embedded_labels`
+/// columns. An ordinary value that is also one of these labels can't be
+/// told apart from it, so they are checked against the raw data.
+pub(super) fn written_text_labels(
+    schema: &Schema,
+    meta: &Value,
+    decoded: bool,
+    embedded_labels: &[String],
+) -> Vec<(String, HashMap<String, String>)> {
+    let vars = variables(meta);
+    schema
+        .iter()
+        .filter(|(_, dtype)| **dtype == DataType::String)
+        .filter_map(|(name, _)| {
+            let var = vars.get(name.as_str())?;
+            if is_numeric_variable(var) {
+                return None;
+            }
+            let missing: Vec<&str> = var["missing_strings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let embeds = embedded_labels.iter().any(|e| e == name.as_str());
+            let labels: HashMap<String, String> = var["value_labels"]
+                .as_object()?
+                .iter()
+                .filter_map(|(code, label)| {
+                    let label = label.as_str()?;
+                    let sentinel = missing.contains(&code.as_str());
+                    ((decoded && !sentinel) || (embeds && sentinel))
+                        .then(|| (code.clone(), label.to_string()))
+                })
+                .collect();
+            (!labels.is_empty()).then(|| (name.to_string(), labels))
+        })
+        .collect()
+}
+
 /// Build the dictionary of the CSV written with `schema`.
 pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &Written) -> Value {
     let vars = variables(meta);
@@ -615,6 +664,12 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             }
             if let Some(missing) = missing_values(var) {
                 x_qsv.insert("missing_values".into(), missing);
+            }
+            if let Some(labels) = tallies.collisions.get(name)
+                && !labels.is_empty()
+            {
+                // a cell holding one of these can't be turned back into its code
+                x_qsv.insert("label_collisions".into(), json!(labels));
             }
             if let Some(tally) = tallies.sentinels(name)
                 && !tally.seen.is_empty()

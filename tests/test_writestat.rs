@@ -389,13 +389,16 @@ fn writestat_xpt_datetime_microseconds() {
     );
 }
 
-// SPSS & Stata files hold milliseconds, SPSS portable files whole seconds
+// Stata files hold milliseconds, & both SPSS writers whole seconds
 #[test]
 fn writestat_datetime_precision_refused() {
     let wrk = Workdir::new("writestat_datetime_precision_refused");
     microsecond_datetime(&wrk);
     for (out, what) in [
-        ("out.sav", "the microseconds of the datetimes in \"ts\""),
+        (
+            "out.sav",
+            "the fractions of a second of the datetimes in \"ts\"",
+        ),
         ("out.dta", "the microseconds of the datetimes in \"ts\""),
         (
             "out.por",
@@ -450,6 +453,134 @@ fn writestat_sav_long_name_with_sentinels() {
     assert!(
         orig.starts_with(&format!("{0},{0}_null\n", "v".repeat(60))),
         "{orig}"
+    );
+}
+
+// Text sentinels, written with pyreadstat 1.3.6: `s` declares NA & XX
+// missing, & labels NA "XX". Under --sentinels-as value the <name>_null
+// column holds codes, so its XX stays XX.
+// (Text value labels can't be written to an SPSS file, hence --lossy.)
+#[test]
+fn writestat_sav_sentinel_codes_not_labels() {
+    let wrk = Workdir::new("writestat_sav_sentinel_codes_not_labels");
+    let flags = ["--sentinels-as", "value"];
+    let orig = to_csv(&wrk, "writestat_sentinel_label_is_code.sav", &flags);
+    assert_eq!(orig, "s,s_null\na,\n,NA\n,XX\nb,\n");
+    writestat(&wrk, "rt.sav", &["--lossy"]);
+    assert_eq!(read_back(&wrk, "rt.sav", &flags), orig);
+    assert_eq!(
+        var(&metadata(&wrk, "rt.sav"), "s")["missing_strings"],
+        serde_json::json!(["NA", "XX"])
+    );
+}
+
+// NA & XX are both labeled "Refused"
+#[test]
+fn writestat_sav_sentinels_sharing_a_label_refused() {
+    let wrk = Workdir::new("writestat_sav_sentinels_sharing_a_label_refused");
+    let orig = to_csv(
+        &wrk,
+        "writestat_sentinels_share_label.sav",
+        &["--sentinels-as", "label"],
+    );
+    assert_eq!(orig, "s,s_null\na,\n,Refused\n,Refused\nb,\n");
+    refused_as_ambiguous(
+        &wrk,
+        "rt.sav",
+        "Column \"s_null\" holds \"Refused\", which is the label of NA, XX,",
+    );
+}
+
+// NA is labeled "Not asked", which is also an ordinary value: readstat
+// records the collision, as nothing in the CSV tells them apart.
+#[test]
+fn writestat_sav_label_that_is_a_value_refused() {
+    let wrk = Workdir::new("writestat_sav_label_that_is_a_value_refused");
+    let orig = to_csv(
+        &wrk,
+        "writestat_sentinel_label_is_value.sav",
+        &["--sentinels-as", "label", "--sentinels-embedded"],
+    );
+    assert_eq!(orig, "s\nNot asked\nNot asked\nb\n");
+    let dict: Value = serde_json::from_str(&wrk.read_to_string("dict.json").unwrap()).unwrap();
+    assert_eq!(
+        dict["properties"]["s"]["x-qsv"]["label_collisions"],
+        serde_json::json!(["Not asked"])
+    );
+    refused_as_ambiguous(
+        &wrk,
+        "rt.sav",
+        "Column \"s\" holds \"Not asked\", which is both a value and the label of NA,",
+    );
+}
+
+// Under --value-labels the sentinel is written empty, so its label is no
+// collision: the round trip keeps the ordinary "Not asked".
+#[test]
+fn writestat_sav_label_of_dropped_sentinel() {
+    let wrk = Workdir::new("writestat_sav_label_of_dropped_sentinel");
+    let flags = ["--value-labels"];
+    let orig = to_csv(&wrk, "writestat_sentinel_label_is_value.sav", &flags);
+    assert_eq!(orig, "s\nNot asked\n\nb\n");
+    writestat(&wrk, "rt.sav", &["--lossy"]);
+    assert_eq!(read_back(&wrk, "rt.sav", &flags), orig);
+    let dict: Value = serde_json::from_str(&wrk.read_to_string("dict.json").unwrap()).unwrap();
+    assert_eq!(
+        dict["properties"]["s"]["x-qsv"]["label_collisions"],
+        Value::Null
+    );
+}
+
+// An SPSS text code may start with a dot: "." labeled "Skipped" is a
+// declared missing value, not a SAS/Stata tag.
+#[test]
+fn writestat_sav_dot_text_sentinel() {
+    let wrk = Workdir::new("writestat_sav_dot_text_sentinel");
+    let flags = ["--sentinels-as", "label", "--sentinels-embedded"];
+    let orig = to_csv(&wrk, "writestat_dot_sentinel.sav", &flags);
+    assert_eq!(orig, "s\na\nSkipped\nb\n");
+    // its text value labels can't be written to an SPSS file
+    let mut cmd = wrk.command("writestat");
+    cmd.args([
+        "--lossy",
+        "--dictionary",
+        "dict.json",
+        "orig.csv",
+        "-o",
+        "rt.sav",
+    ]);
+    let warn = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        warn.contains("its codes are text") && !warn.contains("tagged missing"),
+        "{warn}"
+    );
+    assert_eq!(read_back(&wrk, "rt.sav", &[]), "s\na\n\nb\n");
+}
+
+// Codes 1 & 99 share "Yes", but 99 is a declared missing value, written
+// empty without --sentinels-as: "Yes" can only be 1.
+#[test]
+fn writestat_sav_missing_value_sharing_a_label() {
+    let (_wrk, orig) = sav_round_trip(
+        "writestat_sav_missing_value_sharing_a_label",
+        "writestat_sentinel_shares_label.sav",
+        &["--value-labels"],
+    );
+    assert_eq!(orig, "q\nYes\n\nNo\n");
+}
+
+// Finer than microseconds is a loss for every format
+#[test]
+fn writestat_datetime_nanoseconds_refused() {
+    let wrk = Workdir::new("writestat_datetime_nanoseconds_refused");
+    microsecond_datetime(&wrk);
+    wrk.create_from_string("orig.csv", "ts\n2024-01-02T03:04:05.123000999\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["--dictionary", "dict.json", "orig.csv", "-o", "out.xpt"]);
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("the nanoseconds of the datetimes in \"ts\""),
+        "{err}"
     );
 }
 

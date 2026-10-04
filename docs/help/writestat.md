@@ -37,8 +37,9 @@ The dictionary also says how readstat wrote the CSV, and that is undone: the
 values decoded by the option --value-labels go back to their codes, and the
 SPSS sentinels of --sentinels-as become declared missing values again, whether
 in <name>_null columns or embedded. A label that can't be turned back into one
-code - shared by two codes, or reading as a number that isn't its code - is an
-error: write the CSV again with readstat without the label.
+code - shared by two codes, reading as a number that isn't its code, or also
+an ordinary value - is an error: write the CSV again with readstat without
+the label.
 
 Metadata the output format can't hold is refused rather than dropped silently:  
 value labels & missing values in SAS transport & SPSS portable files, missing

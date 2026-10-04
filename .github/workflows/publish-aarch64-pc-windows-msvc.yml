@@ -1,4 +1,4 @@
-name: Publish aarch64-pc-windows-msvc
+name: Publish aarch64-pc-windows-msvc and gnullvm
 
 on:
 #   push:
@@ -45,6 +45,18 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags: -C target-cpu=native
+          - os: windows-11-arm
+            os-name: windows
+            target: aarch64-pc-windows-gnullvm
+            architecture: aarch64
+            use-cross: false
+            addl-build-args: --features=apply,fetch,foreach,luau,polars,readstat,self_update,ui
+            # Windows: jemallocator is not supported on Windows, so we use the system allocator.
+            default-features: --no-default-features
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            # +crt-static links libunwind statically, so the binaries do not need MSYS2's libunwind.dll.
+            addl-rustflags: -C target-cpu=native -C target-feature=+crt-static
 
     steps:
     - name: Installing Rust toolchain
@@ -56,18 +68,43 @@ jobs:
       uses: actions/checkout@v7
       with:
         ref: ${{ needs.analyze-tags.outputs.previous-tag }}
+    - name: Install Windows ARM64 GNU-family toolchain
+      if: matrix.job.target == 'aarch64-pc-windows-gnullvm'
+      id: msys2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: CLANGARM64
+        update: true
+        install: mingw-w64-clang-aarch64-clang
+    - name: Use Windows ARM64 GNU-family toolchain
+      if: matrix.job.target == 'aarch64-pc-windows-gnullvm'
+      shell: pwsh
+      env:
+        MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+      run: |
+        $bin = "$env:MSYS2_LOCATION\clangarm64\bin"
+        echo $bin >> $env:GITHUB_PATH
+        echo "CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER=$bin\clang.exe" >> $env:GITHUB_ENV
+        # Several dependencies are C and C++, so cc-rs needs the same toolchain.
+        echo "CC_aarch64_pc_windows_gnullvm=$bin\clang.exe" >> $env:GITHUB_ENV
+        echo "CXX_aarch64_pc_windows_gnullvm=$bin\clang++.exe" >> $env:GITHUB_ENV
+        echo "AR_aarch64_pc_windows_gnullvm=$bin\llvm-ar.exe" >> $env:GITHUB_ENV
+        # luau is C++; link libc++ statically so the binaries do not need MSYS2's libc++.dll.
+        echo "CXXSTDLIB_aarch64_pc_windows_gnullvm=static=c++" >> $env:GITHUB_ENV
+        # ...and tell rustc where MSYS2 keeps libc++.a (appended to RUSTFLAGS below).
+        echo "GNULLVM_LINK_SEARCH=-L native=$env:MSYS2_LOCATION\clangarm64\lib" >> $env:GITHUB_ENV
     - name: Build qsv
       # env:
       #   RUSTFLAGS: --emit=asm
       env:
-        RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
+        RUSTFLAGS: ${{ matrix.job.addl-rustflags }} ${{ env.GNULLVM_LINK_SEARCH }}
       # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
       # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
       shell: bash
       run: cargo +${{ matrix.rust }} build --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
-        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
+        RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }} ${{ env.GNULLVM_LINK_SEARCH }}
       # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
       # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
       shell: bash

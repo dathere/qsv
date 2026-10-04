@@ -421,55 +421,65 @@ fn declared_missing(missing: Option<&Value>, n: f64) -> bool {
     discrete || in_range
 }
 
-/// SPSS records a variable's display format as a numeric type code, width &
-/// decimals; this names it the way SPSS (and pyreadstat) write it, e.g.
-/// `F8.2`, `DTIME23.2`, `A3`.
 fn spss_format(var: &Value) -> Option<String> {
-    let name = match var["format_type"].as_u64()? {
-        1 => "A",
-        2 => "AHEX",
-        3 => "COMMA",
-        4 => "DOLLAR",
-        5 => "F",
-        6 => "IB",
-        7 => "PIBHEX",
-        8 => "P",
-        9 => "PIB",
-        10 => "PK",
-        11 => "RB",
-        12 => "RBHEX",
-        15 => "Z",
-        16 => "N",
-        17 => "E",
-        20 => "DATE",
-        21 => "TIME",
-        22 => "DATETIME",
-        23 => "ADATE",
-        24 => "JDATE",
-        25 => "DTIME",
-        26 => "WKDAY",
-        27 => "MONTH",
-        28 => "MOYR",
-        29 => "QYR",
-        30 => "WKYR",
-        31 => "PCT",
-        32 => "DOT",
-        33 => "CCA",
-        34 => "CCB",
-        35 => "CCC",
-        36 => "CCD",
-        37 => "CCE",
-        38 => "EDATE",
-        39 => "SDATE",
-        40 => "MTIME",
-        41 => "YMDHMS",
-        _ => return None,
-    };
+    let code = u8::try_from(var["format_type"].as_u64()?).ok()?;
+    let name = SPSS_FORMATS.iter().find(|(c, _)| *c == code)?.1;
     let width = var["format_width"].as_u64().unwrap_or_default();
     match var["format_decimals"].as_u64().unwrap_or_default() {
         0 => Some(format!("{name}{width}")),
         decimals => Some(format!("{name}{width}.{decimals}")),
     }
+}
+
+/// SPSS's display format type codes & their names.
+const SPSS_FORMATS: &[(u8, &str)] = &[
+    (1, "A"),
+    (2, "AHEX"),
+    (3, "COMMA"),
+    (4, "DOLLAR"),
+    (5, "F"),
+    (6, "IB"),
+    (7, "PIBHEX"),
+    (8, "P"),
+    (9, "PIB"),
+    (10, "PK"),
+    (11, "RB"),
+    (12, "RBHEX"),
+    (15, "Z"),
+    (16, "N"),
+    (17, "E"),
+    (20, "DATE"),
+    (21, "TIME"),
+    (22, "DATETIME"),
+    (23, "ADATE"),
+    (24, "JDATE"),
+    (25, "DTIME"),
+    (26, "WKDAY"),
+    (27, "MONTH"),
+    (28, "MOYR"),
+    (29, "QYR"),
+    (30, "WKYR"),
+    (31, "PCT"),
+    (32, "DOT"),
+    (33, "CCA"),
+    (34, "CCB"),
+    (35, "CCC"),
+    (36, "CCD"),
+    (37, "CCE"),
+    (38, "EDATE"),
+    (39, "SDATE"),
+    (40, "MTIME"),
+    (41, "YMDHMS"),
+];
+
+/// The reverse of [`spss_format`]: `DTIME23.2` -> (type code 25, width 23,
+/// decimals 2), as `qsv writestat` hands SPSS formats back to the writer.
+pub(crate) fn parse_spss_format(format: &str) -> Option<(u8, u8, u8)> {
+    let split = format.find(|c: char| c.is_ascii_digit())?;
+    let (name, rest) = format.split_at(split);
+    let code = SPSS_FORMATS.iter().find(|(_, n)| *n == name)?.0;
+    let (width, decimals) = rest.split_once('.').unwrap_or((rest, "0"));
+    Some((code, width.parse().ok()?, decimals.parse().ok()?))
 }
 
 fn role(measure: Option<&str>) -> Option<&'static str> {
@@ -696,6 +706,11 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             written.file_name
         )),
     );
+    // the title falls back to a generic one, so a real file label is kept
+    // apart too (qsv writestat writes it back)
+    if let Some(label) = file_label {
+        top.insert("file_label".into(), json!(label));
+    }
     top.insert("source_file".into(), json!(written.file_name));
     top.insert("source_format".into(), json!(written.source));
     for (out, key) in [

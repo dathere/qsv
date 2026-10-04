@@ -1532,7 +1532,9 @@ impl UsageParser {
             "join" | "joinp" => "joining",
             "schema" | "validate" | "safenames" => "validation",
             "fmt" | "fixlengths" | "table" => "formatting",
-            "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" | "readstat" => "conversion",
+            "to" | "input" | "excel" | "json" | "jsonl" | "tojsonl" | "readstat" | "writestat" => {
+                "conversion"
+            },
             "describegpt" => "documentation",
             "synthesize" => "generation",
             _ => "utility",
@@ -1898,6 +1900,7 @@ const MCP_SKILL_COMMANDS: &[&str] = &[
     "transpose",
     "validate",
     "viz",
+    "writestat",
 ];
 
 #[cfg(feature = "mcp")]

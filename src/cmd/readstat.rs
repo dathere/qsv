@@ -189,7 +189,7 @@ Common options:
                            Must be a single character. [default: ,]
 "#;
 
-mod dictionary;
+pub(crate) mod dictionary;
 
 use std::{
     collections::HashMap,

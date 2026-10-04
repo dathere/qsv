@@ -539,6 +539,50 @@ fn frequency_weighted_other_with_null() {
     }
 }
 
+// The parallel path folds every chunk's tables into one accumulator per column,
+// pre-sized from the stats cache. 300 indexed rows at -j 4 give 4 chunks, so the fold
+// really merges; it must match the sequential (-j 1) path exactly. Weights are
+// multiples of 0.25 so their sums are exact in any merge order.
+#[test]
+fn frequency_parallel_fold_matches_sequential() {
+    let wrk = Workdir::new("frequency_parallel_fold_matches_sequential");
+    let mut rows = vec![svec!["id", "lo", "mid", "hi", "w"]];
+    for i in 0..300_usize {
+        rows.push(vec![
+            i.to_string(),                      // all-unique: skipped while counting
+            ["x", "y", "z"][i % 3].to_string(), // 3 values
+            format!("m{}", (i * 7) % 41),       // 41 values
+            format!("h{}", (i * 13) % 251),     // 251 values, some repeated
+            (((i % 4) + 1) as f64 * 0.25).to_string(),
+        ]);
+    }
+    wrk.create_indexed("in.csv", rows);
+
+    // populate the stats cache so the accumulator is pre-sized from cardinality
+    let mut stats = wrk.command("stats");
+    stats.arg("in.csv").arg("--cardinality");
+    wrk.assert_success(&mut stats);
+
+    for weighted in [false, true] {
+        let run = |jobs: &str| {
+            let mut cmd = wrk.command("frequency");
+            cmd.arg("in.csv")
+                .args(["--limit", "0"])
+                .args(["--jobs", jobs]);
+            if weighted {
+                cmd.args(["--weight", "w"]);
+            } else {
+                cmd.args(["--select", "id,lo,mid,hi"]);
+            }
+            wrk.read_stdout::<Vec<Vec<String>>>(&mut cmd)
+        };
+        let sequential: Vec<Vec<String>> = run("1");
+        let parallel: Vec<Vec<String>> = run("4");
+        assert!(sequential.len() > 250, "weighted={weighted}: too few rows");
+        assert_eq!(parallel, sequential, "weighted={weighted}");
+    }
+}
+
 // Locks the top_n/bottom_n tie-break used by the --limit fast path: on a count
 // tie at the cutoff, the lexicographically SMALLEST values are kept (matching
 // par_frequent). Guards against a regression in qsv-stats top_n's tie-break.

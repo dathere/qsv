@@ -49,9 +49,11 @@ kept under "x-qsv". It has the shape 'qsv describegpt --dictionary' writes, so
 'qsv validate' & 'qsv viz smart --dictionary' read it - without an LLM.
 
 Only part of a file can be read: --select picks variables, which the readers
-skip over without decoding, and --offset, --limit & --sample pick rows. Rows
-before the --offset are still read through, so skipping far into a large file
-takes time, but stops early once --limit is reached.
+skip over without decoding, and --offset, --limit & --sample pick rows. Stata,
+uncompressed SPSS & SAS transport files jump straight to the --offset. SAS
+datasets & compressed SPSS files still pass over the rows before it (decoding
+them, for a SAS dataset at --jobs > 1), and .por files are read whole. Reading
+stops once --limit is reached.
 
 Convert a SAS dataset to CSV:  
 ```console

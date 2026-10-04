@@ -868,8 +868,8 @@ fn writestat_xpt_limits_refused() {
     );
 }
 
-// Upstream writes an empty POR string as " ", so the sample's empty name is
-// left out of the comparison.
+// The sample's last row has an empty name, which polars-readstat-rs wrote as
+// " " until 0.24.2 (jrothbaum/polars_readstat#70).
 #[test]
 fn writestat_por_round_trip() {
     let wrk = Workdir::new("writestat_por_round_trip");
@@ -882,8 +882,7 @@ fn writestat_por_round_trip() {
         "ID,NAME,SCORE,SEX,VISITED\n1.0,Ana,1.5,1.0,2020-01-31\n2.0,Bo,-2.25,2.0,1999-12-31\n3.0,\
          Chloe,,1.0,2026-03-01"
     );
-    assert_eq!(head(&back), head(&orig));
-    assert!(back.ends_with(",0.0,,1960-01-01\n"), "{back}");
+    assert_eq!(back, orig);
 }
 
 #[test]

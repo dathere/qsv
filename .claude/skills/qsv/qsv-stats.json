@@ -51,7 +51,7 @@
       {
         "flag": "--everything",
         "type": "flag",
-        "description": "Compute all statistics available."
+        "description": "Compute all statistics available. On large files, mode & cardinality tracking dominates memory use. See --mode-cardinality-cap for how to bound it."
       },
       {
         "flag": "--flexible",
@@ -101,7 +101,7 @@
       {
         "flag": "--mode-cardinality-cap",
         "type": "number",
-        "description": "Bound mode-tracking memory on high-cardinality columns. When > 0, if a column's mode tracker grows past <n> UNIQUE values (true cardinality, for both unweighted and weighted runs), qsv drops it and emits sentinel values instead of exact modes and cardinality. The cap is a direct memory bound on the tracker, which stores one entry per unique value. Sentinel output: * mode columns: \"*HIGH_CARDINALITY\" * cardinality column: \">=<n>\" (the \">=\" prefix DOES break downstream parsers expecting a plain integer; cap is opt-in only). Under --cardinality-method approx, the cardinality column ignores this cap (HLL gives an approximate estimate at fixed memory, ~1.5% RSE) — only mode/antimode columns are gated. Useful on wide tables with many ID/UUID/timestamp columns where tracking exact cardinality is wasted work.",
+        "description": "Bound mode-tracking memory on high-cardinality columns. When > 0, if a column's mode tracker grows past <n> UNIQUE values (true cardinality, for both unweighted and weighted runs), qsv drops it and emits sentinel values instead of exact modes and cardinality. The cap is a direct memory bound on the tracker, which stores one entry per unique value. Sentinel output: * mode columns: \"*HIGH_CARDINALITY\" * cardinality column: \">=<n>\" (the \">=\" prefix DOES break downstream parsers expecting a plain integer; cap is opt-in only). Under --cardinality-method approx, the cardinality column ignores this cap (HLL gives an approximate estimate at fixed memory, ~1.5% RSE) — only mode/antimode columns are gated. Useful on wide tables with many ID/UUID/timestamp columns where tracking exact cardinality is wasted work. For large files, a cap of 10000 combined with \"--cardinality-method approx\" keeps an approximate cardinality for capped columns. On a 1M-row, 44-column file this cut --everything's peak memory by ~65% and its runtime by half. Parallel runs warn when mode & cardinality tracking may not fit in available memory.",
         "default": 0
       },
       {

@@ -229,7 +229,7 @@ qsv stats --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select a subset of columns to compute stats for. See 'qsv select --help' for the format details. This is provided here because piping 'qsv select' into 'qsv stats' will prevent the use of indexing. |  |
-| &nbsp;`‑E,`<br>`‑‑everything`&nbsp; | flag | Compute all statistics available. |  |
+| &nbsp;`‑E,`<br>`‑‑everything`&nbsp; | flag | Compute all statistics available. On large files, mode & cardinality tracking dominates memory use. See --mode-cardinality-cap for how to bound it. |  |
 | &nbsp;`‑‑typesonly`&nbsp; | flag | Infer data types only and do not compute statistics. Note that if you want to infer dates and boolean types, you'll still need to use the --infer-dates & --infer-boolean options. |  |
 
 <a name="boolean-inferencing-options"></a>

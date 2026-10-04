@@ -1895,7 +1895,11 @@ fn write_data<W: Write>(
                 Some(InformativeNullColumns::Selected(names)) => names.clone(),
                 _ => schema.iter_names().map(ToString::to_string).collect(),
             };
-            let label_sentinels = args.flag_sentinels_as.as_deref() == Some("label");
+            // --sentinels-as is parsed case-insensitively
+            let label_sentinels = args
+                .flag_sentinels_as
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case("label"));
             let tallies = dictionary::Tallies::new(
                 dictionary::tracked(&schema, &meta),
                 dictionary::sentinel_matchers(&schema, &meta, &embedded_columns, label_sentinels),
@@ -1995,7 +1999,7 @@ fn write_data<W: Write>(
         let flags = serde_json::json!({
             "value_labels": args.flag_value_labels,
             "sas7bcat": catalog.map(|c| c.catalog.file_name().map(|f| f.to_string_lossy().into_owned())),
-            "sentinels_as": args.flag_sentinels_as,
+            "sentinels_as": args.flag_sentinels_as.as_deref().map(str::to_ascii_lowercase),
             "sentinels_embedded": args.flag_sentinels_embedded,
             "sentinels_columns": args.flag_sentinels_columns,
             "compress_numeric": args.flag_compress_numeric,

@@ -2682,3 +2682,34 @@ fn readstat_dictionary_numeric_enum_only_as_written() {
         serde_json::from_str(&std::fs::read_to_string(out).unwrap()).unwrap();
     assert!(dict["properties"]["e"].get("enum").is_none());
 }
+
+#[test]
+fn readstat_dictionary_sentinel_edge_cases() {
+    let wrk = Workdir::new("readstat_dictionary_sentinel_edge_cases");
+    // --sentinels-as is case-insensitive, & so is its effect on the dictionary
+    let labels = wrk.load_test_file("readstat_sentinels_labels.sav");
+    let dict = dictionary_of(
+        &wrk,
+        &labels,
+        &["--sentinels-as", "LABEL", "--sentinels-embedded"],
+    );
+    assert_eq!(
+        dict["properties"]["code"]["x-qsv"]["null_values"],
+        serde_json::json!(["Not asked"])
+    );
+    assert_eq!(dict["x-qsv"]["readstat_flags"]["sentinels_as"], "label");
+
+    // readstat_sentinels_edge.sav - written with pyreadstat 1.3.6: r declares
+    // the range -1e9 to -0.5, & 1498 of its 1500 values fall in it
+    let dict = dictionary_of(
+        &wrk,
+        &wrk.load_test_file("readstat_sentinels_edge.sav"),
+        &["--sentinels-as", "value", "--sentinels-embedded"],
+    );
+    let r = &dict["properties"]["r"]["x-qsv"];
+    assert_eq!(r["null_values"].as_array().unwrap().len(), 1000, "capped");
+    assert_eq!(r["null_values_truncated"], true);
+    let p = &dict["properties"]["p"]["x-qsv"];
+    assert_eq!(p["null_values"], serde_json::json!(["9"]));
+    assert!(p.get("null_values_truncated").is_none());
+}

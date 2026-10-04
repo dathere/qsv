@@ -14,8 +14,13 @@ use serde_json::{Map, Value, json};
 use super::{F64_WHOLE_LIMIT, is_whole};
 
 /// Distinct values tracked per column, to decide `enum`: beyond this many, a
-/// column gets none.
+/// column gets none. Also the most sentinels listed per column.
 const MAX_DISTINCT: usize = 1000;
+
+/// Rows deduplicated at a time, so a column of many values is given up on
+/// after a few slices rather than after deduplicating a whole batch - which,
+/// for a `.por` file, is the whole file.
+const UNIQUE_SLICE: usize = 10_000;
 
 /// What the batches written held, per column: its nulls, and - for the
 /// columns whose `enum` or `null_values` depend on them - its distinct
@@ -27,8 +32,9 @@ pub(super) struct Tallies {
     /// `None` once the column held more than [`MAX_DISTINCT`] values.
     distinct:  HashMap<String, Option<BTreeSet<String>>>,
     /// The sentinels seen in each `--sentinels-embedded` column. Kept apart
-    /// from `distinct`, as a column of many values still has only a few.
-    sentinels: HashMap<String, (SentinelMatcher, BTreeSet<String>)>,
+    /// from `distinct`, as a column of many values usually has only a few -
+    /// but an SPSS missing range can match many, so this is capped too.
+    sentinels: HashMap<String, SentinelTally>,
 }
 
 impl Tallies {
@@ -43,7 +49,16 @@ impl Tallies {
                 .collect(),
             sentinels: sentinels
                 .into_iter()
-                .map(|(name, matcher)| (name, (matcher, BTreeSet::new())))
+                .map(|(name, matcher)| {
+                    (
+                        name,
+                        SentinelTally {
+                            matcher,
+                            seen: BTreeSet::new(),
+                            truncated: false,
+                        },
+                    )
+                })
                 .collect(),
             ..Self::default()
         }
@@ -65,12 +80,17 @@ impl Tallies {
                 _ => 0,
             };
             *self.nulls.entry(name.to_string()).or_default() += (col.null_count() + empty) as u64;
-            if let Some((matcher, seen)) = self.sentinels.get_mut(name)
+            if let Some(tally) = self.sentinels.get_mut(name)
+                && !tally.truncated
                 && *col.dtype() == DataType::String
             {
                 for text in col.as_materialized_series().str()?.iter().flatten() {
-                    if matcher.matches(text) {
-                        seen.insert(text.to_string());
+                    if tally.matcher.matches(text) && !tally.seen.contains(text) {
+                        if tally.seen.len() == MAX_DISTINCT {
+                            tally.truncated = true;
+                            break;
+                        }
+                        tally.seen.insert(text.to_string());
                     }
                 }
             }
@@ -80,16 +100,21 @@ impl Tallies {
             let Some(set) = slot else {
                 continue;
             };
-            // a batch's distinct values, not its rows: labeled columns hold few
-            let unique = col.as_materialized_series().unique()?;
-            for value in unique.iter() {
-                let Some(text) = value_text(&value) else {
-                    continue;
-                };
-                set.insert(text);
-                if set.len() > MAX_DISTINCT {
-                    *slot = None;
-                    break;
+            // distinct values, not rows: labeled columns hold few
+            let series = col.as_materialized_series();
+            let mut offset = 0;
+            'slices: while offset < series.len() {
+                let unique = series.slice(offset as i64, UNIQUE_SLICE).unique()?;
+                offset += UNIQUE_SLICE;
+                for value in unique.iter() {
+                    let Some(text) = value_text(&value) else {
+                        continue;
+                    };
+                    set.insert(text);
+                    if set.len() > MAX_DISTINCT {
+                        *slot = None;
+                        break 'slices;
+                    }
                 }
             }
         }
@@ -104,9 +129,16 @@ impl Tallies {
         self.distinct.get(name).and_then(Option::as_ref)
     }
 
-    fn sentinels(&self, name: &str) -> Option<&BTreeSet<String>> {
-        self.sentinels.get(name).map(|(_, seen)| seen)
+    fn sentinels(&self, name: &str) -> Option<&SentinelTally> {
+        self.sentinels.get(name)
     }
+}
+
+pub(super) struct SentinelTally {
+    matcher:   SentinelMatcher,
+    seen:      BTreeSet<String>,
+    /// More than [`MAX_DISTINCT`] sentinels were seen; `seen` lists the first.
+    truncated: bool,
 }
 
 /// Tells the sentinels apart from the values in a `--sentinels-embedded`
@@ -159,6 +191,10 @@ impl SentinelMatcher {
     }
 
     fn matches(&self, text: &str) -> bool {
+        // labels are written verbatim, padding & all; codes may be padded
+        if self.exact.contains(text) {
+            return true;
+        }
         let text = text.trim_end();
         let tag = |t: &str| {
             let mut chars = t.chars();
@@ -569,13 +605,23 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
             if let Some(missing) = missing_values(var) {
                 x_qsv.insert("missing_values".into(), missing);
             }
-            if let Some(seen) = tallies.sentinels(name)
-                && !seen.is_empty()
+            if let Some(tally) = tallies.sentinels(name)
+                && !tally.seen.is_empty()
             {
                 x_qsv.insert(
                     "null_values".into(),
-                    Value::Array(seen.iter().map(|s| Value::String(s.clone())).collect()),
+                    Value::Array(
+                        tally
+                            .seen
+                            .iter()
+                            .map(|s| Value::String(s.clone()))
+                            .collect(),
+                    ),
                 );
+                if tally.truncated {
+                    // e.g. an SPSS missing range matching many distinct values
+                    x_qsv.insert("null_values_truncated".into(), json!(true));
+                }
             }
             if let Some(held) = held {
                 x_qsv.insert("cardinality".into(), json!(held.len()));
@@ -681,4 +727,33 @@ pub(super) fn build(schema: &Schema, meta: &Value, tallies: &Tallies, written: &
         "additionalProperties": false,
         "x-qsv": Value::Object(top),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::SentinelMatcher;
+
+    /// A label is written verbatim, so one ending in a space must match as is;
+    /// a padded code still matches its declared value.
+    #[test]
+    fn sentinel_matcher_keeps_label_padding() {
+        let var = json!({
+            "type": "Numeric",
+            "format_type": 5,
+            "value_labels": {"9": "Refused ", "1": "Yes"},
+            "missing_range": false,
+            "missing_doubles": [9.0],
+            "missing_strings": [],
+        });
+        let matcher = SentinelMatcher::new(&var, true);
+        assert!(matcher.matches("Refused "));
+        assert!(matcher.matches("9"));
+        assert!(!matcher.matches("Yes"));
+
+        let text = json!({"type": "Str", "missing_strings": ["NA"], "value_labels": {}});
+        let matcher = SentinelMatcher::new(&text, false);
+        assert!(matcher.matches("NA  "), "a padded code");
+    }
 }

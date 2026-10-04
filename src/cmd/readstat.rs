@@ -572,7 +572,8 @@ impl RowWindow {
         if (n as u64) >= len {
             return;
         }
-        let mut rng = StdRng::seed_from_u64(seed);
+        // sampling rows, not a security function, and seeded so --seed reproduces it
+        let mut rng = StdRng::seed_from_u64(seed); // DevSkim: ignore DS148264
         let mut positions: Vec<u64> = rand::seq::index::sample(&mut rng, len as usize, n)
             .into_iter()
             .map(|i| self.offset + i as u64)

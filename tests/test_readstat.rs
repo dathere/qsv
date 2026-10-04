@@ -2127,3 +2127,39 @@ fn readstat_select_ignores_unselected_sentinel_clash() {
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains("named \"rating_null\""), "{stderr}");
 }
+
+/// SPSS DTIME variables are written as seconds, the unit SPSS stores them in.
+/// The readers return them as polars Durations, which the CSV writer can't
+/// write, so any file with one failed outright.
+///   `readstat_dtime.sav` - written with pyreadstat 1.3.6: `dur` is DTIME23.2,
+///     `whole` DTIME11, `t` TIME8. Expected values are pyreadstat's
+///     `read_sav(..., disable_datetime_conversion=True)`.
+#[test]
+fn readstat_spss_dtime_as_seconds() {
+    let wrk = Workdir::new("readstat_spss_dtime_as_seconds");
+    let f = wrk.load_test_file("readstat_dtime.sav");
+
+    let mut cmd = wrk.command("readstat");
+    cmd.arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["id", "dur", "whole", "t"],
+        svec!["1.0", "3725.0", "60.0", "10:30:15.000000000"],
+        svec!["2.0", "1.5", "90061.0", "00:00:01.000000000"],
+        svec!["3.0", "", "0.0", ""],
+    ];
+    assert_eq!(got, expected);
+
+    // they are plain numbers to --compress-numeric
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--compress-numeric", "--select", "dur,whole"])
+        .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["dur", "whole"],
+        svec!["3725.0", "60"],
+        svec!["1.5", "90061"],
+        svec!["", "0"],
+    ];
+    assert_eq!(got, expected);
+}

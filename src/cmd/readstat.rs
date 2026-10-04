@@ -11,7 +11,8 @@ Supported input formats:
     SPSS    .sav, .zsav, .por
 
 Coded values are written as their underlying codes, not their labels, so the
-conversion is lossless. Use --value-labels to decode them instead. SAS keeps
+conversion is lossless. SPSS durations (DTIME) are written as their number of
+seconds, as SPSS stores them. Use --value-labels to decode them instead. SAS keeps
 its value labels in a separate .sas7bcat format catalog, which --value-labels
 finds next to the data file, or --sas7bcat names.
 
@@ -181,7 +182,7 @@ use std::{
 
 use polars::prelude::{
     CsvWriter, DataFrame, DataType, IdxCa, IdxSize, IntoSeries, PlSmallStr, PolarsResult, Schema,
-    SerWriter, StringChunked,
+    SchemaRef, SerWriter, StringChunked, TimeUnit,
 };
 use polars_readstat_rs::{
     CatalogKey, InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat,
@@ -1113,7 +1114,8 @@ fn whole_number_columns(
         preserve_order: Some(!window.is_all()),
         ..opts.clone()
     };
-    let schema = readstat_schema(path, Some(scan_opts.clone()), Some(rs_format))?;
+    let mut schema = readstat_schema(path, Some(scan_opts.clone()), Some(rs_format))?;
+    durations_as_seconds_schema(&mut schema);
     let mut scan = WholeNumberScan::new(&schema);
     if let Some(selection) = selection {
         scan.candidates
@@ -1133,7 +1135,8 @@ fn whole_number_columns(
     )?;
     let mut start = 0_u64;
     for batch in batches {
-        let batch = batch?;
+        let mut batch = batch?;
+        durations_as_seconds(&mut batch)?;
         let height = batch.height() as u64;
         if window.is_all() {
             scan.update(&batch)?;
@@ -1632,6 +1635,43 @@ impl SentinelLabels {
     }
 }
 
+/// SPSS DTIME variables come back from the readers as polars Durations, which
+/// the CSV writer cannot write. They are written as seconds instead - the unit
+/// SPSS stores them in - so they stay numeric & lossless.
+fn units_per_second(dtype: &DataType) -> Option<f64> {
+    match dtype {
+        DataType::Duration(TimeUnit::Nanoseconds) => Some(1e9),
+        DataType::Duration(TimeUnit::Microseconds) => Some(1e6),
+        DataType::Duration(TimeUnit::Milliseconds) => Some(1e3),
+        _ => None,
+    }
+}
+
+fn durations_as_seconds_schema(schema: &mut SchemaRef) {
+    let durations: Vec<PlSmallStr> = schema
+        .iter()
+        .filter(|(_, dtype)| units_per_second(dtype).is_some())
+        .map(|(name, _)| name.clone())
+        .collect();
+    for name in durations {
+        std::sync::Arc::make_mut(schema).set_dtype(&name, DataType::Float64);
+    }
+}
+
+fn durations_as_seconds(df: &mut DataFrame) -> PolarsResult<()> {
+    let durations: Vec<(PlSmallStr, f64)> = df
+        .columns()
+        .iter()
+        .filter_map(|col| units_per_second(col.dtype()).map(|per| (col.name().clone(), per)))
+        .collect();
+    for (name, per_second) in durations {
+        let col = df.column(&name)?.as_materialized_series();
+        let seconds = col.cast(&DataType::Int64)?.cast(&DataType::Float64)? / per_second;
+        df.replace(&name, seconds.with_name(name.clone()).into())?;
+    }
+    Ok(())
+}
+
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
 fn write_data<W: Write>(
     args: &Args,
@@ -1696,6 +1736,7 @@ fn write_data<W: Write>(
         )
     } else {
         let mut df = polars_readstat_rs::scan_por(path, opts.clone())?.collect()?;
+        durations_as_seconds(&mut df)?;
         if let Some(selection) = selection {
             df = df.select(selection.iter().map(String::as_str))?;
         }
@@ -1705,6 +1746,7 @@ fn write_data<W: Write>(
         }
         (df.schema().clone(), Some(df))
     };
+    durations_as_seconds_schema(&mut schema);
 
     // The columns written, in order: each selected variable, followed by its
     // sentinel column if it has one. A variable of the file that happens to
@@ -1806,6 +1848,7 @@ fn write_data<W: Write>(
         let mut start = 0_u64;
         for batch in batches {
             let mut df = batch?;
+            durations_as_seconds(&mut df)?;
             let height = df.height() as u64;
             if !window.is_all() {
                 // before the sentinel check, so it counts only the rows written

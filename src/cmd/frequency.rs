@@ -1459,6 +1459,10 @@ type WeightedFTables = Vec<HashMap<Vec<u8>, f64>>;
 // per-column merge cost, so we fall back to a sequential zip.
 const MERGE_PARALLEL_THRESHOLD: usize = 8;
 
+// Ranked output rows that may be retained ahead of the writer when every column's
+// output is bounded by a positive --limit; see `Args::ranking_window`.
+const RANKED_ROWS_IN_FLIGHT_BUDGET: usize = 100_000;
+
 // Pairwise merge of two FTables. Empty acts as identity so this composes with
 // rayon `reduce(Vec::new, ...)`. Per-column Frequencies merges run in parallel
 // across the rayon pool when there are enough columns to amortize the overhead.
@@ -1544,6 +1548,8 @@ where
     let (tx, rx) = crossbeam_channel::unbounded();
     let mut pending = tables.into_iter().enumerate();
     let rank = &rank;
+    // Set when the writer fails, so queued columns are skipped instead of ranked.
+    let cancelled = &std::sync::atomic::AtomicBool::new(false);
     rayon::in_place_scope(|scope| {
         let mut spawn_next = || {
             let Some((i, table)) = pending.next() else {
@@ -1551,6 +1557,9 @@ where
             };
             let tx = tx.clone();
             scope.spawn(move |_| {
+                if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
                 // Hand a panic to the writer, which would otherwise block forever on a
                 // result that never arrives (dev/test builds unwind).
                 let ranked =
@@ -1580,7 +1589,10 @@ where
             };
             let ranked = ranked.unwrap_or_else(|payload| std::panic::resume_unwind(payload));
             in_flight -= 1;
-            emit(next, ranked)?;
+            if let Err(e) = emit(next, ranked) {
+                cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+                return Err(e);
+            }
             next += 1;
             if spawn_next() {
                 in_flight += 1;
@@ -2778,14 +2790,17 @@ impl Args {
     /// How many columns may be ranked ahead of the CSV/JSON writer (see
     /// `for_each_ranked_column`). With a positive `--limit` that always applies, a ranked
     /// column keeps at most limit + 2 rows (top N, NULL, Other) once its table is dropped,
-    /// so every column can be in flight at once. Otherwise a column's output is unbounded
+    /// so the window holds `RANKED_ROWS_IN_FLIGHT_BUDGET` rows' worth of columns (every
+    /// column at the default `--limit 10`). Otherwise a column's output is unbounded
     /// (e.g. `--limit 0`, a negative limit, or a column under `--lmt-threshold`), so cap
     /// retained columns at `--jobs`.
     fn ranking_window(&self) -> usize {
+        let jobs = rayon::current_num_threads();
         if self.flag_limit > 0 && self.flag_lmt_threshold == 0 {
-            usize::MAX
+            let rows_per_column = self.flag_limit.unsigned_abs().saturating_add(2);
+            jobs.max(RANKED_ROWS_IN_FLIGHT_BUDGET / rows_per_column)
         } else {
-            rayon::current_num_threads()
+            jobs
         }
     }
 

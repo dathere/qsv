@@ -753,41 +753,43 @@ fn frequency_custom_other_text() {
     assert_eq!(got, expected);
 }
 
+// Output order is asserted unsorted: --limit 1 keeps z (3) in h2 while Other holds y, Y, x (4),
+// so --other-sorted must put Other FIRST there. In h1, Other (3) stays after a (4). These tests
+// used to sort their output, which let CSV ignore --other-sorted unnoticed (#4724).
 #[test]
 fn frequency_custom_other_text_sorted() {
     let (wrk, mut cmd) = setup("frequency_custom_other_text_sorted");
-    cmd.args(["--limit", "-4"])
-        .args(["--lmt-threshold", "4"])
+    cmd.args(["--limit", "1"])
         .args(["--other-text", "Ibang halaga"])
         .arg("--other-sorted")
         .arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_unstable();
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h1", "Ibang halaga (3)", "3", "42.85714", "0"],
         svec!["h1", "a", "4", "57.14286", "1"],
-        svec!["h2", "Ibang halaga (4)", "7", "100", "0"],
+        svec!["h1", "Ibang halaga (3)", "3", "42.85714", "0"],
+        svec!["h2", "Ibang halaga (3)", "4", "57.14286", "0"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
 
+// See frequency_custom_other_text_sorted: asserted unsorted, Other outranks z in h2.
 #[test]
 fn frequency_other_sorted() {
     let (wrk, mut cmd) = setup("frequency_other_sorted");
-    cmd.args(["--limit", "-4"])
-        .args(["--lmt-threshold", "4"])
+    cmd.args(["--limit", "1"])
         .arg("--other-sorted")
         .arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    got.sort_unstable();
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
-        svec!["h1", "Other (3)", "3", "42.85714", "0"],
         svec!["h1", "a", "4", "57.14286", "1"],
-        svec!["h2", "Other (4)", "7", "100", "0"],
+        svec!["h1", "Other (3)", "3", "42.85714", "0"],
+        svec!["h2", "Other (3)", "4", "57.14286", "0"],
+        svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
 }
@@ -2903,8 +2905,8 @@ fn frequency_weight_tie_keeps_own_counts_and_limits_by_value() {
 }
 
 // NULL's weights sum to 20.499999999999996 (count 20) and tie with b's 20.5 (count 21).
-// JSON --other-sorted must keep a ranked NULL in rank order, whether --null-sorted left it in
-// place or it was moved to the end and slotted back.
+// --other-sorted must not reorder that tie. With --null-sorted, NULL keeps its rank position;
+// without it, NULL goes to the end as documented (#4724) - in JSON and CSV alike.
 #[test]
 fn frequency_weight_other_sorted_keeps_ranked_null_tie_order() {
     let wrk = Workdir::new("frequency_weight_other_sorted_keeps_ranked_null_tie_order");
@@ -2945,23 +2947,41 @@ fn frequency_weight_other_sorted_keeps_ranked_null_tie_order() {
                 )
             })
             .collect();
+        let null = ("(NULL)".to_string(), 20, 1.0);
+        let b = ("b".to_string(), 21, 2.0);
+        let c = ("c".to_string(), 4, 3.0);
+        let expected = if null_sorted {
+            vec![null, b, c]
+        } else {
+            vec![b, c, null]
+        };
+        assert_eq!(got, expected, "null_sorted={null_sorted}");
+
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--weight", "w"])
+            .args(["--limit", "0"])
+            .args(["--rank-strategy", "ordinal"])
+            .arg("--pct-nulls")
+            .arg("--other-sorted");
+        if null_sorted {
+            cmd.arg("--null-sorted");
+        }
+        let csv: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let csv_values: Vec<&str> = csv.iter().skip(1).map(|r| r[1].as_str()).collect();
+        let json_values: Vec<&str> = expected.iter().map(|(v, _, _)| v.as_str()).collect();
         assert_eq!(
-            got,
-            vec![
-                ("(NULL)".to_string(), 20, 1.0),
-                ("b".to_string(), 21, 2.0),
-                ("c".to_string(), 4, 3.0),
-            ],
-            "null_sorted={null_sorted}"
+            csv_values, json_values,
+            "CSV vs JSON, null_sorted={null_sorted}"
         );
     }
 }
 
-// Other must be placed by count against the COMPLETE ranked sequence, i.e. after the ranked
-// NULL is back in place: Other (21) sorts before NULL (20), even though it ties A's count.
+// Without --null-sorted, a ranked NULL still goes to the end (#4724), and Other is placed by
+// count among the remaining rows: Other (21) before A (20.5 -> 21), then NULL.
 #[test]
-fn frequency_weight_other_sorted_places_other_after_ranked_null() {
-    let wrk = Workdir::new("frequency_weight_other_sorted_places_other_after_ranked_null");
+fn frequency_weight_other_sorted_ranked_null_goes_last() {
+    let wrk = Workdir::new("frequency_weight_other_sorted_ranked_null_goes_last");
     let rows = vec![
         svec!["v", "w"],
         svec!["", "20"],
@@ -2999,8 +3019,8 @@ fn frequency_weight_other_sorted_places_other_after_ranked_null() {
         got,
         vec![
             ("Other (2)".to_string(), 21, 0.0),
-            ("(NULL)".to_string(), 20, 1.0),
             ("A".to_string(), 21, 2.0),
+            ("(NULL)".to_string(), 20, 1.0),
         ]
     );
 }
@@ -4881,26 +4901,118 @@ fn frequency_null_sorted_other_sorted() {
 
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv")
-        .args(["--limit", "2"]) // Limit to top 2, so a and NULL stay, b/c/d go to Other
+        .args(["--limit", "2"])
         .arg("--null-sorted")
         .arg("--other-sorted");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // With both flags and --limit 2:
-    // - a (3) is in top 2
-    // - NULL (2) is in top 2
-    // - b, c, d (1 each) go to Other (total count 3)
-    // With both flags enabled, output should be sorted by count descending:
-    // Other (3, rank 0), a (3, rank 1), NULL (2, rank 2)
-    // But since Other has rank 0 and --other-sorted is set, it sorts with others
+    // NULL is set aside before --limit, so the top 2 are a (3) and b (1, first by value of the
+    // b/c/d tie), and Other holds c + d (2). Everything sorts by count descending: Other ties
+    // NULL at 2 and goes after it by value ("(" < "O"). Until #4724, CSV ignored --other-sorted
+    // and always put Other last.
     let values: Vec<&str> = got.iter().skip(1).map(|r| r[1].as_str()).collect();
-    // All values should be present in some order determined by count
-    assert!(values.contains(&"a"), "Expected 'a' in output");
-    assert!(
-        values.iter().any(|v| v.starts_with("Other")),
-        "Expected 'Other' in output"
-    );
-    assert!(values.contains(&"(NULL)"), "Expected '(NULL)' in output");
+    assert_eq!(values, vec!["a", "(NULL)", "Other (2)", "b"]);
+}
+
+// #4724: CSV ignored --other-sorted (Other always last) while JSON sorted it by count through
+// a JSON-only re-sort. Both now share one placement: Other by count, NULL last unless
+// --null-sorted. Other (12) outranks a (10); NULL (9) sits between a and b only with --null-sorted.
+#[test]
+fn frequency_other_sorted_csv_matches_json() {
+    let wrk = Workdir::new("frequency_other_sorted_csv_matches_json");
+    let mut rows = vec![svec!["v", "w"]];
+    let mut push = |v: &str, n: usize| {
+        for _ in 0..n {
+            rows.push(vec![v.to_string(), "1".to_string()]);
+        }
+    };
+    push("a", 10);
+    push("b", 8);
+    for i in 0..12 {
+        push(&format!("x{i}"), 1);
+    }
+    push("", 9);
+    wrk.create("in.csv", rows);
+
+    let cases: [(&[&str], &[&str]); 4] = [
+        (&[], &["a", "b", "Other (12)", "(NULL)"]),
+        (&["--other-sorted"], &["Other (12)", "a", "b", "(NULL)"]),
+        (
+            &["--other-sorted", "--null-sorted"],
+            &["Other (12)", "a", "(NULL)", "b"],
+        ),
+        (
+            &["--other-sorted", "--asc"],
+            &["x0", "x1", "Other (12)", "(NULL)"],
+        ),
+    ];
+    for weighted in [false, true] {
+        for (flags, expected) in cases {
+            let run = |json: bool| {
+                let mut cmd = wrk.command("frequency");
+                cmd.arg("in.csv")
+                    .args(["-s", "v", "--limit", "2"])
+                    .args(flags);
+                if weighted {
+                    cmd.args(["--weight", "w"]);
+                }
+                if json {
+                    cmd.arg("--json");
+                    let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+                    v["fields"][0]["frequencies"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|f| f["value"].as_str().unwrap().to_string())
+                        .collect::<Vec<_>>()
+                } else {
+                    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+                    got.into_iter().skip(1).map(|r| r[1].clone()).collect()
+                }
+            };
+            let ctx = format!("weighted={weighted} flags={flags:?}");
+            assert_eq!(run(false), expected, "CSV {ctx}");
+            assert_eq!(run(true), expected, "JSON {ctx}");
+        }
+    }
+}
+
+// Weighted --other-sorted must compare Other with tolerance: A = 7.35 + 0.55 =
+// 7.8999999999999995, while Other = total - shown = 7.900000000000001 in every summation order
+// (both are 7.9 exactly). As a tie, it is broken by value, so "A" goes first; a raw f64 compare
+// put Other first, and on inputs whose Other lands on either side it flipped run to run.
+#[test]
+fn frequency_weight_other_sorted_ties_with_tolerance() {
+    let wrk = Workdir::new("frequency_weight_other_sorted_ties_with_tolerance");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["A", "7.35"],
+        svec!["A", "0.55"],
+        svec!["b", "4.45"],
+        svec!["c", "3.45"],
+    ];
+    wrk.create("in.csv", rows);
+    for json in [false, true] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--weight", "w"])
+            .args(["--limit", "1"])
+            .arg("--other-sorted");
+        let values: Vec<String> = if json {
+            cmd.arg("--json");
+            let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+            v["fields"][0]["frequencies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| f["value"].as_str().unwrap().to_string())
+                .collect()
+        } else {
+            let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+            got.into_iter().skip(1).map(|r| r[1].clone()).collect()
+        };
+        assert_eq!(values, vec!["A", "Other (2)"], "json={json}");
+    }
 }
 
 #[test]

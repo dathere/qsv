@@ -27,7 +27,11 @@ variables that do instead. SAS & Stata files don't, so they get no warning.
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
-data with --metadata.
+data with --metadata. Or --dictionary writes it alongside the data, as a JSON
+Schema data dictionary of the CSV written: variable labels become titles,
+value labels an enum (when they cover every value written), and the rest is
+kept under "x-qsv". It has the shape 'qsv describegpt --dictionary' writes, so
+'qsv validate' & 'qsv viz smart --dictionary' read it - without an LLM.
 
 Only part of a file can be read: --select picks variables, which the readers
 skip over without decoding, and --offset, --limit & --sample pick rows. Rows
@@ -63,6 +67,11 @@ takes time, but stops early once --limit is reached.
   Take a reproducible random sample of 500 rows, in file order:
     qsv readstat --sample 500 --seed 42 data.sas7bdat
 
+  Convert an SPSS file & write its data dictionary, then chart it with the
+  variable labels as titles:
+    qsv readstat --dictionary survey.schema.json survey.sav -o survey.csv
+    qsv viz smart --dictionary survey.schema.json survey.csv
+
   Dump the variable dictionary of a Stata file:
     qsv readstat --metadata pretty-json panel.dta
 
@@ -96,6 +105,13 @@ readstat options:
                            the options --value-labels, --sentinels-as label
                            & --metadata. It only names the catalog, so the
                            data needs one of the first two.
+    --dictionary <file>    Also write a JSON Schema data dictionary of the
+                           CSV written to <file>. Name it <stem>.schema.json
+                           after the CSV & 'qsv viz smart' finds it on its
+                           own. It describes the data as written, so the
+                           other options shape it too: the types follow
+                           the option --compress-numeric, the enums
+                           follow --value-labels, & so on.
     --compress-numeric     Write float variables that only ever hold whole
                            numbers as integers, without the ".0" (e.g. 3.0
                            becomes 3). SPSS stores every number as a float, so
@@ -173,6 +189,8 @@ Common options:
                            Must be a single character. [default: ,]
 "#;
 
+mod dictionary;
+
 use std::{
     collections::HashMap,
     fs::File,
@@ -208,6 +226,7 @@ struct Args {
     flag_limit:              Option<usize>,
     flag_sample:             Option<usize>,
     flag_seed:               Option<u64>,
+    flag_dictionary:         Option<String>,
     flag_jobs:               Option<usize>,
     flag_batch:              usize,
     flag_output:             Option<String>,
@@ -380,6 +399,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
              --metadata."
         );
     }
+    if let Some(dict) = args.flag_dictionary.as_deref() {
+        if metadata_mode != MetadataMode::None {
+            return fail_incorrectusage_clierror!(
+                "--dictionary describes the data written, so it doesn't apply to --metadata."
+            );
+        }
+        let same = |a: &Path, b: &Path| a == b || same_file::is_same_file(a, b).unwrap_or(false);
+        let dict = Path::new(dict);
+        if same(dict, path) {
+            return fail_incorrectusage_clierror!("--dictionary would overwrite the input file.");
+        }
+        if args
+            .flag_output
+            .as_deref()
+            .is_some_and(|out| same(dict, Path::new(out)))
+        {
+            return fail_incorrectusage_clierror!(
+                "--dictionary & --output name the same file. Pass a different --dictionary."
+            );
+        }
+    }
     if args.flag_sample == Some(0) {
         return fail_incorrectusage_clierror!("--sample must be at least 1.");
     }
@@ -455,6 +495,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &mut dropped,
             sas_labels.as_ref().filter(|_| args.flag_value_labels),
             sentinel_labels.as_ref(),
+            args.flag_dictionary
+                .as_deref()
+                .map(|d| (Path::new(d), sas_labels.as_ref())),
             delim,
             &mut w,
         )?;
@@ -1673,6 +1716,7 @@ fn durations_as_seconds(df: &mut DataFrame) -> PolarsResult<()> {
 }
 
 /// Stream the file to CSV, one batch at a time, so memory stays bounded.
+#[allow(clippy::too_many_arguments)]
 fn write_data<W: Write>(
     args: &Args,
     path: &Path,
@@ -1684,6 +1728,7 @@ fn write_data<W: Write>(
     dropped: &mut DroppedSentinels,
     sas_labels: Option<&SasLabels>,
     sentinel_labels: Option<&SentinelLabels>,
+    dictionary: Option<(&Path, Option<&SasLabels>)>,
     delim: u8,
     w: &mut W,
 ) -> CliResult<u64> {
@@ -1818,6 +1863,23 @@ fn write_data<W: Write>(
         }
     }
 
+    // --dictionary: the metadata it is built from, & what the data held
+    let mut dict = match dictionary {
+        Some((dict_path, catalog)) => {
+            let meta: serde_json::Value =
+                serde_json::from_str(&metadata_json(path, format, catalog)?)?;
+            let embedded_columns: Vec<String> = match &sentinel_columns {
+                _ if !embedded => Vec::new(),
+                Some(InformativeNullColumns::Selected(names)) => names.clone(),
+                _ => schema.iter_names().map(ToString::to_string).collect(),
+            };
+            let tallies =
+                dictionary::Tallies::new(dictionary::tracked(&schema, &meta, &embedded_columns));
+            Some((dict_path, catalog, meta, embedded_columns, tallies))
+        },
+        None => None,
+    };
+
     let mut wtr = CsvWriter::new(w)
         .include_header(true)
         .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
@@ -1869,6 +1931,9 @@ fn write_data<W: Write>(
                 labels.apply(&mut df, columns, embedded)?;
             }
             drop_whole_number_fraction(&mut df, &whole)?;
+            if let Some((.., tallies)) = &mut dict {
+                tallies.update(&df)?;
+            }
             rows += df.height() as u64;
             // write_batch panics on unaligned chunks
             df.align_chunks();
@@ -1876,6 +1941,9 @@ fn write_data<W: Write>(
         }
     } else if let Some(mut df) = por_df {
         drop_whole_number_fraction(&mut df, &whole)?;
+        if let Some((.., tallies)) = &mut dict {
+            tallies.update(&df)?;
+        }
         rows += df.height() as u64;
         df.align_chunks();
         wtr.write_batch(&df)?;
@@ -1883,7 +1951,70 @@ fn write_data<W: Write>(
     // writes the header if no batch did
     wtr.finish()?;
 
+    if let Some((dict_path, catalog, meta, embedded, tallies)) = dict {
+        let file_name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |f| f.to_string_lossy().into_owned(),
+        );
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        let family = match format {
+            Format::Sas => "SAS",
+            Format::SasXpt => "SAS transport",
+            Format::Stata => "Stata",
+            Format::Spss => "SPSS",
+            Format::SpssPor => "SPSS portable",
+        };
+        let flags = serde_json::json!({
+            "value_labels": args.flag_value_labels,
+            "sas7bcat": catalog.map(|c| c.catalog.file_name().map(|f| f.to_string_lossy().into_owned())),
+            "sentinels_as": args.flag_sentinels_as,
+            "sentinels_embedded": args.flag_sentinels_embedded,
+            "sentinels_columns": args.flag_sentinels_columns,
+            "compress_numeric": args.flag_compress_numeric,
+            "select": selection,
+            "offset": args.flag_offset,
+            "limit": args.flag_limit,
+            "sample": args.flag_sample,
+            "seed": args.flag_sample.map(|_| seed),
+        });
+        let written = dictionary::Written {
+            file_name: &file_name,
+            source: &format!("{family} (.{ext})"),
+            value_labels: args.flag_value_labels,
+            embedded,
+            flags,
+        };
+        let doc = dictionary::build(&schema, &meta, &tallies, &written);
+        let mut out = io::BufWriter::new(File::create(dict_path)?);
+        serde_json::to_writer_pretty(&mut out, &doc)?;
+        out.write_all(b"\n")?;
+        out.flush()?;
+    }
+
     Ok(rows)
+}
+
+/// The file's metadata, as the reader crate reports it. For SAS, with the value
+/// labels of the format catalog in use, if any.
+fn metadata_json(path: &Path, format: Format, sas_labels: Option<&SasLabels>) -> CliResult<String> {
+    let json = if let Some(rs_format) = format.readstat_format() {
+        readstat_metadata_json(path, Some(rs_format))
+    } else {
+        polars_readstat_rs::metadata_json_por(path).map_err(|e| e.to_string())
+    }
+    .map_err(|e| {
+        crate::CliError::Other(format!(
+            "Could not read the metadata of \"{}\": {e}",
+            path.display()
+        ))
+    })?;
+    match sas_labels {
+        Some(labels) => labels.annotate(&json),
+        None => Ok(json),
+    }
 }
 
 fn write_metadata<W: Write>(
@@ -1895,20 +2026,7 @@ fn write_metadata<W: Write>(
     delim: u8,
     w: &mut W,
 ) -> CliResult<()> {
-    let mut json = if let Some(rs_format) = format.readstat_format() {
-        readstat_metadata_json(path, Some(rs_format))
-    } else {
-        polars_readstat_rs::metadata_json_por(path).map_err(|e| e.to_string())
-    }
-    .map_err(|e| {
-        crate::CliError::Other(format!(
-            "Could not read the metadata of \"{}\": {e}",
-            path.display()
-        ))
-    })?;
-    if let Some(labels) = sas_labels {
-        json = labels.annotate(&json)?;
-    }
+    let mut json = metadata_json(path, format, sas_labels)?;
     if let Some(selection) = selection {
         json = select_metadata(&json, selection)?;
     }

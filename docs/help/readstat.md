@@ -1,6 +1,6 @@
 # readstat
 
-> Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. Can read just the variables you need (`--select`) and a window or reproducible random sample of rows (`--offset`, `--limit`, `--sample`). Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory, except SPSS `.sav`/`.zsav` files whose user-defined missing values are tracked (`--sentinels-as`, or the default check that warns when they are dropped).
+> Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`, or writes them alongside the data as a JSON Schema data dictionary (`--dictionary`) that `validate` and `viz smart --dictionary` read, no LLM needed. Can read just the variables you need (`--select`) and a window or reproducible random sample of rows (`--offset`, `--limit`, `--sample`). Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory, except SPSS `.sav`/`.zsav` files whose user-defined missing values are tracked (`--sentinels-as`, or the default check that warns when they are dropped).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/readstat.rs](https://github.com/dathere/qsv/blob/master/src/cmd/readstat.rs)** | [🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")
 
@@ -42,7 +42,11 @@ variables that do instead. SAS & Stata files don't, so they get no warning.
 
 The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
-data with --metadata.
+data with --metadata. Or --dictionary writes it alongside the data, as a JSON
+Schema data dictionary of the CSV written: variable labels become titles,
+value labels an enum (when they cover every value written), and the rest is
+kept under "x-qsv". It has the shape 'qsv describegpt --dictionary' writes, so
+'qsv validate' & 'qsv viz smart --dictionary' read it - without an LLM.
 
 Only part of a file can be read: --select picks variables, which the readers
 skip over without decoding, and --offset, --limit & --sample pick rows. Rows
@@ -105,6 +109,17 @@ qsv readstat --sample 500 --seed 42 data.sas7bdat
 ```
 
 
+Convert an SPSS file & write its data dictionary, then chart it with the
+variable labels as titles:  
+```console
+qsv readstat --dictionary survey.schema.json survey.sav -o survey.csv
+```
+
+```console
+qsv viz smart --dictionary survey.schema.json survey.csv
+```
+
+
 Dump the variable dictionary of a Stata file:  
 ```console
 qsv readstat --metadata pretty-json panel.dta
@@ -144,6 +159,7 @@ qsv readstat --help
 | &nbsp;`‑‑metadata`&nbsp; | string | Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json. For SAS, the value labels are included when a format catalog is used (see --value-labels). | `none` |
 | &nbsp;`‑‑value‑labels`&nbsp; | flag | Decode coded values to their label strings (e.g. 1 becomes "Male") instead of writing the underlying codes. For SAS .sas7bdat files, the labels come from the format catalog: the file named by --sas7bcat, else <name>.sas7bcat or formats.sas7bcat next to the data file. Not supported for .xpt files. |  |
 | &nbsp;`‑‑sas7bcat`&nbsp; | string | The SAS format catalog (.sas7bcat) holding the value labels of a .sas7bdat file, for use by the options --value-labels, --sentinels-as label & --metadata. It only names the catalog, so the data needs one of the first two. |  |
+| &nbsp;`‑‑dictionary`&nbsp; | string | Also write a JSON Schema data dictionary of the CSV written to <file>. Name it <stem>.schema.json after the CSV & 'qsv viz smart' finds it on its own. It describes the data as written, so the other options shape it too: the types follow the option --compress-numeric, the enums follow --value-labels, & so on. |  |
 | &nbsp;`‑‑compress‑numeric`&nbsp; | flag | Write float variables that only ever hold whole numbers as integers, without the ".0" (e.g. 3.0 becomes 3). SPSS stores every number as a float, so this matters most for SPSS files. It is decided per variable, over the rows written: one value like 2.5 keeps the ".0" on every row of that variable. The file is read twice - once to check the values. With sentinel labels embedded, a variable with a label that reads as a number (e.g. "1.0") keeps its ".0", so the label is not rewritten. |  |
 | &nbsp;`‑‑sentinels‑as`&nbsp; | string | Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. none  - write them as empty cells, without the check & its warning. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels reads files on a single thread, so the option --jobs has no effect, and reads SPSS .sav & .zsav files whole (see --batch). |  |
 | &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a <name>_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |

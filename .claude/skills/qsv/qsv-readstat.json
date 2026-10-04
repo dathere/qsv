@@ -1,7 +1,7 @@
 {
   "name": "qsv-readstat",
   "version": "23.0.1",
-  "description": "Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`. Can read just the variables you need (`--select`) and a window or reproducible random sample of rows (`--offset`, `--limit`, `--sample`). Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory, except SPSS `.sav`/`.zsav` files whose user-defined missing values are tracked (`--sentinels-as`, or the default check that warns when they are dropped).",
+  "description": "Convert SAS (`.sas7bdat`, `.xpt`), Stata (`.dta`) & SPSS (`.sav`, `.zsav`, `.por`) files to CSV, preserving the underlying codes of labelled values by default. Also dumps the rich variable metadata these formats carry - variable labels, value labels, missing-value codes, measure & display settings - with `--metadata`, or writes them alongside the data as a JSON Schema data dictionary (`--dictionary`) that `validate` and `viz smart --dictionary` read, no LLM needed. Can read just the variables you need (`--select`) and a window or reproducible random sample of rows (`--offset`, `--limit`, `--sample`). Only SPSS portable (`.por`) files are read whole - every other format streams with constant memory, except SPSS `.sav`/`.zsav` files whose user-defined missing values are tracked (`--sentinels-as`, or the default check that warns when they are dropped).",
   "category": "conversion",
   "command": {
     "subcommand": "readstat",
@@ -30,6 +30,11 @@
         "type": "string",
         "description": "The delimiter to use when writing CSV data. Must be a single character.",
         "default": ","
+      },
+      {
+        "flag": "--dictionary",
+        "type": "string",
+        "description": "Also write a JSON Schema data dictionary of the CSV written to <file>. Name it <stem>.schema.json after the CSV & 'qsv viz smart' finds it on its own. It describes the data as written, so the other options shape it too: the types follow the option --compress-numeric, the enums follow --value-labels, & so on."
       },
       {
         "flag": "--limit",

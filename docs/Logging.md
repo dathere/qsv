@@ -68,3 +68,7 @@ use log::{debug, info};
         );
 <snip>
 ```
+
+## qsv plugin session log
+
+When the qsv Claude plugin is loaded (in Cowork, or as a synced plugin in Claude Code), its `SessionEnd` hook also appends a short summary of each session (date, duration, assistant turns, tool calls by tool) to `.qsv-session-log.md` in the session's working directory, and a one-line `[session_end]` entry to `qsvmcp.log`. In Cowork the session transcript is deleted when the session ends, so this file is the record that's left. Setting `QSV_MCP_LOG_LEVEL=off` turns it off too.

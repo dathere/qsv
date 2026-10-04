@@ -99,3 +99,6 @@ profile*-handoff.md
 examples/viz/__pycache__/
 *.pyc
 /target-release-demo
+
+# Session summaries appended by the qsv Claude plugin's SessionEnd hook (see docs/Logging.md)
+.qsv-session-log.md

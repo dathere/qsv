@@ -4198,10 +4198,12 @@ impl Args {
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
                                      skip_stats: bool| {
-            // With --other-sorted, slot "Other" (rank 0), and NULL rows moved to the end, into
-            // count order, breaking ties by value for deterministic output. The ranked rows keep
+            // With --other-sorted, slot "Other" (rank 0), and NULL rows moved to the end, back
+            // into order, breaking ties by value for deterministic output. The ranked rows keep
             // their established order: inside a weighted tie each row reports its own rounded
             // total, which can differ by one, so re-sorting them by count would reorder a tie.
+            // For the same reason a ranked NULL goes back by rank, not by count. With
+            // --null-sorted, NULL rows were never moved, so they stay where they are.
             if self.flag_other_sorted {
                 // safety: NULL_VAL is set in run()
                 let null_val = NULL_VAL.get().unwrap();
@@ -4213,15 +4215,22 @@ impl Args {
                     }
                     .then_with(|| a.value.cmp(&b.value))
                 };
-                let (mut floating, mut placed): (Vec<_>, Vec<_>) = processed_frequencies
-                    .drain(..)
-                    .partition(|f| f.rank <= 0.0 || f.value == *null_val);
+                let (mut floating, mut placed): (Vec<_>, Vec<_>) =
+                    processed_frequencies.drain(..).partition(|f| {
+                        f.rank <= 0.0 || (!self.flag_null_sorted && f.value == *null_val)
+                    });
                 floating.sort_unstable_by(by_count);
                 for f in floating {
-                    let pos = placed
-                        .iter()
-                        .position(|r| by_count(&f, r) == std::cmp::Ordering::Less)
-                        .unwrap_or(placed.len());
+                    let pos = if f.rank > 0.0 {
+                        placed.iter().position(|r| {
+                            r.rank > f.rank || (r.rank == f.rank && f.value < r.value)
+                        })
+                    } else {
+                        placed
+                            .iter()
+                            .position(|r| by_count(&f, r) == std::cmp::Ordering::Less)
+                    }
+                    .unwrap_or(placed.len());
                     placed.insert(pos, f);
                 }
                 *processed_frequencies = placed;

@@ -2902,6 +2902,61 @@ fn frequency_weight_tie_keeps_own_counts_and_limits_by_value() {
     );
 }
 
+// NULL's weights sum to 20.499999999999996 (count 20) and tie with b's 20.5 (count 21).
+// JSON --other-sorted must keep a ranked NULL in rank order, whether --null-sorted left it in
+// place or it was moved to the end and slotted back.
+#[test]
+fn frequency_weight_other_sorted_keeps_ranked_null_tie_order() {
+    let wrk = Workdir::new("frequency_weight_other_sorted_keeps_ranked_null_tie_order");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["", "20"],
+        svec!["", "0.15"],
+        svec!["", "0.15"],
+        svec!["", "0.15"],
+        svec!["", "0.05"],
+        svec!["b", "20.5"],
+        svec!["c", "3"],
+        svec!["c", "1"],
+    ];
+    wrk.create("in.csv", rows);
+    for null_sorted in [true, false] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--weight", "w"])
+            .args(["--limit", "0"])
+            .args(["--rank-strategy", "ordinal"])
+            .arg("--pct-nulls")
+            .arg("--other-sorted")
+            .arg("--json");
+        if null_sorted {
+            cmd.arg("--null-sorted");
+        }
+        let v: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+        let got: Vec<(String, u64, f64)> = v["fields"][0]["frequencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                (
+                    f["value"].as_str().unwrap().to_string(),
+                    f["count"].as_u64().unwrap(),
+                    f["rank"].as_f64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("(NULL)".to_string(), 20, 1.0),
+                ("b".to_string(), 21, 2.0),
+                ("c".to_string(), 4, 3.0),
+            ],
+            "null_sorted={null_sorted}"
+        );
+    }
+}
+
 // A negative weighted limit keeps totals >= the cutoff AND totals tied with it: y's 100 x 0.1
 // sums to 9.99999999999998, which is 10 in exact arithmetic. z (9.9) is below the cutoff by
 // far more than the tolerance and goes into Other with w.

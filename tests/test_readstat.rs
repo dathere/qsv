@@ -1704,3 +1704,361 @@ fn readstat_spss_very_long_string_name_collision() {
     ];
     assert_eq!(got, expected);
 }
+
+/// `expected_rows()` (cross-checked with pyreadstat) projected to `cols`, by
+/// header name, in the order given.
+fn project(rows: &[Vec<String>], cols: &[&str]) -> Vec<Vec<String>> {
+    let idx: Vec<usize> = cols
+        .iter()
+        .map(|c| rows[0].iter().position(|h| h == c).unwrap())
+        .collect();
+    rows.iter()
+        .map(|r| idx.iter().map(|&i| r[i].clone()).collect())
+        .collect()
+}
+
+#[test]
+fn readstat_select_names_ranges_negation() {
+    let wrk = Workdir::new("readstat_select_names_ranges_negation");
+    let all = expected_rows();
+    let cases: [(&str, &str, &[&str]); 6] = [
+        // order follows --select, not the file
+        ("sav", "score,id", &["score", "id"]),
+        ("zsav", "2-3", &["name", "score"]),
+        ("dta", "!name", &["id", "score", "sex", "visited"]),
+        ("dta", "/^s/", &["score", "sex"]),
+        // XPT's reader decoded projected columns from the wrong variable
+        // before polars-readstat-rs 0.23.3 (jrothbaum/polars_readstat#64)
+        ("xpt", "3,1", &["score", "id"]),
+        ("xpt", "visited", &["visited"]),
+    ];
+    for (ext, select, cols) in cases {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--select", select]).arg(sample(&wrk, ext));
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, project(&all, cols), "{ext} --select {select}");
+    }
+}
+
+#[test]
+fn readstat_select_por() {
+    let wrk = Workdir::new("readstat_select_por");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--select", "SCORE,ID", "--offset", "2"])
+        .arg(sample(&wrk, "por"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["SCORE", "ID"], svec!["", "3.0"], svec!["0.0", "4.0"]];
+    assert_eq!(got, expected);
+
+    // .por is read whole, so qsv itself ends the window at --limit
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--select", "ID,SCORE", "--offset", "1", "--limit", "2"])
+        .arg(sample(&wrk, "por"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["ID", "SCORE"],
+        svec!["2.0", "-2.25"],
+        svec!["3.0", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_offset_limit() {
+    let wrk = Workdir::new("readstat_offset_limit");
+    let all = expected_rows();
+    // (offset, limit, rows of `all` expected, 1-based); batch 1 puts every
+    // row in its own batch, so the window spans batches
+    let cases: [(&str, Option<&str>, &[usize]); 5] = [
+        ("1", Some("2"), &[2, 3]),
+        ("0", Some("1"), &[1]),
+        ("3", Some("10"), &[4]),
+        ("2", None, &[3, 4]),
+        ("9", None, &[]),
+    ];
+    for ext in ["sav", "dta", "xpt"] {
+        for (offset, limit, rows) in cases {
+            for batch in ["1", "50000"] {
+                let mut cmd = wrk.command("readstat");
+                cmd.args(["--offset", offset, "--batch", batch]);
+                if let Some(limit) = limit {
+                    cmd.args(["--limit", limit]);
+                }
+                let f = sample(&wrk, ext);
+                cmd.arg(&f);
+                let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+                let mut expected = vec![all[0].clone()];
+                expected.extend(rows.iter().map(|&r| all[r].clone()));
+                assert_eq!(
+                    got, expected,
+                    "{ext} --offset {offset} --limit {limit:?} -b {batch}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn readstat_offset_limit_sas7bdat_values() {
+    let wrk = Workdir::new("readstat_offset_limit_sas7bdat_values");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--select", "YEAR,Y", "--offset", "30", "--limit", "5"])
+        .arg(sample(&wrk, "sas7bdat"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // pyreadstat: read_sas7bdat(usecols=["Y","YEAR"], row_offset=30)
+    assert_eq!(got[0], svec!["YEAR", "Y"]);
+    assert_eq!(got.len(), 3, "{got:?}");
+    for (row, (year, y)) in got[1..]
+        .iter()
+        .zip([("1978.0", 22.726_f64), ("1979.0", 23.619)])
+    {
+        assert_eq!(row[0], year);
+        let v: f64 = row[1].parse().unwrap();
+        assert!((v - y).abs() < 1e-3, "{row:?}");
+    }
+}
+
+/// The parallel readers keep rows in order on a partial read too: `--limit`
+/// and `--offset` must give the same rows at any --jobs.
+#[test]
+fn readstat_offset_limit_keeps_order_with_jobs() {
+    let wrk = Workdir::new("readstat_offset_limit_keeps_order_with_jobs");
+    let f = wrk.load_test_file("readstat_order.sav");
+
+    let mut serial = wrk.command("readstat");
+    serial.arg(&f);
+    let all: Vec<Vec<String>> = wrk.read_stdout(&mut serial);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--jobs", "4", "--batch", "100", "--offset", "1000", "--limit", "500",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut expected = vec![all[0].clone()];
+    expected.extend_from_slice(&all[1001..1501]);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_sample_seeded() {
+    let wrk = Workdir::new("readstat_sample_seeded");
+    let f = sample(&wrk, "sas7bdat");
+
+    let mut full = wrk.command("readstat");
+    full.arg(&f);
+    let all: Vec<Vec<String>> = wrk.read_stdout(&mut full);
+
+    let run = |seed: &str, batch: &str| -> Vec<Vec<String>> {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--sample", "5", "--seed", seed, "--batch", batch])
+            .arg(&f);
+        wrk.read_stdout(&mut cmd)
+    };
+    let got = run("42", "50000");
+    assert_eq!(got.len(), 6, "{got:?}");
+    assert_eq!(got[0], all[0]);
+    // the sample is drawn by position, so batching doesn't change it
+    assert_eq!(got, run("42", "3"));
+    // a subsequence of the file, in file order
+    let mut pos = 1;
+    for row in &got[1..] {
+        pos += all[pos..].iter().position(|r| r == row).unwrap() + 1;
+    }
+}
+
+#[test]
+fn readstat_sample_within_window() {
+    let wrk = Workdir::new("readstat_sample_within_window");
+    let f = sample(&wrk, "sas7bdat");
+    let mut full = wrk.command("readstat");
+    full.arg(&f);
+    let all: Vec<Vec<String>> = wrk.read_stdout(&mut full);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--sample", "4", "--seed", "7", "--offset", "10", "--limit", "8",
+    ])
+    .arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 5, "{got:?}");
+    for row in &got[1..] {
+        assert!(all[11..19].contains(row), "{row:?} is outside rows 10..18");
+    }
+
+    // a sample no smaller than the window keeps all of it
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sample", "50", "--offset", "30"]).arg(&f);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut expected = vec![all[0].clone()];
+    expected.extend_from_slice(&all[31..]);
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_select_sentinel_columns() {
+    let wrk = Workdir::new("readstat_select_sentinel_columns");
+    let mut cmd = wrk.command("readstat");
+    cmd.args(["--sentinels-as", "value", "--select", "rating,id"])
+        .arg(sentinels(&wrk, "sav"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // pyreadstat: rating's declared missings are 8 & 9, in rows 2 & 4
+    let expected = vec![
+        svec!["rating", "rating_null", "id"],
+        svec!["3.0", "", "1.0"],
+        svec!["", "8", "2.0"],
+        svec!["4.0", "", "3.0"],
+        svec!["", "9", "4.0"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--sentinels-as",
+        "value",
+        "--sentinels-columns",
+        "income",
+        "--select",
+        "id",
+    ])
+    .arg(sentinels(&wrk, "sav"));
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("--sentinels-columns names \"income\", which --select leaves out"),
+        "{stderr}"
+    );
+
+    // a variable of the file named `<name>_null` is selected like any other,
+    // and is not taken for its neighbour's sentinel column
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--sentinels-as",
+        "value",
+        "--sentinels-columns",
+        "other",
+        "--select",
+        "rating,rating_null,other",
+    ])
+    .arg(wrk.load_test_file("readstat_sentinels_suffix.sav"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["rating", "rating_null", "other", "other_null"],
+        svec!["3.0", "8", "1.0", ""],
+        svec!["", "x", "", "5"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_sentinel_warning_counts_only_rows_and_variables_written() {
+    let wrk = Workdir::new("readstat_sentinel_warning_counts_only_rows_and_variables_written");
+    let cases: [(&[&str], Option<&str>); 5] = [
+        (
+            &["--select", "rating"],
+            Some("2 sentinels (user-defined missing values) in 1 variable (rating)"),
+        ),
+        // pyreadstat, row_offset=2: income 950 (in its 900-999 range) & rating 9
+        (
+            &["--offset", "2"],
+            Some("2 sentinels (user-defined missing values) in 2 variables (income, rating)"),
+        ),
+        (&["--select", "id,plain"], None),
+        // above one job, SPSS names the variables declaring missing values
+        // instead of counting - only the selected ones
+        (
+            &["--select", "rating,id", "--jobs", "2"],
+            Some("1 variable (rating) declares user-defined missing values"),
+        ),
+        (&["--select", "id,plain", "--jobs", "2"], None),
+    ];
+    for (args, expected) in cases {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(args).arg(sentinels(&wrk, "sav"));
+        let stderr = wrk.stderr_on_success(&mut cmd);
+        match expected {
+            Some(expected) => assert!(stderr.contains(expected), "{args:?}: {stderr}"),
+            None => assert!(!stderr.contains("sentinel"), "{args:?}: {stderr}"),
+        }
+    }
+}
+
+#[test]
+fn readstat_compress_numeric_over_rows_written() {
+    let wrk = Workdir::new("readstat_compress_numeric_over_rows_written");
+    // score holds 1.5 & -2.25 in rows 1-2 only, so from row 3 on it is whole
+    let mut cmd = wrk.command("readstat");
+    cmd.args([
+        "--compress-numeric",
+        "--offset",
+        "2",
+        "--select",
+        "id,score",
+    ])
+    .arg(sample(&wrk, "sav"));
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["id", "score"], svec!["3", ""], svec!["4", "0"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn readstat_metadata_select() {
+    let wrk = Workdir::new("readstat_metadata_select");
+    // SAS names its list `columns`, Stata & SPSS `variables`
+    for (ext, key, select, names) in [
+        ("sav", "variables", "score,id", ["score", "id"]),
+        ("dta", "variables", "2,1", ["name", "id"]),
+        ("sas7bdat", "columns", "Y,YEAR", ["Y", "YEAR"]),
+    ] {
+        let mut cmd = wrk.command("readstat");
+        cmd.args(["--metadata", "json", "--select", select])
+            .arg(sample(&wrk, ext));
+        let got: String = wrk.stdout(&mut cmd);
+        let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+        let listed: Vec<&str> = json[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(listed, names, "{ext}");
+        assert!(
+            json.get("row_count").is_some(),
+            "{ext}: file-level keys kept"
+        );
+    }
+}
+
+#[test]
+fn readstat_selection_refusals() {
+    let wrk = Workdir::new("readstat_selection_refusals");
+    let cases: [(&[&str], &str); 6] = [
+        (
+            &["--metadata", "json", "--limit", "2"],
+            "don't apply to --metadata",
+        ),
+        (&["--seed", "3"], "--seed requires --sample"),
+        (&["--sample", "0"], "--sample must be at least 1"),
+        (
+            &["--select", "id,id"],
+            "picks the variable \"id\" more than once",
+        ),
+        (&["--select", "!1-5"], "--select picks no variables"),
+        (&["--select", "nope"], "--select:"),
+    ];
+    for (args, expected) in cases {
+        let out = wrk.path("refused.csv");
+        std::fs::write(&out, "keep me").unwrap();
+        let mut cmd = wrk.command("readstat");
+        cmd.args(args)
+            .args(["--output", out.to_str().unwrap()])
+            .arg(sample(&wrk, "sav"));
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains(expected), "{args:?}: {stderr}");
+        // refused before --output is created
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            "keep me",
+            "{args:?}"
+        );
+    }
+}

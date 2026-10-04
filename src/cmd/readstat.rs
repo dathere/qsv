@@ -28,6 +28,11 @@ The variable metadata these formats carry - variable labels, value labels,
 missing-value codes, measure & display settings - can be dumped instead of the
 data with --metadata.
 
+Only part of a file can be read: --select picks variables, which the readers
+skip over without decoding, and --offset, --limit & --sample pick rows. Rows
+before the --offset are still read through, so skipping far into a large file
+takes time, but stops early once --limit is reached.
+
   Convert a SAS dataset to CSV:
     qsv readstat data.sas7bdat > data.csv
 
@@ -45,8 +50,20 @@ data with --metadata.
   values as codes:
     qsv readstat --sentinels-as label --sentinels-columns q1,q2 survey.sav
 
+  Read three variables & the first 1000 rows of a wide SPSS file:
+    qsv readstat --select id,age,income --limit 1000 survey.sav
+
+  Read every variable from "q1" to "q20", except "q7", by name range:
+    qsv readstat --select 'q1-q20,!q7' survey.sav
+
+  Take a reproducible random sample of 500 rows, in file order:
+    qsv readstat --sample 500 --seed 42 data.sas7bdat
+
   Dump the variable dictionary of a Stata file:
     qsv readstat --metadata pretty-json panel.dta
+
+  Dump the metadata of just two variables:
+    qsv readstat --metadata json --select age,income panel.dta
 
   Pipe straight into another qsv command:
     qsv readstat data.sas7bdat | qsv stats
@@ -79,7 +96,7 @@ readstat options:
                            numbers as integers, without the ".0" (e.g. 3.0
                            becomes 3). SPSS stores every number as a float, so
                            this matters most for SPSS files. It is decided per
-                           variable, over the whole file: one value like 2.5
+                           variable, over the rows written: one value like 2.5
                            keeps the ".0" on every row of that variable. The
                            file is read twice - once to check the values.
                            With sentinel labels embedded, a variable with a
@@ -111,6 +128,22 @@ readstat options:
                            for. Requires --sentinels-as. By default, every
                            eligible variable: the numeric ones for SAS &
                            Stata, those with declared missing values for SPSS.
+    --select <cols>        The variables to read, in the order given, using
+                           qsv's select syntax: names, 1-based indices,
+                           ranges (q1-q20), /regex/ & ! to exclude. See
+                           'qsv select --help' for the full syntax. Variables
+                           left out are skipped by the reader. Also applies
+                           to the option --metadata, which then lists only
+                           these variables.
+    --offset <n>           Skip the first <n> rows. [default: 0]
+    --limit <n>            Write at most <n> rows, counted after the
+                           rows skipped by --offset.
+    --sample <n>           Write a random sample of <n> rows, in file order,
+                           drawn from the rows --offset & --limit select.
+                           If there are no more than <n> such rows, all of
+                           them are written.
+    --seed <number>        Seed the random number generator of --sample,
+                           so the same sample is drawn every time.
     -j, --jobs <arg>       Number of reader threads. [default: 1]
                            Raising it speeds up large uncompressed files at the
                            cost of memory, as out-of-order chunks have to be
@@ -143,16 +176,17 @@ use std::{
 };
 
 use polars::prelude::{
-    CsvWriter, DataFrame, DataType, IntoSeries, PlSmallStr, PolarsResult, Schema, SerWriter,
-    StringChunked,
+    CsvWriter, DataFrame, DataType, IdxCa, IdxSize, IntoSeries, PlSmallStr, PolarsResult, Schema,
+    SerWriter, StringChunked,
 };
 use polars_readstat_rs::{
     CatalogKey, InformativeNullColumns, InformativeNullMode, InformativeNullOpts, ReadStatFormat,
     ScanOptions, readstat_batch_iter, readstat_metadata_json, readstat_schema,
 };
+use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 
-use crate::{CliResult, cmd::joinp::tsvssv_delim, config::Delimiter, util};
+use crate::{CliResult, cmd::joinp::tsvssv_delim, config::Delimiter, select::SelectColumns, util};
 
 #[derive(Deserialize)]
 struct Args {
@@ -164,6 +198,11 @@ struct Args {
     flag_sentinels_as:       Option<String>,
     flag_sentinels_embedded: bool,
     flag_sentinels_columns:  Option<String>,
+    flag_select:             Option<SelectColumns>,
+    flag_offset:             usize,
+    flag_limit:              Option<usize>,
+    flag_sample:             Option<usize>,
+    flag_seed:               Option<u64>,
     flag_jobs:               Option<usize>,
     flag_batch:              usize,
     flag_output:             Option<String>,
@@ -328,10 +367,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--compress-numeric applies to the data, not to --metadata."
         );
     }
+    if metadata_mode != MetadataMode::None
+        && (args.flag_offset > 0 || args.flag_limit.is_some() || args.flag_sample.is_some())
+    {
+        return fail_incorrectusage_clierror!(
+            "--offset, --limit & --sample pick rows of the data, so they don't apply to \
+             --metadata."
+        );
+    }
+    if args.flag_sample == Some(0) {
+        return fail_incorrectusage_clierror!("--sample must be at least 1.");
+    }
+    if args.flag_seed.is_some() && args.flag_sample.is_none() {
+        return fail_incorrectusage_clierror!("--seed requires --sample.");
+    }
     // before --output is created, so a rejected request leaves it untouched
-    let sentinels = sentinel_opts(&args, input, path, format, sentinels_as)?;
+    let selection = resolve_selection(&args, path, format)?;
+    let sentinels = sentinel_opts(
+        &args,
+        input,
+        path,
+        format,
+        sentinels_as,
+        selection.as_deref(),
+    )?;
     let check = if metadata_mode == MetadataMode::None {
-        sentinel_check(&args, path, format)
+        sentinel_check(&args, path, format, selection.as_deref())
     } else {
         SentinelCheck::Off
     };
@@ -374,10 +435,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if metadata_mode == MetadataMode::None {
         let (mut dropped, watch) = DroppedSentinels::new(format, args.flag_value_labels, check);
+        let seed = args.flag_seed.unwrap_or_else(rand::random);
+        if args.flag_sample.is_some() {
+            log::info!("--sample seed: {seed}");
+        }
         let rows = write_data(
             &args,
             path,
             format,
+            selection.as_deref(),
+            seed,
             sentinels,
             watch,
             &mut dropped,
@@ -393,6 +460,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         write_metadata(
             path,
             format,
+            selection.as_deref(),
             &metadata_mode,
             sas_labels.as_ref(),
             delim,
@@ -402,6 +470,143 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+/// The file's variable names, in file order, as the readers name them.
+fn file_variables(path: &Path, format: Format) -> CliResult<Vec<String>> {
+    let schema = match format.readstat_format() {
+        Some(rs_format) => readstat_schema(path, None, Some(rs_format))?,
+        None => polars_readstat_rs::scan_por(path, ScanOptions::default())?.collect_schema()?,
+    };
+    Ok(schema.iter_names().map(ToString::to_string).collect())
+}
+
+/// The variables `--select` picks, in the order it names them.
+fn resolve_selection(args: &Args, path: &Path, format: Format) -> CliResult<Option<Vec<String>>> {
+    let Some(select) = &args.flag_select else {
+        return Ok(None);
+    };
+    let variables = file_variables(path, format)?;
+    let header: csv::ByteRecord = variables.iter().map(String::as_bytes).collect();
+    let picked = match select.selection(&header, true) {
+        Ok(picked) => picked,
+        Err(e) => return fail_incorrectusage_clierror!("--select: {e}"),
+    };
+    if picked.is_empty() {
+        return fail_incorrectusage_clierror!("--select picks no variables.");
+    }
+    let mut names: Vec<String> = Vec::with_capacity(picked.len());
+    for &i in picked.iter() {
+        let name = &variables[i];
+        if names.contains(name) {
+            return fail_incorrectusage_clierror!(
+                "--select picks the variable \"{name}\" more than once."
+            );
+        }
+        names.push(name.clone());
+    }
+    Ok(Some(names))
+}
+
+fn row_count(path: &Path, format: Format) -> CliResult<Option<u64>> {
+    let Some(rs_format) = format.readstat_format() else {
+        return Ok(None);
+    };
+    if format == Format::SasXpt {
+        // XPT's metadata JSON doesn't carry its row count
+        return Ok(Some(
+            polars_readstat_rs::read_xpt_metadata(path)?.row_count as u64,
+        ));
+    }
+    let meta = readstat_metadata_json(path, Some(rs_format)).map_err(|e| {
+        crate::CliError::Other(format!(
+            "Could not read the metadata of \"{}\": {e}",
+            path.display()
+        ))
+    })?;
+    let meta: serde_json::Value = serde_json::from_str(&meta)?;
+    Ok(meta["row_count"].as_u64())
+}
+
+/// The rows `--offset`, `--limit` & `--sample` keep, by their 0-based
+/// position in the file. The sample is drawn once, so every pass over the
+/// file (the `--compress-numeric` check, then the write) keeps the same rows.
+#[derive(Clone, Default)]
+struct RowWindow {
+    offset: u64,
+    end:    Option<u64>,
+    /// Sorted positions, all within `offset..end`.
+    sample: Option<Vec<u64>>,
+}
+
+impl RowWindow {
+    fn new(args: &Args) -> Self {
+        let offset = args.flag_offset as u64;
+        Self {
+            offset,
+            end: args
+                .flag_limit
+                .map(|limit| offset.saturating_add(limit as u64)),
+            sample: None,
+        }
+    }
+
+    /// Draw `--sample` from the window, now that the file's row count is
+    /// known. With no more rows than the sample size, every row is kept.
+    fn draw(&mut self, args: &Args, seed: u64, rows: u64) {
+        let Some(n) = args.flag_sample else {
+            return;
+        };
+        let end = self.end.map_or(rows, |end| end.min(rows));
+        let len = end.saturating_sub(self.offset);
+        if (n as u64) >= len {
+            return;
+        }
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut positions: Vec<u64> = rand::seq::index::sample(&mut rng, len as usize, n)
+            .into_iter()
+            .map(|i| self.offset + i as u64)
+            .collect();
+        positions.sort_unstable();
+        self.sample = Some(positions);
+    }
+
+    fn is_all(&self) -> bool {
+        self.offset == 0 && self.end.is_none() && self.sample.is_none()
+    }
+
+    /// How many rows the reader has to read: up to the last row kept.
+    fn n_rows(&self) -> Option<usize> {
+        let last = match &self.sample {
+            Some(sample) => Some(sample.last().map_or(0, |&p| p + 1)),
+            None => self.end,
+        };
+        last.map(|n| usize::try_from(n).unwrap_or(usize::MAX))
+    }
+
+    /// Keep the rows of a batch whose first row is at position `start`.
+    fn apply(&self, df: &DataFrame, start: u64) -> PolarsResult<DataFrame> {
+        let height = df.height() as u64;
+        let lo = self.offset.max(start);
+        let hi = self
+            .end
+            .map_or(start + height, |end| end.min(start + height));
+        if lo >= hi {
+            return Ok(df.clear());
+        }
+        match &self.sample {
+            None => Ok(df.slice((lo - start) as i64, (hi - lo) as usize)),
+            Some(sample) => {
+                let first = sample.partition_point(|&p| p < lo);
+                let last = sample.partition_point(|&p| p < hi);
+                let idx: Vec<IdxSize> = sample[first..last]
+                    .iter()
+                    .map(|&p| (p - start) as IdxSize)
+                    .collect();
+                df.take(&IdxCa::from_vec(PlSmallStr::EMPTY, idx))
+            },
+        }
+    }
 }
 
 /// A suffix no variable name can carry, so probing with it never collides.
@@ -419,6 +624,7 @@ fn sentinel_opts(
     path: &Path,
     format: Format,
     sentinels_as: SentinelsAs,
+    selection: Option<&[String]>,
 ) -> CliResult<Option<InformativeNullOpts>> {
     if sentinels_as == SentinelsAs::None {
         if args.flag_sentinels_embedded || args.flag_sentinels_columns.is_some() {
@@ -462,6 +668,19 @@ fn sentinel_opts(
                 }
             }
             check_sentinel_columns(args, input, path, format, rs_format, &names)?;
+            if let Some(selection) = selection {
+                let outside: Vec<String> = names
+                    .iter()
+                    .filter(|n| !selection.contains(n))
+                    .map(|n| format!("\"{n}\""))
+                    .collect();
+                if !outside.is_empty() {
+                    return fail_incorrectusage_clierror!(
+                        "--sentinels-columns names {}, which --select leaves out.",
+                        outside.join(", ")
+                    );
+                }
+            }
             InformativeNullColumns::Selected(names)
         },
     };
@@ -539,7 +758,12 @@ const SPSS_COUNT_MAX_BYTES: u64 = 128 * 1024 * 1024;
 /// instead, while SAS & Stata files don't, so they get no check. Nor is it
 /// done for files with no variable that can hold a sentinel, or for the XPT &
 /// POR readers, which don't report sentinels.
-fn sentinel_check(args: &Args, path: &Path, format: Format) -> SentinelCheck {
+fn sentinel_check(
+    args: &Args,
+    path: &Path,
+    format: Format,
+    selection: Option<&[String]>,
+) -> SentinelCheck {
     if args.flag_sentinels_as.is_some() {
         return SentinelCheck::Off;
     }
@@ -572,6 +796,7 @@ fn sentinel_check(args: &Args, path: &Path, format: Format) -> SentinelCheck {
     let variables: Vec<String> = schema
         .iter_names()
         .filter_map(|name| name.strip_suffix(PROBE_SUFFIX))
+        .filter(|name| selection.is_none_or(|sel| sel.iter().any(|s| s == name)))
         .map(str::to_string)
         .collect();
     if variables.is_empty() {
@@ -859,27 +1084,26 @@ impl WholeNumberScan {
     }
 }
 
-/// `--compress-numeric` pass 1: the float columns whose every value, across
-/// the whole file, is a whole number. Upstream's own `compress_numeric` can't
-/// be used: it decides per batch, so one column can print `2` in one batch and
-/// `2.0` in the next, and it turns 0/1 & all-null columns into Booleans.
-///
-/// Sentinel columns are left out of the scan (`informative_nulls: None`), so a
-/// variable that `--sentinels-embedded` turns into text is judged by its
-/// numeric values alone.
 fn whole_number_columns(
     path: &Path,
     rs_format: ReadStatFormat,
     opts: &ScanOptions,
     batch_size: Option<usize>,
+    selection: Option<&[String]>,
+    window: &RowWindow,
 ) -> CliResult<Vec<PlSmallStr>> {
+    // the window picks rows by position, so they must arrive in file order
     let scan_opts = ScanOptions {
         informative_nulls: None,
-        preserve_order: Some(false),
+        preserve_order: Some(!window.is_all()),
         ..opts.clone()
     };
     let schema = readstat_schema(path, Some(scan_opts.clone()), Some(rs_format))?;
     let mut scan = WholeNumberScan::new(&schema);
+    if let Some(selection) = selection {
+        scan.candidates
+            .retain(|(name, _)| selection.iter().any(|s| s == name.as_str()));
+    }
     if scan.candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -889,11 +1113,19 @@ fn whole_number_columns(
         Some(scan_opts),
         Some(rs_format),
         Some(scan.names()),
-        None,
+        window.n_rows(),
         batch_size,
     )?;
+    let mut start = 0_u64;
     for batch in batches {
-        scan.update(&batch?)?;
+        let batch = batch?;
+        let height = batch.height() as u64;
+        if window.is_all() {
+            scan.update(&batch)?;
+        } else {
+            scan.update(&window.apply(&batch, start)?)?;
+        }
+        start += height;
     }
     Ok(scan.columns())
 }
@@ -1390,6 +1622,8 @@ fn write_data<W: Write>(
     args: &Args,
     path: &Path,
     format: Format,
+    selection: Option<&[String]>,
+    seed: u64,
     sentinels: Option<InformativeNullOpts>,
     watch: Option<InformativeNullOpts>,
     dropped: &mut DroppedSentinels,
@@ -1430,20 +1664,68 @@ fn write_data<W: Write>(
     // written exactly once even when the file has no rows at all.
     let rs_format = format.readstat_format();
     let batch_size = (args.flag_batch > 0).then_some(args.flag_batch);
+    let mut window = RowWindow::new(args);
     let (mut schema, por_df) = if let Some(rs_format) = rs_format {
+        if args.flag_sample.is_some() {
+            let Some(rows) = row_count(path, format)? else {
+                return fail_clierror!(
+                    "Cannot --sample \"{}\": its metadata doesn't record how many rows it has.",
+                    path.display()
+                );
+            };
+            window.draw(args, seed, rows);
+        }
         (
             readstat_schema(path, Some(opts.clone()), Some(rs_format))?,
             None,
         )
     } else {
-        let df = polars_readstat_rs::scan_por(path, opts.clone())?.collect()?;
+        let mut df = polars_readstat_rs::scan_por(path, opts.clone())?.collect()?;
+        if let Some(selection) = selection {
+            df = df.select(selection.iter().map(String::as_str))?;
+        }
+        window.draw(args, seed, df.height() as u64);
+        if !window.is_all() {
+            df = window.apply(&df, 0)?;
+        }
         (df.schema().clone(), Some(df))
+    };
+
+    // The columns written, in order: each selected variable, followed by its
+    // sentinel column if it has one. A variable of the file that happens to
+    // be named `<name>_null` is not a sentinel column.
+    let order: Option<Vec<PlSmallStr>> = match (selection, rs_format) {
+        (Some(selection), Some(_)) => {
+            let separate = sentinel_columns.is_some() && !embedded;
+            let variables = if separate {
+                file_variables(path, format)?
+            } else {
+                Vec::new()
+            };
+            let mut order: Vec<PlSmallStr> = Vec::with_capacity(selection.len());
+            for name in selection {
+                order.push(PlSmallStr::from(name.as_str()));
+                let indicator = format!("{name}_null");
+                if separate && schema.contains(&indicator) && !variables.contains(&indicator) {
+                    order.push(PlSmallStr::from(indicator));
+                }
+            }
+            let mut projected = Schema::with_capacity(order.len());
+            for name in &order {
+                if let Some(dtype) = schema.get(name) {
+                    projected.insert(name.clone(), dtype.clone());
+                }
+            }
+            schema = std::sync::Arc::new(projected);
+            Some(order)
+        },
+        _ => None,
     };
 
     let mut whole = if !args.flag_compress_numeric {
         Vec::new()
     } else if let Some(rs_format) = rs_format {
-        whole_number_columns(path, rs_format, &opts, batch_size)?
+        whole_number_columns(path, rs_format, &opts, batch_size, selection, &window)?
     } else if let Some(df) = &por_df {
         let mut whole = WholeNumberScan::new(df.schema());
         whole.update(df)?;
@@ -1502,13 +1784,26 @@ fn write_data<W: Write>(
             path,
             Some(read_opts),
             Some(rs_format),
-            None,
-            None,
+            selection.map(<[String]>::to_vec),
+            window.n_rows(),
             batch_size,
         )?;
+        let mut start = 0_u64;
         for batch in batches {
             let mut df = batch?;
+            let height = df.height() as u64;
+            if !window.is_all() {
+                // before the sentinel check, so it counts only the rows written
+                df = window.apply(&df, start)?;
+            }
+            start += height;
+            if df.height() == 0 {
+                continue;
+            }
             dropped.take(&mut df)?;
+            if let Some(order) = &order {
+                df = df.select(order.iter().cloned())?;
+            }
             if let Some(labels) = sas_labels {
                 labels.apply(&mut df)?;
             }
@@ -1536,6 +1831,7 @@ fn write_data<W: Write>(
 fn write_metadata<W: Write>(
     path: &Path,
     format: Format,
+    selection: Option<&[String]>,
     mode: &MetadataMode,
     sas_labels: Option<&SasLabels>,
     delim: u8,
@@ -1555,6 +1851,9 @@ fn write_metadata<W: Write>(
     if let Some(labels) = sas_labels {
         json = labels.annotate(&json)?;
     }
+    if let Some(selection) = selection {
+        json = select_metadata(&json, selection)?;
+    }
 
     match mode {
         MetadataMode::Json => {
@@ -1570,6 +1869,41 @@ fn write_metadata<W: Write>(
         MetadataMode::None => unreachable!("handled by the caller"),
     }
     Ok(())
+}
+
+/// Keep only the `--select`ed variables in the per-variable metadata, in the
+/// order selected. The list is the array of objects with a "name" - named
+/// `columns` for SAS & `variables` for Stata & SPSS - and the file-level keys
+/// are kept as they are.
+fn select_metadata(json: &str, selection: &[String]) -> CliResult<String> {
+    use serde_json::Value;
+
+    let mut value: Value = serde_json::from_str(json)?;
+    let Some(obj) = value.as_object_mut() else {
+        return Ok(json.to_string());
+    };
+    for list in obj.values_mut() {
+        let Some(vars) = list.as_array_mut() else {
+            continue;
+        };
+        if vars.is_empty()
+            || !vars
+                .iter()
+                .all(|v| v.get("name").is_some_and(Value::is_string))
+        {
+            continue;
+        }
+        let picked: Vec<Value> = selection
+            .iter()
+            .filter_map(|name| {
+                vars.iter()
+                    .find(|v| v["name"].as_str() == Some(name.as_str()))
+                    .cloned()
+            })
+            .collect();
+        *vars = picked;
+    }
+    Ok(serde_json::to_string(&value)?)
 }
 
 /// Flatten the per-variable metadata into a CSV table.

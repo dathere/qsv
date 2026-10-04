@@ -26,7 +26,8 @@ SPSS    .sav, .zsav, .por
 ```
 
 Coded values are written as their underlying codes, not their labels, so the
-conversion is lossless. Use --value-labels to decode them instead. SAS keeps
+conversion is lossless. SPSS durations (DTIME) are written as their number of
+seconds, as SPSS stores them. Use --value-labels to decode them instead. SAS keeps
 its value labels in a separate .sas7bcat format catalog, which --value-labels
 finds next to the data file, or --sas7bcat names.
 

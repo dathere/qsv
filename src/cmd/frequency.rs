@@ -1818,11 +1818,11 @@ fn apply_ranking_strategy_weighted(
 ///   only values with weight greater than or equal to the absolute value of this limit; if zero, no
 ///   limits are applied
 /// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
-///   is 0 or when it is greater than or equal to the number of unique values; when this is a
-///   positive number less than the unique count, no limits are applied.
+///   is 0 or when the number of unique values is greater than or equal to it; a column with fewer
+///   unique values than a positive threshold is returned in full.
 fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_threshold: usize) {
     let unique_counts_len = counts.len();
-    if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
+    if lmt_threshold == 0 || unique_counts_len >= lmt_threshold {
         let abs_limit = limit.unsigned_abs();
 
         #[allow(clippy::cast_precision_loss)]
@@ -1842,8 +1842,8 @@ fn apply_limits_weighted(counts: &mut Vec<(Vec<u8>, f64)>, limit: isize, lmt_thr
 /// * `limit` - Limit value (positive = top N, negative = threshold)
 /// * `unq_limit` - Unique limit for all-unique columns
 /// * `lmt_threshold` - Threshold controlling when limits are applied. Limits are applied when this
-///   is 0 or when it is >= the number of unique values. When this is a positive number less than
-///   the unique count, no limits are applied.
+///   is 0 or when the number of unique values is >= it. A column with fewer unique values than a
+///   positive threshold is returned in full.
 /// * `all_unique` - Whether the column has all unique values
 fn apply_limits_unweighted(
     counts: &mut Vec<(Vec<u8>, u64)>,
@@ -1853,7 +1853,7 @@ fn apply_limits_unweighted(
     all_unique: bool,
 ) {
     let unique_counts_len = counts.len();
-    if lmt_threshold == 0 || lmt_threshold >= unique_counts_len {
+    if lmt_threshold == 0 || unique_counts_len >= lmt_threshold {
         let abs_limit = limit.unsigned_abs();
         let unique_limited = if all_unique && limit > 0 && unq_limit != abs_limit && unq_limit > 0 {
             counts.truncate(unq_limit);
@@ -3013,7 +3013,8 @@ impl Args {
             // Subtract null_weight from other_weight since NULL is handled separately
             (
                 total_weight - count_sum - null_weight,
-                unique_counts_len.saturating_sub(1), // NULL was removed from counts
+                // unlike counts(), unique_counts_len was taken after NULL left `counts`
+                unique_counts_len,
             )
         } else {
             (total_weight - count_sum, unique_counts_len)
@@ -3077,8 +3078,16 @@ impl Args {
             abs_limit
         };
 
+        // apply_limits_unweighted tests the threshold after the NULL bucket is set aside
+        // (when --pct-nulls is off), so use that same count here or the two paths could
+        // disagree for a column whose count including NULL equals the threshold.
+        let threshold_unique_count = if !self.flag_pct_nulls && ftab.count(&Vec::new()) > 0 {
+            unique_counts_len - 1
+        } else {
+            unique_counts_len
+        };
         let threshold_fires =
-            self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len;
+            self.flag_lmt_threshold == 0 || threshold_unique_count >= self.flag_lmt_threshold;
         let use_topn =
             self.flag_limit > 0 && threshold_fires && effective_limit < unique_counts_len;
 

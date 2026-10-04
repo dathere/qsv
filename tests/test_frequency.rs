@@ -380,9 +380,10 @@ fn frequency_limit_threshold() {
 
 #[test]
 fn frequency_limit_threshold_notmet() {
+    // both columns have 4 unique values, below the threshold of 5
     let (wrk, mut cmd) = setup("frequency_limit_threshold_notmet");
     cmd.args(["--limit", "-2"])
-        .args(["--lmt-threshold", "3"])
+        .args(["--lmt-threshold", "5"])
         .arg("--pct-nulls");
 
     let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -399,6 +400,143 @@ fn frequency_limit_threshold_notmet() {
         svec!["h2", "z", "3", "42.85714", "1"],
     ];
     assert_eq!(got, expected);
+}
+
+// --lmt-threshold applies limits only to columns with at least that many unique values:
+// `hi` (6 unique) is limited, `lo` (2 unique) is returned in full.
+fn setup_lmt_threshold_mixed(name: &str) -> (Workdir, process::Command) {
+    let rows = vec![
+        svec!["lo", "hi", "w"],
+        svec!["x", "a", "1"],
+        svec!["x", "a", "1"],
+        svec!["x", "a", "1"],
+        svec!["y", "b", "1"],
+        svec!["y", "c", "1"],
+        svec!["x", "d", "1"],
+        svec!["y", "e", "1"],
+        svec!["x", "f", "1"],
+    ];
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--limit", "1"])
+        .args(["--lmt-threshold", "4"]);
+    (wrk, cmd)
+}
+
+fn lmt_threshold_mixed_expected() -> Vec<Vec<String>> {
+    vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["lo", "x", "5", "62.5", "1"],
+        svec!["lo", "y", "3", "37.5", "2"],
+        svec!["hi", "a", "3", "37.5", "1"],
+        svec!["hi", "Other (5)", "5", "62.5", "0"],
+    ]
+}
+
+#[test]
+fn frequency_limit_threshold_limits_only_high_cardinality() {
+    let (wrk, mut cmd) = setup_lmt_threshold_mixed("frequency_lmt_threshold_high_card");
+    cmd.args(["--select", "lo,hi"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, lmt_threshold_mixed_expected());
+}
+
+#[test]
+fn frequency_limit_threshold_limits_only_high_cardinality_weighted() {
+    let (wrk, mut cmd) = setup_lmt_threshold_mixed("frequency_lmt_threshold_high_card_weighted");
+    cmd.args(["--select", "lo,hi,w"]).args(["--weight", "w"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, lmt_threshold_mixed_expected());
+}
+
+// `v` has 4 unique values counting NULL, 3 without. With --pct-nulls off (the default),
+// NULL is set aside before the threshold is tested, so 3 < 4 and `v` is returned in full;
+// the top-N fast path must agree with the full-sort path on that count.
+fn setup_lmt_threshold_null_boundary(name: &str) -> (Workdir, process::Command) {
+    let rows = vec![
+        svec!["v", "k"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["b", "1"],
+        svec!["c", "1"],
+        svec!["", "1"],
+    ];
+    let wrk = Workdir::new(name);
+    wrk.create("in.csv", rows);
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .args(["--select", "v"])
+        .args(["--limit", "1"])
+        .args(["--lmt-threshold", "4"]);
+    (wrk, cmd)
+}
+
+#[test]
+fn frequency_limit_threshold_null_set_aside() {
+    let (wrk, mut cmd) = setup_lmt_threshold_null_boundary("frequency_lmt_threshold_null_aside");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["v", "a", "3", "60", "1"],
+        svec!["v", "b", "1", "20", "2"],
+        svec!["v", "c", "1", "20", "2"],
+        svec!["v", "(NULL)", "1", "", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_limit_threshold_null_counted() {
+    let (wrk, mut cmd) = setup_lmt_threshold_null_boundary("frequency_lmt_threshold_null_counted");
+    cmd.arg("--pct-nulls");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["v", "a", "3", "50", "1"],
+        svec!["v", "Other (3)", "3", "50", "0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// With a NULL set aside, the weighted "Other" row must still account for the values
+// past --limit; NULL was subtracted from the unique count twice, dropping `b` entirely.
+#[test]
+fn frequency_weighted_other_with_null() {
+    let wrk = Workdir::new("frequency_weighted_other_with_null");
+    let rows = vec![
+        svec!["v", "w"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["a", "1"],
+        svec!["b", "1"],
+        svec!["", "1"],
+    ];
+    wrk.create("in.csv", rows);
+
+    for threshold in ["0", "1"] {
+        let mut cmd = wrk.command("frequency");
+        cmd.arg("in.csv")
+            .args(["--select", "v,w"])
+            .args(["--weight", "w"])
+            .args(["--limit", "1"])
+            .args(["--lmt-threshold", threshold]);
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["v", "a", "3", "75", "1"],
+            svec!["v", "Other (1)", "1", "25", "0"],
+            svec!["v", "(NULL)", "1", "", ""],
+        ];
+        assert_eq!(got, expected, "--lmt-threshold {threshold}");
+    }
 }
 
 // Locks the top_n/bottom_n tie-break used by the --limit fast path: on a count

@@ -659,6 +659,50 @@ pub fn is_state_code(raw: &str) -> bool {
     state_geoid_for_code(raw).is_some()
 }
 
+/// Island-area names a column may hold besides the 52 in [`USPS_STATE_FIPS`] (#4694): each
+/// `TIGERweb` `NAME`, plus the common spellings of the two whose official name differs from
+/// everyday use. Lower-case, as matched.
+const ISLAND_AREA_NAMES: &[(&str, &str)] = &[
+    ("american samoa", "60"),
+    ("guam", "66"),
+    ("commonwealth of the northern mariana islands", "69"),
+    ("northern mariana islands", "69"),
+    ("united states virgin islands", "78"),
+    ("u.s. virgin islands", "78"),
+    ("us virgin islands", "78"),
+];
+
+/// State GEOID for any spelling a state column may hold: a USPS code, a 1-2 digit FIPS, or a full
+/// name. For joining a column that mixes spellings onto one feature key (#4694).
+#[must_use]
+pub fn state_geoid_for_any_spelling(raw: &str) -> Option<String> {
+    state_geoid_for_code(raw).or_else(|| state_geoid_for_name(raw).map(str::to_string))
+}
+
+/// State GEOID for a state's full NAME (`Pennsylvania`, `u.s. virgin islands`), or `None`.
+///
+/// Exact and ASCII-case-insensitive after trimming, never fuzzy: a near-miss spelling must stay
+/// unmatched and be reported, not guessed. Kept apart from [`state_geoid_for_code`] /
+/// [`is_state_code`] on purpose — those decide routing for USPS and FIPS columns, and a name is a
+/// different shape that callers opt into explicitly.
+#[must_use]
+pub fn state_geoid_for_name(raw: &str) -> Option<&'static str> {
+    let folded = raw.trim().to_ascii_lowercase();
+    if folded.is_empty() {
+        return None;
+    }
+    USPS_STATE_FIPS
+        .iter()
+        .find(|(.., name)| name.eq_ignore_ascii_case(&folded))
+        .map(|(_, fips, _)| *fips)
+        .or_else(|| {
+            ISLAND_AREA_NAMES
+                .iter()
+                .find(|(name, _)| *name == folded)
+                .map(|(_, fips)| *fips)
+        })
+}
+
 /// Is `values` a column of STATE codes and nothing else a finer layer could claim?
 ///
 /// True when at least half of the non-empty values are state codes ([`is_state_code`]) AND no
@@ -696,6 +740,10 @@ pub fn is_state_code_column(values: &[String]) -> bool {
 /// codes, `GEOID` for FIPS. Decided by majority so a stray value of the other shape (a typo, a
 /// footnote row) cannot flip the key for the whole column.
 ///
+/// Full state NAMES vote for `GEOID` (#4694): no attribute is spelled the way a hand-typed name
+/// column is (`TIGERweb` calls the Virgin Islands "United States Virgin Islands"), so `viz`
+/// joins names through an alias map onto whichever key wins here.
+///
 /// The fetched features carry both, and the map joins on whichever this names — a USPS column
 /// joined on GEOID would match nothing. It is recorded in the cached sidecar, so a warm run keys
 /// the map exactly as the cold run did.
@@ -706,7 +754,7 @@ fn state_feature_id_key(codes: &[String]) -> &'static str {
         if code.is_empty() {
             continue;
         }
-        if code.bytes().all(|b| b.is_ascii_digit()) {
+        if code.bytes().all(|b| b.is_ascii_digit()) || state_geoid_for_name(code).is_some() {
             digit += 1;
         } else if code.bytes().all(|b| b.is_ascii_alphabetic()) {
             alpha += 1;
@@ -729,12 +777,14 @@ fn state_feature_id_key(codes: &[String]) -> &'static str {
 /// scored against the caller's original, unfiltered codes, so nothing is hidden from the honesty
 /// check by being dropped here.
 fn normalize_codes(codes: &[String], layer: Layer) -> Vec<String> {
-    // A state column holds USPS codes at least as often as FIPS, and a USPS code is not a
-    // paddable number, so it gets its own spelling-aware path to the same GEOID.
+    // A state column holds USPS codes or full names at least as often as FIPS, and neither is a
+    // paddable number, so it gets its own spelling-aware path to the same GEOID (#4694).
     if layer == Layer::State {
         let mut out: Vec<String> = codes
             .iter()
-            .filter_map(|c| state_geoid_for_code(c))
+            .filter_map(|c| {
+                state_geoid_for_code(c).or_else(|| state_geoid_for_name(c).map(str::to_string))
+            })
             .collect();
         out.sort_unstable();
         out.dedup();
@@ -1964,12 +2014,12 @@ mod tests {
 
     #[test]
     fn state_codes_normalize_from_usps_or_fips() {
-        let codes: Vec<String> = ["ca", " PA ", "6", "42", "GU", "AA", "California", "123", ""]
+        let codes: Vec<String> = ["ca", " PA ", "6", "42", "GU", "AA", "Atlantis", "123", ""]
             .iter()
             .map(|s| (*s).to_string())
             .collect();
         // USPS (any case, island areas included) and 1-2 digit FIPS all reach the GEOID; a
-        // military "state" (AA), a name, and a 3-digit code do not
+        // military "state" (AA), a non-state word, and a 3-digit code do not
         assert_eq!(normalize_codes(&codes, Layer::State), ["06", "42", "66"]);
         // and no other layer accepts them
         for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
@@ -1978,6 +2028,47 @@ mod tests {
                 "{} must not normalize state codes",
                 other.label()
             );
+        }
+    }
+
+    #[test]
+    fn state_names_normalize_exactly_including_island_area_aliases() {
+        let v = |xs: &[&str]| xs.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            normalize_codes(
+                &v(&[
+                    "Pennsylvania",
+                    " new york ",
+                    "DISTRICT OF COLUMBIA",
+                    "Puerto Rico",
+                    "Guam",
+                    "American Samoa",
+                    "Northern Mariana Islands",
+                    "Commonwealth of the Northern Mariana Islands",
+                    "U.S. Virgin Islands",
+                    "US Virgin Islands",
+                    "United States Virgin Islands",
+                ]),
+                Layer::State
+            ),
+            ["11", "36", "42", "60", "66", "69", "72", "78"]
+        );
+        // never fuzzy: a near miss, a bare "Virgin Islands" (the British ones exist too) and a
+        // county spelling stay unmatched
+        for miss in [
+            "Pensylvania",
+            "Virgin Islands",
+            "Washington County",
+            "New York City",
+        ] {
+            assert_eq!(state_geoid_for_name(miss), None, "{miss}");
+        }
+        // names are their own shape: the code predicates that drive routing are unchanged
+        assert!(!is_state_code("Pennsylvania"));
+        assert!(!is_state_code_column(&v(&["Pennsylvania", "Ohio"])));
+        // and no finer layer accepts a state name
+        for other in [Layer::County, Layer::Zcta, Layer::Tract, Layer::Place] {
+            assert!(normalize_codes(&v(&["Ohio"]), other).is_empty());
         }
     }
 
@@ -2001,6 +2092,13 @@ mod tests {
         // one stray value of the other shape cannot flip the column's key
         assert_eq!(state_feature_id_key(&v(&["CA", "PA", "42"])), "STUSAB");
         assert_eq!(state_feature_id_key(&v(&["06", "42", "CA"])), "GEOID");
+        // full names vote GEOID (#4694) — "Ohio" is all-alphabetic, but it is not a USPS code
+        assert_eq!(
+            state_feature_id_key(&v(&["Ohio", "Texas", "Utah"])),
+            "GEOID"
+        );
+        assert_eq!(state_feature_id_key(&v(&["Ohio", "Texas", "PA"])), "GEOID");
+        assert_eq!(state_feature_id_key(&v(&["CA", "PA", "Ohio"])), "STUSAB");
     }
 
     #[test]

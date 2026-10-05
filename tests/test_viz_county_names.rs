@@ -92,6 +92,35 @@ fn viz_county_names_bare_basename_resolves() {
     });
 }
 
+/// #4694: a bare county name that is also a STATE name ("Washington") still goes down the county
+/// path when --region-state declares the column holds counties. Without that precedence, a
+/// state-name majority would send these rows to the States layer and draw the wrong geography.
+#[test]
+#[serial]
+fn viz_county_names_beat_state_names_with_region_state() {
+    let wrk = Workdir::new("viz_county_names_beat_state_names_with_region_state");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases
+Washington,PA,10
+Allegheny,PA,20
+",
+    );
+    with_mock_tigerweb(|base, observed| {
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--region-state", "state"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "county names failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(html.contains("42125") && html.contains("42003"), "{stderr}");
+        assert!(
+            observed.state_queries.lock().unwrap().is_empty(),
+            "the States layer must not be queried for a county column"
+        );
+    });
+}
+
 /// A name several counties carry, with no state to resolve it, is REFUSED — not resolved to an
 /// arbitrary state and not counted as a soft drop. 422 county names are shared nationally,
 /// covering 52% of counties and skewing populous, so a soft drop would clear the coverage gate

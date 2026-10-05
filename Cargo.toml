@@ -160,7 +160,7 @@ opt-level = 1                # optional: faster test runtime for heavy deps (pol
 
 # Fast "near-release" profile for perf iteration
 [profile.release-dev]
-inherits = "release"
+inherits = "release-luau"
 lto = "thin"
 codegen-units = 16
 incremental = true

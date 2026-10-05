@@ -373,7 +373,12 @@ async fn serve_state_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResp
         ("42", "PA", "Pennsylvania", 44.0),
         ("66", "GU", "Guam", 46.0),
         // TIGERweb's own spellings, which differ from everyday use (#4694)
-        ("69", "MP", "Commonwealth of the Northern Mariana Islands", 48.0),
+        (
+            "69",
+            "MP",
+            "Commonwealth of the Northern Mariana Islands",
+            48.0,
+        ),
         ("78", "VI", "United States Virgin Islands", 50.0),
     ]
     .iter()
@@ -1769,7 +1774,10 @@ fn viz_geojson_auto_resolves_full_state_names() {
         assert_eq!(z.get("42"), Some(&15.0), "Pennsylvania/pennsylvania: {z:?}");
         assert_eq!(z.get("36"), Some(&20.0));
         let hover = traces[0]["hovertext"].to_string();
-        assert!(hover.contains("Pennsylvania"), "hover lost the name: {hover}");
+        assert!(
+            hover.contains("Pennsylvania"),
+            "hover lost the name: {hover}"
+        );
 
         let fetches: Vec<String> = observed
             .state_queries
@@ -1781,6 +1789,40 @@ fn viz_geojson_auto_resolves_full_state_names() {
             .collect();
         assert_eq!(fetches.len(), 1, "one geometry fetch expected: {fetches:?}");
         assert_eq!(query_param(&fetches[0], "where"), "GEOID IN ('36','42')");
+    });
+}
+
+// #4694: a column read as state NAMES that leaves values unmatched may really be bare county names
+// (Washington, Delaware and Franklin are all county names), so the omission line says how to ask for
+// counties. A USPS column with a miss gets no such hint.
+#[test]
+#[serial]
+fn viz_geojson_auto_state_name_misses_point_at_region_state() {
+    let wrk = Workdir::new("viz_geojson_auto_state_name_misses_point_at_region_state");
+    wrk.create_from_string(
+        "names.csv",
+        "state,cases\nPennsylvania,1\nNew York,2\nFranklin,3\n",
+    );
+    wrk.create_from_string("codes.csv", "state,cases\nPA,1\nNY,2\nTX,3\n");
+
+    with_mock_tigerweb(|base, _observed| {
+        let out = state_choropleth(&wrk, base, "names.csv");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert!(stderr.contains("e.g. Franklin"), "{stderr}");
+        assert!(
+            stderr.contains("read as state names") && stderr.contains("--region-state"),
+            "the county remedy must be named: {stderr}"
+        );
+
+        let out = state_choropleth(&wrk, base, "codes.csv");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert!(stderr.contains("e.g. TX"), "{stderr}");
+        assert!(
+            !stderr.contains("read as state names"),
+            "a USPS column must not get the names hint: {stderr}"
+        );
     });
 }
 
@@ -1820,7 +1862,10 @@ fn viz_geojson_auto_mixed_state_codes_and_names_all_match() {
         let out = state_choropleth(&wrk, base, "st.csv");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "mixed column must resolve: {stderr}");
-        assert!(!stderr.contains("omitted"), "the name must not drop: {stderr}");
+        assert!(
+            !stderr.contains("omitted"),
+            "the name must not drop: {stderr}"
+        );
         let traces = choropleth_traces(&String::from_utf8_lossy(&out.stdout));
         assert_eq!(traces[0]["featureidkey"], "properties.STUSAB");
         let z = z_by_location(&traces[0]);
@@ -1885,7 +1930,10 @@ fn viz_smart_state_name_column_draws_a_census_rate_map() {
             "expected a count map and a rate map, got {} choropleth traces",
             traces.len()
         );
-        assert!(html.contains("residents"), "the rate map must be per resident");
+        assert!(
+            html.contains("residents"),
+            "the rate map must be per resident"
+        );
         let z = z_by_location(&traces[0]);
         assert!(
             z.contains_key("42") && z.contains_key("36"),

@@ -5578,6 +5578,10 @@ fn resolve_auto_geojson(
         })
         .count();
     let state_names_ok = state_layer_ok && !county_signals && state_named * 2 >= codes.len();
+    // Routed to the States layer by its NAMES rather than its codes: if some values then miss, the
+    // column may be bare county names that happen to share state names, so say how to ask for
+    // counties instead.
+    let routed_by_state_names = state_names_ok && usps_like * 2 < codes.len();
     if !(state_layer_ok && usps_like * 2 >= codes.len())
         && !state_names_ok
         && codes.iter().all(|c| !c.bytes().any(|b| b.is_ascii_digit()))
@@ -5647,9 +5651,15 @@ fn resolve_auto_geojson(
     }
     if matched < total {
         let sample = unmatched_sample.join(", ");
+        let county_hint = if routed_by_state_names {
+            " The column was read as state names; if it holds COUNTY names, pass --region-state \
+             <column> or spell them the way the Census does (Washington County)."
+        } else {
+            ""
+        };
         winfo!(
             "--geojson {spec}: {} of {total} distinct --locations values matched no boundary and \
-             are omitted from the map (e.g. {sample}).",
+             are omitted from the map (e.g. {sample}).{county_hint}",
             total - matched
         );
     }

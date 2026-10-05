@@ -1,0 +1,14 @@
+This is a statically linked (musl) build for 64-bit ARM Linux, with a reduced
+feature set: apply, fetch, foreach, self_update, lens, color and synthesize.
+luau, polars, geocode, viz, readstat and the other optional features are not
+enabled.
+
+It uses the system allocator instead of jemalloc, because tikv-jemalloc does
+not build with the native ARM64 musl toolchain. qsvdp and qsvmcp are not
+included.
+
+If your system has glibc, the aarch64-unknown-linux-gnu prebuilt has more
+features. Otherwise, compile qsv natively on this platform to enable them.
+
+https://www.gnu.org/software/libc/
+https://musl.libc.org

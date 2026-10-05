@@ -467,7 +467,7 @@ MIT
 
 ---
 
-**Updated**: 2026-09-12
+**Updated**: 2026-10-05
 **Version**: 24.0.0
 **Generator**: `qsv --update-mcp-skills`
 **Skills**: 57 commands

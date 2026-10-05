@@ -5,10 +5,19 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [24.0.0] - 2026-10-15
+
+Companion release to qsv 24.0.0, "The Evidence Act Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 24.0.0 because the regenerated skill JSONs advertise a command and options that only exist in the new binary (`writestat`, and eleven new `readstat` options). The headline for MCP/Cowork users is the **`readstat` ↔ `writestat` round trip** for SAS, Stata and SPSS files, which takes the skill count to **57**. Update your qsv binary first.
 
 ### Added
 - **New `qsv-writestat` skill** ([#4728](https://github.com/dathere/qsv/issues/4728)). Exposes the new `writestat` command, the inverse of `qsv-readstat`: it writes a CSV as an SPSS (`.sav`, `.por`), Stata (`.dta`) or SAS transport (`.xpt`) file, restoring variable labels, value labels and missing values from the JSON Schema data dictionary `readstat --dictionary` wrote. Categorized as `conversion`, alongside `readstat`. As its output is a binary file, a call without an `output_file` is refused with a message naming the extensions, rather than writing into the auto-created text temp file other commands use. Skill count 56 -> 57 (qsvmcp 69 -> 70 commands, full qsv 79 -> 80).
+
+### Changed
+- **`qsv-readstat` gains eleven options**, all new in the 24.0.0 binary: `--dictionary` (a JSON Schema data dictionary from the file's own metadata, which `qsv-writestat`, `qsv-validate` and `qsv-viz` read), partial reads with `--select`, `--offset`, `--limit`, `--sample` and `--seed`, user-defined missing values with `--sentinels-as`, `--sentinels-columns` and `--sentinels-embedded`, SAS format catalogs with `--sas7bcat`, and `--compress-numeric`.
+- **`qsv-moarstats` describes 73 statistical measures, up from 56**: moment skewness, L-moment ratios, lag-1 autocorrelation, the Hoover index and Benford MAD under `advanced`, plus Cramér's V and OLS regression under `bivariate-stats`. Its cardinality threshold now also gates `cramersv`.
+- **`qsv-stats` and `qsv-frequency` gain `--flexible`**, to read CSVs with ragged records instead of refusing them. `qsv-stats`' `everything` option now warns that mode and cardinality tracking dominates memory on large files and points to `--mode-cardinality-cap`.
+- **Corrected option descriptions** carried over from the binary's usage text: `qsv-extsort`'s `memory-limit` is a byte budget for each in-memory chunk, `qsv-geocode`'s `admin1` filter returns only places inside the listed admin1s, and `qsv-joinp`'s `maintain-order` defaults to `none`. `qsv-describegpt`, `qsv-pivotp`, `qsv-validate` and `qsv-viz` descriptions are refreshed to match the binary as well.
+- **The qsv binary can now print these tool definitions itself** ([#4638](https://github.com/dathere/qsv/issues/4638)): `<command> --help --format json` emits a command's definition in the same schema as the skill JSONs here, and `--export-tool-definitions <dir>` writes them for every installed command. The binary's tests assert its output is byte-identical to the committed skills.
 
 ## [23.0.1] - 2026-09-13
 

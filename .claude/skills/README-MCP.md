@@ -621,7 +621,7 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-09-12
+**Updated**: 2026-10-05
 **Version**: 24.0.0
 **Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 57 discoverable via `qsv_search_tools`
 **Skills**: 57 qsv commands

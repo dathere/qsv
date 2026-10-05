@@ -15,10 +15,13 @@ name: Publish (Linux only)
 # pgo-train.sh pivoted on a column with 841,014 distinct values. See issue #4589 and the
 # fix in 139c2ef33.
 #
-# Currently covers x86_64-unknown-linux-gnu only - the one Linux target that has ever
-# needed a retry. If musl or aarch64 ever needs one, copy its entry from publish.yml
-# verbatim; scripts/check-publish-matrix-sync.py accepts any SUBSET of publish.yml's Linux
-# entries but requires each one present here to match publish.yml exactly.
+# Covers x86_64-unknown-linux-gnu and aarch64-unknown-linux-musl - the Linux targets that
+# have needed a retry (aarch64 musl in 24.0.0: its build succeeded but packaging failed on a
+# missing docs/publishing_assets README). Each target is its own caller job, gated on the
+# `target` input, so a retry rebuilds ONLY the target that failed. To add another, copy its
+# entry from publish.yml verbatim into a new job the same way;
+# scripts/check-publish-matrix-sync.py checks the matrix of EVERY job here, accepts any
+# SUBSET of publish.yml's Linux entries, and requires each one present to match exactly.
 #
 # The matrix entry below MUST stay identical to publish.yml's entry for the same target, or
 # a retry would ship binaries built with different features than the full run would have.
@@ -46,6 +49,17 @@ on:
         type: string
         required: false
         default: ''
+      target:
+        description: >-
+          Which Linux target to rebuild and re-upload. Pick the one that failed: every
+          target built here REPLACES its asset on the release (overwrite: true).
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
 
 jobs:
   analyze-tags:
@@ -91,6 +105,9 @@ jobs:
   publish:
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
+    # one caller job per target: a job-level `if` cannot read `matrix`, so per-target
+    # selection has to happen at the job level, against the `target` input
+    if: ${{ inputs.target == 'all' || inputs.target == 'x86_64-unknown-linux-gnu' }}
     strategy:
       # don't cancel the other target build if one fails; each publishes independently
       fail-fast: false
@@ -156,6 +173,64 @@ jobs:
       lto: ${{ matrix.job.lto }}
       codegen_units: ${{ matrix.job.codegen-units }}
       split_mcp: ${{ matrix.job.split-mcp || false }}
+      job_timeout: 240
+    secrets:
+      QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+
+  publish-aarch64-musl:
+    name: Publish for ${{ matrix.job.target }}
+    needs: analyze-tags
+    if: ${{ inputs.target == 'all' || inputs.target == 'aarch64-unknown-linux-musl' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable]
+        job:
+          #### KEEP IN SYNC WITH publish.yml (enforced by check-publish-matrix-sync.py) ####
+          - os: ubuntu-24.04-arm
+            os-name: linux
+            target: aarch64-unknown-linux-musl
+            architecture: aarch64
+            # Build natively and use musl-tools for the static ARM64 artifact.
+            use-cross: false
+            musl-prep: true
+            # Keep the reduced feature set used by the existing x86_64 musl release.
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize
+            # tikv-jemalloc does not build with the native ARM64 musl toolchain.
+            default-features: --no-default-features
+            addl-qsvlite-features:
+            addl-qsvdp-features:
+            addl-rustflags:
+            pgo: false
+            pgo-train-flags:
+            pgo-lto:
+            lto:
+            codegen-units:
+            split-mcp: false
+          #### END KEEP IN SYNC ####
+    uses: ./.github/workflows/publish-target.yml
+    with:
+      os: ${{ matrix.job.os }}
+      os_name: ${{ matrix.job.os-name }}
+      target: ${{ matrix.job.target }}
+      previous_tag: ${{ needs.analyze-tags.outputs.previous-tag }}
+      # same DISPATCHED-COMMIT default as the `publish` job above, for the same reason
+      source_ref: ${{ inputs.source_ref != '' && inputs.source_ref || github.sha }}
+      rust: ${{ matrix.rust }}
+      addl_build_args: ${{ matrix.job.addl-build-args }}
+      default_features: ${{ matrix.job.default-features }}
+      addl_qsvlite_features: ${{ matrix.job.addl-qsvlite-features }}
+      addl_qsvdp_features: ${{ matrix.job.addl-qsvdp-features }}
+      addl_rustflags: ${{ matrix.job.addl-rustflags }}
+      # this entry DOES set musl-prep, so it is read from the matrix (unlike the literal
+      # `false` in the job above); job-timeout is unset here as in publish.yml, so 240
+      musl_prep: ${{ matrix.job.musl-prep }}
+      pgo: ${{ matrix.job.pgo }}
+      pgo_train_flags: ${{ matrix.job.pgo-train-flags }}
+      pgo_lto: ${{ matrix.job.pgo-lto }}
+      lto: ${{ matrix.job.lto }}
+      codegen_units: ${{ matrix.job.codegen-units }}
+      split_mcp: ${{ matrix.job.split-mcp }}
       job_timeout: 240
     secrets:
       QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}

@@ -51,18 +51,29 @@ RETRIES = [
 
 
 def entries(path, needle):
+    """Every matching target entry from EVERY job's `matrix.job` list in the file.
+
+    publish-linux.yml gives each target its own caller job (a job-level `if` cannot read
+    `matrix`, so per-target selection needs separate jobs). Reading only the `publish` job
+    would leave those other entries silently unchecked.
+    """
     doc = yaml.safe_load(path.read_text())
     jobs = doc.get("jobs", {})
     if "publish" not in jobs:
         sys.exit(f"{path.name}: no `publish` job")
-    matrix = jobs["publish"].get("strategy", {}).get("matrix", {}).get("job", [])
-    if not isinstance(matrix, list):
-        sys.exit(f"{path.name}: `publish` job has no literal matrix list")
-    return {
-        e["target"]: e
-        for e in matrix
-        if isinstance(e, dict) and needle in str(e.get("target", ""))
-    }
+    found = {}
+    for job_id, job in jobs.items():
+        matrix = (job or {}).get("strategy", {}).get("matrix", {}).get("job")
+        if matrix is None:
+            continue
+        if not isinstance(matrix, list):
+            sys.exit(f"{path.name}: `{job_id}` job has no literal matrix list")
+        for e in matrix:
+            if isinstance(e, dict) and needle in str(e.get("target", "")):
+                if e["target"] in found:
+                    sys.exit(f"{path.name}: {e['target']} appears in more than one job")
+                found[e["target"]] = e
+    return found
 
 
 def compare(full, retry, retry_name, label, require_all):

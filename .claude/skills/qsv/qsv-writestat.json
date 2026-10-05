@@ -1,6 +1,6 @@
 {
   "name": "qsv-writestat",
-  "version": "23.0.1",
+  "version": "24.0.0",
   "description": "The inverse of `readstat`: write a CSV as an SPSS (`.sav`, `.por`), Stata (`.dta`) or SAS transport (`.xpt`) file. With the JSON Schema data dictionary `readstat --dictionary` wrote, a converted file comes back with its variable labels, value labels, missing values & display settings - and decoded value labels & sentinel columns are turned back into codes & declared missing values. Metadata the output format can't hold is refused, not silently dropped, unless `--lossy` is given.",
   "category": "conversion",
   "command": {

@@ -672,6 +672,13 @@ const ISLAND_AREA_NAMES: &[(&str, &str)] = &[
     ("us virgin islands", "78"),
 ];
 
+/// State GEOID for any spelling a state column may hold: a USPS code, a 1-2 digit FIPS, or a full
+/// name. For joining a column that mixes spellings onto one feature key (#4694).
+#[must_use]
+pub fn state_geoid_for_any_spelling(raw: &str) -> Option<String> {
+    state_geoid_for_code(raw).or_else(|| state_geoid_for_name(raw).map(str::to_string))
+}
+
 /// State GEOID for a state's full NAME (`Pennsylvania`, `u.s. virgin islands`), or `None`.
 ///
 /// Exact and ASCII-case-insensitive after trimming, never fuzzy: a near-miss spelling must stay

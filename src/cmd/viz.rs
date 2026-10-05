@@ -5199,7 +5199,10 @@ impl RegionMatcher {
 ///
 /// The fetched features are keyed by `GEOID` or `STUSAB` (whichever the column's codes favour,
 /// see `viz_census::state_feature_id_key`), and no attribute is spelled the way a hand-typed name
-/// column is, so each distinct name maps to its feature's id IN THAT KEY. Built from the boundary
+/// column is, so each distinct value maps to its feature's id IN THAT KEY. Once the column holds
+/// any name, EVERY state spelling in it is aliased, not only the names: a name majority keys on
+/// `GEOID`, and the matcher cannot turn a stray USPS code (`PA`) into one on its own. A column with
+/// no names gets no aliases, so code-only columns render exactly as before. Built from the boundary
 /// document rather than from the name table alone, so the alias target is always an id the
 /// matcher will find. Empty for any other layer: a county or tract feature never carries a 2-digit
 /// `GEOID`, so a name like `Washington` in a finer column adds nothing.
@@ -5209,14 +5212,17 @@ fn state_name_aliases(
     codes: &[String],
 ) -> RegionAliases {
     let mut aliases = RegionAliases::default();
-    let names: Vec<(&String, &str)> = codes
-        .iter()
-        .filter(|c| !crate::cmd::viz_census::is_state_code(c))
-        .filter_map(|c| crate::cmd::viz_census::state_geoid_for_name(c).map(|g| (c, g)))
-        .collect();
-    if names.is_empty() {
+    let has_name = codes.iter().any(|c| {
+        !crate::cmd::viz_census::is_state_code(c)
+            && crate::cmd::viz_census::state_geoid_for_name(c).is_some()
+    });
+    if !has_name {
         return aliases;
     }
+    let spellings: Vec<(&String, String)> = codes
+        .iter()
+        .filter_map(|c| crate::cmd::viz_census::state_geoid_for_any_spelling(c).map(|g| (c, g)))
+        .collect();
     let mut id_by_geoid: HashMap<String, String> = HashMap::new();
     for feature in geojson
         .get("features")
@@ -5231,12 +5237,25 @@ fn state_name_aliases(
             id_by_geoid.insert(geoid, id);
         }
     }
-    for (name, geoid) in names {
-        if let Some(id) = id_by_geoid.get(geoid) {
-            aliases.insert(&name.trim().to_ascii_lowercase(), "", id);
+    for (spelling, geoid) in spellings {
+        if let Some(id) = id_by_geoid.get(&geoid) {
+            aliases.insert(&spelling.trim().to_ascii_lowercase(), "", id);
         }
     }
     aliases
+}
+
+/// The feature key the rendered map will match on: an explicit `--feature-id-key`, else the key
+/// the auto-resolved boundary set was fetched with.
+fn effective_feature_id_key<'a>(
+    args: &'a Args,
+    feature_id_key_explicit: bool,
+    boundaries: &'a crate::cmd::viz_census::BoundarySet,
+) -> &'a str {
+    match args.flag_feature_id_key.as_deref() {
+        Some(key) if feature_id_key_explicit => key,
+        _ => &boundaries.feature_id_key,
+    }
 }
 
 fn score_region_code_coverage(
@@ -5499,6 +5518,7 @@ fn resolve_auto_geojson(
     args: &mut Args,
     spec: &str,
     stdin_guard: &mut Option<tempfile::TempPath>,
+    feature_id_key_explicit: bool,
 ) -> CliResult<(String, Option<String>)> {
     // `auto` has to read the region column BEFORE the chart is built, which means the input is
     // read twice. A file re-opens fine; stdin does not — the first pass drained it and the second
@@ -5619,7 +5639,11 @@ fn resolve_auto_geojson(
         );
     }
     let boundaries = crate::cmd::viz_census::resolve(&codes, auto_spec)?;
-    let name_aliases = state_name_aliases(&boundaries.geojson, &boundaries.feature_id_key, &codes);
+    // An explicit --feature-id-key overrides the auto key when the map renders (see
+    // `validate_geojson_source`), so the aliases and the coverage gate must use the same key, or
+    // the gate passes a map that then shades nothing.
+    let match_key = effective_feature_id_key(args, feature_id_key_explicit, &boundaries);
+    let name_aliases = state_name_aliases(&boundaries.geojson, match_key, &codes);
 
     // "auto" is only honest if the guess is testable: score the column against what was actually
     // fetched and refuse to render a mostly-unmatched map. Without this, a --locations column of
@@ -5627,7 +5651,7 @@ fn resolve_auto_geojson(
     // shades nothing, exits 0, and says nothing.
     let (matched, total, unmatched_sample) = score_region_code_coverage(
         &boundaries.geojson,
-        &boundaries.feature_id_key,
+        match_key,
         &codes,
         Some(&name_aliases),
         None,
@@ -5651,11 +5675,16 @@ fn resolve_auto_geojson(
     }
     if matched < total {
         let sample = unmatched_sample.join(", ");
-        let county_hint = if routed_by_state_names {
+        let county_hint = if !routed_by_state_names {
+            ""
+        } else if auto_spec.layer.is_some() {
+            // --region-state and county spellings both route to the county resolver, which
+            // refuses a pinned non-county layer, so the layer has to change too
+            " The column was read as state names; if it holds COUNTY names, use --geojson \
+             census:county (or auto) with --region-state <column>."
+        } else {
             " The column was read as state names; if it holds COUNTY names, pass --region-state \
              <column> or spell them the way the Census does (Washington County)."
-        } else {
-            ""
         };
         winfo!(
             "--geojson {spec}: {} of {total} distinct --locations values matched no boundary and \
@@ -7112,14 +7141,11 @@ fn resolve_smart_auto_geojson(
 
         // The honesty gate, over EVERY code rather than the probe sample: a column of
         // plausible-but-nonexistent codes must not render a map that shades nothing and exits 0.
-        let name_aliases = state_name_aliases(
-            &boundaries.geojson,
-            &boundaries.feature_id_key,
-            region_codes,
-        );
+        let match_key = effective_feature_id_key(args, feature_id_key_explicit, &boundaries);
+        let name_aliases = state_name_aliases(&boundaries.geojson, match_key, region_codes);
         let (matched, total, unmatched_sample) = score_region_code_coverage(
             &boundaries.geojson,
-            &boundaries.feature_id_key,
+            match_key,
             region_codes,
             Some(&name_aliases),
             None,
@@ -7319,7 +7345,7 @@ fn resolve_and_validate_geojson(
         if args.cmd_smart {
             return Ok(None);
         }
-        resolve_auto_geojson(args, &spec, stdin_guard)?
+        resolve_auto_geojson(args, &spec, stdin_guard, feature_id_key_explicit)?
     } else if is_url || is_file {
         (spec, None)
     } else {

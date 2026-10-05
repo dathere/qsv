@@ -151,6 +151,20 @@ debug    = true
 panic    = "unwind"
 strip    = false
 
+[profile.dev]
+debug = "line-tables-only"   # or 0 if you rarely use a debugger
+
+[profile.dev.package."*"]
+debug = 0                    # no debuginfo for deps
+opt-level = 1                # optional: faster test runtime for heavy deps (polars etc.), slower first build
+
+# Fast "near-release" profile for perf iteration
+[profile.release-dev]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = true
+
 [dependencies]
 anstream = { version = "1.0", optional = true }
 arboard = { version = "3.6.1", default-features = false, optional = true }

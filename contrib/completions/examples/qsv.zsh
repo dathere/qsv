@@ -2925,13 +2925,21 @@ _arguments "${_arguments_options[@]}" : \
 '--batch=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--dictionary=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--limit=[]: :_default' \
 '--metadata=[]: :_default' \
+'--offset=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--sample=[]: :_default' \
+'--sas7bcat=[]: :_default' \
+'--seed=[]: :_default' \
+'--select=[]: :_default' \
 '--sentinels-as=[]: :_default' \
 '--sentinels-columns=[]: :_default' \
+'--compress-numeric[]' \
 '--sentinels-embedded[]' \
 '--value-labels[]' \
 '-h[Print help]' \
@@ -6476,6 +6484,21 @@ esac
     ;;
 esac
 ;;
+(writestat)
+_arguments "${_arguments_options[@]}" : \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--format=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--table-name=[]: :_default' \
+'--compress[]' \
+'--lossy[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 ":: :_qsv__subcmd__help_commands" \
@@ -7228,6 +7251,10 @@ _arguments "${_arguments_options[@]}" : \
     ;;
 esac
 ;;
+(writestat)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (help)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -7323,6 +7350,7 @@ _qsv_commands() {
 'transpose:' \
 'validate:' \
 'viz:' \
+'writestat:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv commands' commands "$@"
@@ -8014,6 +8042,7 @@ _qsv__subcmd__help_commands() {
 'transpose:' \
 'validate:' \
 'viz:' \
+'writestat:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv help commands' commands "$@"
@@ -8867,6 +8896,11 @@ _qsv__subcmd__help__subcmd__viz__subcmd__violin_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help viz violin commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__writestat_commands] )) ||
+_qsv__subcmd__help__subcmd__writestat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help writestat commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__implode_commands] )) ||
 _qsv__subcmd__implode_commands() {
     local commands; commands=()
@@ -9686,6 +9720,11 @@ _qsv__subcmd__viz__subcmd__treemap_commands() {
 _qsv__subcmd__viz__subcmd__violin_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz violin commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__writestat_commands] )) ||
+_qsv__subcmd__writestat_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv writestat commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_qsv" ]; then

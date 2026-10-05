@@ -108,6 +108,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('transpose', 'transpose', [CompletionResultType]::ParameterValue, 'transpose')
             [CompletionResult]::new('validate', 'validate', [CompletionResultType]::ParameterValue, 'validate')
             [CompletionResult]::new('viz', 'viz', [CompletionResultType]::ParameterValue, 'viz')
+            [CompletionResult]::new('writestat', 'writestat', [CompletionResultType]::ParameterValue, 'writestat')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -2783,13 +2784,21 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('--batch', '--batch', [CompletionResultType]::ParameterName, 'batch')
             [CompletionResult]::new('-d', '-d', [CompletionResultType]::ParameterName, 'd')
             [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
+            [CompletionResult]::new('--dictionary', '--dictionary', [CompletionResultType]::ParameterName, 'dictionary')
             [CompletionResult]::new('-j', '-j', [CompletionResultType]::ParameterName, 'j')
             [CompletionResult]::new('--jobs', '--jobs', [CompletionResultType]::ParameterName, 'jobs')
+            [CompletionResult]::new('--limit', '--limit', [CompletionResultType]::ParameterName, 'limit')
             [CompletionResult]::new('--metadata', '--metadata', [CompletionResultType]::ParameterName, 'metadata')
+            [CompletionResult]::new('--offset', '--offset', [CompletionResultType]::ParameterName, 'offset')
             [CompletionResult]::new('-o', '-o', [CompletionResultType]::ParameterName, 'o')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
+            [CompletionResult]::new('--sample', '--sample', [CompletionResultType]::ParameterName, 'sample')
+            [CompletionResult]::new('--sas7bcat', '--sas7bcat', [CompletionResultType]::ParameterName, 'sas7bcat')
+            [CompletionResult]::new('--seed', '--seed', [CompletionResultType]::ParameterName, 'seed')
+            [CompletionResult]::new('--select', '--select', [CompletionResultType]::ParameterName, 'select')
             [CompletionResult]::new('--sentinels-as', '--sentinels-as', [CompletionResultType]::ParameterName, 'sentinels-as')
             [CompletionResult]::new('--sentinels-columns', '--sentinels-columns', [CompletionResultType]::ParameterName, 'sentinels-columns')
+            [CompletionResult]::new('--compress-numeric', '--compress-numeric', [CompletionResultType]::ParameterName, 'compress-numeric')
             [CompletionResult]::new('--sentinels-embedded', '--sentinels-embedded', [CompletionResultType]::ParameterName, 'sentinels-embedded')
             [CompletionResult]::new('--value-labels', '--value-labels', [CompletionResultType]::ParameterName, 'value-labels')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -6212,6 +6221,20 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
         'qsv;viz;help;help' {
             break
         }
+        'qsv;writestat' {
+            [CompletionResult]::new('-d', '-d', [CompletionResultType]::ParameterName, 'd')
+            [CompletionResult]::new('--delimiter', '--delimiter', [CompletionResultType]::ParameterName, 'delimiter')
+            [CompletionResult]::new('--dictionary', '--dictionary', [CompletionResultType]::ParameterName, 'dictionary')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'format')
+            [CompletionResult]::new('-o', '-o', [CompletionResultType]::ParameterName, 'o')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'output')
+            [CompletionResult]::new('--table-name', '--table-name', [CompletionResultType]::ParameterName, 'table-name')
+            [CompletionResult]::new('--compress', '--compress', [CompletionResultType]::ParameterName, 'compress')
+            [CompletionResult]::new('--lossy', '--lossy', [CompletionResultType]::ParameterName, 'lossy')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
         'qsv;help' {
             [CompletionResult]::new('apply', 'apply', [CompletionResultType]::ParameterValue, 'apply')
             [CompletionResult]::new('behead', 'behead', [CompletionResultType]::ParameterValue, 'behead')
@@ -6292,6 +6315,7 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             [CompletionResult]::new('transpose', 'transpose', [CompletionResultType]::ParameterValue, 'transpose')
             [CompletionResult]::new('validate', 'validate', [CompletionResultType]::ParameterValue, 'validate')
             [CompletionResult]::new('viz', 'viz', [CompletionResultType]::ParameterValue, 'viz')
+            [CompletionResult]::new('writestat', 'writestat', [CompletionResultType]::ParameterValue, 'writestat')
             [CompletionResult]::new('help', 'help', [CompletionResultType]::ParameterValue, 'Print this message or the help of the given subcommand(s)')
             break
         }
@@ -6822,6 +6846,9 @@ Register-ArgumentCompleter -Native -CommandName 'qsv' -ScriptBlock {
             break
         }
         'qsv;help;viz;violin' {
+            break
+        }
+        'qsv;help;writestat' {
             break
         }
         'qsv;help;help' {

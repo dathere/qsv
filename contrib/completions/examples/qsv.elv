@@ -105,6 +105,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand transpose 'transpose'
             cand validate 'validate'
             cand viz 'viz'
+            cand writestat 'writestat'
             cand help 'Print this message or the help of the given subcommand(s)'
         }
         &'qsv;apply'= {
@@ -2637,13 +2638,21 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand --batch 'batch'
             cand -d 'd'
             cand --delimiter 'delimiter'
+            cand --dictionary 'dictionary'
             cand -j 'j'
             cand --jobs 'jobs'
+            cand --limit 'limit'
             cand --metadata 'metadata'
+            cand --offset 'offset'
             cand -o 'o'
             cand --output 'output'
+            cand --sample 'sample'
+            cand --sas7bcat 'sas7bcat'
+            cand --seed 'seed'
+            cand --select 'select'
             cand --sentinels-as 'sentinels-as'
             cand --sentinels-columns 'sentinels-columns'
+            cand --compress-numeric 'compress-numeric'
             cand --sentinels-embedded 'sentinels-embedded'
             cand --value-labels 'value-labels'
             cand -h 'Print help'
@@ -5961,6 +5970,19 @@ set edit:completion:arg-completer[qsv] = {|@words|
         }
         &'qsv;viz;help;help'= {
         }
+        &'qsv;writestat'= {
+            cand -d 'd'
+            cand --delimiter 'delimiter'
+            cand --dictionary 'dictionary'
+            cand --format 'format'
+            cand -o 'o'
+            cand --output 'output'
+            cand --table-name 'table-name'
+            cand --compress 'compress'
+            cand --lossy 'lossy'
+            cand -h 'Print help'
+            cand --help 'Print help'
+        }
         &'qsv;help'= {
             cand apply 'apply'
             cand behead 'behead'
@@ -6041,6 +6063,7 @@ set edit:completion:arg-completer[qsv] = {|@words|
             cand transpose 'transpose'
             cand validate 'validate'
             cand viz 'viz'
+            cand writestat 'writestat'
             cand help 'Print this message or the help of the given subcommand(s)'
         }
         &'qsv;help;apply'= {
@@ -6419,6 +6442,8 @@ set edit:completion:arg-completer[qsv] = {|@words|
         &'qsv;help;viz;treemap'= {
         }
         &'qsv;help;viz;violin'= {
+        }
+        &'qsv;help;writestat'= {
         }
         &'qsv;help;help'= {
         }

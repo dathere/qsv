@@ -1938,10 +1938,18 @@ module completions {
 
   export extern "qsv readstat" [
     --batch(-b): string
+    --compress-numeric
     --delimiter(-d): string
+    --dictionary: string
     --jobs(-j): string
+    --limit: string
     --metadata: string
+    --offset: string
     --output(-o): string
+    --sample: string
+    --sas7bcat: string
+    --seed: string
+    --select: string
     --sentinels-as: string
     --sentinels-columns: string
     --sentinels-embedded
@@ -4834,6 +4842,17 @@ module completions {
   export extern "qsv viz help help" [
   ]
 
+  export extern "qsv writestat" [
+    --compress
+    --delimiter(-d): string
+    --dictionary: string
+    --format: string
+    --lossy
+    --output(-o): string
+    --table-name: string
+    --help(-h)                # Print help
+  ]
+
   # Print this message or the help of the given subcommand(s)
   export extern "qsv help" [
   ]
@@ -5292,6 +5311,9 @@ module completions {
   ]
 
   export extern "qsv help viz violin" [
+  ]
+
+  export extern "qsv help writestat" [
   ]
 
   # Print this message or the help of the given subcommand(s)

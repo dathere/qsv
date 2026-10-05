@@ -256,6 +256,9 @@ _qsv() {
             qsv,viz)
                 cmd="qsv__subcmd__viz"
                 ;;
+            qsv,writestat)
+                cmd="qsv__subcmd__writestat"
+                ;;
             qsv__subcmd__apply,calcconv)
                 cmd="qsv__subcmd__apply__subcmd__calcconv"
                 ;;
@@ -711,6 +714,9 @@ _qsv() {
                 ;;
             qsv__subcmd__help,viz)
                 cmd="qsv__subcmd__help__subcmd__viz"
+                ;;
+            qsv__subcmd__help,writestat)
+                cmd="qsv__subcmd__help__subcmd__writestat"
                 ;;
             qsv__subcmd__help__subcmd__apply,calcconv)
                 cmd="qsv__subcmd__help__subcmd__apply__subcmd__calcconv"
@@ -1226,7 +1232,7 @@ _qsv() {
 
     case "${cmd}" in
         qsv)
-            opts="-V -h --list --envlist --update --updatenow --version --help apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help"
+            opts="-V -h --list --envlist --update --updatenow --version --help apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz writestat help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7418,7 +7424,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help)
-            opts="apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz help"
+            opts="apply behead blake3 cat clean clipboard color count datefmt dedup denull describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixedwidth fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py readstat rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate viz writestat help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -9573,6 +9579,20 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__help__subcmd__writestat)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__implode)
             opts="-d -k -n -o -r -v -h --delimiter --keys --no-headers --output --rename --skip-empty --sorted --value --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -10984,7 +11004,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__readstat)
-            opts="-b -d -j -o -h --batch --delimiter --jobs --metadata --output --sentinels-as --sentinels-columns --sentinels-embedded --value-labels --help"
+            opts="-b -d -j -o -h --batch --compress-numeric --delimiter --dictionary --jobs --limit --metadata --offset --output --sample --sas7bcat --seed --select --sentinels-as --sentinels-columns --sentinels-embedded --value-labels --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -11006,6 +11026,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --jobs)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -11014,7 +11038,15 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --metadata)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --offset)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -11023,6 +11055,22 @@ _qsv() {
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sas7bcat)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --seed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --select)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -20855,6 +20903,48 @@ _qsv() {
                     return 0
                     ;;
                 -z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__writestat)
+            opts="-d -o -h --compress --delimiter --dictionary --format --lossy --output --table-name --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --table-name)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

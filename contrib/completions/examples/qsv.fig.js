@@ -10056,10 +10056,26 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--dictionary",
+          isRepeatable: true,
+          args: {
+            name: "dictionary",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-j", "--jobs"],
           isRepeatable: true,
           args: {
             name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--limit",
+          isRepeatable: true,
+          args: {
+            name: "limit",
             isOptional: true,
           },
         },
@@ -10072,10 +10088,50 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--offset",
+          isRepeatable: true,
+          args: {
+            name: "offset",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-o", "--output"],
           isRepeatable: true,
           args: {
             name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sample",
+          isRepeatable: true,
+          args: {
+            name: "sample",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sas7bcat",
+          isRepeatable: true,
+          args: {
+            name: "sas7bcat",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--seed",
+          isRepeatable: true,
+          args: {
+            name: "seed",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--select",
+          isRepeatable: true,
+          args: {
+            name: "select",
             isOptional: true,
           },
         },
@@ -10094,6 +10150,9 @@ const completion: Fig.Spec = {
             name: "sentinels-columns",
             isOptional: true,
           },
+        },
+        {
+          name: "--compress-numeric",
         },
         {
           name: "--sentinels-embedded",
@@ -27527,6 +27586,61 @@ const completion: Fig.Spec = {
       ],
     },
     {
+      name: "writestat",
+      options: [
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--dictionary",
+          isRepeatable: true,
+          args: {
+            name: "dictionary",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--format",
+          isRepeatable: true,
+          args: {
+            name: "format",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--table-name",
+          isRepeatable: true,
+          args: {
+            name: "table-name",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--compress",
+        },
+        {
+          name: "--lossy",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
       name: "help",
       description: "Print this message or the help of the given subcommand(s)",
       subcommands: [
@@ -28007,6 +28121,9 @@ const completion: Fig.Spec = {
               name: "violin",
             },
           ],
+        },
+        {
+          name: "writestat",
         },
         {
           name: "help",

@@ -597,7 +597,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Stale-warning filter consults the final projection shape.
         // For Catalog mode the build-time warnings still reference
         // Dataset fields by name (`dcat:contactPoint`), so the filter
-        // must walk into `dcat:dataset[0]` when it's present.
+        // must walk into `dataset/0` when it's present.
         let final_projection_snapshot = out_map.get("projection").cloned();
         let mut projection_warnings: Vec<projection::ProjectionWarning> = stashed
             .into_iter()
@@ -635,6 +635,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     blocking.len()
                 )));
             }
+            // The schema validator and the template stage both report a
+            // missing Required property; keep only the schema finding,
+            // which is the one --strict counts.
+            projection_warnings.retain(|w| !is_dup_of_schema_required(w, &validation));
             projection_warnings.extend(validation);
 
             // Out-of-process validator (e.g. mlcroissant, pyshacl).
@@ -1157,6 +1161,18 @@ fn final_projection_has_field(final_projection: Option<&Value>, field: &str) -> 
     if field.is_empty() {
         return false;
     }
+    if projection_has_field(projection, field) {
+        return true;
+    }
+    // Catalog mode: build-time warnings name Dataset fields relative to
+    // the Dataset, which now lives at `dataset/0` inside the envelope.
+    projection
+        .pointer("/dataset/0")
+        .filter(|d| d.is_object())
+        .is_some_and(|d| projection_has_field(d, field))
+}
+
+fn projection_has_field(projection: &Value, field: &str) -> bool {
     // Top-level field name (the common case for build-time warnings).
     if !field.contains('/')
         && let Some(v) = projection.get(field)
@@ -1172,6 +1188,27 @@ fn final_projection_has_field(final_projection: Option<&Value>, field: &str) -> 
     projection
         .pointer(&pointer)
         .is_some_and(|v| !is_value_empty(v))
+}
+
+/// True when `w` is a template-stage "missing X" warning that the
+/// schema validator also reported as a Required missing property
+/// (`X` at the root, or `dataset/0/X` in Catalog mode). Render-error
+/// warnings at the same field are deliberately not matched — they
+/// explain *why* the field is missing.
+fn is_dup_of_schema_required(
+    w: &projection::ProjectionWarning,
+    schema: &[projection::ProjectionWarning],
+) -> bool {
+    if !matches!(w.severity, projection::Severity::Required)
+        || w.message != format!("missing {}", w.field)
+    {
+        return false;
+    }
+    let in_catalog = format!("dataset/0/{}", w.field);
+    schema.iter().any(|s| {
+        matches!(s.severity, projection::Severity::Required)
+            && (s.field == w.field || s.field == in_catalog)
+    })
 }
 
 fn is_value_empty(v: &Value) -> bool {

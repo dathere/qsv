@@ -976,3 +976,132 @@ fn writestat_stdin_inferred_types() {
         "n,s,d\n1.0,a,2024-01-02\n2.5,b,2024-03-04\n"
     );
 }
+
+// No dictionary: the numeric columns are typed from the stats cache, and the
+// text columns holding dates, times or booleans are recognised as polars does.
+// Each column below must come out exactly as polars' own whole-file inference
+// (QSV_STATSCACHE_MODE=none) types it.
+const INFERENCE_CSV: &str = "\
+i,f,b,d,dt,t,nyc,e,s,dmix
+1,1.1,true,2024-01-02,2024-01-02T03:04:05,12:34:56,04/18/2019 09:55:45 PM,,a,2024-01-02
+,2,FALSE,2024-01-03,2024-01-02T03:04:06,01:02:03,04/19/2019 10:00:00 AM,,b,x
+3,,,,,,,,c,2024-01-04
+";
+
+fn inferred(wrk: &Workdir, out: &str, statscache: bool) {
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", out]);
+    if !statscache {
+        cmd.env("QSV_STATSCACHE_MODE", "none");
+    }
+    wrk.assert_success(&mut cmd);
+}
+
+fn assert_inference_matches_polars(name: &str, ext: &str) -> (Workdir, Value) {
+    let wrk = Workdir::new(name);
+    wrk.create_from_string("in.csv", INFERENCE_CSV);
+    let (stats, polars) = (format!("stats.{ext}"), format!("polars.{ext}"));
+    inferred(&wrk, &polars, false);
+    assert!(!wrk.path("in.stats.csv.data.jsonl").exists());
+    inferred(&wrk, &stats, true);
+    // the stats path was taken
+    assert!(wrk.path("in.stats.csv.data.jsonl").exists());
+    assert_eq!(read_back(&wrk, &stats, &[]), read_back(&wrk, &polars, &[]));
+    let meta = metadata(&wrk, &stats);
+    assert_eq!(
+        vars(&meta, &["type", "format_class"]),
+        vars(&metadata(&wrk, &polars), &["type", "format_class"])
+    );
+    (wrk, meta)
+}
+
+#[test]
+fn writestat_inferred_types_match_polars_sav() {
+    let (wrk, meta) = assert_inference_matches_polars("writestat_inferred_types_sav", "sav");
+    for (name, ty) in [
+        ("i", "Numeric"),
+        ("f", "Numeric"),
+        ("nyc", "Str"),
+        ("e", "Str"),
+    ] {
+        assert_eq!(var(&meta, name)["type"], ty, "{name}");
+    }
+    assert_eq!(var(&meta, "d")["format_class"], "Date");
+    assert_eq!(var(&meta, "dt")["format_class"], "DateTime");
+    assert_eq!(var(&meta, "t")["format_class"], "Time");
+    // one value that isn't a date leaves the column as text
+    assert_eq!(var(&meta, "dmix")["type"], "Str");
+    // read as a double, never a float: 1.1 stays 1.1
+    let back = read_back(&wrk, "stats.sav", &["--select", "f"]);
+    assert_eq!(back, "f\n1.1\n2.0\n\n");
+}
+
+#[test]
+fn writestat_inferred_types_match_polars_dta() {
+    assert_inference_matches_polars("writestat_inferred_types_dta", "dta");
+}
+
+#[test]
+fn writestat_inferred_types_match_polars_xpt() {
+    assert_inference_matches_polars("writestat_inferred_types_xpt", "xpt");
+}
+
+// stdin is spooled to a directory of its own, which takes the stats cache
+// written beside the spool away with it
+#[test]
+fn writestat_stdin_leaves_no_stats_cache() {
+    let wrk = Workdir::new("writestat_stdin_leaves_no_stats_cache");
+    wrk.create_from_string("in.csv", "n,s\n1,a\n2,b\n");
+    std::fs::create_dir(wrk.path("tmp")).unwrap();
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["-o", "out.sav"])
+        .env("TMPDIR", wrk.path("tmp"))
+        .stdin(std::fs::File::open(wrk.path("in.csv")).unwrap());
+    wrk.assert_success(&mut cmd);
+    assert_eq!(std::fs::read_dir(wrk.path("tmp")).unwrap().count(), 0);
+}
+
+// A stats cache that no longer matches its file (same size, older input) is
+// reported, with how to get past it.
+#[test]
+fn writestat_stale_stats_cache() {
+    let wrk = Workdir::new("writestat_stale_stats_cache");
+    wrk.create_from_string("in.csv", "n\n1\n2\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "first.sav"]);
+    wrk.assert_success(&mut cmd);
+    let cache = std::fs::metadata(wrk.path("in.stats.csv.data.jsonl")).unwrap();
+    let cache_mtime = filetime::FileTime::from_last_modification_time(&cache);
+    wrk.create_from_string("in.csv", "n\n1\nx\n");
+    let older = filetime::FileTime::from_unix_time(cache_mtime.unix_seconds() - 60, 0);
+    filetime::set_file_mtime(wrk.path("in.csv"), older).unwrap();
+
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "second.sav"]);
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(err.contains("may be out of date"), "{err}");
+    assert!(err.contains("QSV_STATSCACHE_MODE=none"), "{err}");
+
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "third.sav"])
+        .env("QSV_STATSCACHE_MODE", "none");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(read_back(&wrk, "third.sav", &[]), "n\n1\nx\n");
+}
+
+// The one intended change from polars' own inference: zero-padded numbers
+// (ZIP, FIPS or BBL codes) keep their zeros as text, where polars read them
+// as numbers.
+#[test]
+fn writestat_zero_padded_stays_text() {
+    let wrk = Workdir::new("writestat_zero_padded_stays_text");
+    wrk.create_from_string("in.csv", "code,n\n00123,1\n00456,2\n,3\n");
+    inferred(&wrk, "out.sav", true);
+    let meta = metadata(&wrk, "out.sav");
+    assert_eq!(var(&meta, "code")["type"], "Str");
+    assert_eq!(var(&meta, "n")["type"], "Numeric");
+    assert_eq!(
+        read_back(&wrk, "out.sav", &[]),
+        "code,n\n00123,1.0\n00456,2.0\n,3.0\n"
+    );
+}

@@ -15,7 +15,11 @@ The variable metadata comes from a JSON Schema data dictionary (--dictionary).
 One written by 'qsv readstat --dictionary' brings a converted file back with its
 variable labels, value labels, missing values & display settings; one written
 by 'qsv describegpt --dictionary' gives its labels as variable labels. Without
-a dictionary, the column types are inferred from the CSV.
+a dictionary, the column types are inferred from the CSV: numbers from its stats
+cache (created beside it if missing, so later runs are faster), and dates, times
+& true/false values as Polars recognises them. Set QSV_STATSCACHE_MODE to none
+to have Polars infer every type itself instead, reading the whole file on a
+single thread, which is much slower.
 
 The dictionary also says how readstat wrote the CSV, and that is undone: the
 values decoded by the option --value-labels go back to their codes, and the
@@ -400,17 +404,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // stdin is spooled to a file, which the CSV reader needs
+    // stdin is spooled to a file, which the CSV reader needs. It gets a
+    // directory of its own, so the stats cache written beside it goes with it.
     let mut _stdin_spool = None;
     let input: PathBuf = match args.arg_input.as_deref() {
         Some(i) => PathBuf::from(i),
         None => {
-            let mut spool = tempfile::Builder::new().suffix(".csv").tempfile()?;
+            let dir = tempfile::tempdir()?;
+            let path = dir.path().join("stdin.csv");
             let mut buf = Vec::new();
             std::io::stdin().read_to_end(&mut buf)?;
-            std::io::Write::write_all(&mut spool, &buf)?;
-            let path = spool.path().to_path_buf();
-            _stdin_spool = Some(spool);
+            std::fs::write(&path, &buf)?;
+            _stdin_spool = Some(dir);
             path
         },
     };
@@ -427,14 +432,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .map(Dictionary::load)
         .transpose()?;
     let delim = args.flag_delimiter.map_or(b',', Delimiter::as_byte);
-    let df = LazyCsvReader::new(PlRefPath::new(input.to_string_lossy().as_ref()))
-        .with_has_header(true)
-        .with_separator(delim)
+    let df = if dict.is_some() {
         // with a dictionary, every column is read as text & typed by it
-        .with_infer_schema_length(if dict.is_some() { Some(0) } else { None })
-        .with_try_parse_dates(dict.is_none())
-        .finish()?
-        .collect()?;
+        csv_reader(&input, delim)
+            .with_infer_schema_length(Some(0))
+            .finish()?
+            .collect()?
+    } else {
+        read_inferred(&input, delim)?
+    };
 
     let mut losses = Losses::default();
     let (df, pairs) = match &dict {
@@ -1348,6 +1354,197 @@ fn merge_string_sentinels(
         df.drop_in_place(indicator)?;
     }
     Ok((df, numeric))
+}
+
+fn csv_reader(input: &Path, delim: u8) -> LazyCsvReader {
+    LazyCsvReader::new(PlRefPath::new(input.to_string_lossy().as_ref()))
+        .with_has_header(true)
+        .with_separator(delim)
+}
+
+/// Without a dictionary, the numeric columns are typed from the stats cache:
+/// polars' own inference reads the whole file on one thread, trying date
+/// patterns on every text cell. The text columns holding dates, times or
+/// booleans are then recognised as polars would. Without usable stats (e.g.
+/// `QSV_STATSCACHE_MODE=none`), polars infers the types itself.
+fn read_inferred(input: &Path, delim: u8) -> CliResult<DataFrame> {
+    if let Some(dtypes) = stats_dtypes(input, delim) {
+        let mut lf = csv_reader(input, delim)
+            .with_infer_schema_length(Some(0))
+            .finish()?;
+        // the stats engine & polars may split a line differently (e.g. under
+        // QSV_COMMENT_CHAR), so a column count they disagree on isn't used
+        if lf.collect_schema()?.len() == dtypes.len() {
+            // The stats engine accepts fewer numbers than polars reads, so a
+            // failure means the cache describes other rows: it is out of date,
+            // or was written under other reader settings (e.g. a comment
+            // character), which it doesn't record.
+            match csv_reader(input, delim)
+                .with_infer_schema_length(Some(0))
+                .with_dtype_overwrite_by_position(Some(Arc::new(dtypes)))
+                .finish()?
+                .collect()
+            {
+                Ok(df) => return Ok(recognise_text_columns(df)?),
+                Err(e) => log::info!(
+                    "writestat: the stats cache doesn't fit \"{}\", so polars infers the types: \
+                     {e}",
+                    input.display()
+                ),
+            }
+        } else {
+            log::info!("writestat: the stats cache & polars disagree on the column count");
+        }
+    }
+    Ok(csv_reader(input, delim)
+        .with_infer_schema_length(None)
+        .with_try_parse_dates(true)
+        .finish()?
+        .collect()?)
+}
+
+/// The column types the stats cache gives, as read by polars: whole numbers as
+/// Int64, other numbers as Float64 & the rest as text.
+fn stats_dtypes(input: &Path, delim: u8) -> Option<Vec<DataType>> {
+    // these make the CSV reader the stats engine uses skip or reinterpret
+    // lines that polars reads as rows
+    if std::env::var_os("QSV_COMMENT_CHAR").is_some()
+        || util::get_envvar_flag("QSV_SNIFF_PREAMBLE")
+        || util::get_envvar_flag("QSV_NO_HEADERS")
+        || std::env::var("QSV_TOGGLE_HEADERS").is_ok_and(|v| v == "1")
+    {
+        log::info!("writestat: the stats engine would read other rows, so polars infers the types");
+        return None;
+    }
+    match stats_dtypes_from(input, delim, false) {
+        StatsTypes::Usable(dtypes) => Some(dtypes),
+        // computed afresh, without the options that made it unusable
+        StatsTypes::Unusable => match stats_dtypes_from(input, delim, true) {
+            StatsTypes::Usable(dtypes) => Some(dtypes),
+            _ => None,
+        },
+        StatsTypes::Unavailable => None,
+    }
+}
+
+enum StatsTypes {
+    Usable(Vec<DataType>),
+    /// a cache written by another command, for other columns or types
+    Unusable,
+    Unavailable,
+}
+
+fn stats_dtypes_from(input: &Path, delim: u8, force: bool) -> StatsTypes {
+    let Ok(pattern_columns) = crate::select::SelectColumns::parse("") else {
+        return StatsTypes::Unavailable;
+    };
+    let schema_args = util::SchemaArgs {
+        flag_enum_threshold:  0,
+        flag_ignore_case:     false,
+        flag_strict_dates:    false,
+        flag_strict_formats:  false,
+        flag_pattern_columns: pattern_columns,
+        // dates are recognised as polars recognises them instead
+        flag_dates_whitelist: String::new(),
+        flag_prefer_dmy:      false,
+        flag_force:           force,
+        flag_stdout:          false,
+        flag_jobs:            Some(util::njobs(None)),
+        flag_polars:          false,
+        flag_no_headers:      false,
+        // as polars reads it, rather than guessed from the file extension
+        flag_delimiter:       Some(Delimiter(delim)),
+        arg_input:            Some(input.to_string_lossy().into_owned()),
+        flag_memcheck:        false,
+        flag_output:          None,
+    };
+    let (headers, stats) =
+        match util::get_stats_records(&schema_args, util::StatsMode::PolarsSchema) {
+            Ok((_, stats)) if stats.is_empty() => return StatsTypes::Unavailable,
+            Ok(records) => records,
+            Err(e) => {
+                log::info!("writestat: no stats cache, so polars infers the column types: {e}");
+                return StatsTypes::Unavailable;
+            },
+        };
+    // A cache is reused whatever options wrote it: one of a --select is in
+    // another column order, and --infer-boolean & --infer-dates type columns
+    // of numbers (0/1, timestamps) as booleans & dates.
+    let in_order = headers.len() == stats.len()
+        && headers
+            .iter()
+            .zip(&stats)
+            .all(|(header, s)| s.field.as_bytes() == header);
+    if !in_order
+        || stats
+            .iter()
+            .any(|s| matches!(s.r#type.as_str(), "Boolean" | "Date" | "DateTime"))
+    {
+        log::info!("writestat: the stats cache was written with other options");
+        return StatsTypes::Unusable;
+    }
+    StatsTypes::Usable(
+        stats
+            .iter()
+            .map(|s| match s.r#type.as_str() {
+                "Integer" => DataType::Int64,
+                "Float" => DataType::Float64,
+                _ => DataType::String,
+            })
+            .collect(),
+    )
+}
+
+/// Types the text columns that polars, inferring the types itself, would have
+/// read as booleans, dates, datetimes or times.
+fn recognise_text_columns(mut df: DataFrame) -> PolarsResult<DataFrame> {
+    use rayon::prelude::*;
+    let found: Vec<(usize, Series)> = df
+        .columns()
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, col)| recognise(col.str().ok()?).map(|s| (i, s)))
+        .collect();
+    for (i, series) in found {
+        df.replace_column(i, series.into_column())?;
+    }
+    Ok(df)
+}
+
+/// polars types a column by every value, so the first decides what is tried &
+/// a single value that doesn't fit leaves the column as text.
+fn recognise(strings: &StringChunked) -> Option<Series> {
+    use polars::chunked_array::temporal::string::{
+        StringMethods, infer::infer_pattern_single, patterns::Pattern,
+    };
+
+    let first = strings.iter().flatten().next()?;
+    let is_bool = |v: &str| v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("false");
+    if is_bool(first) {
+        return strings.iter().flatten().all(is_bool).then(|| {
+            strings
+                .iter()
+                .map(|v| v.map(|v| v.eq_ignore_ascii_case("true")))
+                .collect::<BooleanChunked>()
+                .with_name(strings.name().clone())
+                .into_series()
+        });
+    }
+    let ambiguous = StringChunked::from_iter([Some("raise")]);
+    let tu = TimeUnit::Microseconds;
+    let converted = match infer_pattern_single(first)? {
+        Pattern::DateDMY | Pattern::DateYMD => strings.as_date(None, true).ok()?.into_series(),
+        Pattern::DatetimeDMY | Pattern::DatetimeYMD => strings
+            .as_datetime(None, tu, true, false, None, &ambiguous)
+            .ok()?
+            .into_series(),
+        Pattern::DatetimeYMDZ => strings
+            .as_datetime(None, tu, true, true, Some(&TimeZone::UTC), &ambiguous)
+            .ok()?
+            .into_series(),
+        Pattern::Time => strings.as_time(None, true).ok()?.into_series(),
+    };
+    (converted.null_count() == strings.null_count()).then_some(converted)
 }
 
 fn write(

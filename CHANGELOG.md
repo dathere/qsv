@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Performance
+- **`writestat` without a dictionary no longer spends minutes inferring column types** ([#4744](https://github.com/dathere/qsv/issues/4744)). Nearly all its time went into Polars inferring the CSV's column types: it read the whole file on one thread and tried date patterns on every text cell, so a 1M-row file took 1.5 to 7 minutes before the writer even started. Numeric columns are now typed from the stats cache, which is multithreaded and reused by later runs. Text columns that hold dates, times or true/false values are recognised the way Polars recognises them. On a 1M-row NYC 311 file, a dev build now takes 21 s with a cold stats cache and 6 s with a warm one, where the 24.0.0 release build took 84 to 399 s across runs.
+  - The output is unchanged except for **zero-padded numbers, which now keep their zeros as text**. Polars read `0000000000` in NYC's `bbl` column as the number 0, but such columns are usually codes (ZIP, FIPS, BBL), and the stats engine types them as text. A few other edge cases change in the same direction: quoted numbers are read as numbers, as are `+5` and `NaN`/`Infinity` written in other cases, and integers too large for 64 bits become doubles.
+  - Set `QSV_STATSCACHE_MODE=none` to have Polars infer every type itself, as before. If a stats cache doesn't fit its file (it is out of date, or was written under other reader settings), Polars infers the types instead.
+
 ## [24.0.0] - 2026-10-05 ⚖️ The "Evidence Act" Release 🏛️
 
 ~160 commits since 23.0.1, and the theme is **EVIDENCE**. The 2019 [Foundations for Evidence-Based Policymaking Act](https://www.congress.gov/bill/115th-congress/house-bill/4174) asks US federal agencies to build policy on evidence, to make their data open by default and machine-readable, and to describe all of it in a public data inventory. Seven years on, the hard part is rarely the law. It is the plumbing: the evidence sits in SAS, Stata and SPSS files, and the inventory has to pass a validator. This release works on both.

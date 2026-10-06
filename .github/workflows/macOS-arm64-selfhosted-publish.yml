@@ -43,7 +43,7 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            # TEMPORARY (24.0.0): PGO is OFF because qsv's PGO-instrumented binary segfaults
+            # TEMPORARY (24.0.0, #4740): PGO is OFF because qsv's PGO-instrumented binary segfaults
             # in a static initializer before main() when built with Rust 1.99 / LLVM 23.1.1 -
             # even `qsv --version` - so training writes no profiles and the optimize step
             # dies with a misleading "raw profile version mismatch". Rust 1.98.1 / LLVM 22
@@ -90,7 +90,7 @@ jobs:
         export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
         chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
         ./scripts/build-pgo.sh
-    # TEMPORARY non-PGO fallback while `pgo: false` (see the matrix note). Mirrors what
+    # TEMPORARY non-PGO fallback while `pgo: false` (#4740; see the matrix note). Mirrors what
     # build-pgo.sh builds, minus PGO: release-luau (luau is in the feature list; panic=unwind,
     # qsv #3937), fat LTO from Cargo.toml, feature_capable (the qsv bin's required-features),
     # and target-cpu=native. QSV_KIND stays the workflow-level `prebuilt`.

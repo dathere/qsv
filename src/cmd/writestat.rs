@@ -1375,25 +1375,26 @@ fn read_inferred(input: &Path, delim: u8) -> CliResult<DataFrame> {
         // the stats engine & polars may split a line differently (e.g. under
         // QSV_COMMENT_CHAR), so a column count they disagree on isn't used
         if lf.collect_schema()?.len() == dtypes.len() {
-            let df = csv_reader(input, delim)
+            // The stats engine accepts fewer numbers than polars reads, so a
+            // failure means the cache describes other rows: it is out of date,
+            // or was written under other reader settings (e.g. a comment
+            // character), which it doesn't record.
+            match csv_reader(input, delim)
                 .with_infer_schema_length(Some(0))
                 .with_dtype_overwrite_by_position(Some(Arc::new(dtypes)))
                 .finish()?
                 .collect()
-                .map_err(|e| {
-                    // the stats engine accepts fewer numbers than polars reads,
-                    // so only a stale cache gets here
-                    CliError::Other(format!(
-                        "Could not read \"{}\" with the column types of its stats cache, which \
-                         may be out of date: {e}\nDelete {}* & try again, or set \
-                         QSV_STATSCACHE_MODE=none to infer the types without it.",
-                        input.display(),
-                        input.with_extension("stats.csv").display()
-                    ))
-                })?;
-            return Ok(recognise_text_columns(df)?);
+            {
+                Ok(df) => return Ok(recognise_text_columns(df)?),
+                Err(e) => log::info!(
+                    "writestat: the stats cache doesn't fit \"{}\", so polars infers the types: \
+                     {e}",
+                    input.display()
+                ),
+            }
+        } else {
+            log::info!("writestat: the stats cache & polars disagree on the column count");
         }
-        log::info!("writestat: the stats cache & polars disagree on the column count");
     }
     Ok(csv_reader(input, delim)
         .with_infer_schema_length(None)
@@ -1410,6 +1411,7 @@ fn stats_dtypes(input: &Path, delim: u8) -> Option<Vec<DataType>> {
     if std::env::var_os("QSV_COMMENT_CHAR").is_some()
         || util::get_envvar_flag("QSV_SNIFF_PREAMBLE")
         || util::get_envvar_flag("QSV_NO_HEADERS")
+        || std::env::var("QSV_TOGGLE_HEADERS").is_ok_and(|v| v == "1")
     {
         log::info!("writestat: the stats engine would read other rows, so polars infers the types");
         return None;

@@ -1061,8 +1061,8 @@ fn writestat_stdin_leaves_no_stats_cache() {
     assert_eq!(std::fs::read_dir(wrk.path("tmp")).unwrap().count(), 0);
 }
 
-// A stats cache that no longer matches its file (same size, older input) is
-// reported, with how to get past it.
+// A stats cache that no longer fits its file (same size, older input) is set
+// aside, and polars infers the types itself.
 #[test]
 fn writestat_stale_stats_cache() {
     let wrk = Workdir::new("writestat_stale_stats_cache");
@@ -1076,17 +1076,24 @@ fn writestat_stale_stats_cache() {
     let older = filetime::FileTime::from_unix_time(cache_mtime.unix_seconds() - 60, 0);
     filetime::set_file_mtime(wrk.path("in.csv"), older).unwrap();
 
-    let mut cmd = wrk.command("writestat");
-    cmd.args(["in.csv", "-o", "second.sav"]);
-    let err = wrk.stderr_on_error(&mut cmd);
-    assert!(err.contains("may be out of date"), "{err}");
-    assert!(err.contains("QSV_STATSCACHE_MODE=none"), "{err}");
+    inferred(&wrk, "second.sav", true);
+    assert_eq!(var(&metadata(&wrk, "second.sav"), "n")["type"], "Str");
+    assert_eq!(read_back(&wrk, "second.sav", &[]), "n\n1\nx\n");
+}
 
-    let mut cmd = wrk.command("writestat");
-    cmd.args(["in.csv", "-o", "third.sav"])
-        .env("QSV_STATSCACHE_MODE", "none");
+// A cache written under QSV_COMMENT_CHAR left out a line polars reads as a row.
+#[test]
+fn writestat_comment_char_stats_cache() {
+    let wrk = Workdir::new("writestat_comment_char_stats_cache");
+    wrk.create_from_string("in.csv", "n\n1\n#foo\n2\n");
+    let old = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+    filetime::set_file_mtime(wrk.path("in.csv"), old).unwrap();
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--cardinality", "--stats-jsonl", "in.csv"])
+        .env("QSV_COMMENT_CHAR", "#");
     wrk.assert_success(&mut cmd);
-    assert_eq!(read_back(&wrk, "third.sav", &[]), "n\n1\nx\n");
+    inferred(&wrk, "out.sav", true);
+    assert_eq!(read_back(&wrk, "out.sav", &[]), "n\n1\n#foo\n2\n");
 }
 
 // The one intended change from polars' own inference: zero-padded numbers
@@ -1151,4 +1158,16 @@ fn writestat_comment_char_skips_stats() {
     wrk.assert_success(&mut cmd);
     assert_eq!(var(&metadata(&wrk, "out.sav"), "n")["type"], "Str");
     assert_eq!(read_back(&wrk, "out.sav", &[]), "n\n1\n#foo\n2\n");
+}
+
+// QSV_TOGGLE_HEADERS=1 makes the stats engine read the header as a row.
+#[test]
+fn writestat_toggle_headers_skips_stats() {
+    let wrk = Workdir::new("writestat_toggle_headers_skips_stats");
+    wrk.create_from_string("in.csv", "n\n1\n2\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.sav"])
+        .env("QSV_TOGGLE_HEADERS", "1");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(var(&metadata(&wrk, "out.sav"), "n")["type"], "Numeric");
 }

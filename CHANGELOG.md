@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 - **`writestat` without a dictionary no longer spends minutes inferring column types** ([#4744](https://github.com/dathere/qsv/issues/4744)). Nearly all its time went into Polars inferring the CSV's column types: it read the whole file on one thread and tried date patterns on every text cell, so a 1M-row file took 1.5 to 7 minutes before the writer even started. Numeric columns are now typed from the stats cache, which is multithreaded and reused by later runs. Text columns that hold dates, times or true/false values are recognised the way Polars recognises them. On a 1M-row NYC 311 file, a dev build now takes 21 s with a cold stats cache and 6 s with a warm one, where the 24.0.0 release build took 84 to 399 s across runs.
   - The output is unchanged except for **zero-padded numbers, which now keep their zeros as text**. Polars read `0000000000` in NYC's `bbl` column as the number 0, but such columns are usually codes (ZIP, FIPS, BBL), and the stats engine types them as text. A few other edge cases change in the same direction: quoted numbers are read as numbers, as are `+5` and `NaN`/`Infinity` written in other cases, and integers too large for 64 bits become doubles.
-  - Set `QSV_STATSCACHE_MODE=none` to have Polars infer every type itself, as before. If a stats cache's numeric types no longer fit its file, `writestat` stops and says so.
+  - Set `QSV_STATSCACHE_MODE=none` to have Polars infer every type itself, as before. If a stats cache doesn't fit its file (it is out of date, or was written under other reader settings), Polars infers the types instead.
 
 ## [24.0.0] - 2026-10-05 ⚖️ The "Evidence Act" Release 🏛️
 

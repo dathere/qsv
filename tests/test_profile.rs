@@ -2401,6 +2401,65 @@ fn catalog_dataset_info_override_clears_stale_warnings() {
 }
 
 #[test]
+fn catalog_field_warning_not_cleared_by_same_named_dataset_field() {
+    // A required `catalog.fields` entry that renders empty must keep its
+    // `missing X` warning even when the inner Dataset has a populated
+    // field of the same name: the warning is scoped to the envelope.
+    let wrk = Workdir::new("profile_catalog_field_scope");
+    seed_geo_csv(&wrk);
+    let base = std::fs::read_to_string(
+        std::env::current_dir()
+            .unwrap()
+            .join("resources/profiles/dcat-us-v3.yaml"),
+    )
+    .unwrap();
+    let anchor = "  dataset_key: \"dataset\"\n";
+    assert_eq!(base.matches(anchor).count(), 1, "profile anchor moved");
+    let custom = base.replace(
+        anchor,
+        &format!(
+            "{anchor}  fields:\n    - path: \"description\"\n      template: ''\n      \
+             required_level: required\n"
+        ),
+    );
+    std::fs::write(wrk.path("custom.yaml"), custom).unwrap();
+    std::fs::write(
+        wrk.path("init.json"),
+        r#"{"package": {"title": "X", "notes": "Dataset notes", "name": "x"}}"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "custom.yaml",
+        "--catalog",
+        "--initial-context",
+        "init.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/dataset/0/description")
+            .and_then(|v| v.as_str()),
+        Some("Dataset notes"),
+    );
+    assert!(out.pointer("/projection/description").is_none());
+    let warnings = out["projection_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w["field"] == "description" && w["message"] == "missing description"),
+        "catalog-scoped missing description must survive, got: {warnings:#?}",
+    );
+}
+
+#[test]
 fn dataset_info_override_supplies_field_before_strict_validation() {
     // Roborev finding 2439#4: validation must run AFTER dataset_info
     // overrides. A user who supplies a missing mandatory field via a

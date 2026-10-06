@@ -1105,3 +1105,50 @@ fn writestat_zero_padded_stays_text() {
         "code,n\n00123,1.0\n00456,2.0\n,3.0\n"
     );
 }
+
+/// Writes in.csv, then a stats cache for it with `stats_flags`, and makes the
+/// CSV older than the cache, so the cache is reused rather than recomputed.
+fn cached_with(wrk: &Workdir, csv: &str, stats_flags: &[&str]) {
+    wrk.create_from_string("in.csv", csv);
+    let old = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+    filetime::set_file_mtime(wrk.path("in.csv"), old).unwrap();
+    let mut cmd = wrk.command("stats");
+    cmd.args(stats_flags)
+        .args(["--cardinality", "--stats-jsonl", "in.csv"]);
+    wrk.assert_success(&mut cmd);
+}
+
+// A cache of a --select has its columns in another order: types by position
+// would go to the wrong columns.
+#[test]
+fn writestat_reordered_stats_cache() {
+    let wrk = Workdir::new("writestat_reordered_stats_cache");
+    cached_with(&wrk, "n,s\n1,a\n", &["--select", "2,1"]);
+    inferred(&wrk, "out.sav", true);
+    let meta = metadata(&wrk, "out.sav");
+    assert_eq!(var(&meta, "n")["type"], "Numeric");
+    assert_eq!(var(&meta, "s")["type"], "Str");
+}
+
+// --infer-boolean types a column of 0 & 1 as Boolean, which polars reads as
+// numbers.
+#[test]
+fn writestat_infer_boolean_stats_cache() {
+    let wrk = Workdir::new("writestat_infer_boolean_stats_cache");
+    cached_with(&wrk, "flag,x\n0,a\n1,b\n", &["--infer-boolean"]);
+    inferred(&wrk, "out.sav", true);
+    assert_eq!(var(&metadata(&wrk, "out.sav"), "flag")["type"], "Numeric");
+}
+
+// With a comment character, the stats engine skips lines polars reads as rows.
+#[test]
+fn writestat_comment_char_skips_stats() {
+    let wrk = Workdir::new("writestat_comment_char_skips_stats");
+    wrk.create_from_string("in.csv", "n\n1\n#foo\n2\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.sav"])
+        .env("QSV_COMMENT_CHAR", "#");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(var(&metadata(&wrk, "out.sav"), "n")["type"], "Str");
+    assert_eq!(read_back(&wrk, "out.sav", &[]), "n\n1\n#foo\n2\n");
+}

@@ -1405,16 +1405,47 @@ fn read_inferred(input: &Path, delim: u8) -> CliResult<DataFrame> {
 /// The column types the stats cache gives, as read by polars: whole numbers as
 /// Int64, other numbers as Float64 & the rest as text.
 fn stats_dtypes(input: &Path, delim: u8) -> Option<Vec<DataType>> {
+    // these make the CSV reader the stats engine uses skip or reinterpret
+    // lines that polars reads as rows
+    if std::env::var_os("QSV_COMMENT_CHAR").is_some()
+        || util::get_envvar_flag("QSV_SNIFF_PREAMBLE")
+        || util::get_envvar_flag("QSV_NO_HEADERS")
+    {
+        log::info!("writestat: the stats engine would read other rows, so polars infers the types");
+        return None;
+    }
+    match stats_dtypes_from(input, delim, false) {
+        StatsTypes::Usable(dtypes) => Some(dtypes),
+        // computed afresh, without the options that made it unusable
+        StatsTypes::Unusable => match stats_dtypes_from(input, delim, true) {
+            StatsTypes::Usable(dtypes) => Some(dtypes),
+            _ => None,
+        },
+        StatsTypes::Unavailable => None,
+    }
+}
+
+enum StatsTypes {
+    Usable(Vec<DataType>),
+    /// a cache written by another command, for other columns or types
+    Unusable,
+    Unavailable,
+}
+
+fn stats_dtypes_from(input: &Path, delim: u8, force: bool) -> StatsTypes {
+    let Ok(pattern_columns) = crate::select::SelectColumns::parse("") else {
+        return StatsTypes::Unavailable;
+    };
     let schema_args = util::SchemaArgs {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
         flag_strict_dates:    false,
         flag_strict_formats:  false,
-        flag_pattern_columns: crate::select::SelectColumns::parse("").ok()?,
+        flag_pattern_columns: pattern_columns,
         // dates are recognised as polars recognises them instead
         flag_dates_whitelist: String::new(),
         flag_prefer_dmy:      false,
-        flag_force:           false,
+        flag_force:           force,
         flag_stdout:          false,
         flag_jobs:            Some(util::njobs(None)),
         flag_polars:          false,
@@ -1425,23 +1456,41 @@ fn stats_dtypes(input: &Path, delim: u8) -> Option<Vec<DataType>> {
         flag_memcheck:        false,
         flag_output:          None,
     };
-    match util::get_stats_records(&schema_args, util::StatsMode::PolarsSchema) {
-        Ok((_, stats)) if !stats.is_empty() => Some(
-            stats
-                .iter()
-                .map(|s| match s.r#type.as_str() {
-                    "Integer" => DataType::Int64,
-                    "Float" => DataType::Float64,
-                    _ => DataType::String,
-                })
-                .collect(),
-        ),
-        Ok(_) => None,
-        Err(e) => {
-            log::info!("writestat: no stats cache, so polars infers the column types: {e}");
-            None
-        },
+    let (headers, stats) =
+        match util::get_stats_records(&schema_args, util::StatsMode::PolarsSchema) {
+            Ok((_, stats)) if stats.is_empty() => return StatsTypes::Unavailable,
+            Ok(records) => records,
+            Err(e) => {
+                log::info!("writestat: no stats cache, so polars infers the column types: {e}");
+                return StatsTypes::Unavailable;
+            },
+        };
+    // A cache is reused whatever options wrote it: one of a --select is in
+    // another column order, and --infer-boolean & --infer-dates type columns
+    // of numbers (0/1, timestamps) as booleans & dates.
+    let in_order = headers.len() == stats.len()
+        && headers
+            .iter()
+            .zip(&stats)
+            .all(|(header, s)| s.field.as_bytes() == header);
+    if !in_order
+        || stats
+            .iter()
+            .any(|s| matches!(s.r#type.as_str(), "Boolean" | "Date" | "DateTime"))
+    {
+        log::info!("writestat: the stats cache was written with other options");
+        return StatsTypes::Unusable;
     }
+    StatsTypes::Usable(
+        stats
+            .iter()
+            .map(|s| match s.r#type.as_str() {
+                "Integer" => DataType::Int64,
+                "Float" => DataType::Float64,
+                _ => DataType::String,
+            })
+            .collect(),
+    )
 }
 
 /// Types the text columns that polars, inferring the types itself, would have

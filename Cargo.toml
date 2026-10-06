@@ -455,7 +455,7 @@ sha2 = { version = "0.11", optional = true }
 simdutf8 = "0.1"
 spreadsheet-ods = { version = "1", optional = true }
 toml = "1.1"
-toon-format = { version = "0.5", default-features = false }
+toon-format = { version = "0.6", default-features = false }
 smallvec = "1"
 snap = "1"
 strsim = { version = "0.11", optional = true }

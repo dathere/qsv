@@ -1767,7 +1767,7 @@ fn frequency_toon() {
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --limit 0 --select h2 --toon`"
+description: Generated with `qsv frequency in.csv --limit 0 --select h2 --toon`
 rowcount: 7
 fieldcount: 1
 fields[1]:
@@ -1809,7 +1809,7 @@ fn frequency_toon_no_headers() {
     let got: String = wrk.stdout(&mut cmd);
     // NULL entries are now at the end by default (--null-sorted flag changes this behavior)
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon --pct-nulls`"
+description: Generated with `qsv frequency in.csv --limit 0 --select 1 --no-headers --toon --pct-nulls`
 rowcount: 8
 fieldcount: 1
 fields[1]:
@@ -1850,7 +1850,7 @@ fn frequency_toon_ignore_case() {
         .arg("--toon");
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --ignore-case --limit 0 --select h2 --toon`"
+description: Generated with `qsv frequency in.csv --ignore-case --limit 0 --select h2 --toon`
 rowcount: 7
 fieldcount: 1
 fields[1]:
@@ -1886,7 +1886,7 @@ fn frequency_toon_limit() {
     cmd.args(["--limit", "1"]).arg("--toon").arg("--pct-nulls");
     let got: String = wrk.stdout(&mut cmd);
     let expected = r#"input: in.csv
-description: "Generated with `qsv frequency in.csv --limit 1 --toon --pct-nulls`"
+description: Generated with `qsv frequency in.csv --limit 1 --toon --pct-nulls`
 rowcount: 7
 fieldcount: 2
 fields[2]:

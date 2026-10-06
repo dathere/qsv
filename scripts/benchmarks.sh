@@ -23,9 +23,9 @@
 #
 # Make sure you're using a release-optimized `qsv`.
 # If you can't use the prebuilt binaries at https://github.com/dathere/qsv/releases/latest,
-# build it to have at least the apply, geocode, luau, synthesize, to and polars features enabled:
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,synthesize,to,polars` or
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,synthesize,to,polars`
+# build it to have at least the apply, geocode, luau, readstat, synthesize, to and polars features enabled:
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,readstat,synthesize,to,polars` or
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,readstat,synthesize,to,polars`
 #
 # This shell script has been tested on Linux and macOS. It should work on other Unix-like systems,
 # but will NOT run on native Windows. If you're on Windows, you can run it using Cygwin or WSL
@@ -36,13 +36,13 @@
 #
 # And of course, it dogfoods `qsv` as well to prepare the benchmark data, fetch the rowcount,
 # and to parse and format the benchmark results. :)
-# It uses the following commands: apply, cat, count, luau, sample, schema, search, select, snappy, sort,
-# tojsonl and to xlsx. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
+# It uses the following commands: apply, cat, count, luau, safenames, sample, schema, search, select, slice,
+# snappy, sort, tojsonl, to xlsx and writestat. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
 
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.7.0
+bm_version=9.8.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -198,6 +198,17 @@ if "$qsv_bin" synthesize --help &>/dev/null; then
 else
   echo "NOTE: $qsv_bin does not have the synthesize feature - skipping the synthesize benchmark."
   echo "      Build with the synthesize feature enabled to benchmark the synthesize command."
+fi
+
+# check if $qsv_bin has the readstat & writestat commands (both gated by the readstat feature).
+# Also a SOFT check. The benchmarks' inputs are prepared by dogfooding writestat, so the
+# benchmarker binary must have the feature too, or we skip the whole group.
+has_readstat=0
+if "$qsv_bin" readstat --help &>/dev/null && "$qsv_benchmarker_bin" writestat --help &>/dev/null; then
+  has_readstat=1
+else
+  echo "NOTE: $qsv_bin or $qsv_benchmarker_bin does not have the readstat feature - skipping the"
+  echo "      readstat & writestat benchmarks. Build both with the readstat feature enabled to run them."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -467,6 +478,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f geo_data.csv
   rm -f ods_data.csv
   rm -f pragmastats_50kdata.csv*
+  rm -f stat_100kdata*
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
   rm -f data_sorted.csv
@@ -613,6 +625,32 @@ geo_rowcount=$("$qsv_benchmarker_bin" count --no-polars geo_data.csv)
 ods_rowcount=$("$qsv_benchmarker_bin" count --no-polars ods_data.csv)
 pragma_rowcount=$("$qsv_benchmarker_bin" count --no-polars pragmastats_50kdata.csv)
 
+# readstat & writestat inputs. writestat refuses the NYC 311 column names for SPSS & Stata
+# (they hold spaces), so the CSV is run through safenames first. A refusal exits instantly, and
+# as hyperfine runs with -i, it would be published as a plausible timing. That is also why SPSS
+# portable (.por) & SAS transport v5 (.xpt5) aren't benchmarked: they need names of at most
+# 8 bytes, which safenames doesn't give. A 100k-row subset keeps writestat affordable - a
+# full-size write takes 1.5 to 10 minutes per run. The readstat inputs are written from it too.
+stat_rowcount=
+if [[ "$has_readstat" -eq 1 ]]; then
+  if [ ! -r stat_100kdata.csv ]; then
+    echo "   stat_100kdata.csv..."
+    "$qsv_benchmarker_bin" slice -l 100000 "$data" |
+      "$qsv_benchmarker_bin" safenames -o stat_100kdata.csv
+  fi
+  for statfile in stat_100kdata.sav stat_100kdata.dta stat_100kdata.xpt; do
+    if [ ! -r "$statfile" ]; then
+      echo "   $statfile..."
+      "$qsv_benchmarker_bin" writestat stat_100kdata.csv -o "$statfile"
+    fi
+  done
+  if [ ! -r stat_100kdata_compressed.sav ]; then
+    echo "   stat_100kdata_compressed.sav..."
+    "$qsv_benchmarker_bin" writestat --compress stat_100kdata.csv -o stat_100kdata_compressed.sav
+  fi
+  stat_rowcount=$("$qsv_benchmarker_bin" count --no-polars stat_100kdata.csv)
+fi
+
 # Look up the recs_per_sec divisor for a benchmark BY NAME. Most benchmarks read the full
 # dataset and use $rowcount; the few that read a prepared subset are listed here. Sets the
 # global `subset_rowcount` to that subset's rowcount, or "" meaning "use the full $rowcount".
@@ -639,6 +677,10 @@ function rowcount_for_benchmark {
     ;;
   geoconvert_csv2geojsonl) subset_rowcount="$geo_rowcount" ;;
   to_ods) subset_rowcount="$ods_rowcount" ;;
+  readstat_sav | readstat_sav_compressed | readstat_dta | readstat_dta_select | readstat_xpt | \
+    writestat_sav | writestat_sav_compress | writestat_dta | writestat_xpt)
+    subset_rowcount="$stat_rowcount"
+    ;;
   *) subset_rowcount= ;;
   esac
 }
@@ -908,6 +950,13 @@ run pragmastat_50k_twosample "$qsv_bin" pragmastat --twosample --force -s \'Lati
 run --index pragmastat_50k_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
+if [[ "$has_readstat" -eq 1 ]]; then
+  run readstat_sav "$qsv_bin" readstat stat_100kdata.sav
+  run readstat_sav_compressed "$qsv_bin" readstat stat_100kdata_compressed.sav
+  run readstat_dta "$qsv_bin" readstat stat_100kdata.dta
+  run readstat_dta_select "$qsv_bin" readstat --select unique_key,agency,borough stat_100kdata.dta
+  run readstat_xpt "$qsv_bin" readstat stat_100kdata.xpt
+fi
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
 run replace "$qsv_bin" replace \'zip\' \'postal\' "$data"
 run --index replace_indexed "$qsv_bin" replace \'zip\' \'postal\' "$data"
@@ -1051,6 +1100,12 @@ run validate_valid_output "$qsv_bin" validate "$data" "$schema" --valid-output -
 run validate_dynenum "$qsv_bin" validate "$data" "$dynenum_schema"
 run validate_dynenum_batchall "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
 run validate_dynenum_valid_output "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
+if [[ "$has_readstat" -eq 1 ]]; then
+  run writestat_sav "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.sav
+  run writestat_sav_compress "$qsv_bin" writestat --compress stat_100kdata.csv -o benchmark_work.sav
+  run writestat_dta "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.dta
+  run writestat_xpt "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.xpt
+fi
 run --index validate_index "$qsv_bin" validate "$data" "$schema"
 run --index validate_batchall_index "$qsv_bin" validate --batch 0 "$data" "$schema"
 run --index validate_no_schema_index "$qsv_bin" validate "$data"

@@ -84,6 +84,7 @@ tmp/*
 *.key
 *.psv
 scripts/benchmark_data.*
+scripts/stat_100kdata*
 *.mcpb
 .roborev.toml
 /.claude/skills/docs/diagnosis

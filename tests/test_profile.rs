@@ -2258,6 +2258,207 @@ fn strict_fails_command_on_violation() {
     );
 }
 
+fn contactpoint_warnings(out: &Value) -> Vec<Value> {
+    out.get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter(|w| {
+                    w.get("field")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|f| f.contains("contactPoint"))
+                        || w.get("message")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|m| m.contains("contactPoint"))
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+fn validate_dedupes_missing_required_dataset_mode() {
+    // #4739: the template stage and the schema validator both flagged a
+    // missing contactPoint; only the schema finding should remain, and
+    // it must name the property rather than the (root) parent `""`.
+    let wrk = Workdir::new("profile_dedupe_required_dataset");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--validate", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let cp = contactpoint_warnings(&out);
+    assert_eq!(
+        cp.len(),
+        1,
+        "expected one contactPoint warning, got: {cp:#?}"
+    );
+    assert_eq!(cp[0]["field"], "contactPoint");
+    assert_eq!(cp[0]["severity"], "required");
+    let warnings = out["projection_warnings"].as_array().unwrap();
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w["severity"] == "required" && w["field"] == ""),
+        "no Required finding may have an empty field, got: {warnings:#?}",
+    );
+}
+
+#[test]
+fn validate_dedupes_missing_required_catalog_mode() {
+    let wrk = Workdir::new("profile_dedupe_required_catalog");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--validate", "--catalog", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let cp = contactpoint_warnings(&out);
+    assert_eq!(
+        cp.len(),
+        1,
+        "expected one contactPoint warning, got: {cp:#?}"
+    );
+    assert_eq!(cp[0]["field"], "dataset/0/contactPoint");
+    assert_eq!(cp[0]["severity"], "required");
+}
+
+#[test]
+fn strict_count_matches_required_warnings() {
+    let wrk = Workdir::new("profile_strict_count_matches");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--validate", "--catalog", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let required = out["projection_warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| w["severity"] == "required")
+        .count();
+    assert!(required > 0, "fixture must have Required findings");
+
+    let mut strict = wrk.command("profile");
+    strict.args([
+        "in.csv",
+        "--validate",
+        "--strict",
+        "--catalog",
+        "-o",
+        "strict.json",
+    ]);
+    let output = strict.output().expect("spawn qsv profile");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("{required} schema violation(s)")),
+        "--strict count must equal the {required} Required warnings, got: {stderr}",
+    );
+}
+
+#[test]
+fn catalog_dataset_info_override_clears_stale_warnings() {
+    // In --catalog mode the Dataset lives at `dataset/0`; the stale
+    // build-time filter must look there, not only at the envelope root.
+    let wrk = Workdir::new("profile_clear_stale_catalog");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "dataset_info": {
+                "/projection/dataset/0/contactPoint": {
+                    "@type":    "Kind",
+                    "fn":       "Override",
+                    "hasEmail": "mailto:o@x.gov"
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--catalog",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/dataset/0/contactPoint/fn")
+            .and_then(|v| v.as_str()),
+        Some("Override"),
+    );
+    let cp = contactpoint_warnings(&out);
+    assert!(
+        cp.is_empty(),
+        "stale contactPoint warning must be filtered out, got: {cp:#?}"
+    );
+}
+
+#[test]
+fn catalog_field_warning_not_cleared_by_same_named_dataset_field() {
+    // A required `catalog.fields` entry that renders empty must keep its
+    // `missing X` warning even when the inner Dataset has a populated
+    // field of the same name: the warning is scoped to the envelope.
+    let wrk = Workdir::new("profile_catalog_field_scope");
+    seed_geo_csv(&wrk);
+    let base = std::fs::read_to_string(
+        std::env::current_dir()
+            .unwrap()
+            .join("resources/profiles/dcat-us-v3.yaml"),
+    )
+    .unwrap();
+    let anchor = "  dataset_key: \"dataset\"\n";
+    assert_eq!(base.matches(anchor).count(), 1, "profile anchor moved");
+    let custom = base.replace(
+        anchor,
+        &format!(
+            "{anchor}  fields:\n    - path: \"description\"\n      template: ''\n      \
+             required_level: required\n"
+        ),
+    );
+    std::fs::write(wrk.path("custom.yaml"), custom).unwrap();
+    std::fs::write(
+        wrk.path("init.json"),
+        r#"{"package": {"title": "X", "notes": "Dataset notes", "name": "x"}}"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "custom.yaml",
+        "--catalog",
+        "--initial-context",
+        "init.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/projection/dataset/0/description")
+            .and_then(|v| v.as_str()),
+        Some("Dataset notes"),
+    );
+    assert!(out.pointer("/projection/description").is_none());
+    let warnings = out["projection_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w["field"] == "description" && w["message"] == "missing description"),
+        "catalog-scoped missing description must survive, got: {warnings:#?}",
+    );
+}
+
 #[test]
 fn dataset_info_override_supplies_field_before_strict_validation() {
     // Roborev finding 2439#4: validation must run AFTER dataset_info

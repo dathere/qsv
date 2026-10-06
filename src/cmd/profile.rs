@@ -474,6 +474,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         serde_json::to_value(&formula_results).unwrap_or(json!([])),
     );
 
+    // Build-time projection warnings, each paired with the JSON-Pointer
+    // prefix (no leading `/`) of the object its `field` is relative to:
+    // `""` for the projection root (Dataset mode, or the Catalog
+    // envelope's own fields) and `<dataset_key>/0/` for Dataset fields
+    // once wrapped in a Catalog. Consumed after overrides + validation.
+    let mut pending_warnings: Vec<(projection::ProjectionWarning, String)> = Vec::new();
+
     if !args.flag_no_projection {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
@@ -518,7 +525,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Wrapping first would push discovered Dataset metadata onto
         // the outer Catalog (where keys like `dct:contactPoint`
         // shouldn't live) instead of the inner Dataset.
-        let (dataset_block, mut projection_warnings) = projection::project(
+        let (dataset_block, dataset_warnings) = projection::project(
             &profile,
             &projection_ctx,
             projection::ProjectionMode::Dataset,
@@ -532,20 +539,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =
                 projection::wrap_in_catalog_envelope(&profile, merged_dataset, &projection_ctx)?;
-            projection_warnings.extend(cat_warnings);
+            let dataset_key = profile
+                .catalog
+                .as_ref()
+                .and_then(|c| c.dataset_key.as_deref())
+                .unwrap_or("dcat:dataset");
+            let prefix = format!("{}/0/", dataset_key.replace('~', "~0").replace('/', "~1"));
+            pending_warnings.extend(dataset_warnings.into_iter().map(|w| (w, prefix.clone())));
+            pending_warnings.extend(cat_warnings.into_iter().map(|w| (w, String::new())));
             catalog_block
         } else {
+            pending_warnings.extend(dataset_warnings.into_iter().map(|w| (w, String::new())));
             merged_dataset
         };
         out_map.insert("projection".to_string(), merged_dcat);
-        // Stash the build-time warnings for now; we'll insert them
-        // after dataset_info overrides + schema validation have had
-        // their say so the final projection_warnings array reflects
-        // the emitted projection block, not an intermediate snapshot.
-        out_map.insert(
-            "__pending_projection_warnings".to_string(),
-            serde_json::to_value(&projection_warnings).unwrap_or(json!([])),
-        );
         // Surface the raw discovered DCAT alongside the merged block so
         // downstream tooling can diff or audit what came from the
         // publisher vs what qsv inferred. The discovered payload is
@@ -583,26 +590,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Phase 6 (post-override): JSON Schema validation runs on the
     // emitted projection block, after dataset_info overrides have
-    // applied. Pulls the stashed build-time warnings back out, drops
+    // applied. Takes the pending build-time warnings, drops
     // any whose referenced field is now present in the final
     // projection block (the dataset_info override or discovered-DCAT
     // merge satisfied them), then merges schema violations into the
     // final projection_warnings array.
     if !args.flag_no_projection {
         let out_map = output.as_object_mut().unwrap();
-        let stashed: Vec<projection::ProjectionWarning> = out_map
-            .remove("__pending_projection_warnings")
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
-        // Stale-warning filter consults the final projection shape.
-        // For Catalog mode the build-time warnings still reference
-        // Dataset fields by name (`dcat:contactPoint`), so the filter
-        // must walk into `dcat:dataset[0]` when it's present.
         let final_projection_snapshot = out_map.get("projection").cloned();
-        let mut projection_warnings: Vec<projection::ProjectionWarning> = stashed
+        let (mut projection_warnings, warning_prefixes): (
+            Vec<projection::ProjectionWarning>,
+            Vec<String>,
+        ) = pending_warnings
             .into_iter()
-            .filter(|w| !final_projection_has_field(final_projection_snapshot.as_ref(), &w.field))
-            .collect();
+            .filter(|(w, prefix)| {
+                !final_projection_has_field(final_projection_snapshot.as_ref(), prefix, &w.field)
+            })
+            .unzip();
 
         if args.flag_validate
             && let Some(final_projection) = out_map.get("projection")
@@ -635,6 +639,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     blocking.len()
                 )));
             }
+            // The schema validator and the template stage both report a
+            // missing Required property; keep only the schema finding,
+            // which is the one --strict counts.
+            // `retain` visits elements exactly once, in order, so the
+            // parallel prefix iterator stays aligned.
+            let mut prefixes = warning_prefixes.iter();
+            projection_warnings.retain(|w| {
+                let prefix = prefixes.next().map_or("", String::as_str);
+                !is_dup_of_schema_required(w, prefix, &validation)
+            });
             projection_warnings.extend(validation);
 
             // Out-of-process validator (e.g. mlcroissant, pyshacl).
@@ -1140,23 +1154,33 @@ fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
 }
 
 /// Returns true when the final projection block carries a non-null,
-/// non-empty value for `field` (a JSON-LD key like `"dcat:contactPoint"`
-/// or a nested path like `"dcat:distribution/0/dct:license"`). Used
-/// to filter stale build-time warnings after `dataset_info` overrides
-/// and discovered-DCAT merging have had a chance to populate slots
-/// that were originally absent.
+/// non-empty value for `field` (a key like `"contactPoint"` or a nested
+/// path like `"distribution/0/license"`) inside the object at `prefix`
+/// (a JSON-Pointer prefix without the leading `/`: `""` for the
+/// projection root, `"dataset/0/"` for a Dataset wrapped in a Catalog).
+/// Used to filter stale build-time warnings after `dataset_info`
+/// overrides and discovered-DCAT merging have had a chance to populate
+/// slots that were originally absent.
 ///
 /// Top-level field names get a fast direct lookup; nested paths are
 /// resolved via JSON Pointer (with a leading `/` added if absent).
 /// Returns false for any unparseable / missing field — the safe
 /// default is "keep the warning".
-fn final_projection_has_field(final_projection: Option<&Value>, field: &str) -> bool {
-    let Some(projection) = final_projection else {
+fn final_projection_has_field(final_projection: Option<&Value>, prefix: &str, field: &str) -> bool {
+    let Some(root) = final_projection else {
         return false;
     };
     if field.is_empty() {
         return false;
     }
+    let scope = if prefix.is_empty() {
+        Some(root)
+    } else {
+        root.pointer(&format!("/{}", prefix.trim_end_matches('/')))
+    };
+    let Some(projection) = scope else {
+        return false;
+    };
     // Top-level field name (the common case for build-time warnings).
     if !field.contains('/')
         && let Some(v) = projection.get(field)
@@ -1172,6 +1196,27 @@ fn final_projection_has_field(final_projection: Option<&Value>, field: &str) -> 
     projection
         .pointer(&pointer)
         .is_some_and(|v| !is_value_empty(v))
+}
+
+/// True when `w` is a template-stage "missing X" warning that the
+/// schema validator also reported as a Required missing property at
+/// the same location (`prefix` + `X`, see [`final_projection_has_field`]).
+/// Render-error warnings at the same field are deliberately not
+/// matched — they explain *why* the field is missing.
+fn is_dup_of_schema_required(
+    w: &projection::ProjectionWarning,
+    prefix: &str,
+    schema: &[projection::ProjectionWarning],
+) -> bool {
+    if !matches!(w.severity, projection::Severity::Required)
+        || w.message != format!("missing {}", w.field)
+    {
+        return false;
+    }
+    let path = format!("{prefix}{}", w.field);
+    schema
+        .iter()
+        .any(|s| matches!(s.severity, projection::Severity::Required) && s.field == path)
 }
 
 fn is_value_empty(v: &Value) -> bool {

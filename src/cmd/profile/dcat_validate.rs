@@ -327,7 +327,23 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
             .iter_errors(block)
             .map(|err| {
                 let path = err.instance_path().to_string();
-                let field = path.trim_start_matches('/').to_string();
+                // A `required` error points at the parent object, not
+                // the missing key; qualify `field` with the property so
+                // findings can be matched against template-stage
+                // warnings (and so a root-level miss isn't `""`).
+                let field = match err.kind() {
+                    jsonschema::error::ValidationErrorKind::Required { property } => {
+                        let prop = property
+                            .as_str()
+                            .map_or_else(|| property.to_string(), str::to_string)
+                            .replace('~', "~0")
+                            .replace('/', "~1");
+                        format!("{path}/{prop}")
+                    },
+                    _ => path.clone(),
+                }
+                .trim_start_matches('/')
+                .to_string();
                 let kind = format!("{:?}", err.kind());
                 ProjectionWarning {
                     field,

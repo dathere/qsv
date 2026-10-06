@@ -4,6 +4,20 @@
 
 When unsure how to use a project tool or publish workflow, check existing docs first (e.g., marketplace docs, plugin docs) before guessing. Never fabricate CLI flags.
 
+## Shell environment
+
+- The shell is zsh on macOS. Quote glob patterns, and use arrays rather than unquoted word-splitting in loops.
+- Use BSD `sed` syntax (`sed -i ''`). For multi-line source edits, prefer Edit or serena tools over sed or perl scripts.
+- Test jq expressions on a small sample before chaining them into verification commands.
+
+## Standard PR workflow (qsv)
+
+1. Fix with regression tests, then mutation-check them: revert the fix and confirm the tests fail.
+2. Update CHANGELOG (cite PR numbers), the USAGE/help text, and the wiki at ~/GitHub/qsv.wiki if behavior changed.
+3. Expect roborev review. Before pushing, self-review for edge cases: missing values, failure paths, `--` handling, feature-gated builds (Python), and permissions.
+4. Post-merge cleanup: first confirm `gh pr view <N> --json state` reports `MERGED` (deleting the head branch of an OPEN PR closes it). Then `git checkout master && git pull`, delete the local and remote branch, close linked issues with a comment, and don't file follow-up issues unless they are needed.
+- Only do release prep (version bumps, tags) when explicitly asked. 'Update CHANGELOG' means only the CHANGELOG.
+
 ## Documentation
 
 When counting items in documentation (tools, commands, features), always verify counts by explicitly listing and numbering each item. Never estimate counts.

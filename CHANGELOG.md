@@ -4,9 +4,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [24.0.0] - 2026-10-15 ⚖️ The "Evidence Act" Release 🏛️
-
-### Highlights
+## [24.0.0] - 2026-10-05 ⚖️ The "Evidence Act" Release 🏛️
 
 ~160 commits since 23.0.1, and the theme is **EVIDENCE**. The 2019 [Foundations for Evidence-Based Policymaking Act](https://www.congress.gov/bill/115th-congress/house-bill/4174) asks US federal agencies to build policy on evidence, to make their data open by default and machine-readable, and to describe all of it in a public data inventory. Seven years on, the hard part is rarely the law. It is the plumbing: the evidence sits in SAS, Stata and SPSS files, and the inventory has to pass a validator. This release works on both.
 
@@ -31,6 +29,16 @@ From the statistician's `.sav` file to the inventory entry on data.gov, qsv now 
 
 > [!IMPORTANT]
 > **The x86_64 prebuilts now require a CPU with AVX2** (`x86-64-v3`). Older Intel Pentium/Celeron/Atom parts and VMs with a conservative CPU model (`kvm64`/`qemu64`) will die with `Illegal instruction`, and **`qsv --update` would install a binary that cannot run, or update itself back.** Check with `grep -o avx2 /proc/cpuinfo | head -1` before updating. `qsvdp` and the aarch64, ppc64le and s390x prebuilts are unaffected. See Breaking Changes.
+>
+> In addition, Profile Guided Optimization (PGO) did not work on Apple Silicon for this release (https://github.com/dathere/qsv/issues/4740), so the performance gains realized by improving `stats` & `frequency` algorithms will not be as much until PGO starts working again on Apple Silicon.
+
+### 🙏 Contributors
+
+Thanks to everyone who made 24.0.0 possible:
+
+- [@meop](https://github.com/meop) for the new Linux ARM64 musl ([#4721](https://github.com/dathere/qsv/pull/4721)) and Windows ARM64 GNU ([#4722](https://github.com/dathere/qsv/pull/4722)) prebuilts
+- [@dexhunter](https://github.com/dexhunter) (with Aiden of [Weco AI](https://weco.ai)) for frequency caches that survive temp-dir cleanup ([#4641](https://github.com/dathere/qsv/pull/4641))
+- [@jrothbaum](https://github.com/jrothbaum) for the run of upstream [polars-readstat-rs](https://github.com/jrothbaum/polars_readstat) fixes behind this release's `readstat` work
 
 ---
 <a id="v24-changes" name="v24-changes"></a>

@@ -146,6 +146,8 @@ viz:
     grouped_violin_failed: "se omitió el panel de violines agrupados (%{q_err})"
     lorenz_capped: "%{q_dropped} medida(s) adicional(es) de alta desigualdad no se muestran como curvas de Lorenz (límite %{q_cap})"
     lorenz_failed: "se omitió el panel de Lorenz (%{q_err})"
+    benford_capped: "%{q_dropped} medida(s) adicional(es) no mostrada(s) como paneles de Benford de primer dígito (límite %{q_cap})"
+    benford_failed: "Panel de Benford omitido (%{q_err})"
     parcats_failed: "se omitió el panel de categorías paralelas (parcats) (%{q_err})"
     hierarchy_shown_as_parcats: "se omite el panel de jerarquía '%{q_title}': sus dimensiones ya se muestran en un panel de categorías paralelas (parcats)."
     hierarchy_shown_as_sankey: "se omite el panel de jerarquía '%{q_title}': sus dos dimensiones ya se muestran en un panel de flujo dirigido (Sankey), que transmite mejor su relación de muchos a muchos."
@@ -222,6 +224,11 @@ viz:
     agg_sum: "suma"
     agg_mean: "media"
     sampled: "%{q_name} (muestreado)"
+    benford: "%{q_label} — primeros dígitos de Benford (%{q_verdict}, MAD %{q_mad})"
+    benford_close: "conformidad estrecha"
+    benford_acceptable: "conformidad aceptable"
+    benford_marginal: "conformidad marginal"
+    benford_nonconforming: "no conforme"
     dominated_by: "(dominado por %{q_value}, %{q_pct}%)"
     # `pair_r` y `pair_r_nonlinear` los comparten DOS titulos distintos (el par
     # animado y el par estatico); se traducen siempre junto con ambos.
@@ -293,6 +300,8 @@ viz:
     box_gini: "Gini %{q_gini}"
     lorenz_unit: "la concentración es esperable salvo que las filas sean unidades comparables"
     lorenz_zeros: "tramo plano = %{q_pct}% ceros, no valores pequeños · %{q_unit}"
+    benford_caveat: "La ley de Benford se aplica a importes que abarcan varios órdenes de magnitud; una desviación invita a revisar, no prueba un error"
+    box_file_order_drift: "deriva en el orden del archivo"
     raw_count_caveat: "recuentos brutos — las regiones más grandes/activas acumulan más filas; añade --denominator-key para una tasa"
     raw_count_paired: "recuentos brutos — sin ajustar por el tamaño de la región"
     raw_sum_caveat: "totales brutos — las regiones más grandes/activas acumulan más; añade --denominator-key para una tasa"
@@ -323,6 +332,8 @@ viz:
     lorenz: "%{q_label} (Gini %{q_gini})<br>el %{x:.0%} inferior de los registros posee el %{y:.0%}<extra></extra>"
     # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
     lorenz_hoover: "Hoover %{q_hoover}: habría que redistribuir el %{q_pct}% del total para alcanzar la igualdad<extra></extra>"
+    benford: "primer dígito %{q_digit}: %{q_observed}% observado · %{q_expected}% esperado (Benford)"
+    scatter_fit: "ajuste por mínimos cuadrados: y = %{q_intercept} %{q_slope}·x<br>r² = %{q_r2}<extra></extra>"
     # Title hover listing the shape hints hidden behind a panel title's ellipsis.
     more_hints: "además: %{q_hints}"
     ohlc: "Apertura: %{open}<br>Máximo: %{high}<br>Mínimo: %{low}<br>Cierre: %{close}<extra></extra>"
@@ -396,6 +407,7 @@ viz:
       contour: "%{q_x} y %{q_y} son el par más correlacionado; con tantas filas una dispersión se saturaría, así que su densidad se dibuja como contornos."
       scatter3d: "Estas tres columnas forman la terna con mayor correlación, así que se dibujan juntas en una dispersión 3D giratoria."
       lorenz: "%{q_col} está distribuida de forma desigual (Gini %{q_gini}); la curva de Lorenz muestra cuánto se aleja su proporción acumulada de la igualdad perfecta."
+      benford: "Los dígitos iniciales de %{q_col} se comparan con la ley de Benford (%{q_verdict}); las barras muestran la frecuencia de cada primer dígito y la línea punteada, la predicción de la ley."
       funnel: "El diccionario de datos declara estas columnas como etapas ordenadas de un proceso, así que se dibujan como embudo de la primera etapa a la última."
       measure_by_dim: "Este par — una medida dividida por una categoría — muestra la asociación más fuerte de ese tipo en el conjunto de datos."
       grouped_violin: "Una silueta de distribución por categoría: la misma división que la barra contigua, pero mostrando toda la dispersión en lugar de un solo agregado."

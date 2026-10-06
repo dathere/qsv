@@ -4403,6 +4403,133 @@ fn viz_smart_scatter_pair_panel() {
     // a scatter trace whose panel title names the pair and its (rounded) r value
     assert!(html.contains(r#""type":"scatter""#));
     assert!(html.contains("metric_a vs metric_b (r="));
+    // the drill-down carries its least-squares line: b = 2a + (a mod 2) over a = 0..9 gives slope
+    // 2 + 0.25/8.25 = 2.03 and r² = 16.75² / (8.25 × 34.25) = 0.99
+    assert_eq!(html.matches(r#""name":"fit""#).count(), 1);
+    assert!(html.contains("2.03\u{b7}x"), "fit equation expected");
+    assert!(html.contains("r\u{b2} = 0.99"), "fit r² expected");
+}
+
+#[test]
+fn viz_smart_scatter_pair_fit_line_on_inline_layout() {
+    // A coordinate pair forces the inline-div layout, which builds each plot separately from the
+    // typed grid — the fit line has to be added there too. Same pair as
+    // `viz_smart_scatter_pair_panel`.
+    let wrk = Workdir::new("viz_smart_scatter_pair_fit_line_on_inline_layout");
+    let mut rows = String::from("metric_a,metric_b,latitude,longitude\n");
+    for i in 0..60_u32 {
+        let a = i % 10;
+        let b = a * 2 + (i % 2);
+        let (lat, lon) = (
+            40.6 + f64::from(i % 50) * 0.004,
+            -74.0 + f64::from(i % 37) * 0.005,
+        );
+        rows.push_str(&format!("{a},{b},{lat:.4},{lon:.4}\n"));
+    }
+    wrk.create_from_string("metrics_geo.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "metrics_geo.csv",
+        "-o",
+        &out_html,
+        "--lat",
+        "latitude",
+        "--lon",
+        "longitude",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("qsv-viz-panel-1"),
+        "expected the inline-div layout (one div per panel)"
+    );
+    assert!(html.contains("metric_a vs metric_b (r="));
+    assert_eq!(html.matches(r#""name":"fit""#).count(), 1);
+}
+
+#[test]
+fn viz_smart_smarter_file_order_drift_hint() {
+    // `load` climbs steadily down the file (lag-1 autocorrelation ~1 from moarstats --advanced),
+    // so its distribution title notes the drift — unless the file runs in the charted date
+    // column's order, where file order IS time order and the time-series panel already shows the
+    // trend. `None` = no date column; `Some(Order)` = a date column in that file order.
+    #[derive(Clone, Copy)]
+    enum Order {
+        Sorted,
+        NearlySorted,
+        Scattered,
+    }
+    let csv = |dates: Option<Order>| {
+        let mut rows = String::from(if dates.is_some() {
+            "day,load\n"
+        } else {
+            "load\n"
+        });
+        for i in 0..300_u32 {
+            let load = 100 + i / 3;
+            match dates {
+                None => rows.push_str(&format!("{load}\n")),
+                Some(order) => {
+                    let k = match order {
+                        Order::Sorted => i / 3,
+                        // one early row out of place: stats calls it "Unsorted", lag-1 stays ~1
+                        Order::NearlySorted if i == 1 => 90,
+                        Order::NearlySorted => i / 3,
+                        // a permutation of days 0..99 with no run order (lag-1 ~0)
+                        Order::Scattered => (i * 37) % 100,
+                    };
+                    rows.push_str(&format!(
+                        "2024-{:02}-{:02},{load}\n",
+                        1 + k / 28,
+                        1 + k % 28
+                    ));
+                },
+            }
+        }
+        rows
+    };
+    let render = |name: &str, dates: Option<Order>| {
+        let wrk = Workdir::new(name);
+        wrk.create_from_string("load.csv", &csv(dates));
+        let out_html = wrk.path("load.html").to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "load.csv", "--smarter", "-o", &out_html]);
+        wrk.assert_success(&mut cmd);
+        let html = wrk.read_to_string("load.html").unwrap();
+        // the `load` distribution panel is drawn in every variant, so an absent hint is meaningful
+        assert!(html.contains(r#""type":"violin""#) || html.contains(r#""type":"box""#));
+        html
+    };
+
+    assert!(
+        render("viz_smart_drift_hint_no_date", None).contains("drifts in file order"),
+        "drift hint expected without a date column"
+    );
+    assert!(
+        render(
+            "viz_smart_drift_hint_scattered_date",
+            Some(Order::Scattered)
+        )
+        .contains("drifts in file order"),
+        "drift hint expected when the file is not in date order"
+    );
+    assert!(
+        !render("viz_smart_drift_hint_sorted_date", Some(Order::Sorted))
+            .contains("drifts in file order"),
+        "no drift hint when the file is sorted by the charted date column"
+    );
+    assert!(
+        !render(
+            "viz_smart_drift_hint_nearly_sorted_date",
+            Some(Order::NearlySorted)
+        )
+        .contains("drifts in file order"),
+        "no drift hint when the file is nearly in date order"
+    );
 }
 
 #[test]
@@ -15888,6 +16015,48 @@ fn viz_smart_smarter_adds_lorenz_for_unequal_measure() {
 }
 
 #[test]
+fn viz_smart_smarter_adds_benford_panel() {
+    // `--smarter` runs `moarstats --advanced`, which sets `benford_mad` for the additive `income`
+    // column (300 non-zero values spanning three decades). Every value (250 ones, 50 of
+    // 1000..1049) leads with "1" — 100% against Benford's 30.1% — so MAD ≈ 0.155: nonconforming.
+    // `widgets` (100..159) spans under two decades and gets no MAD, hence no panel.
+    let wrk = Workdir::new("viz_smart_smarter_adds_benford_panel");
+    wrk.create_from_string("inc.csv", &unequal_income_csv());
+
+    let out_html = wrk.path("inc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "inc.csv", "--smarter", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("inc.html").unwrap();
+    // the expected-share line is drawn once per Benford panel
+    assert_eq!(
+        html.matches(r#""name":"Benford""#).count(),
+        1,
+        "exactly one Benford panel (income) expected"
+    );
+
+    // the title carries moarstats' CACHED MAD, not a recomputed one
+    let mut rdr = csv::Reader::from_path(wrk.path("inc.stats.csv")).unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let col = |name: &str| headers.iter().position(|h| h == name).unwrap();
+    let (field_i, mad_i) = (col("field"), col("benford_mad"));
+    let mad: f64 = rdr
+        .records()
+        .map(Result::unwrap)
+        .find(|r| &r[field_i] == "income")
+        .expect("income row in the stats cache")[mad_i]
+        .parse()
+        .unwrap();
+    assert!(
+        html.contains(&format!(
+            "income \u{2014} Benford first digits (nonconforming, MAD {mad:.3})"
+        )),
+        "Benford title with the cached MAD {mad:.3} expected"
+    );
+    assert!(!html.contains("widgets \u{2014} Benford"));
+}
+
+#[test]
 fn viz_smart_lorenz_hoover_marker_on_inline_layout() {
     // The inline-div layout (taken when any non-cartesian panel — here a map — is present) builds
     // each Lorenz plot separately from the typed grid, so the Hoover marker has to be added there
@@ -15935,6 +16104,13 @@ fn viz_smart_lorenz_hoover_marker_on_inline_layout() {
         1,
         "the inline Lorenz plot should carry its Hoover marker"
     );
+    // the same income column also passes the Benford gate (300 non-zero values over three
+    // decades); the inline plot builder must add its expected-share line too
+    assert_eq!(
+        html.matches(r#""name":"Benford""#).count(),
+        1,
+        "the inline Benford plot should carry its expected-share line"
+    );
 }
 
 #[test]
@@ -15954,6 +16130,8 @@ fn viz_smart_plain_adds_no_lorenz_without_smarter() {
         !html.contains("Lorenz curve"),
         "plain viz smart (no --smarter) must not add a Lorenz panel; html: {html}"
     );
+    // nor a Benford panel: `benford_mad` also comes only from moarstats --advanced
+    assert_eq!(html.matches(r#""name":"Benford""#).count(), 0);
 }
 
 // A zero-inflated unequal additive measure: 300 rows of exactly 0 (60% of the column), 150 small

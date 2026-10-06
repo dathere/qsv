@@ -368,7 +368,7 @@
       {
         "flag": "--smarter",
         "type": "flag",
-        "description": "Before building the Data Schematic, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share, Gini). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, skew/outlier hints on box panels, and Lorenz curves for the most unequal additive measures. Costs one extra pass and writes <stem>.stats.csv, its sidecars and an .idx index. On geocode-enabled builds it also adds the US FIPS code to map hovers. Applied only with default parsing; an input using the --no-headers or --delimiter flags falls back to the standard Data Schematic. Only affects `smart`."
+        "description": "Before building the Data Schematic, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share, Gini, Benford MAD, lag-1 autocorrelation). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, skew/outlier/file-order-drift hints on box panels, Lorenz curves for the most unequal additive measures, and Benford first-digit panels for additive measures spanning 2+ orders of magnitude. Costs one extra pass and writes <stem>.stats.csv, its sidecars and an .idx index. On geocode-enabled builds it also adds the US FIPS code to map hovers. Applied only with default parsing; an input using the --no-headers or --delimiter flags falls back to the standard Data Schematic. Only affects `smart`."
       },
       {
         "flag": "--snap-max-dist",

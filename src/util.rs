@@ -6723,6 +6723,20 @@ mod tests {
     }
 
     #[test]
+    fn statsdata_lag1_and_benford_accept_string_caches() {
+        // same trap as `moment_skewness`: caches written before these joined STATSDATA_TYPES_MAP
+        // carry them as JSON STRINGS, which a strict f64 would reject for the WHOLE record.
+        let line = r#"{"field":"x","type":"Float","nullcount":0,"cardinality":9,"lag1_autocorrelation":"0.72","benford_mad":"0.0041"}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
+        assert_eq!(s.lag1_autocorrelation, Some(0.72));
+        assert_eq!(s.benford_mad, Some(0.0041));
+        let line = r#"{"field":"x","type":"Float","nullcount":0,"cardinality":9,"lag1_autocorrelation":-0.3,"benford_mad":""}"#;
+        let s: crate::cmd::stats::StatsData = serde_json::from_str(line).unwrap();
+        assert_eq!(s.lag1_autocorrelation, Some(-0.3));
+        assert_eq!(s.benford_mad, None);
+    }
+
+    #[test]
     fn resolve_stats_columns_exact_selection_wins() {
         let headers = csv::StringRecord::from(vec!["a", "b", "a"]);
         // the baseline ran here with --select 3,3: exact, and names line up

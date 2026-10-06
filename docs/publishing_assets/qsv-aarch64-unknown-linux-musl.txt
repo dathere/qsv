@@ -7,8 +7,9 @@ It uses the system allocator instead of jemalloc, because tikv-jemalloc does
 not build with the native ARM64 musl toolchain. qsvdp and qsvmcp are not
 included.
 
-If your system has glibc, the aarch64-unknown-linux-gnu prebuilt has more
-features. Otherwise, compile qsv natively on this platform to enable them.
+The aarch64-unknown-linux-gnu prebuilt has the same feature set, but uses
+jemalloc and is PGO-optimized, so prefer it if your system has glibc. To enable
+the other features, compile qsv natively on this platform.
 
 https://www.gnu.org/software/libc/
 https://musl.libc.org

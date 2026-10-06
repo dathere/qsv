@@ -139,23 +139,26 @@ _ISSUE_URL = "https://github.com/dathere/qsv/issues/4603"
 RELEASE_NOTE_HTML = (
     " <b>24.0.0 — built without PGO.</b> The Apple Silicon prebuilt benchmarked here skipped "
     f'profile-guided optimization (<a href="{_PGO_URL}">#4740</a>); 21.1.0-23.0.1 were PGO builds. '
-    "Even so, the median benchmark held level with 23.0.1. A few did slow — "
-    "<code>sortcheck_unsorted</code> takes ~1.9x as long, and <code>split_chunks_index_j1</code>, "
-    "<code>extdedup</code>, <code>snappy_compress</code> and <code>stats_index</code> 16-35% longer — "
-    "and lost PGO is a likely factor. Meanwhile 23.0.1's un-indexed regression is fixed "
-    f'(<a href="{_ISSUE_URL}">#4603</a>): un-indexed <code>count</code> is ~6x faster again, and '
-    "frequency, searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, "
-    "plus validate's ~2x faster plain scan, top this release's speedups.")
+    "Even so, the median benchmark held level with 23.0.1. The few that slowed by 16-35% — "
+    "<code>split_chunks_index_j1</code>, <code>extdedup</code>, <code>snappy_compress</code> and "
+    "<code>stats_index</code> — fell back to their pre-PGO (21.0.0 and earlier) range, consistent with "
+    "the lost PGO. <code>sortcheck_unsorted</code> is the exception: it held at ~10 ms through non-PGO "
+    "and PGO releases alike and is ~19 ms here, so PGO doesn't explain it. Meanwhile 23.0.1's "
+    f'un-indexed regression is fixed (<a href="{_ISSUE_URL}">#4603</a>): un-indexed <code>count</code> '
+    "is ~6x faster than on 23.0.1, and frequency, searchset and extsort cut 39-57% off their 23.0.1 "
+    "run times. Those recoveries, plus validate's ~2x faster plain scan, top this release's speedups.")
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
     "> **24.0.0 — built without PGO.** The Apple Silicon prebuilt benchmarked here skipped\n"
     f"> profile-guided optimization ([#4740]({_PGO_URL})); 21.1.0-23.0.1 were PGO builds. Even so,\n"
-    "> the median benchmark held level with 23.0.1. A few did slow — `sortcheck_unsorted` takes\n"
-    "> ~1.9x as long, and `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index`\n"
-    "> 16-35% longer — and lost PGO is a likely factor. Meanwhile 23.0.1's un-indexed regression is\n"
-    f"> fixed ([#4603]({_ISSUE_URL})): un-indexed `count` is ~6x faster again, and frequency,\n"
-    "> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus\n"
-    "> validate's ~2x faster plain scan, top this release's speedups.\n")
+    "> the median benchmark held level with 23.0.1. The few that slowed by 16-35% —\n"
+    "> `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index` — fell back to their\n"
+    "> pre-PGO (21.0.0 and earlier) range, consistent with the lost PGO. `sortcheck_unsorted` is the\n"
+    "> exception: it held at ~10 ms through non-PGO and PGO releases alike and is ~19 ms here, so PGO\n"
+    "> doesn't explain it. Meanwhile 23.0.1's un-indexed regression is fixed\n"
+    f"> ([#4603]({_ISSUE_URL})): un-indexed `count` is ~6x faster than on 23.0.1, and frequency,\n"
+    "> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus validate's\n"
+    "> ~2x faster plain scan, top this release's speedups.\n")
 
 
 def find_qsv():

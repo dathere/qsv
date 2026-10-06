@@ -9,12 +9,14 @@ for the methodology and the raw CSVs.
 > [!NOTE]
 > **24.0.0 — built without PGO.** The Apple Silicon prebuilt benchmarked here skipped
 > profile-guided optimization ([#4740](https://github.com/dathere/qsv/issues/4740)); 21.1.0-23.0.1 were PGO builds. Even so,
-> the median benchmark held level with 23.0.1. A few did slow — `sortcheck_unsorted` takes
-> ~1.9x as long, and `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index`
-> 16-35% longer — and lost PGO is a likely factor. Meanwhile 23.0.1's un-indexed regression is
-> fixed ([#4603](https://github.com/dathere/qsv/issues/4603)): un-indexed `count` is ~6x faster again, and frequency,
-> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus
-> validate's ~2x faster plain scan, top this release's speedups.
+> the median benchmark held level with 23.0.1. The few that slowed by 16-35% —
+> `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index` — fell back to their
+> pre-PGO (21.0.0 and earlier) range, consistent with the lost PGO. `sortcheck_unsorted` is the
+> exception: it held at ~10 ms through non-PGO and PGO releases alike and is ~19 ms here, so PGO
+> doesn't explain it. Meanwhile 23.0.1's un-indexed regression is fixed
+> ([#4603](https://github.com/dathere/qsv/issues/4603)): un-indexed `count` is ~6x faster than on 23.0.1, and frequency,
+> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus validate's
+> ~2x faster plain scan, top this release's speedups.
 
 > Looking for the **full per-command timing tables**? See the classic
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the

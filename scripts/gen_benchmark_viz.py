@@ -73,14 +73,16 @@ SOURCE_URL = "https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_v
 # stay out — an index barely helps a streaming command (sample_100000, exclude and
 # frequency_sorted all sit at ~1.0x). validate was one of those for most of its history (~1.06x
 # from launch through 22.0.1) and joined once #4508/#4509 — which took the serde_json::Value
-# conversion out of the batch-parallel validation path — roughly doubled its indexed throughput.
-# That is so far a ONE-run result; drop it back out if a later run returns it toward 1x.
-INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl", "validate"]
+# conversion out of the batch-parallel validation path — roughly doubled its indexed throughput
+# (2.28x at 23.0.1). It was dropped again at 24.0.0: the plain scan caught up (~2x faster), so
+# the pair fell back to 1.24x — a real win for everyone, but no longer an index story.
+INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl"]
 # Full-history trend: each marquee command's PLAIN and `_index` variant as SEPARATE series, so
 # the index advantage reads release by release. Each entry below is expanded to `<name>` and
 # `<name>_index` by prep_trend(). stats is represented by its heavier `--everything` pass.
 # search/searchset only gained index support at 10.0.0, so those two `_index` lines start there;
-# validate's pair ran together (~1x) until its index finally started paying off around 23.0.0.
+# validate's pair ran together (~1x) for most of its history; its index gap opened at 23.0.x and
+# narrowed again at 24.0.0 when the plain scan caught up.
 TREND_PAIRS = ["stats_everything", "frequency", "search", "searchset", "validate"]
 # Heatmap: marquee commands shown with their index variant wherever it exists, folded into one
 # line per command by merge_index() (the base variant is used before index support was added).
@@ -131,23 +133,29 @@ GROWTH_CEILING = 10_000_000
 # next run rather than quietly becoming a false claim about newer numbers. Set to None (or bump the
 # version and rewrite) when a newer run supersedes it. Standing behaviour does NOT belong here — it
 # goes in the affected chart's own description, which every future run keeps rendering.
-RELEASE_NOTE_VERSION = "23.0.1"
+RELEASE_NOTE_VERSION = "24.0.0"
+_PGO_URL = "https://github.com/dathere/qsv/issues/4740"
 _ISSUE_URL = "https://github.com/dathere/qsv/issues/4603"
 RELEASE_NOTE_HTML = (
-    " <b>23.0.1 — un-indexed regression, under investigation.</b> Un-indexed <code>count</code> is "
-    "~8.6x slower than 22.0.1, and several other un-indexed benchmarks fell 34-58%, while their "
-    "indexed counterparts improved. The un-indexed row count routes through polars and this release "
-    "moved polars from crates.io 0.55.2 to the py-1.44.2 git pin; the indexed path reads the index "
-    f'instead and is unaffected. Tracked in <a href="{_ISSUE_URL}">#4603</a> — building an index '
-    "sidesteps it entirely.")
+    " <b>24.0.0 — built without PGO.</b> The Apple Silicon prebuilt benchmarked here skipped "
+    f'profile-guided optimization (<a href="{_PGO_URL}">#4740</a>); 21.1.0-23.0.1 were PGO builds. '
+    "Even so, the median benchmark held level with 23.0.1. A few did slow — "
+    "<code>sortcheck_unsorted</code> takes ~1.9x as long, and <code>split_chunks_index_j1</code>, "
+    "<code>extdedup</code>, <code>snappy_compress</code> and <code>stats_index</code> 16-35% longer — "
+    "and lost PGO is a likely factor. Meanwhile 23.0.1's un-indexed regression is fixed "
+    f'(<a href="{_ISSUE_URL}">#4603</a>): un-indexed <code>count</code> is ~6x faster again, and '
+    "frequency, searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, "
+    "plus validate's ~2x faster plain scan, top this release's speedups.")
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
-    "> **23.0.1 — un-indexed regression, under investigation.** Un-indexed `count` is ~8.6x slower\n"
-    "> than 22.0.1, and several other un-indexed benchmarks fell 34-58%, while their indexed\n"
-    "> counterparts improved. The un-indexed row count routes through polars, and this release moved\n"
-    "> polars from crates.io 0.55.2 to the `py-1.44.2` git pin; the indexed path reads the index\n"
-    f"> instead and is unaffected. Tracked in [#4603]({_ISSUE_URL}) — building an index sidesteps it\n"
-    "> entirely.\n")
+    "> **24.0.0 — built without PGO.** The Apple Silicon prebuilt benchmarked here skipped\n"
+    f"> profile-guided optimization ([#4740]({_PGO_URL})); 21.1.0-23.0.1 were PGO builds. Even so,\n"
+    "> the median benchmark held level with 23.0.1. A few did slow — `sortcheck_unsorted` takes\n"
+    "> ~1.9x as long, and `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index`\n"
+    "> 16-35% longer — and lost PGO is a likely factor. Meanwhile 23.0.1's un-indexed regression is\n"
+    f"> fixed ([#4603]({_ISSUE_URL})): un-indexed `count` is ~6x faster again, and frequency,\n"
+    "> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus\n"
+    "> validate's ~2x faster plain scan, top this release's speedups.\n")
 
 
 def find_qsv():
@@ -340,8 +348,8 @@ def prep_index():
 
 def prep_count():
     # `count` on its own axis: with an index it reads the precomputed row count → effectively
-    # instant (two orders of magnitude over the plain scan since #4472 took the un-indexed path off
-    # the fast Polars count), a range far too wide for the shared charts.
+    # instant (an order of magnitude or more over the plain scan), a range far too wide for the
+    # shared charts.
     f = qsv(["search", "-s", "name", r"^count(_index)?$", LATEST], tmp("cnt0.csv"))
     return qsv(["luau", "map", "index_status",
                 '(name:sub(-6)=="_index") and "with index" or "no index"', f], tmp("count.csv"))
@@ -571,6 +579,7 @@ def build_index(figs, info):
             f"<span><b>Platform</b> {html_escape(plat)}</span>",
             f"<span><b>CPU</b> {html_escape(chip or '?')} ({html_escape(cores)} cores)</span>",
             f"<span><b>RAM</b> {html_escape(mem)}</span>",
+            f"<span><b>Build</b> {html_escape(info.get('kind', '?'))}</span>",
             "<span><b>Dataset</b> NYC 311 — 1M rows × 41 cols (520 MB)</span>"]
     parts.append("<div class=meta>" + "".join(meta) + "</div>")
     parts.append("</header>")
@@ -798,7 +807,10 @@ def main():
                     f"The gap between a pair is what an index buys you. {tr_gap}"
                     "search and searchset only learned to use an index at 10.0.0, so those two "
                     "_index lines start there. validate is the exception — its pair runs together "
-                    "for most of the history; an index barely helped it until the latest releases. "
+                    "for most of the history; an index gap opened at 23.0.x and narrowed at 24.0.0 "
+                    "when the plain scan roughly doubled in speed. "
+                    "Release builds were PGO-optimized from 21.1.0 through 23.0.1; 24.0.0's Apple "
+                    "Silicon build was not (#4740), so a dip at 24.0.0 may be the build, not the code. "
                     "stats is shown as the heavier --everything pass. The y-axis is logarithmic: "
                     "ten lines this far apart would pile up along the bottom of a linear axis, and "
                     "on a log axis a constant multiple reads as a constant vertical gap. Broad "
@@ -888,7 +900,8 @@ def main():
                     "The indexed marquee commands over the recent window, each row normalized to its "
                     "own peak (1.0 = that command's fastest release). Normalizing per row lets a "
                     "90M-rows/sec count and a 600k-rows/sec frequency share one canvas — the colour "
-                    "shows trajectory, not absolute speed."))
+                    "shows trajectory, not absolute speed. 24.0.0's Apple Silicon build skipped PGO "
+                    "(#4740), unlike 21.1.0-23.0.1, so read a cooler 24.0.0 cell with that in mind."))
     figs.append(viz("treemap", prep_treemap(),
                     ["--cols", "family,name", "--value", "mean", "--agg", "sum",
                      "--title", "Where the suite spends time (mean run time)"],

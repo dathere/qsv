@@ -5938,6 +5938,12 @@ pub fn infer_polars_schema(
     let (csv_fields, csv_stats) = get_stats_records(&schema_args, StatsMode::PolarsSchema)?;
     let mut schema = polars::prelude::Schema::with_capacity(csv_stats.len());
 
+    // stats min/max of date columns are normalised to RFC3339, so whether polars
+    // can read a column's dates is checked against its raw values instead
+    let temporal_samples = raw_temporal_samples(&table_str, delimiter, &csv_stats)?;
+    // the stats engine folds the env var in too
+    let dmy = prefer_dmy || get_envvar_flag("QSV_PREFER_DMY");
+
     // fetch the decimal scale from the QSV_POLARS_DECIMAL_SCALE env var
     let scale = std::env::var("QSV_POLARS_DECIMAL_SCALE")
         .ok()
@@ -6010,11 +6016,20 @@ pub fn infer_polars_schema(
                         }
                     },
                     "Boolean" => polars::datatypes::DataType::Boolean,
-                    "Date" => polars::datatypes::DataType::Date,
-                    "DateTime" => polars::datatypes::DataType::Datetime(
-                        polars::datatypes::TimeUnit::Milliseconds,
-                        None,
-                    ),
+                    "Date" | "DateTime" => {
+                        let samples = temporal_samples.get(&idx).map_or(&[][..], Vec::as_slice);
+                        polars_temporal_dtype(samples, dmy).unwrap_or_else(|| {
+                            if debuglog_flag {
+                                log::debug!(
+                                    "column {:?} typed String in the Polars schema: polars can't \
+                                     read its dates as qsv does (first value: {:?})",
+                                    stat.field,
+                                    samples.first()
+                                );
+                            }
+                            polars::datatypes::DataType::String
+                        })
+                    },
                     _ => polars::datatypes::DataType::String,
                 }
             },
@@ -6031,6 +6046,109 @@ pub fn infer_polars_schema(
         log::debug!("Saved stats_schema to file: {}", schema_file.display());
     }
     Ok(true)
+}
+
+/// Raw values of the columns stats typed Date/DateTime, keyed by column index.
+///
+/// Only a leading sample is read - up to `SAMPLE_MAX` non-empty values per column
+/// within the first `ROW_MAX` rows - as a full pass would double the cost of a
+/// schema stats already took a pass over. A later row in a format polars can't
+/// read still fails the read.
+#[cfg(feature = "polars")]
+fn raw_temporal_samples(
+    table: &String,
+    delimiter: Option<crate::config::Delimiter>,
+    stats: &[StatsData],
+) -> CliResult<std::collections::HashMap<usize, Vec<String>>> {
+    const SAMPLE_MAX: usize = 1_000;
+    const ROW_MAX: usize = 10_000;
+
+    let mut samples: std::collections::HashMap<usize, Vec<String>> = stats
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| matches!(s.r#type.as_str(), "Date" | "DateTime"))
+        .map(|(i, _)| (i, Vec::new()))
+        .collect();
+    if samples.is_empty() {
+        return Ok(samples);
+    }
+    let mut rdr = Config::new(Some(table)).delimiter(delimiter).reader()?;
+    let mut record = csv::ByteRecord::new();
+    let mut rows = 0;
+    // a row the reader can't read ends the sample early rather than failing the
+    // schema (a column with no values sampled is typed String)
+    while rows < ROW_MAX && rdr.read_byte_record(&mut record).unwrap_or(false) {
+        rows += 1;
+        let mut all_full = true;
+        for (&i, values) in &mut samples {
+            if values.len() < SAMPLE_MAX {
+                // untrimmed, as the polars CSV reader parses it
+                if let Some(v) = record.get(i).filter(|v| !v.is_empty()) {
+                    values.push(String::from_utf8_lossy(v).into_owned());
+                }
+                all_full &= values.len() >= SAMPLE_MAX;
+            }
+        }
+        if all_full {
+            break;
+        }
+    }
+    Ok(samples)
+}
+
+/// The Polars type a column of dates/datetimes can be read as, if the Polars CSV
+/// reader can parse its values the way qsv does.
+///
+/// Mirrors `writestat::recognise`: the first value picks the pattern, and every
+/// value must then parse with it. Day-first patterns are only accepted with
+/// `prefer_dmy`, as Polars reads `04/05/2019` as 4 May while qsv reads 5 April.
+#[cfg(feature = "polars")]
+fn polars_temporal_dtype(
+    samples: &[String],
+    prefer_dmy: bool,
+) -> Option<polars::prelude::DataType> {
+    use polars::{
+        chunked_array::temporal::string::{
+            StringMethods, infer::infer_pattern_single, patterns::Pattern,
+        },
+        prelude::{DataType, StringChunked, TimeUnit},
+    };
+
+    let first = samples.first()?;
+    let strings = StringChunked::from_iter(samples.iter().map(|s| Some(s.as_str())));
+    let ambiguous = StringChunked::from_iter([Some("raise")]);
+    let tu = TimeUnit::Milliseconds;
+    let (dtype, nulls) = match infer_pattern_single(first)? {
+        Pattern::DateDMY if !prefer_dmy => return None,
+        Pattern::DatetimeDMY if !prefer_dmy => return None,
+        Pattern::DateYMD | Pattern::DateDMY => (
+            DataType::Date,
+            strings.as_date(None, true).ok()?.null_count(),
+        ),
+        Pattern::DatetimeYMD | Pattern::DatetimeDMY => (
+            DataType::Datetime(tu, None),
+            strings
+                .as_datetime(None, tu, true, false, None, &ambiguous)
+                .ok()?
+                .null_count(),
+        ),
+        Pattern::DatetimeYMDZ => (
+            DataType::Datetime(tu, None),
+            strings
+                .as_datetime(
+                    None,
+                    tu,
+                    true,
+                    true,
+                    Some(&polars::prelude::TimeZone::UTC),
+                    &ambiguous,
+                )
+                .ok()?
+                .null_count(),
+        ),
+        Pattern::Time => return None,
+    };
+    (nulls == 0).then_some(dtype)
 }
 
 /// BLAKE3 hash of a file optimized for maximum performance

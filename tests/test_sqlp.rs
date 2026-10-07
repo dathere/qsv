@@ -6118,3 +6118,129 @@ fn sqlp_cast_string_to_date_is_silent() {
         );
     }
 }
+
+#[cfg(not(feature = "datapusher_plus"))]
+/// Writes a one-column CSV, builds its Polars schema with `schema --polars`, then
+/// returns the schema's type for the column and a plain `sqlp` read's output.
+fn pschema_date_type(name: &str, values: &[&str], prefer_dmy: bool) -> (String, String) {
+    let wrk = Workdir::new(name);
+    let mut rows = vec![svec!["id", "c"]];
+    for (i, v) in values.iter().enumerate() {
+        rows.push(vec![(i + 1).to_string(), (*v).to_string()]);
+    }
+    wrk.create("t.csv", rows);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("t.csv");
+    if prefer_dmy {
+        cmd.arg("--prefer-dmy");
+    }
+    wrk.assert_success(&mut cmd);
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("t.csv.pschema.json")).unwrap())
+            .unwrap();
+
+    // the pschema.json is picked up automatically
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("select c from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    (schema["fields"]["c"].to_string(), got)
+}
+
+#[test]
+fn sqlp_pschema_us_12h_datetime_issue_4746() {
+    let wrk = Workdir::new("sqlp_pschema_us_12h_datetime_issue_4746");
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["id", "created"],
+            svec!["1", "04/18/2019 09:55:45 PM"],
+            svec!["2", "04/19/2019 10:00:00 AM"],
+            svec!["3", "12/31/2020 11:59:59 PM"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("--cache-schema")
+        .arg("t.csv")
+        .arg("select * from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got,
+        "id,created\n1,04/18/2019 09:55:45 PM\n2,04/19/2019 10:00:00 AM\n3,12/31/2020 11:59:59 PM"
+    );
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("t.csv.pschema.json")).unwrap())
+            .unwrap();
+    assert_eq!(schema["fields"]["created"], "String");
+
+    // a later plain sqlp run, which loads the cached schema, still works
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("select count(*) as n from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "n\n3");
+}
+
+#[cfg(not(feature = "datapusher_plus"))]
+#[test]
+fn sqlp_pschema_date_formats_polars_cant_read_are_strings() {
+    // month-first
+    let (typ, got) = pschema_date_type("sqlp_pschema_mdy", &["04/18/2019", "12/31/2020"], false);
+    assert_eq!(typ, r#""String""#);
+    assert_eq!(got, "c\n04/18/2019\n12/31/2020");
+
+    // a column whose formats polars would read differently from row to row
+    let (typ, got) = pschema_date_type("sqlp_pschema_mixed", &["2019-04-18", "04/18/2019"], false);
+    assert_eq!(typ, r#""String""#);
+    assert_eq!(got, "c\n2019-04-18\n04/18/2019");
+}
+
+#[cfg(not(feature = "datapusher_plus"))]
+#[test]
+fn sqlp_pschema_day_first_dates_need_prefer_dmy() {
+    // qsv reads these month-first, polars day-first
+    let (typ, got) = pschema_date_type("sqlp_pschema_ambig", &["04/05/2019", "03/06/2020"], false);
+    assert_eq!(typ, r#""String""#);
+    assert_eq!(got, "c\n04/05/2019\n03/06/2020");
+
+    let (typ, got) = pschema_date_type(
+        "sqlp_pschema_ambig_dmy",
+        &["04/05/2019", "03/06/2020"],
+        true,
+    );
+    assert_eq!(typ, r#""Date""#);
+    assert_eq!(got, "c\n2019-05-04\n2020-06-03");
+}
+
+// sqlp --cache-schema has no --prefer-dmy, but honours QSV_PREFER_DMY
+#[test]
+fn sqlp_pschema_day_first_dates_with_qsv_prefer_dmy() {
+    let wrk = Workdir::new("sqlp_pschema_ambig_dmy_env");
+    wrk.create(
+        "t.csv",
+        vec![svec!["c"], svec!["04/05/2019"], svec!["03/06/2020"]],
+    );
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_PREFER_DMY", "1")
+        .arg("--cache-schema")
+        .arg("t.csv")
+        .arg("select c from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "c\n2019-05-04\n2020-06-03");
+}
+
+#[cfg(not(feature = "datapusher_plus"))]
+#[test]
+fn sqlp_pschema_ymd_dates_stay_temporal() {
+    let (typ, got) = pschema_date_type("sqlp_pschema_ymd", &["2019-04-18", "2020-12-31"], false);
+    assert_eq!(typ, r#""Date""#);
+    assert_eq!(got, "c\n2019-04-18\n2020-12-31");
+
+    let (typ, got) = pschema_date_type(
+        "sqlp_pschema_ymd_hms",
+        &["2019-04-18 21:55:45", "2020-12-31 23:59:59"],
+        false,
+    );
+    assert_eq!(typ, r#"{"Datetime":["Milliseconds",null]}"#);
+    assert_eq!(got, "c\n2019-04-18T21:55:45.000\n2020-12-31T23:59:59.000");
+}

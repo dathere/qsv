@@ -728,6 +728,67 @@ fn moarstats_all_stats_already_added() {
     );
 }
 
+// #4738: when every --advanced column already exists, a --bivariate rerun still does real
+// work, so it must not warn "No additional stats can be computed", and a routine all-unique
+// skip must not dump the field_pairs diagnostic to stderr.
+#[test]
+fn moarstats_bivariate_rerun_no_misleading_warning() {
+    let wrk = Workdir::new("moarstats_bivariate_rerun_no_warning");
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["id", "x", "y"],
+            svec!["P01", "1", "2"],
+            svec!["P02", "2", "4"],
+            svec!["P03", "3", "7"],
+            svec!["P04", "4", "8"],
+            svec!["P05", "5", "11"],
+            svec!["P06", "1", "2"],
+            svec!["P07", "2", "5"],
+            svec!["P08", "3", "6"],
+        ],
+    );
+
+    let mut first = wrk.command("moarstats");
+    first.arg("--advanced").arg("test.csv");
+    wrk.assert_success(&mut first);
+
+    // Precondition: a plain rerun reaches the "nothing left to add" path.
+    let mut rerun = wrk.command("moarstats");
+    rerun.arg("--advanced").arg("test.csv");
+    let rerun_stderr = wrk.output_stderr(&mut rerun);
+    assert!(
+        rerun_stderr.contains("No additional stats can be computed"),
+        "precondition: plain rerun should warn, got: {rerun_stderr}"
+    );
+
+    let mut bivariate = wrk.command("moarstats");
+    bivariate
+        .arg("--advanced")
+        .arg("--bivariate")
+        .arg("test.csv");
+    let out = bivariate.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    assert!(out.status.success(), "--bivariate rerun failed: {stderr}");
+    assert!(
+        wrk.path("test.stats.bivariate.csv").exists(),
+        "bivariate file should be written; stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("No additional stats can be computed"),
+        "--bivariate rerun must not warn that nothing can be computed: {stderr}"
+    );
+    assert!(
+        stderr.contains("computing bivariate statistics only"),
+        "--bivariate rerun should say it is computing bivariate stats only: {stderr}"
+    );
+    assert!(
+        !stderr.contains("bivariate field_pairs:"),
+        "routine skips must not dump the field_pairs diagnostic to stderr: {stderr}"
+    );
+}
+
 #[test]
 fn moarstats_outlier_statistics_values() {
     let wrk = Workdir::new("moarstats_outlier_values");

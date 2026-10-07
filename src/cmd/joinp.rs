@@ -942,15 +942,9 @@ impl Args {
                                     polars::datatypes::DataType::Int64
                                 }
                             },
-                            "Float" => {
-                                let min = stat.min.as_ref().unwrap();
-                                let max = stat.max.as_ref().unwrap();
-                                if min.parse::<f32>().is_ok() && max.parse::<f32>().is_ok() {
-                                    polars::datatypes::DataType::Float32
-                                } else {
-                                    polars::datatypes::DataType::Float64
-                                }
-                            },
+                            // Never Float32: it would silently lose precision (see
+                            // util::infer_polars_schema)
+                            "Float" => polars::datatypes::DataType::Float64,
                             "Boolean" => polars::datatypes::DataType::Boolean,
                             "Date" => polars::datatypes::DataType::Date,
                             "DateTime" => polars::datatypes::DataType::Datetime(

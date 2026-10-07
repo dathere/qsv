@@ -5995,9 +5995,6 @@ pub fn infer_polars_schema(
                         }
                     },
                     "Float" => {
-                        // safety: float types are guaranteed to have a min and max
-                        let min = stat.min.as_ref().unwrap();
-                        let max = stat.max.as_ref().unwrap();
                         let precision = stat.max_precision.unwrap_or(0);
 
                         // As we use f64 internally, its unlikely that we have more
@@ -6006,13 +6003,12 @@ pub fn infer_polars_schema(
                         if precision > 16 {
                             // For very high precision, use Decimal type
                             polars::datatypes::DataType::Decimal(precision as usize, scale)
-                        } else if precision > 7
-                            || min.parse::<f32>().is_err()
-                            || max.parse::<f32>().is_err()
-                        {
-                            polars::datatypes::DataType::Float64
                         } else {
-                            polars::datatypes::DataType::Float32
+                            // Never narrow to Float32: it holds only ~7 significant digits
+                            // (max_precision counts decimal places, not significant digits)
+                            // and `str::parse::<f32>` returns Ok(inf) for out-of-range values,
+                            // so a cached schema would silently change query results.
+                            polars::datatypes::DataType::Float64
                         }
                     },
                     "Boolean" => polars::datatypes::DataType::Boolean,

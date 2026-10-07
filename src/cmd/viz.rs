@@ -37771,6 +37771,10 @@ fn ols_fit(xs: &[f64], ys: &[f64]) -> Option<(f64, f64, f64)> {
         sxy = dx.mul_add(dy, sxy);
         syy = dy.mul_add(dy, syy);
     }
+    // an overflowed moment would make r silently 0 (finite / ∞) rather than non-finite
+    if !(sxx.is_finite() && sxy.is_finite() && syy.is_finite()) {
+        return None;
+    }
     // relative to x's own scale: each deviation carries ~ε·|mean| of cancellation noise, so a
     // spread no larger than that is rounding, not signal — at any magnitude of x
     if sxx <= nf * (16.0 * f64::EPSILON * mx.abs()).powi(2) {
@@ -45217,6 +45221,8 @@ mod tests {
             (b - 1.0).abs() < 1e-12 && (r2 - 1.0).abs() < 1e-12,
             "{b} {r2}"
         );
+        // a y spread whose squares overflow is no fit, not a finite slope with r² = 0
+        assert!(ols_fit(&[0.0, 0.0, 1.0, 10.0], &[0.0, 0.0, 1e200, 1e201]).is_none());
     }
 
     #[test]

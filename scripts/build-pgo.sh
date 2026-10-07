@@ -52,6 +52,23 @@ TRAIN_FLAGS="${TRAIN_FLAGS:-}"
 RUSTFLAGS="${RUSTFLAGS:-}"
 export RUSTFLAGS
 
+# Keep C/C++ deps out of PGO on macOS (qsv #4740). cc-rs forwards rustc's
+# -Cprofile-generate/-use to the C/C++ compiler, and Apple clang's instrprof format
+# differs from rustc's LLVM whenever their majors differ (Apple clang 21 writes raw
+# v10, Rust 1.99/LLVM 23 expects v11). The mismatched records crash the profiling
+# runtime in jemalloc's static constructor, before main(), and Apple clang rejects
+# rustc's merged .profdata. cc appends <VAR>_<target> env flags last, so these win.
+# Rust code is still PGO-optimized; only C/C++ deps (jemalloc, luau, ...) lose it.
+# Upstream: rust-lang/cc-rs#1986, rust-lang/rust#163640.
+case "$TARGET" in
+  *-apple-darwin)
+    target_env_suffix="${TARGET//-/_}"
+    for var in "CFLAGS_${target_env_suffix}" "CXXFLAGS_${target_env_suffix}"; do
+      export "$var=${!var:+${!var} }-fno-profile-generate -fno-profile-use"
+    done
+    ;;
+esac
+
 # derive the profile if not explicitly set
 if [[ -z "${PROFILE:-}" ]]; then
   if [[ ",$QSV_FEATURES," == *",luau,"* ]]; then

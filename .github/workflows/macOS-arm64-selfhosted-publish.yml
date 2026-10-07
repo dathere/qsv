@@ -43,15 +43,10 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
-            # TEMPORARY (24.0.0, #4740): PGO is OFF because qsv's PGO-instrumented binary segfaults
-            # in a static initializer before main() when built with Rust 1.99 / LLVM 23.1.1 -
-            # even `qsv --version` - so training writes no profiles and the optimize step
-            # dies with a misleading "raw profile version mismatch". Rust 1.98.1 / LLVM 22
-            # (23.0.1) was fine. The same crash reproduces from the 23.0.1 source with 1.99,
-            # so it is toolchain-triggered, not a qsv change; a NON-PGO 1.99 build runs fine.
-            # Restore `pgo: true` once a toolchain fixes the instrumented build (check with
-            # `scripts/build-pgo.sh` locally: the instrumented binary must survive --version).
-            pgo: false
+            # PGO on/off switch. `false` skips build-pgo.sh and uses the plain "Build qsv (normal)"
+            # step instead - a one-line fallback if a toolchain update breaks the PGO build again
+            # (e.g. #4740: Rust 1.99 vs Apple clang profile-format mismatch, handled in build-pgo.sh).
+            pgo: true
 
     steps:
     - name: Installing Rust toolchain
@@ -90,7 +85,7 @@ jobs:
         export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
         chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
         ./scripts/build-pgo.sh
-    # TEMPORARY non-PGO fallback while `pgo: false` (#4740; see the matrix note). Mirrors what
+    # Non-PGO build, used only when `pgo: false` (see the matrix note). Mirrors what
     # build-pgo.sh builds, minus PGO: release-luau (luau is in the feature list; panic=unwind,
     # qsv #3937), fat LTO from Cargo.toml, feature_capable (the qsv bin's required-features),
     # and target-cpu=native. QSV_KIND stays the workflow-level `prebuilt`.

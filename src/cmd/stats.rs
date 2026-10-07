@@ -992,6 +992,12 @@ pub struct StatsData {
     // before it joined `STATSDATA_TYPES_MAP` carry it as a JSON STRING.
     #[serde(default, deserialize_with = "de_lenient_f64")]
     pub moment_skewness: Option<f64>,
+    // moarstats `--advanced` file-order lag-1 autocorrelation and Nigrini's Benford MAD. Lenient
+    // for the same reason as `moment_skewness`: older caches carry them as JSON STRINGS.
+    #[serde(default, deserialize_with = "de_lenient_f64")]
+    pub lag1_autocorrelation: Option<f64>,
+    #[serde(default, deserialize_with = "de_lenient_f64")]
+    pub benford_mad: Option<f64>,
 }
 
 impl StatsData {
@@ -1167,6 +1173,8 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "median_mean_ratio" => JsonTypes::Float,
     "normalized_entropy" => JsonTypes::Float,
     "moment_skewness" => JsonTypes::Float,
+    "lag1_autocorrelation" => JsonTypes::Float,
+    "benford_mad" => JsonTypes::Float,
 };
 
 static INFER_DATE_FLAGS: OnceLock<SmallVec<[bool; 50]>> = OnceLock::new();

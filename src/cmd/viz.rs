@@ -525,10 +525,12 @@ smart options:
                            instead of as an opaque "Other (1)" bar.
     --smarter              Before building the Data Schematic, run `qsv moarstats --advanced`
                            to enrich the stats cache with distribution-shape statistics
-                           (bimodality, entropy, skewness, outlier share, Gini). This unlocks
-                           histograms for bimodal columns, frequency bars for concentrated
-                           high-cardinality columns, skew/outlier hints on box panels, and
-                           Lorenz curves for the most unequal additive measures. Costs one
+                           (bimodality, entropy, skewness, outlier share, Gini, Benford MAD,
+                           lag-1 autocorrelation). This unlocks histograms for bimodal
+                           columns, frequency bars for concentrated high-cardinality columns,
+                           skew/outlier/file-order-drift hints on box panels, Lorenz curves
+                           for the most unequal additive measures, and Benford first-digit
+                           panels for additive measures spanning 2+ orders of magnitude. Costs one
                            extra pass and writes <stem>.stats.csv, its sidecars and an .idx
                            index. On geocode-enabled builds it also adds the US FIPS code to
                            map hovers. Applied only with default parsing; an input using
@@ -16591,6 +16593,7 @@ fn tour_overview_key(kind: &PanelKind) -> Option<&'static str> {
         PanelKind::ContourPair { .. } => Some("@contour"),
         PanelKind::Scatter3D { .. } => Some("@scatter3d"),
         PanelKind::Lorenz { .. } => Some("@lorenz"),
+        PanelKind::Benford { .. } => Some("@benford"),
         PanelKind::Funnel { .. } => Some("@funnel"),
         PanelKind::MeasureByDim { .. } => Some("@measure_by_dim"),
         PanelKind::GroupedViolin { .. } => Some("@grouped_violin"),
@@ -16680,6 +16683,12 @@ fn tour_panel_explanation(
             x_label, y_label, ..
         } => t!("viz.tour.explain.contour", q_x = x_label, q_y = y_label).into_owned(),
         PanelKind::Scatter3D { .. } => t!("viz.tour.explain.scatter3d").into_owned(),
+        PanelKind::Benford { mad, label, .. } => t!(
+            "viz.tour.explain.benford",
+            q_col = label,
+            q_verdict = benford_verdict(*mad)
+        )
+        .into_owned(),
         PanelKind::Lorenz { gini, label, .. } => t!(
             "viz.tour.explain.lorenz",
             q_col = label,
@@ -20850,6 +20859,16 @@ enum PanelKind {
         label:  String,
         /// the Hoover index and where it sits on the curve — see `LorenzGap`
         hoover: LorenzGap,
+    },
+    /// Benford's-law first-digit test for an additive measure: the observed share of each first
+    /// significant digit 1–9 (bars) against Benford's expected `log10(1 + 1/d)` (a muted line, a
+    /// SECOND trace added at render). Built only under `--smarter`, which supplies moarstats'
+    /// `benford_mad`; see `is_benford_candidate`. `mad` is the CACHED value shown in the title.
+    Benford {
+        observed: [f64; 9],
+        expected: [f64; 9],
+        mad:      f64,
+        label:    String,
     },
     /// Ordered pipeline funnel over process STAGES — planned → committed → spent, impressions →
     /// clicks → conversions (issue #4222). Built ONLY from a dictionary declaration
@@ -26778,7 +26797,15 @@ fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
 ///    `skew_strength`). The chart's own shape shows skew, so it ranks after the numbers — except on
 ///    a LOG value axis (`log_axis`), which straightens the shape; there it ranks third.
 /// 6. concentration (moarstats `gini_coefficient`)
-fn box_shape_hints(s: &crate::cmd::stats::StatsData, log_axis: bool) -> Vec<String> {
+/// 7. file-order drift (moarstats `lag1_autocorrelation` at/above `LAG1_DRIFT_MIN`) — only when
+///    `file_order_hint` is set, i.e. the file does NOT run in the charted time axis's order (see
+///    `file_follows_date_order`): on a date-ordered file, file order IS time order and the
+///    time-series panel already shows the trend.
+fn box_shape_hints(
+    s: &crate::cmd::stats::StatsData,
+    log_axis: bool,
+    file_order_hint: bool,
+) -> Vec<String> {
     // nulls below ~a third of the column read as ordinary; above, they reshape the box. Zeros
     // use the shared `ZERO_SHARE_MIN`, which the Lorenz flat-run caveat reads too.
     const NULL_SHARE_MIN: f64 = 0.30;
@@ -26832,6 +26859,10 @@ fn box_shape_hints(s: &crate::cmd::stats::StatsData, log_axis: bool) -> Vec<Stri
         .gini_coefficient
         .filter(|g| *g >= GINI_MIN)
         .map(|g| t!("viz.notes.box_gini", q_gini = format!("{g:.2}")).into_owned());
+    let lag1_part = s
+        .lag1_autocorrelation
+        .filter(|r| file_order_hint && r.is_finite() && *r >= LAG1_DRIFT_MIN)
+        .map(|_| t!("viz.notes.box_file_order_drift").into_owned());
 
     // What the chart CAN'T show outranks what it can: a box/violin draws its own skew, but not
     // its null or zero share, how far outliers drag the (undrawn) mean, or the outlier share. On
@@ -26845,6 +26876,7 @@ fn box_shape_hints(s: &crate::cmd::stats::StatsData, log_axis: bool) -> Vec<Stri
             impact_part,
             outlier_part,
             gini_part,
+            lag1_part,
         ]
     } else {
         [
@@ -26854,10 +26886,27 @@ fn box_shape_hints(s: &crate::cmd::stats::StatsData, log_axis: bool) -> Vec<Stri
             outlier_part,
             skew_part,
             gini_part,
+            lag1_part,
         ]
     };
     order.into_iter().flatten().collect()
 }
+
+/// Whether the file runs in (near) date order of this date column: stats found it physically
+/// sorted, or — a few out-of-place rows make `sort_order` "Unsorted" — its own file-order lag-1
+/// autocorrelation (moarstats, which computes it for dates too) clears `LAG1_DRIFT_MIN`. Then file
+/// order is time order, and a measure's file-order drift is just the trend the time series shows.
+fn file_follows_date_order(date: &crate::cmd::stats::StatsData) -> bool {
+    sort_order_rank(date) == 0
+        || date
+            .lag1_autocorrelation
+            .is_some_and(|r| r.is_finite() && r >= LAG1_DRIFT_MIN)
+}
+
+/// Lag-1 autocorrelation (in file order) at/above which neighbouring rows are similar enough to
+/// call the column "drifting in file order" — sorted, trending, or appended in batches. Independent
+/// rows sit near 0.
+const LAG1_DRIFT_MIN: f64 = 0.5;
 
 /// Title display-width budget for a STATIC image cell `cell_px` wide. Grid panel titles are 13 px
 /// (`ann_font(13)`), ~7.5 px per average glyph, less ~24 px of breathing room. Static exports
@@ -26949,7 +26998,15 @@ const LORENZ_CURVE_MAX_POINTS: usize = 2000;
 /// intensive ratio) and falls back to the field/label name heuristic (`is_intensive_measure`)
 /// when no dictionary routed the column.
 fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData) -> bool {
-    let additive = match sem.agg {
+    is_additive_measure(sem, s) && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
+}
+
+/// Whether a numeric column is an ADDITIVE amount (revenue, population, counts summed per row) as
+/// opposed to an intensive rate/ratio/index, or an identifier/code. Shared by the Lorenz and
+/// Benford gates: neither a concentration curve nor a first-digit test means anything for a
+/// bounded intensive measure such as an age, a rating or a percentage.
+fn is_additive_measure(sem: &ColSemantics, s: &crate::cmd::stats::StatsData) -> bool {
+    match sem.agg {
         // dictionary-tagged additive amount/count (revenue, population, …)
         Some(Agg::Sum) => true,
         // dictionary-tagged intensive/other aggregation (ratio/rate/index) → not distributable
@@ -26962,8 +27019,35 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
         None => {
             !is_intensive_measure(&sem.label, &s.field) && !is_identifier_name(&sem.label, &s.field)
         },
-    };
-    additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
+    }
+}
+
+/// Cap on how many Benford first-digit panels a single smart Data Schematic adds (least
+/// conforming first), for the same reason as `LORENZ_MAX_PANELS`.
+const BENFORD_MAX_PANELS: usize = 2;
+
+/// Whether a column gets a Benford first-digit panel: an additive measure (see
+/// `is_additive_measure`) whose moarstats `benford_mad` is present. moarstats sets it only under
+/// `--advanced` (so only `--smarter` reaches this) and only when the column has at least 100
+/// non-zero values spanning two orders of magnitude — the range Benford's law needs.
+fn is_benford_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData) -> bool {
+    s.benford_mad.is_some_and(f64::is_finite) && is_additive_measure(sem, s)
+}
+
+/// Nigrini's conformity verdict for a first-digit MAD, as a catalog string: below 0.006 close,
+/// below 0.012 acceptable, below 0.015 marginal, otherwise nonconforming.
+fn benford_verdict(mad: f64) -> String {
+    // literal keys, so the catalog audit test can see every one
+    if mad < 0.006 {
+        t!("viz.title.benford_close")
+    } else if mad < 0.012 {
+        t!("viz.title.benford_acceptable")
+    } else if mad < 0.015 {
+        t!("viz.title.benford_marginal")
+    } else {
+        t!("viz.title.benford_nonconforming")
+    }
+    .into_owned()
 }
 
 fn lorenz_caveat(s: &crate::cmd::stats::StatsData) -> String {
@@ -28300,6 +28384,59 @@ fn build_lorenz_panel(
             },
         )
         .with_subtitle(Some(lorenz_caveat(stat))),
+    ))
+}
+
+/// Read one column in full, count its first significant digits with moarstats' own counter
+/// (`benford_digit_counts`, so the bars come from exactly the counts behind the cached MAD) and
+/// build a `Benford` overview panel. The title carries the CACHED `benford_mad` and its Nigrini
+/// verdict, never a recomputed one — the same convention as the Lorenz panel's Gini. Returns `None`
+/// when the column no longer passes the Benford gate (e.g. the file changed under the cache).
+fn build_benford_panel(
+    args: &Args,
+    sems: &[ColSemantics],
+    idx: usize,
+    mad: f64,
+) -> CliResult<Option<Panel>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let label = sems
+        .get(idx)
+        .map(|s| s.label.as_str())
+        .filter(|l| !l.is_empty())
+        .map_or_else(|| col_label(&headers, idx, nh), ToString::to_string);
+
+    let mut values: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        if let Some(v) = parse_f64(record.get(idx)) {
+            values.push(v);
+        }
+    }
+    let Some((counts, n)) = crate::cmd::moarstats::benford_digit_counts(values) else {
+        return Ok(None);
+    };
+    #[allow(clippy::cast_precision_loss)]
+    let observed: [f64; 9] = std::array::from_fn(|i| counts[i] as f64 / n as f64);
+    let expected: [f64; 9] =
+        std::array::from_fn(|i| crate::cmd::moarstats::benford_expected(i + 1));
+
+    Ok(Some(
+        Panel::new(
+            t!(
+                "viz.title.benford",
+                q_label = label.as_str(),
+                q_verdict = benford_verdict(mad),
+                q_mad = format!("{mad:.3}")
+            )
+            .into_owned(),
+            PanelKind::Benford {
+                observed,
+                expected,
+                mad,
+                label,
+            },
+        )
+        .with_subtitle(Some(t!("viz.notes.benford_caveat").into_owned())),
     ))
 }
 
@@ -35065,6 +35202,10 @@ impl<'a> SmartCtx<'a> {
             && matches!(out_format, OutFormat::Html))
         .then_some(dict_data.as_ref())
         .flatten();
+        // the lag-1 "drifts in file order" hint, unless the file is (nearly) in the charted time
+        // axis's order — see `box_shape_hints`
+        let file_order_hint = canonical_date_col(stats, col_sems)
+            .is_none_or(|(date_idx, _)| !file_follows_date_order(&stats[date_idx]));
 
         for (idx, s) in stats.iter().enumerate() {
             if is_map_col(idx) {
@@ -35265,7 +35406,9 @@ impl<'a> SmartCtx<'a> {
                         | PanelKind::BoxRaw { .. }
                         | PanelKind::BoxOutliers { .. }
                         | PanelKind::Violin { .. }
-                        | PanelKind::Histogram { .. } => box_shape_hints(s, value_log),
+                        | PanelKind::Histogram { .. } => {
+                            box_shape_hints(s, value_log, file_order_hint)
+                        },
                         _ => Vec::new(),
                     };
                     let interactive = matches!(out_format, OutFormat::Html);
@@ -36483,6 +36626,48 @@ impl<'a> SmartCtx<'a> {
             }
         }
 
+        // prepend Benford first-digit panels for ADDITIVE measures that pass moarstats' Benford
+        // gate (`benford_mad` present — only under --smarter). Least conforming (highest
+        // MAD) first, capped at BENFORD_MAX_PANELS. Built BEFORE the Lorenz block, so —
+        // both prepending — the Lorenz curves end up above these.
+        {
+            let mut benford_candidates: Vec<(usize, f64)> = self
+                .stats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !self.is_map_col(*i)
+                        && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
+                        && matches!(s.r#type.as_str(), "Integer" | "Float")
+                        && s.cardinality > 1
+                        && is_benford_candidate(&self.col_sems[*i], s)
+                })
+                .map(|(i, s)| (i, s.benford_mad.unwrap_or_default()))
+                .collect();
+            benford_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let dropped = benford_candidates.len().saturating_sub(BENFORD_MAX_PANELS);
+            benford_candidates.truncate(BENFORD_MAX_PANELS);
+            if dropped > 0 {
+                viz_skip_note!(
+                    VIZ_SMART_PREFIX,
+                    "viz.omit.benford_capped",
+                    q_dropped = dropped,
+                    q_cap = BENFORD_MAX_PANELS
+                );
+            }
+            for (idx, mad) in benford_candidates.into_iter().rev() {
+                match build_benford_panel(&self.args, &self.col_sems, idx, mad) {
+                    Ok(Some(panel)) => self.panels.insert(0, panel),
+                    Ok(None) => {},
+                    Err(e) => viz_skip_note!(
+                        VIZ_SMART_PREFIX,
+                        "viz.omit.benford_failed",
+                        q_err = e.to_string()
+                    ),
+                }
+            }
+        }
+
         // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
         // Gini — populated only under --smarter), add the plot whose geometry IS the Gini:
         // cumulative population share vs cumulative value share, against the equality diagonal.
@@ -36994,6 +37179,7 @@ impl<'a> SmartCtx<'a> {
                 | PanelKind::AnimatedBubble { .. }
                 | PanelKind::ScatterPair { .. }
                 | PanelKind::Lorenz { .. }
+                | PanelKind::Benford { .. }
                 | PanelKind::Funnel { .. }
                 | PanelKind::ContourPair { .. }
                 | PanelKind::Scatter3D { .. }
@@ -37539,6 +37725,148 @@ fn lorenz_hoover_trace(panel: &Panel, axes: Option<(String, String)>) -> Option<
     Some(h)
 }
 
+/// The expected-share line for a `Benford` panel: Benford's `log10(1 + 1/d)` per first digit, a
+/// muted dotted line with markers over the observed bars. `None` for any other panel kind.
+fn benford_expected_trace(panel: &Panel, axes: Option<(String, String)>) -> Option<Box<dyn Trace>> {
+    let PanelKind::Benford { expected, .. } = &panel.kind else {
+        return None;
+    };
+    let mut t = Scatter::new(benford_digit_labels(), expected.to_vec())
+        .mode(Mode::LinesMarkers)
+        .name("Benford")
+        .line(
+            Line::new()
+                .color(MUTED_COLOR)
+                .dash(plotly::common::DashType::Dot),
+        )
+        .marker(Marker::new().color(MUTED_COLOR).size(5))
+        .hover_info(HoverInfo::Skip);
+    if let Some((x, y)) = &axes {
+        t = t.x_axis(x.clone()).y_axis(y.clone());
+    }
+    Some(t)
+}
+
+/// The category labels "1".."9" of a Benford panel's x-axis.
+fn benford_digit_labels() -> Vec<String> {
+    (1..=9).map(|d: u8| d.to_string()).collect()
+}
+
+/// Ordinary least squares of `ys` on `xs`: `(intercept, slope, r²)`. `None` with fewer than 3
+/// points, a (near-)constant x, or any non-finite result. r² is `1` for a constant y on a sloped
+/// x (a perfect, flat fit).
+#[allow(clippy::cast_precision_loss)]
+fn ols_fit(xs: &[f64], ys: &[f64]) -> Option<(f64, f64, f64)> {
+    let n = xs.len().min(ys.len());
+    if n < 3 {
+        return None;
+    }
+    let nf = n as f64;
+    let mx = xs[..n].iter().sum::<f64>() / nf;
+    let my = ys[..n].iter().sum::<f64>() / nf;
+    let (mut sxx, mut sxy, mut syy) = (0.0_f64, 0.0_f64, 0.0_f64);
+    for (x, y) in xs[..n].iter().zip(&ys[..n]) {
+        let (dx, dy) = (x - mx, y - my);
+        sxx = dx.mul_add(dx, sxx);
+        sxy = dx.mul_add(dy, sxy);
+        syy = dy.mul_add(dy, syy);
+    }
+    if sxx <= f64::EPSILON * mx.abs().max(1.0) * nf {
+        return None;
+    }
+    let slope = sxy / sxx;
+    let intercept = slope.mul_add(-mx, my);
+    let r2 = if syy > 0.0 {
+        (sxy * sxy / (sxx * syy)).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    (slope.is_finite() && intercept.is_finite() && r2.is_finite()).then_some((intercept, slope, r2))
+}
+
+/// The least-squares fit line for a `ScatterPair` panel: a muted dashed segment across the observed
+/// x range, its hover naming the equation and r². Computed from the panel's own points — no cached
+/// statistic — so it is identical with and without `--smarter`. `None` for any other panel kind,
+/// for a degenerate fit (see `ols_fit`), or when either axis is logarithmic: a straight line in
+/// linear space would render as a curve there and misrepresent the fit.
+fn scatter_fit_trace(panel: &Panel, axes: Option<(String, String)>) -> Option<Box<dyn Trace>> {
+    let PanelKind::ScatterPair { xs, ys, .. } = &panel.kind else {
+        return None;
+    };
+    if panel.axis_log.0 || panel.axis_log.1 {
+        return None;
+    }
+    let (intercept, slope, r2) = ols_fit(xs, ys)?;
+    let (lo, hi) = xs
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+            (a.min(v), b.max(v))
+        });
+    // the slope carries its own operator so the equation reads `y = a − b·x`, never `+ -b`
+    let sign = if slope < 0.0 { '\u{2212}' } else { '+' };
+    let hover = t!(
+        "viz.hover.scatter_fit",
+        q_intercept = fmt_measure(intercept),
+        q_slope = format!("{sign} {}", fmt_measure(slope.abs())),
+        q_r2 = format!("{r2:.2}")
+    )
+    .into_owned();
+    let mut t = Scatter::new(
+        vec![lo, hi],
+        vec![slope.mul_add(lo, intercept), slope.mul_add(hi, intercept)],
+    )
+    .mode(Mode::Lines)
+    .name("fit")
+    .line(
+        Line::new()
+            .color(MUTED_COLOR)
+            .dash(plotly::common::DashType::Dash),
+    )
+    .hover_template(hover);
+    if let Some((x, y)) = &axes {
+        t = t.x_axis(x.clone()).y_axis(y.clone());
+    }
+    Some(t)
+}
+
+#[inline(never)]
+fn panel_trace_benford(
+    panel: &Panel,
+    color: &'static str,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
+    let PanelKind::Benford {
+        observed, expected, ..
+    } = &panel.kind
+    else {
+        unreachable!("panel_trace dispatches on panel.kind")
+    };
+    // per-digit hover as DATA (`hover_text_array`), so no template-token escaping is needed
+    let hover: Vec<String> = observed
+        .iter()
+        .zip(expected)
+        .enumerate()
+        .map(|(i, (o, e))| {
+            t!(
+                "viz.hover.benford",
+                q_digit = i + 1,
+                q_observed = format!("{:.1}", o * 100.0),
+                q_expected = format!("{:.1}", e * 100.0)
+            )
+            .into_owned()
+        })
+        .collect();
+    let mut t = Bar::new(benford_digit_labels(), observed.to_vec())
+        .name(escape_hover(&panel.name))
+        .marker(Marker::new().color(color))
+        .hover_text_array(hover)
+        .hover_info(HoverInfo::Text);
+    if let Some((x, y)) = &axes {
+        t = t.x_axis(x.clone()).y_axis(y.clone());
+    }
+    (t, None, false)
+}
+
 /// Build the plotly trace for one smart-Data Schematic panel. `axes` carries the subplot axis refs
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
@@ -37572,6 +37900,7 @@ fn panel_trace(
         PanelKind::TimeSeries { .. } => panel_trace_time_series(panel, color, axes),
         PanelKind::ScatterPair { .. } => panel_trace_scatter_pair(panel, color, axes),
         PanelKind::Lorenz { .. } => panel_trace_lorenz(panel, color, axes),
+        PanelKind::Benford { .. } => panel_trace_benford(panel, color, axes),
         PanelKind::Funnel {
             form: PipelineForm::Bridge,
             ..
@@ -38633,6 +38962,7 @@ fn smart_grid_parts(
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
             | PanelKind::Lorenz { .. }
+            | PanelKind::Benford { .. }
             | PanelKind::Funnel { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
@@ -39032,6 +39362,14 @@ fn smart_grid_parts(
             if let Some(h) = lorenz_hoover_trace(panel, Some((xref.clone(), yref.clone()))) {
                 traces.push(h);
             }
+        }
+        // the Benford panel's expected-share line and the ScatterPair fit line are second traces
+        // bound to this cell's axes too.
+        if let Some(t) = benford_expected_trace(panel, Some((xref.clone(), yref.clone()))) {
+            traces.push(t);
+        }
+        if let Some(t) = scatter_fit_trace(panel, Some((xref.clone(), yref.clone()))) {
+            traces.push(t);
         }
 
         // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
@@ -40647,6 +40985,12 @@ fn inline_panel_plot_cartesian(
         if let Some(h) = lorenz_hoover_trace(panel, None) {
             plot.add_trace(h);
         }
+    }
+    if let Some(t) = benford_expected_trace(panel, None) {
+        plot.add_trace(t);
+    }
+    if let Some(t) = scatter_fit_trace(panel, None) {
+        plot.add_trace(t);
     }
 
     // correlation cells need extra left room for tick labels and right room for the colorbar;
@@ -42410,6 +42754,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
         | PanelKind::Lorenz { .. }
+        | PanelKind::Benford { .. }
         | PanelKind::Funnel { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
@@ -44728,6 +45073,190 @@ mod tests {
         assert_eq!((pop[0], share[0]), (0.0, 0.0));
         assert!((pop.last().unwrap() - 1.0).abs() < 1e-12);
         assert!((share.last().unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn is_benford_candidate_gates() {
+        let stat = |field: &str, mad: Option<f64>| crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            field: field.to_string(),
+            cardinality: 100,
+            benford_mad: mad,
+            ..Default::default()
+        };
+        let sem = |agg: Option<Agg>, label: &str| ColSemantics {
+            route: Route::Measure,
+            agg,
+            label: label.to_string(),
+            ..Default::default()
+        };
+        // additive amount with a cached MAD -> candidate, whatever the verdict
+        assert!(is_benford_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", Some(0.02))
+        ));
+        assert!(is_benford_candidate(
+            &sem(None, ""),
+            &stat("population", Some(0.003))
+        ));
+        // no MAD (plain viz smart, or moarstats' Benford gate failed) -> never
+        assert!(!is_benford_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", None)
+        ));
+        assert!(!is_benford_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", Some(f64::NAN))
+        ));
+        // intensive measures and identifiers carry no first-digit meaning
+        assert!(!is_benford_candidate(
+            &sem(Some(Agg::Mean), "growth_rate"),
+            &stat("growth_rate", Some(0.003))
+        ));
+        assert!(!is_benford_candidate(
+            &sem(None, ""),
+            &stat("avg_temperature", Some(0.003))
+        ));
+        assert!(!is_benford_candidate(
+            &sem(None, ""),
+            &stat("customer_id", Some(0.003))
+        ));
+    }
+
+    #[test]
+    fn benford_verdict_follows_nigrini_bands() {
+        let _locale = english_locale();
+        assert_eq!(benford_verdict(0.0), "close conformity");
+        assert_eq!(benford_verdict(0.0059), "close conformity");
+        assert_eq!(benford_verdict(0.006), "acceptable conformity");
+        assert_eq!(benford_verdict(0.0119), "acceptable conformity");
+        assert_eq!(benford_verdict(0.012), "marginal conformity");
+        assert_eq!(benford_verdict(0.0149), "marginal conformity");
+        assert_eq!(benford_verdict(0.015), "nonconforming");
+    }
+
+    #[test]
+    fn benford_expected_trace_draws_the_law_only_on_benford_panels() {
+        let expected: [f64; 9] =
+            std::array::from_fn(|i| crate::cmd::moarstats::benford_expected(i + 1));
+        let panel = Panel::new(
+            "b".to_string(),
+            PanelKind::Benford {
+                observed: [1.0 / 9.0; 9],
+                expected,
+                mad: 0.05,
+                label: "b".to_string(),
+            },
+        );
+        let json = serde_json::to_value(benford_expected_trace(&panel, None).unwrap()).unwrap();
+        assert_eq!(
+            json["x"],
+            serde_json::json!(["1", "2", "3", "4", "5", "6", "7", "8", "9"])
+        );
+        let ys: Vec<f64> = serde_json::from_value(json["y"].clone()).unwrap();
+        assert!((ys[0] - 2f64.log10()).abs() < 1e-12, "P(1) = log10 2");
+        assert!(
+            (ys.iter().sum::<f64>() - 1.0).abs() < 1e-12,
+            "shares sum to 1"
+        );
+        let not_benford = Panel::new(
+            "m".to_string(),
+            PanelKind::MeasureByDim {
+                labels: Vec::new(),
+                values: Vec::new(),
+            },
+        );
+        assert!(benford_expected_trace(&not_benford, None).is_none());
+    }
+
+    #[test]
+    fn ols_fit_known_lines_and_degenerates() {
+        let (a, b, r2) = ols_fit(&[1.0, 2.0, 3.0, 4.0], &[3.0, 5.0, 7.0, 9.0]).unwrap();
+        assert!((a - 1.0).abs() < 1e-12 && (b - 2.0).abs() < 1e-12 && (r2 - 1.0).abs() < 1e-12);
+        // hand-computed: sxx = 5, sxy = 4.5, syy = 4.75
+        let (a, b, r2) = ols_fit(&[0.0, 1.0, 2.0, 3.0], &[0.0, 1.0, 1.0, 3.0]).unwrap();
+        assert!((b - 0.9).abs() < 1e-12, "{b}");
+        assert!((a + 0.1).abs() < 1e-12, "{a}");
+        assert!((r2 - 20.25 / 23.75).abs() < 1e-12, "{r2}");
+        // too few points, or a constant x (vertical cloud), has no fit
+        assert!(ols_fit(&[1.0, 2.0], &[1.0, 2.0]).is_none());
+        assert!(ols_fit(&[5.0, 5.0, 5.0], &[1.0, 2.0, 3.0]).is_none());
+    }
+
+    #[test]
+    fn scatter_fit_trace_draws_on_linear_axes_only() {
+        let _locale = english_locale();
+        let pair = |ys: Vec<f64>| {
+            Panel::new(
+                "p".to_string(),
+                PanelKind::ScatterPair {
+                    xs: vec![0.0, 1.0, 2.0, 3.0],
+                    ys,
+                    sizes: None,
+                    x_label: "x".to_string(),
+                    y_label: "y".to_string(),
+                    size_label: None,
+                    x_unit: None,
+                    y_unit: None,
+                    size_unit: None,
+                },
+            )
+        };
+        let json =
+            serde_json::to_value(scatter_fit_trace(&pair(vec![0.0, 1.0, 1.0, 3.0]), None).unwrap())
+                .unwrap();
+        let xs: Vec<f64> = serde_json::from_value(json["x"].clone()).unwrap();
+        let ys: Vec<f64> = serde_json::from_value(json["y"].clone()).unwrap();
+        assert_eq!(xs, [0.0, 3.0], "spans the observed x range");
+        assert!(
+            (ys[0] + 0.1).abs() < 1e-12 && (ys[1] - 2.6).abs() < 1e-12,
+            "{ys:?}"
+        );
+        let hover = json["hovertemplate"].as_str().unwrap();
+        assert!(hover.contains("y = -0.1 + 0.9\u{b7}x"), "{hover}");
+        assert!(hover.contains("r\u{b2} = 0.85"), "{hover}");
+        // a negative slope carries its own operator: never `+ -0.9`
+        let json =
+            serde_json::to_value(scatter_fit_trace(&pair(vec![3.0, 1.0, 1.0, 0.0]), None).unwrap())
+                .unwrap();
+        let hover = json["hovertemplate"].as_str().unwrap();
+        assert!(hover.contains("\u{2212} 0.9\u{b7}x"), "{hover}");
+        // a straight line would render as a curve on a log axis
+        let logged = pair(vec![0.0, 1.0, 1.0, 3.0]).with_axis_log((false, true));
+        assert!(scatter_fit_trace(&logged, None).is_none());
+        let logged = pair(vec![0.0, 1.0, 1.0, 3.0]).with_axis_log((true, false));
+        assert!(scatter_fit_trace(&logged, None).is_none());
+        let not_pair = Panel::new(
+            "m".to_string(),
+            PanelKind::MeasureByDim {
+                labels: Vec::new(),
+                values: Vec::new(),
+            },
+        );
+        assert!(scatter_fit_trace(&not_pair, None).is_none());
+    }
+
+    #[test]
+    fn box_shape_hints_file_order_drift_ranks_last_without_a_time_axis() {
+        let _locale = english_locale();
+        let mut s = stat("Float", 500, Some(0.5));
+        s.gini_coefficient = Some(0.7);
+        s.lag1_autocorrelation = Some(0.8);
+        assert_eq!(
+            box_shape_hints(&s, false, true),
+            ["Gini 0.70", "drifts in file order"]
+        );
+        assert_eq!(
+            box_shape_hints(&s, true, true).last().map(String::as_str),
+            Some("drifts in file order")
+        );
+        // a charted time axis already shows the trend
+        assert_eq!(box_shape_hints(&s, false, false), ["Gini 0.70"]);
+        // below the cut, or anti-correlated, there is no drift to report
+        s.lag1_autocorrelation = Some(0.49);
+        assert_eq!(box_shape_hints(&s, false, true), ["Gini 0.70"]);
+        s.lag1_autocorrelation = Some(-0.9);
+        assert_eq!(box_shape_hints(&s, false, true), ["Gini 0.70"]);
     }
 
     #[test]
@@ -49052,7 +49581,7 @@ mod tests {
     /// Test shorthand: every hint `box_shape_hints` finds on a LINEAR axis, uncapped, rendered
     /// like a title parenthetical.
     fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
-        let hints = box_shape_hints(s, false);
+        let hints = box_shape_hints(s, false, true);
         (!hints.is_empty()).then(|| format!("({})", hints.join(", ")))
     }
 
@@ -49172,11 +49701,11 @@ mod tests {
             "right-skewed",
             "Gini 0.70",
         ];
-        assert_eq!(box_shape_hints(&s, false), linear);
+        assert_eq!(box_shape_hints(&s, false, true), linear);
         // a LOG value axis straightens the shape, so skew moves up right behind the data-quality
         // parts there
         assert_eq!(
-            box_shape_hints(&s, true),
+            box_shape_hints(&s, true, true),
             [
                 "40% null",
                 "50% zeros",
@@ -49191,7 +49720,7 @@ mod tests {
         s.sparsity = Some(0.05);
         s.n_zero = Some(10);
         s.n_positive = Some(90);
-        assert_eq!(box_shape_hints(&s, false), linear[2..]);
+        assert_eq!(box_shape_hints(&s, false, true), linear[2..]);
     }
 
     #[test]

@@ -3086,16 +3086,23 @@ const BENFORD_MIN_N: usize = 100;
 /// since Benford's law does not apply to narrow-range data.
 /// Nigrini's conformity thresholds: < 0.006 close, < 0.012 acceptable,
 /// < 0.015 marginal, otherwise nonconforming.
-#[allow(
-    clippy::cast_precision_loss,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
-)]
 fn compute_benford_mad(values: &[f64]) -> Option<f64> {
+    benford_digit_counts(values.iter().copied())
+        .map(|(counts, n)| benford_mad_from_counts(&counts, n))
+}
+
+/// First-significant-digit counts (`counts[d - 1]` for digit `d`) and their total over the
+/// finite non-zero values (sign ignored), or `None` when the Benford gate fails (fewer than
+/// `BENFORD_MIN_N` such values, or a range narrower than two orders of magnitude). Shared with
+/// `viz smart`'s Benford panel so its bars come from exactly the counts behind `benford_mad`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+pub(crate) fn benford_digit_counts(
+    values: impl IntoIterator<Item = f64>,
+) -> Option<([u64; 9], u64)> {
     let mut counts = [0_u64; 9];
     let mut n: usize = 0;
     let (mut min_abs, mut max_abs) = (f64::INFINITY, 0.0_f64);
-    for &x in values {
+    for x in values {
         let a = x.abs();
         if a == 0.0 || !a.is_finite() {
             continue;
@@ -3116,17 +3123,25 @@ fn compute_benford_mad(values: &[f64]) -> Option<f64> {
     if n < BENFORD_MIN_N || max_abs / min_abs < 100.0 {
         return None;
     }
+    Some((counts, n as u64))
+}
+
+/// Benford's expected share of first digit `d` (1..=9): `log10(1 + 1/d)`.
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn benford_expected(d: usize) -> f64 {
+    (1.0 + 1.0 / d as f64).log10()
+}
+
+/// Nigrini's MAD from first-digit counts (see `benford_digit_counts`).
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn benford_mad_from_counts(counts: &[u64; 9], n: u64) -> f64 {
     let n = n as f64;
-    let mad = counts
+    counts
         .iter()
         .enumerate()
-        .map(|(i, &c)| {
-            let expected = (1.0 + 1.0 / (i as f64 + 1.0)).log10();
-            (c as f64 / n - expected).abs()
-        })
+        .map(|(i, &c)| (c as f64 / n - benford_expected(i + 1)).abs())
         .sum::<f64>()
-        / 9.0;
-    Some(mad)
+        / 9.0
 }
 
 /// Finalize the `--advanced` per-field statistics from its full (file-ordered) value
@@ -8166,6 +8181,22 @@ mod tests {
         assert!(compute_lag1_autocorrelation(&alt, 0.0).unwrap() < -0.8);
         assert_eq!(compute_lag1_autocorrelation(&[5.0; 4], 5.0), None);
         assert_eq!(compute_lag1_autocorrelation(&[1.0, 2.0], 1.5), None);
+    }
+
+    #[test]
+    fn benford_digit_counts_feed_the_mad() {
+        // viz draws its Benford bars from `benford_digit_counts`; they must be exactly the counts
+        // behind the cached `benford_mad`. Sign is ignored, zeros and non-finite values skipped.
+        let mut values: Vec<f64> = (0..300).map(|k| 1.05_f64.powi(k)).collect();
+        values.extend([0.0, -12.0, f64::NAN, f64::INFINITY]);
+        let (counts, n) = benford_digit_counts(values.iter().copied()).unwrap();
+        assert_eq!(n, 301);
+        assert_eq!(counts.iter().sum::<u64>(), n);
+        assert_eq!(
+            compute_benford_mad(&values),
+            Some(benford_mad_from_counts(&counts, n))
+        );
+        assert!((benford_expected(1) - 2f64.log10()).abs() < 1e-15);
     }
 
     #[test]

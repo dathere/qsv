@@ -230,6 +230,8 @@ viz:
     grouped_violin_failed: "grouped-violin panel skipped (%{q_err})"
     lorenz_capped: "%{q_dropped} additional high-inequality measure(s) not shown as Lorenz curves (cap %{q_cap})"
     lorenz_failed: "Lorenz panel skipped (%{q_err})"
+    benford_capped: "%{q_dropped} additional measure(s) not shown as Benford first-digit panels (cap %{q_cap})"
+    benford_failed: "Benford panel skipped (%{q_err})"
     parcats_failed: "parallel-categories (parcats) panel skipped (%{q_err})"
     hierarchy_shown_as_parcats: "skipping the '%{q_title}' hierarchy panel — its dimensions are already shown as a parallel-categories (parcats) panel."
     hierarchy_shown_as_sankey: "skipping the '%{q_title}' hierarchy panel — its two dimensions are already shown as a directed-flow (Sankey) panel, which conveys their many-to-many relationship better."
@@ -373,6 +375,11 @@ viz:
     agg_mean: "mean"
     # Suffixes decorating a title whose base is a column name.
     sampled: "%{q_name} (sampled)"
+    benford: "%{q_label} — Benford first digits (%{q_verdict}, MAD %{q_mad})"
+    benford_close: "close conformity"
+    benford_acceptable: "acceptable conformity"
+    benford_marginal: "marginal conformity"
+    benford_nonconforming: "nonconforming"
     dominated_by: "(dominated by %{q_value}, %{q_pct}%)"
     # NUMERIC-PAIR DRILL-DOWN. `pair_r` / `pair_r_nonlinear` are SHARED by two
     # different rendered titles and must always be localized together with both:
@@ -526,6 +533,8 @@ viz:
     # repeating it, so a translation can put it wherever its grammar wants.
     lorenz_unit: "concentration is expected unless rows are comparable units"
     lorenz_zeros: "flat run = %{q_pct}% zeros, not small values · %{q_unit}"
+    benford_caveat: "Benford's law fits amounts spanning several orders of magnitude; a deviation is a prompt to look closer, not proof of error"
+    box_file_order_drift: "drifts in file order"
     # Subtitle on a region map colored by RAW ROW COUNTS with no denominator
     # available (issue #4394). It names the population-map fallacy in one line:
     # such a map largely redraws where the people (or the activity) are, so the
@@ -578,6 +587,8 @@ viz:
     lorenz: "%{q_label} (Gini %{q_gini})<br>bottom %{x:.0%} of records hold %{y:.0%}<extra></extra>"
     # Hoover marker on a Lorenz curve: the share of the total that would have to move to reach equality.
     lorenz_hoover: "Hoover %{q_hoover}: %{q_pct}% of the total would have to move to reach equality<extra></extra>"
+    benford: "first digit %{q_digit}: %{q_observed}% observed · %{q_expected}% expected (Benford)"
+    scatter_fit: "least-squares fit: y = %{q_intercept} %{q_slope}·x<br>r² = %{q_r2}<extra></extra>"
     # Title hover listing the shape hints hidden behind a panel title's ellipsis.
     more_hints: "also: %{q_hints}"
     ohlc: "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>"
@@ -685,6 +696,7 @@ viz:
       contour: "%{q_x} and %{q_y} are the most strongly correlated pair; with this many rows a scatter would overplot, so their density is contoured instead."
       scatter3d: "These three columns form the strongest-correlation triple, so they are drawn together in a rotatable 3D scatter."
       lorenz: "%{q_col} is unevenly distributed (Gini %{q_gini}); the Lorenz curve shows how far its cumulative share bends away from perfect equality."
+      benford: "The leading digits of %{q_col} are compared with Benford's law (%{q_verdict}); the bars show how often each first digit occurs, the dotted line what the law predicts."
       funnel: "The data dictionary declares these columns as ordered pipeline stages, so they are drawn as a funnel from first stage to last."
       measure_by_dim: "This pair - a measure split by a category - shows the strongest such association in the dataset."
       grouped_violin: "One distribution silhouette per category: the same split as the bar beside it, but showing the full spread instead of one aggregate."

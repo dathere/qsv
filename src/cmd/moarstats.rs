@@ -5796,7 +5796,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let any_exist = moarstats_columns.iter().any(|col| column_exists(col))
             || headers.iter().any(|h| h.starts_with("atkinson_index_"));
 
-        if any_exist {
+        if args.flag_bivariate {
+            // The run still does real work (the bivariate file), so don't warn as if it were a
+            // no-op (#4738).
+            if any_exist {
+                winfo!(
+                    "All univariate statistics are already present; computing bivariate \
+                     statistics only."
+                );
+            } else {
+                winfo!(
+                    "No univariate statistics can be added with the available base statistics \
+                     (consider running stats with --everything); computing bivariate statistics \
+                     only."
+                );
+            }
+        } else if any_exist {
             wwarn!(
                 "Warning: No additional stats can be computed. All available additional \
                  statistics have already been added to this stats CSV file."
@@ -6424,17 +6439,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             + skipped_all_unique_no_stat
             + skipped_type_filter;
         if total_skipped > 0 || field_pairs.is_empty() {
-            // Always log a summary when something was skipped or when no
-            // pairs survived — this is the diagnostic trail for the
-            // recurring "primary-only bivariate output" flake. winfo!
-            // (not log::info!) writes to stderr unconditionally; qsv's
-            // default log level is `off`, so a bare log::info! would
-            // disappear in CI. This single line carries the aggregate
-            // per-reason skip counts and the full csv_headers — enough
-            // signal to spot the corruption mode without dragging the
-            // per-pair trail into every healthy run. Per-pair detail is
-            // emitted via log::warn! (gated by QSV_LOG_LEVEL) above.
-            winfo!(
+            // This summary is the diagnostic trail for the recurring "primary-only bivariate
+            // output" flake in joined-inputs mode: one line with the per-reason skip counts and
+            // the full csv_headers (per-pair detail goes to log::warn! above). qsv's default log
+            // level is `off`, so it goes to stderr via winfo! in joined-inputs mode, or when no
+            // pair survived at all (the user needs to know why). Routine skips in a plain run
+            // (e.g. all-unique ID columns) are normal, so there it's log-only (#4738).
+            let summary = format!(
                 "bivariate field_pairs: built {built} pair(s) from {nfields} stats fields \
                  (record_count={record_count:?}); skipped: \
                  field1_bad_type={skipped_field1_bad_type}, \
@@ -6448,6 +6459,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 nfields = stats_field_names.len(),
                 csv_headers = csv_headers.iter().collect::<Vec<_>>()
             );
+            if temp_joined_path.is_some() || field_pairs.is_empty() {
+                winfo!("{summary}");
+            } else {
+                log::info!("{summary}");
+            }
         }
 
         // In joined-inputs mode, fail loud when the corruption signature

@@ -211,11 +211,13 @@ sqlp options:
                               input file, with the extension ".pschema.json"
                               (data.csv's Polars schema file will be data.pschema.json)
                               NOTE: You can edit the generated schema files to change the Polars schema
-                              and cast columns to the desired data type. For example, you can force
-                              a Float32 column to be a Float64 column by changing the "Float32" type
-                              to "Float64" in the schema file.
+                              and cast columns to the desired data type. Float columns are saved
+                              as Float64. For example, to save memory you can narrow a Float64
+                              column to Float32 by changing its "Float64" type to "Float32" in the
+                              schema file, at the cost of precision (Float32 holds only about
+                              7 significant digits).
                               You can also cast a Float to a Decimal with a desired precision and scale.
-                              (e.g. instead of "Float32", use "{Decimal" : [10, 3]}")
+                              (e.g. instead of "Float64", use {"Decimal": [10, 3]})
                               The valid types are: `Boolean`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`,
                               `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`, `Date`, `Datetime`,
                               `Duration`, `Time`, `Null`, `Categorical`, `Decimal` and `Enum`.

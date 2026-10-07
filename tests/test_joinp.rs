@@ -3268,3 +3268,42 @@ fn joinp_tsv_cache_schema_minus1() {
     assert_eq!(got.len(), 3); // header + 2 matched rows
     assert_eq!(got[0], svec!["id", "name", "city"]);
 }
+
+#[test]
+fn joinp_cache_schema_floats_keep_f64_precision_issue_4752() {
+    let wrk = Workdir::new("joinp_cache_schema_floats_issue_4752");
+    wrk.create(
+        "left.csv",
+        vec![
+            svec!["id", "amount"],
+            svec!["1", "123456.789"],
+            svec!["2", "1.5e40"],
+        ],
+    );
+    wrk.create(
+        "right.csv",
+        vec![svec!["id", "name"], svec!["1", "a"], svec!["2", "b"]],
+    );
+
+    // build a stats cache so --cache-schema 1 derives the schema from stats
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--stats-jsonl", "-E", "left.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["--cache-schema", "1", "id", "left.csv", "id", "right.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("left.csv.pschema.json")).unwrap())
+            .unwrap();
+    assert_eq!(schema["fields"]["amount"], "Float64");
+    // Float32 would give 123456.79 and inf
+    assert_eq!(
+        crate::workdir::sorted_rows(got),
+        vec![
+            svec!["id", "amount", "name"],
+            svec!["1", "123456.789", "a"],
+            svec!["2", "1.5e+40", "b"],
+        ]
+    );
+}

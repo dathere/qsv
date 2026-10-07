@@ -1141,8 +1141,8 @@ select ward,count(*) as cnt from temp_table2 group by ward order by cnt desc, wa
     "precinct": "String",
     "location_street_name": "String",
     "location_zipcode": "String",
-    "latitude": "Float32",
-    "longitude": "Float32",
+    "latitude": "Float64",
+    "longitude": "Float64",
     "source": "String"
   },
   "metadata": null
@@ -6243,4 +6243,59 @@ fn sqlp_pschema_ymd_dates_stay_temporal() {
     );
     assert_eq!(typ, r#"{"Datetime":["Milliseconds",null]}"#);
     assert_eq!(got, "c\n2019-04-18T21:55:45.000\n2020-12-31T23:59:59.000");
+}
+
+#[cfg(not(feature = "datapusher_plus"))]
+#[test]
+fn sqlp_pschema_floats_keep_f64_precision_issue_4752() {
+    let wrk = Workdir::new("sqlp_pschema_floats_f64_issue_4752");
+    wrk.create(
+        "g.csv",
+        vec![
+            svec!["id", "amount"],
+            svec!["1", "99999.99"],
+            svec!["2", "12345.67"],
+        ],
+    );
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("--polars").arg("g.csv");
+    wrk.assert_success(&mut cmd);
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("g.csv.pschema.json")).unwrap())
+            .unwrap();
+    assert_eq!(schema["fields"]["amount"], "Float64");
+
+    // the pschema.json is picked up automatically; Float32 would give 112345.664
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("g.csv")
+        .arg("select sum(amount) as total from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "total\n112345.66");
+}
+
+#[test]
+fn sqlp_cache_schema_large_floats_not_inf_issue_4752() {
+    let wrk = Workdir::new("sqlp_cache_schema_large_floats_issue_4752");
+    wrk.create(
+        "t.csv",
+        vec![svec!["id", "x"], svec!["1", "1.5e40"], svec!["2", "2.5e40"]],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("--cache-schema")
+        .arg("t.csv")
+        .arg("select x from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "x\n1.5e+40\n2.5e+40");
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("t.csv.pschema.json")).unwrap())
+            .unwrap();
+    assert_eq!(schema["fields"]["x"], "Float64");
+
+    // a later plain sqlp run loads the cached schema; Float32 would read these as inf
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("select x from _t_1");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "x\n1.5e+40\n2.5e+40");
 }

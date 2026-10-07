@@ -43,6 +43,10 @@ jobs:
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
+            # PGO on/off switch. `false` skips build-pgo.sh and uses the plain "Build qsv (normal)"
+            # step instead - a one-line fallback if a toolchain update breaks the PGO build again
+            # (e.g. #4740: Rust 1.99 vs Apple clang profile-format mismatch, handled in build-pgo.sh).
+            pgo: true
 
     steps:
     - name: Installing Rust toolchain
@@ -58,11 +62,13 @@ jobs:
     # ensure 7zip is present so PGO training can use the full NYC-311 dataset (the
     # later "install 7zip" step runs post-build; this is idempotent on the self-hosted runner)
     - name: install 7zip (for PGO training)
+      if: ${{ matrix.job.pgo }}
       run: brew install sevenzip
     # PGO-optimized qsv build (issue #1448). aarch64-apple-darwin is an ideal PGO target
     # (native, already target-cpu=native). build-pgo.sh runs instrument -> train -> optimize
     # and leaves the binary where the "Copy binaries" step looks. QSV_KIND=prebuilt-pgo.
     - name: Build qsv (PGO)
+      if: ${{ matrix.job.pgo }}
       shell: bash
       env:
         QSV_KIND: prebuilt-pgo
@@ -79,6 +85,16 @@ jobs:
         export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
         chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
         ./scripts/build-pgo.sh
+    # Non-PGO build, used only when `pgo: false` (see the matrix note). Mirrors what
+    # build-pgo.sh builds, minus PGO: release-luau (luau is in the feature list; panic=unwind,
+    # qsv #3937), fat LTO from Cargo.toml, feature_capable (the qsv bin's required-features),
+    # and target-cpu=native. QSV_KIND stays the workflow-level `prebuilt`.
+    - name: Build qsv (normal)
+      if: ${{ !matrix.job.pgo }}
+      shell: bash
+      env:
+        RUSTFLAGS: -C target-cpu=native
+      run: cargo +${{ matrix.rust }} build --profile release-luau --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm -C target-cpu=native

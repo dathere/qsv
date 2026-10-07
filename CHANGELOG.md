@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The output is unchanged except for **zero-padded numbers, which now keep their zeros as text**. Polars read `0000000000` in NYC's `bbl` column as the number 0, but such columns are usually codes (ZIP, FIPS, BBL), and the stats engine types them as text. A few other edge cases change in the same direction: quoted numbers are read as numbers, as are `+5` and `NaN`/`Infinity` written in other cases, and integers too large for 64 bits become doubles.
   - Set `QSV_STATSCACHE_MODE=none` to have Polars infer every type itself, as before. If a stats cache doesn't fit its file (it is out of date, or was written under other reader settings), Polars infers the types instead.
 
+### Fixed
+- **`schema --polars` and `sqlp --cache-schema` no longer write Polars schemas that break every later `sqlp` query** ([#4746](https://github.com/dathere/qsv/issues/4746)). Columns qsv recognised as dates were typed Polars `Date`/`Datetime` even when Polars can't parse their format, e.g. NYC 311's `04/18/2019 09:55:45 PM`. Every read with that schema then failed, and `sqlp` loads an existing `.pschema.json` automatically. A date column now gets a temporal type only if Polars parses a sample of its raw values (up to 1,000 non-empty values from the first 10,000 rows); otherwise it is typed String.
+  - Day-first dates are typed `Date`/`Datetime` only with `--prefer-dmy` or `QSV_PREFER_DMY` (the only way for `sqlp --cache-schema`). Without either, qsv reads `04/05/2019` as April 5 but Polars read it as 4 May, so such columns silently held different dates.
+  - `.pschema.json` files written by earlier versions are not rewritten. Delete them (or run `qsv clean --schema`) to regenerate.
+
 ## [24.0.0] - 2026-10-05 ⚖️ The "Evidence Act" Release 🏛️
 
 ~160 commits since 23.0.1, and the theme is **EVIDENCE**. The 2019 [Foundations for Evidence-Based Policymaking Act](https://www.congress.gov/bill/115th-congress/house-bill/4174) asks US federal agencies to build policy on evidence, to make their data open by default and machine-readable, and to describe all of it in a public data inventory. Seven years on, the hard part is rarely the law. It is the plumbing: the evidence sits in SAS, Stata and SPSS files, and the inventory has to pass a validator. This release works on both.

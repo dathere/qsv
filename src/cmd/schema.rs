@@ -47,6 +47,11 @@ skip schema inferencing which may fail when the inferencing sample is too low, i
 Polars to optimize the query and gives the user the option to tailor the schema to their specific
 query needs (e.g. using a Decimal type with explicit precision and scale instead of a Float type).
 
+Date and datetime columns are only given a Polars Date/Datetime type if Polars can read their
+values as qsv does. Columns in formats Polars can't parse (e.g. "04/18/2019 09:55:45 PM") are
+typed String instead, so the schema doesn't make later reads fail. So are day-first dates when
+neither --prefer-dmy nor QSV_PREFER_DMY is set, as Polars reads "04/05/2019" as 4 May.
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_schema.rs.
 See also https://github.com/dathere/qsv/wiki/Validation-and-Schema#schema
 

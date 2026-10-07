@@ -205,6 +205,8 @@ sqlp options:
                               stats cache is available. If so, it will use it to derive a Polars schema
                               and save it. If there's no stats cache, it will infer the schema
                               using --infer-len and save the inferred schemas.
+                              Date columns in formats Polars can't parse are saved as String,
+                              as are day-first dates unless QSV_PREFER_DMY is set.
                               Each schema file will have the same file stem as the corresponding
                               input file, with the extension ".pschema.json"
                               (data.csv's Polars schema file will be data.pschema.json)

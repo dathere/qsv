@@ -6119,6 +6119,7 @@ fn sqlp_cast_string_to_date_is_silent() {
     }
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 /// Writes a one-column CSV, builds its Polars schema with `schema --polars`, then
 /// returns the schema's type for the column and a plain `sqlp` read's output.
 fn pschema_date_type(name: &str, values: &[&str], prefer_dmy: bool) -> (String, String) {
@@ -6180,6 +6181,7 @@ fn sqlp_pschema_us_12h_datetime_issue_4746() {
     assert_eq!(got, "n\n3");
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn sqlp_pschema_date_formats_polars_cant_read_are_strings() {
     // month-first
@@ -6193,6 +6195,7 @@ fn sqlp_pschema_date_formats_polars_cant_read_are_strings() {
     assert_eq!(got, "c\n2019-04-18\n04/18/2019");
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn sqlp_pschema_day_first_dates_need_prefer_dmy() {
     // qsv reads these month-first, polars day-first
@@ -6207,8 +6210,11 @@ fn sqlp_pschema_day_first_dates_need_prefer_dmy() {
     );
     assert_eq!(typ, r#""Date""#);
     assert_eq!(got, "c\n2019-05-04\n2020-06-03");
+}
 
-    // sqlp --cache-schema has no --prefer-dmy, but honours QSV_PREFER_DMY
+// sqlp --cache-schema has no --prefer-dmy, but honours QSV_PREFER_DMY
+#[test]
+fn sqlp_pschema_day_first_dates_with_qsv_prefer_dmy() {
     let wrk = Workdir::new("sqlp_pschema_ambig_dmy_env");
     wrk.create(
         "t.csv",
@@ -6223,6 +6229,7 @@ fn sqlp_pschema_day_first_dates_need_prefer_dmy() {
     assert_eq!(got, "c\n2019-05-04\n2020-06-03");
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn sqlp_pschema_ymd_dates_stay_temporal() {
     let (typ, got) = pschema_date_type("sqlp_pschema_ymd", &["2019-04-18", "2020-12-31"], false);

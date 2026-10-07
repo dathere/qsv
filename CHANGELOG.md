@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **`viz smart` puts more of moarstats' statistics on the page** ([#4750](https://github.com/dathere/qsv/pull/4750)).
+- **`viz smart` puts more of moarstats' statistics on the page** ([#4750](https://github.com/dathere/qsv/pull/4750), [#4754](https://github.com/dathere/qsv/pull/4754)).
   - Under `--smarter`, additive measures that pass moarstats' Benford gate (at least 100 non-zero values spanning two or more orders of magnitude) get a **Benford first-digit panel**: the observed share of each leading digit against Benford's law, titled with the cached MAD and Nigrini's conformity verdict. At most two per page, least conforming first.
   - The strongest-pair **scatter now draws its least-squares line**, with the equation and r² in its hover (a coefficient smaller than 0.001 prints in scientific notation, e.g. `1e-4`, rather than rounding to 0). It is computed from the plotted points, so it appears with or without `--smarter`. It is fitted whatever the scale of x (1e-9 or 1e100), and left off log axes, where a straight line would render as a curve.
   - Under `--smarter`, a box/violin title notes **"drifts in file order"** when a measure's lag-1 autocorrelation is 0.5 or more, unless the file runs in the order of the charted time axis, a date column or a dictionary-routed bare-year column (then the time-series panel already shows the trend).

@@ -616,6 +616,26 @@ fn croissant_uses_schema_org_context_and_sc_dataset_type() {
         Some("https://schema.org/"),
         "Croissant @context.@vocab must be schema.org",
     );
+    // Final Croissant 1.1 canonical context terms (spec Appendix 1 +
+    // mlcroissant 1.1.1's 1.1 context) must be aliased to the cr: vocabulary.
+    for term in [
+        "annotation",
+        "arrayShape",
+        "citeAs",
+        "containedIn",
+        "excludes",
+        "isArray",
+        "readLines",
+        "sdVersion",
+        "unArchive",
+        "value",
+    ] {
+        assert_eq!(
+            context.get(term).and_then(|v| v.as_str()),
+            Some(format!("cr:{term}").as_str()),
+            "Croissant 1.1 @context must map `{term}` to cr:{term}",
+        );
+    }
 }
 
 #[test]
@@ -825,6 +845,53 @@ fn croissant_frequency_off_by_default_extended_stats_on_fresh_run() {
         assert!(
             term_codes.contains(expected),
             "extended stat `{expected}` must surface on a fresh run; saw {term_codes:?}",
+        );
+    }
+}
+
+#[test]
+fn croissant_annotations_are_typed_cr_field() {
+    // Croissant 1.1 "Annotating Data": annotations are cr:Field nodes.
+    // mlcroissant 1.1.1 rejects an untyped annotation with
+    // `"<unknown node>" should have an attribute "@type": ".../Field"`.
+    let wrk = Workdir::new("croissant_annotations_typed");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let record_set = out
+        .pointer("/projection/recordSet/0")
+        .expect("schema RecordSet");
+    let mut annotations: Vec<&serde_json::Value> = record_set
+        .get("annotation")
+        .and_then(|v| v.as_array())
+        .expect("RecordSet annotation array")
+        .iter()
+        .collect();
+    for f in record_set
+        .get("field")
+        .and_then(|v| v.as_array())
+        .expect("field array")
+    {
+        if let Some(anns) = f.get("annotation").and_then(|v| v.as_array()) {
+            annotations.extend(anns);
+        }
+    }
+    assert!(
+        annotations.len() > 1,
+        "expected field-level stat annotations"
+    );
+    for a in annotations {
+        assert_eq!(
+            a.get("@type").and_then(|v| v.as_str()),
+            Some("cr:Field"),
+            "every Croissant annotation must be typed cr:Field, got {a}",
         );
     }
 }

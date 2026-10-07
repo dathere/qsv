@@ -773,6 +773,9 @@ dataset:
         assert_eq!(external.command, "mlcroissant");
         assert!(external.args.iter().any(|a| a == "validate"));
         assert!(external.args.iter().any(|a| a.contains("{file}")));
+        // mlcroissant exits non-zero only on errors, so its findings
+        // are spec violations, not advisories.
+        assert_eq!(external.default_severity.as_deref(), Some("required"));
         assert!(!spec.dataset.fields.is_empty());
         assert!(spec.distribution.is_some());
         assert!(spec.catalog.is_some());

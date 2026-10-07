@@ -35204,7 +35204,7 @@ impl<'a> SmartCtx<'a> {
         .flatten();
         // the lag-1 "drifts in file order" hint, unless the file is (nearly) in the charted time
         // axis's order — see `box_shape_hints`
-        let file_order_hint = canonical_date_col(stats, col_sems)
+        let file_order_hint = trend_time_col(stats, col_sems)
             .is_none_or(|(date_idx, _)| !file_follows_date_order(&stats[date_idx]));
 
         for (idx, s) in stats.iter().enumerate() {
@@ -37753,8 +37753,8 @@ fn benford_digit_labels() -> Vec<String> {
 }
 
 /// Ordinary least squares of `ys` on `xs`: `(intercept, slope, r²)`. `None` with fewer than 3
-/// points, a (near-)constant x, or any non-finite result. r² is `1` for a constant y on a sloped
-/// x (a perfect, flat fit).
+/// points, a constant x (its spread within rounding noise of its mean, at any scale), or any
+/// non-finite result. r² is `1` for a constant y on a sloped x (a perfect, flat fit).
 #[allow(clippy::cast_precision_loss)]
 fn ols_fit(xs: &[f64], ys: &[f64]) -> Option<(f64, f64, f64)> {
     let n = xs.len().min(ys.len());
@@ -37771,17 +37771,38 @@ fn ols_fit(xs: &[f64], ys: &[f64]) -> Option<(f64, f64, f64)> {
         sxy = dx.mul_add(dy, sxy);
         syy = dy.mul_add(dy, syy);
     }
-    if sxx <= f64::EPSILON * mx.abs().max(1.0) * nf {
+    // an overflowed moment would make r silently 0 (finite / ∞) rather than non-finite
+    if !(sxx.is_finite() && sxy.is_finite() && syy.is_finite()) {
+        return None;
+    }
+    // relative to x's own scale: each deviation carries ~ε·|mean| of cancellation noise, so a
+    // spread no larger than that is rounding, not signal — at any magnitude of x
+    if sxx <= nf * (16.0 * f64::EPSILON * mx.abs()).powi(2) {
         return None;
     }
     let slope = sxy / sxx;
     let intercept = slope.mul_add(-mx, my);
+    // normalize before squaring: sxy² and sxx·syy overflow long before r does
     let r2 = if syy > 0.0 {
-        (sxy * sxy / (sxx * syy)).clamp(0.0, 1.0)
+        let r = sxy / (sxx.sqrt() * syy.sqrt());
+        (r * r).min(1.0)
     } else {
         1.0
     };
     (slope.is_finite() && intercept.is_finite() && r2.is_finite()).then_some((intercept, slope, r2))
+}
+
+/// Format a regression coefficient: [`fmt_measure`], except a nonzero magnitude below `0.001`
+/// (which `fmt_measure` would round to `0`) prints in scientific notation (`1e-4`, `2.5e-7`), so a
+/// shallow slope on a large-scale x never reads as a flat line.
+fn fmt_coef(v: f64) -> String {
+    if v == 0.0 || v.abs() >= 1e-3 || !v.is_finite() {
+        return fmt_measure(v);
+    }
+    let s = format!("{v:.2e}");
+    let (mantissa, exp) = s.split_once('e').unwrap_or((&s, ""));
+    let mantissa = mantissa.trim_end_matches('0').trim_end_matches('.');
+    format!("{mantissa}e{exp}")
 }
 
 /// The least-squares fit line for a `ScatterPair` panel: a muted dashed segment across the observed
@@ -37806,8 +37827,8 @@ fn scatter_fit_trace(panel: &Panel, axes: Option<(String, String)>) -> Option<Bo
     let sign = if slope < 0.0 { '\u{2212}' } else { '+' };
     let hover = t!(
         "viz.hover.scatter_fit",
-        q_intercept = fmt_measure(intercept),
-        q_slope = format!("{sign} {}", fmt_measure(slope.abs())),
+        q_intercept = fmt_coef(intercept),
+        q_slope = format!("{sign} {}", fmt_coef(slope.abs())),
         q_r2 = format!("{r2:.2}")
     )
     .into_owned();
@@ -45181,6 +45202,37 @@ mod tests {
         // too few points, or a constant x (vertical cloud), has no fit
         assert!(ols_fit(&[1.0, 2.0], &[1.0, 2.0]).is_none());
         assert!(ols_fit(&[5.0, 5.0, 5.0], &[1.0, 2.0, 3.0]).is_none());
+        // ... nor does an x whose spread is only rounding noise next to its mean (1e15's ulp is
+        // 0.125); a 1-unit spread on a 1e8 mean is real signal
+        assert!(ols_fit(&[1e15 + 0.125, 1e15 + 0.25, 1e15 + 0.375], &[1.0, 2.0, 3.0]).is_none());
+        let (_, b, _) = ols_fit(&[1e8, 1e8 + 1.0, 1e8 + 2.0], &[1.0, 2.0, 3.0]).unwrap();
+        assert!((b - 1.0).abs() < 1e-9, "{b}");
+        // the degeneracy check is scale-free: a nano-scale predictor still fits
+        let (a, b, r2) = ols_fit(&[1e-9, 2e-9, 3e-9, 4e-9], &[3.0, 5.0, 7.0, 9.0]).unwrap();
+        assert!(
+            (b / 2e9 - 1.0).abs() < 1e-9 && (a - 1.0).abs() < 1e-6,
+            "{a} {b}"
+        );
+        assert!((r2 - 1.0).abs() < 1e-12, "{r2}");
+        // ... and r² is normalized before squaring, so huge magnitudes don't overflow to ∞/∞
+        let big = [1e100, 2e100, 3e100, 4e100];
+        let (_, b, r2) = ols_fit(&big, &big).unwrap();
+        assert!(
+            (b - 1.0).abs() < 1e-12 && (r2 - 1.0).abs() < 1e-12,
+            "{b} {r2}"
+        );
+        // a y spread whose squares overflow is no fit, not a finite slope with r² = 0
+        assert!(ols_fit(&[0.0, 0.0, 1.0, 10.0], &[0.0, 0.0, 1e200, 1e201]).is_none());
+    }
+
+    #[test]
+    fn fmt_coef_keeps_small_nonzero_coefficients() {
+        assert_eq!(fmt_coef(0.0), "0");
+        assert_eq!(fmt_coef(0.9), "0.9");
+        assert_eq!(fmt_coef(1234.5), "1,234.5");
+        assert_eq!(fmt_coef(0.0001), "1e-4");
+        assert_eq!(fmt_coef(-2.5e-7), "-2.5e-7");
+        assert_eq!(fmt_coef(1.234e-5), "1.23e-5");
     }
 
     #[test]
@@ -45221,6 +45273,14 @@ mod tests {
                 .unwrap();
         let hover = json["hovertemplate"].as_str().unwrap();
         assert!(hover.contains("\u{2212} 0.9\u{b7}x"), "{hover}");
+        // a shallow slope on a large-scale x keeps its digits instead of reading `+ 0·x`
+        let mut shallow = pair(vec![1.1, 2.1, 3.1, 4.1]);
+        if let PanelKind::ScatterPair { xs, .. } = &mut shallow.kind {
+            *xs = vec![10_000.0, 20_000.0, 30_000.0, 40_000.0];
+        }
+        let json = serde_json::to_value(scatter_fit_trace(&shallow, None).unwrap()).unwrap();
+        let hover = json["hovertemplate"].as_str().unwrap();
+        assert!(hover.contains("y = 0.1 + 1e-4\u{b7}x"), "{hover}");
         // a straight line would render as a curve on a log axis
         let logged = pair(vec![0.0, 1.0, 1.0, 3.0]).with_axis_log((false, true));
         assert!(scatter_fit_trace(&logged, None).is_none());

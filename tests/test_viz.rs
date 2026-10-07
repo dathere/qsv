@@ -4533,6 +4533,42 @@ fn viz_smart_smarter_file_order_drift_hint() {
 }
 
 #[test]
+fn viz_smart_smarter_file_order_drift_hint_bare_year_axis() {
+    // A dictionary-routed bare-year column is the charted time axis too (issue #4685), so a file
+    // sorted by it gets no drift hint. Without the dictionary the Integer years are no time axis,
+    // and `load`'s file-order drift is reported.
+    let mut rows = String::from("yr,load\n");
+    for i in 0..300_u32 {
+        rows.push_str(&format!("{},{}\n", 2000 + i / 3, 100 + i / 3));
+    }
+    let dict = r#"{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "properties": {
+    "yr": { "type": "integer", "title": "Year", "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "time.date" } }
+  } }"#;
+    let render = |name: &str, with_dict: bool| {
+        let wrk = Workdir::new(name);
+        wrk.create_from_string("load.csv", &rows);
+        wrk.create_from_string("dict.json", dict);
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "load.csv", "--smarter", "-o", "load.html"]);
+        if with_dict {
+            cmd.arg("--dictionary").arg(wrk.path("dict.json"));
+        }
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string("load.html").unwrap()
+    };
+
+    assert!(
+        render("viz_smart_drift_hint_bare_year_no_dict", false).contains("drifts in file order"),
+        "drift hint expected when the years are not a time axis"
+    );
+    assert!(
+        !render("viz_smart_drift_hint_bare_year_dict", true).contains("drifts in file order"),
+        "no drift hint when the file is sorted by the charted bare-year axis"
+    );
+}
+
+#[test]
 fn viz_smart_scatter3d_triple_panel() {
     let wrk = Workdir::new("viz_smart_scatter3d_triple_panel");
     // a moderately-correlated pair (a,b: r~0.78, below the collinear cutoff) plus a third column c

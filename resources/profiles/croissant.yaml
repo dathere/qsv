@@ -26,13 +26,20 @@
 #   * Optional 1.1 field `citeAs` surfaces when `pkg.citation` is
 #     present in the seed metadata.
 #
+# Aligned with mlcommons/croissant release v1.1.1 (2026-10-05). That
+# release does not change the 1.1 spec (croissant-spec-1.1.md and
+# croissant.ttl are byte-identical to v1.1.0); the @context below carries
+# every term in the final spec's Appendix 1 plus mlcroissant 1.1.1's
+# 1.1 context (`arrayShape`, `containedIn`, `isArray`), so hand-edited
+# or downstream-enriched output can use them without redefining terms.
+#
 # Validation: disabled (no published JSON Schema upstream; Croissant
 # uses Python validator https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
 # Discovery: disabled (Croissant isn't typically discovered from
 # CKAN-shaped publisher metadata).
 
 name: croissant
-version: 1.1.0
+version: 1.1.1
 about: Croissant 1.1 ML metadata format (mlcommons.org)
 about_url: https://github.com/mlcommons/croissant
 
@@ -103,18 +110,23 @@ validation:
   strippable_curie_prefixes: []
   # `mlcroissant` is the reference validator shipped by MLCommons
   # (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
-  # Install via `pip install mlcroissant`. qsv runs it under
+  # Install via `pip install -U mlcroissant` (1.1.x validates 1.1). qsv runs it under
   # `--validate`; findings surface as ProjectionWarnings at
   # `default_severity`. Missing-binary cases never fail the run.
+  # `required`: mlcroissant exits non-zero only when it finds errors
+  # (warnings alone exit 0, and qsv surfaces nothing on exit 0), so any
+  # surfaced finding means the document fails the reference validator.
+  # Its output is surfaced line by line, so in a failing run the
+  # warning lines printed alongside the errors are labelled Required too.
   external:
     command: "mlcroissant"
     args: ["validate", "--jsonld", "{file}"]
     label: "mlcroissant"
-    default_severity: "recommended"
+    default_severity: "required"
     # Shown in the missing-binary warning so users see the install
     # path at the exact moment they need it. Free-form — typically
     # a one-line install command + the project URL.
-    install_hint: "pip install mlcroissant (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant)"
+    install_hint: "pip install -U mlcroissant (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant)"
 
 # =========================================================================
 # Dataset projection
@@ -130,6 +142,9 @@ dataset:
   type: "sc:Dataset"
   context:
     "@language":        "en"
+    # https, not the http of spec Appendix 1: the 1.1 spec mixes both
+    # schemes across its examples, and mlcroissant (the reference
+    # validator) emits https://schema.org/ in its own 1.1 context.
     "@vocab":           "https://schema.org/"
     sc:                 "https://schema.org/"
     cr:                 "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
@@ -145,13 +160,16 @@ dataset:
     # Aliased to cr:annotation so the bare key expands canonically rather
     # than resolving to schema.org/annotation via @vocab.
     annotation:         "cr:annotation"
+    arrayShape:         "cr:arrayShape"
     citeAs:             "cr:citeAs"
     column:             "cr:column"
     conformsTo:         "dct:conformsTo"
+    containedIn:        "cr:containedIn"
     data:               { "@id": "cr:data",        "@type": "@json" }
     dataType:           { "@id": "cr:dataType",    "@type": "@vocab" }
     equivalentProperty: "cr:equivalentProperty"
     examples:           { "@id": "cr:examples",    "@type": "@json" }
+    excludes:           "cr:excludes"
     extract:            "cr:extract"
     field:              "cr:field"
     fileObject:         "cr:fileObject"
@@ -159,22 +177,27 @@ dataset:
     fileSet:            "cr:fileSet"
     format:             "cr:format"
     includes:           "cr:includes"
+    isArray:            "cr:isArray"
     isLiveDataset:      "cr:isLiveDataset"
     jsonPath:           "cr:jsonPath"
     key:                "cr:key"
     md5:                "cr:md5"  # DevSkim: ignore DS126858 — JSON-LD @context shortcut term (vocabulary mapping `md5` → `cr:md5`), not actual MD5 hash usage. qsv emits sha256 below.
     parentField:        "cr:parentField"
     path:               "cr:path"
+    readLines:          "cr:readLines"
     recordSet:          "cr:recordSet"
     references:         "cr:references"
     regex:              "cr:regex"
     repeated:           "cr:repeated"
     replace:            "cr:replace"
     samplingRate:       "cr:samplingRate"
+    sdVersion:          "cr:sdVersion"
     separator:          "cr:separator"
     source:             "cr:source"
     subField:           "cr:subField"
     transform:          "cr:transform"
+    unArchive:          "cr:unArchive"
+    value:              "cr:value"
   fields:
     - path: "name"
       template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
@@ -334,6 +357,10 @@ distribution:
 #     `equivalentProperty` (sc:minValue / sc:maxValue) the spec shows.
 #     Annotations are emitted only when qsv actually produced the stat
 #     for that column (numeric stats are null for text columns, etc.).
+#     Each annotation carries `"@type": "cr:Field"` — the spec's
+#     "Annotating Data" section defines annotations as cr:Field nodes and
+#     mlcroissant errors on untyped ones, even though the statistics
+#     example in the spec omits the type on field-level annotations.
 #
 # Value-frequency distributions ("the distribution of values in a field
 # is a statistic on the field") have no canonical scalar slot in 1.1, so
@@ -406,6 +433,7 @@ recordsets:
                 {%- if st.min is defined and st.min is not none and (st.min | string) != "" -%}
                   {%- set ann.first = false -%}
                   {
+                    "@type": "cr:Field",
                     "@id": {{ ("main-table/" ~ col_name ~ "/min") | tojson }},
                     "value": {% if is_numeric %}{{ st.min }}{% else %}{{ st.min | tojson }}{% endif %},
                     "dataType": {
@@ -421,6 +449,7 @@ recordsets:
                 {%- if st.max is defined and st.max is not none and (st.max | string) != "" -%}
                   {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
                   {
+                    "@type": "cr:Field",
                     "@id": {{ ("main-table/" ~ col_name ~ "/max") | tojson }},
                     "value": {% if is_numeric %}{{ st.max }}{% else %}{{ st.max | tojson }}{% endif %},
                     "dataType": {
@@ -440,6 +469,7 @@ recordsets:
                   {%- if sval is defined and sval is not none -%}
                     {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
                     {
+                      "@type": "cr:Field",
                       "@id": {{ ("main-table/" ~ col_name ~ "/" ~ d[0]) | tojson }},
                       "value": {{ sval | tojson }},
                       "dataType": {
@@ -457,6 +487,7 @@ recordsets:
                 {%- if st.mode is defined and st.mode is not none and (st.mode | string) != "" -%}
                   {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
                   {
+                    "@type": "cr:Field",
                     "@id": {{ ("main-table/" ~ col_name ~ "/mode") | tojson }},
                     "value": {{ st.mode | tojson }},
                     "dataType": {

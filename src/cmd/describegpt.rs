@@ -2497,10 +2497,31 @@ fn replace_attribution_placeholder(
         },
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
-        command_line = provenance_command_line(),
+        // A multi-line --prompt is in the command line verbatim; in a SQL comment, each of its
+        // lines needs the comment marker or the rest of the prompt becomes SQL.
+        command_line = provenance_command_line().replace('\n', &format!("\n{att_prefix}")),
         ts = chrono::Utc::now().to_rfc3339(),
     );
 
+    // In a JSON response the placeholder sits inside a string literal (e.g. the tags prompt's
+    // "attribution" key), so the attribution must be JSON-escaped: a quote in the command line
+    // would otherwise end the string and break the object. The placeholder itself starts with
+    // `{`, so it is removed before the check (callers also pass the bare placeholder).
+    let without_placeholder = text.replace("{GENERATED_BY_SIGNATURE}", "");
+    let trimmed = without_placeholder.trim_start();
+    let looks_like_json = trimmed.starts_with('{')
+        || trimmed.starts_with('[')
+        || trimmed
+            .strip_prefix("```json")
+            .is_some_and(|rest| rest.trim_start().starts_with(['{', '[']));
+    if looks_like_json {
+        let escaped = serde_json::to_string(&attribution).unwrap_or_default();
+        let escaped = escaped
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .unwrap_or(&escaped);
+        return text.replace("{GENERATED_BY_SIGNATURE}", escaped);
+    }
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
 }
 

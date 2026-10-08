@@ -9,7 +9,10 @@
 
 use serial_test::serial;
 
-use crate::{test_viz_census::with_mock_tigerweb, workdir::Workdir};
+use crate::{
+    test_viz_census::{choropleth_traces, with_mock_tigerweb, z_by_location},
+    workdir::Workdir,
+};
 
 /// A `viz choropleth --geojson auto` command wired to the mock service and an isolated cache.
 fn county_cmd(wrk: &Workdir, base: &str, csv: &str) -> std::process::Command {
@@ -684,6 +687,20 @@ fn viz_county_names_refuse_a_mismatched_explicit_feature_id_key() {
             "the auto key itself is fine: {stderr}"
         );
         assert!(String::from_utf8_lossy(&out.stdout).contains("42003"));
+
+        // the fetch mirrors each GEOID into a top-level `id`, so that key carries the same values
+        // and must not be refused (roborev 5118)
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--feature-id-key", "id"])
+            .env("QSV_VIZ_NO_COMPRESS", "1");
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "`id` mirrors GEOID: {stderr}");
+        let traces = choropleth_traces(&String::from_utf8_lossy(&out.stdout));
+        assert_eq!(traces[0]["featureidkey"], "id");
+        let z = z_by_location(&traces[0]);
+        assert_eq!(z.get("42003"), Some(&10.0), "{z:?}");
+        assert_eq!(z.get("42101"), Some(&20.0), "{z:?}");
     });
 }
 

@@ -353,8 +353,8 @@ choropleth options:
                            entry in the locations column, or that labels each binned
                            region (e.g. id, properties.fips). With --geojson auto the
                            key is set for you; an explicit key overrides it, except that
-                           county or place names resolve to properties.GEOID and refuse
-                           any other key. [default: id]
+                           county or place names resolve to GEOIDs and refuse a key
+                           that does not carry them. [default: id]
     --feature-name-key <k>  GeoJSON property path whose value is shown as the
                            human-readable region label in choropleth hover (e.g.
                            properties.name). When omitted, common name keys are
@@ -5263,10 +5263,13 @@ fn effective_feature_id_key<'a>(
     }
 }
 
-/// Refuse an explicit `--feature-id-key` that differs from the key an alias-synthesizing resolver
-/// (county names, geocoded place names) fetched with. Those resolvers map each name to a Census
-/// GEOID, so the aliases can only ever match under that key: honoring another one would pass the
-/// coverage gate and then silently drop every row at render.
+/// Refuse an explicit `--feature-id-key` that does not carry the ids an alias-synthesizing
+/// resolver (county names, geocoded place names) fetched with. Those resolvers map each name to a
+/// Census GEOID, so the aliases can only ever match under a key holding those GEOIDs: honoring
+/// another one would pass the coverage gate and then silently drop every row at render.
+///
+/// Compared by VALUE, not path: the fetched features mirror the GEOID into a top-level `id`
+/// (`viz_census::fetch_layer`), so an explicit `--feature-id-key id` matches exactly.
 fn refuse_explicit_key_on_synthesized_aliases(
     args: &Args,
     feature_id_key_explicit: bool,
@@ -5274,17 +5277,30 @@ fn refuse_explicit_key_on_synthesized_aliases(
     spec: &str,
     what: &str,
 ) -> CliResult<()> {
-    match args.flag_feature_id_key.as_deref() {
-        Some(key) if feature_id_key_explicit && key != boundaries.feature_id_key => {
-            fail_incorrectusage_clierror!(
-                "--geojson {spec} resolves {what} to Census GEOIDs, which match only on '{}'; \
-                 --feature-id-key '{key}' cannot match them. Omit --feature-id-key with --geojson \
-                 {spec}.",
-                boundaries.feature_id_key
-            )
-        },
-        _ => Ok(()),
+    let Some(key) = args.flag_feature_id_key.as_deref() else {
+        return Ok(());
+    };
+    if !feature_id_key_explicit || key == boundaries.feature_id_key {
+        return Ok(());
     }
+    let features = boundaries
+        .geojson
+        .get("features")
+        .and_then(serde_json::Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let carries_the_geoids = features.iter().all(|f| {
+        feature_id_by_path_value(f, &boundaries.feature_id_key)
+            .is_none_or(|geoid| feature_id_by_path_value(f, key).as_ref() == Some(&geoid))
+    });
+    if carries_the_geoids {
+        return Ok(());
+    }
+    fail_incorrectusage_clierror!(
+        "--geojson {spec} resolves {what} to Census GEOIDs, which match only on '{}'; \
+         --feature-id-key '{key}' does not carry them. Omit --feature-id-key with --geojson \
+         {spec}.",
+        boundaries.feature_id_key
+    )
 }
 
 fn score_region_code_coverage(

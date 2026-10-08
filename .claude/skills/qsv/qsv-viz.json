@@ -156,7 +156,7 @@
       {
         "flag": "--feature-id-key",
         "type": "string",
-        "description": "Property path in each GeoJSON feature whose value matches an entry in the locations column, or that labels each binned region (e.g. id, properties.fips). With --geojson auto the key is set for you; an explicit key overrides it, except that county or place names resolve to properties.GEOID and refuse any other key.",
+        "description": "Property path in each GeoJSON feature whose value matches an entry in the locations column, or that labels each binned region (e.g. id, properties.fips). With --geojson auto the key is set for you; an explicit key overrides it, except that county or place names resolve to GEOIDs and refuse a key that does not carry them.",
         "default": "id"
       },
       {

@@ -1632,7 +1632,7 @@ fn viz_smart_census_firewall_refusal_is_not_blamed_on_the_column() {
 
 /// Every choropleth trace in a rendered page (run with `QSV_VIZ_NO_COMPRESS` so figures are plain
 /// JSON), in document order.
-fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
+pub(crate) fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
     for chunk in html.split("Plotly.newPlot(").skip(1) {
         let Some(comma) = chunk.find(", ") else {
@@ -1656,7 +1656,7 @@ fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
 }
 
 /// `location -> z` for one trace.
-fn z_by_location(trace: &serde_json::Value) -> std::collections::HashMap<String, f64> {
+pub(crate) fn z_by_location(trace: &serde_json::Value) -> std::collections::HashMap<String, f64> {
     let locs = trace["locations"].as_array().cloned().unwrap_or_default();
     let z = trace["z"].as_array().cloned().unwrap_or_default();
     locs.iter()

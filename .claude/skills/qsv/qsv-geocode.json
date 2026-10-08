@@ -175,7 +175,7 @@
       {
         "flag": "--timeout",
         "type": "number",
-        "description": "Timeout for downloading Geonames cities index.",
+        "description": "Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update - raise it on slow connections.",
         "default": 120
       }
     ]

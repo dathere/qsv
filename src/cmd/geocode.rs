@@ -509,6 +509,9 @@ geocode options:
                                 Set to 0 to load all rows in one batch.
                                 [default: 50000]
     --timeout <seconds>         Timeout for downloading Geonames cities index.
+                                Also applies to each Geonames source file downloaded
+                                when rebuilding the index with index-update - raise it
+                                on slow connections.
                                 [default: 120]
     --cache-dir <dir>           The directory to use for caching the Geonames cities index
                                 and the persistent on-disk OpenCage result cache.
@@ -1285,13 +1288,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                 // will only update if there are changes unless --force is specified
                 check_index_file(&geocode_index_file)?;
 
+                let timeout_secs = util::timeout_secs(args.flag_timeout)?;
                 if args.flag_force {
-                    display_rebuild_instructions(
-                        &args.flag_cities_url,
-                        &cities_filename,
-                        &args.flag_languages,
-                        &geocode_index_file,
-                    );
+                    winfo!("Forcing a rebuild of the Geonames index...");
+                    rebuild_index(updater, &geocode_index_file, timeout_secs).await?;
                 } else {
                     winfo!("Checking main Geonames website for updates...");
                     let metadata = index_storage
@@ -1305,12 +1305,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         CliError::Network(format!("Geonames update check failed: {e}"))
                     })? {
                         winfo!("Updates available at Geonames.org.");
-                        display_rebuild_instructions(
-                            &args.flag_cities_url,
-                            &cities_filename,
-                            &args.flag_languages,
-                            &geocode_index_file,
-                        );
+                        rebuild_index(updater, &geocode_index_file, timeout_secs).await?;
                     } else {
                         winfo!("Skipping update. Geonames index is up-to-date.");
                     }
@@ -2236,29 +2231,96 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     Ok(())
 }
 
-/// Display instructions for rebuilding the Geonames index using the geosuggest crate directly
-fn display_rebuild_instructions(
-    cities_url: &str,
-    cities_filename: &str,
-    languages: &str,
+/// Download the Geonames sources, build a fresh index and install it at `geocode_index_file`.
+async fn rebuild_index(
+    updater: IndexUpdater<'_>,
     geocode_index_file: &str,
-) {
+    timeout_secs: u64,
+) -> CliResult<()> {
     winfo!(
-        r"To rebuild the index, use the geosuggest crate directly:
-
-git clone https://github.com/estin/geosuggest.git
-cd geosuggest
-cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=cli,tracing -- \
-    from-urls \
-    --cities-url {cities_url} \
-    --cities-filename {cities_filename} \
-    --languages {languages} \
-    --output {geocode_index_file}",
-        cities_url = cities_url,
-        cities_filename = cities_filename,
-        languages = languages,
-        geocode_index_file = geocode_index_file,
+        "Downloading Geonames source files and rebuilding the index. This downloads several \
+         hundred MB, needs about 2 GB of memory and can take a few minutes (per-download timeout: \
+         {timeout_secs}s - raise it with --timeout on slow connections)..."
     );
+    let start = std::time::Instant::now();
+    let engine_data = updater
+        .build()
+        .await
+        .map_err(|e| CliError::Network(format!("Cannot rebuild the Geonames index: {e:#}")))?;
+    write_index_file(Path::new(geocode_index_file), &engine_data)?;
+    winfo!(
+        "Geonames index rebuilt in {} and saved to {geocode_index_file}.",
+        indicatif::HumanDuration(start.elapsed())
+    );
+    Ok(())
+}
+
+/// Write `engine_data` as a Geonames index file at `index_path`, replacing it atomically.
+///
+/// The index is written to a sibling temp file, loaded back to prove it is usable, and only then
+/// renamed over `index_path`, so a failed write never clobbers a working index.
+///
+/// The storage framing - `<u32 BE metadata length><rkyv metadata><rkyv payload>` - is written
+/// here rather than via geosuggest-core 0.8 `Storage::dump_to`, which writes the metadata LENGTH
+/// but gates the metadata BYTES behind its `tracing` feature, producing an unloadable index
+/// (the corruption behind qsv issue #4433). Reported upstream as estin/geosuggest#50 - once
+/// a fixed release is in Cargo.lock, this can go back to `Storage::dump_to`.
+fn write_index_file(index_path: &Path, engine_data: &EngineData) -> CliResult<()> {
+    use std::io::Write;
+
+    let metadata = rkyv::to_bytes::<rkyv::rancor::Error>(&engine_data.metadata)
+        .map_err(|e| CliError::Other(format!("Cannot serialize Geonames index metadata: {e}")))?;
+    let metadata_len = u32::try_from(metadata.len())
+        .map_err(|_| CliError::Other("Geonames index metadata is too large".to_string()))?;
+
+    let index_dir = index_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(index_dir)?;
+    {
+        let mut wtr = std::io::BufWriter::new(tmp.as_file_mut());
+        wtr.write_all(&metadata_len.to_be_bytes())?;
+        wtr.write_all(&metadata)?;
+        wtr.write_all(&engine_data.data)?;
+        wtr.flush()?;
+    }
+    tmp.as_file().sync_all()?;
+    // close the write handle before the path is reopened and renamed (Windows ARM64 deadlocks
+    // otherwise); the TempPath still deletes the temp on drop if anything below fails
+    let tmp_path = tmp.into_temp_path();
+
+    verify_index_file(&tmp_path)?;
+
+    // `tempfile` creates 0600; keep the replaced index's mode rather than narrowing it
+    #[cfg(unix)]
+    if let Ok(existing) = fs::metadata(index_path) {
+        let _ = fs::set_permissions(&tmp_path, existing.permissions());
+    }
+
+    tmp_path
+        .persist(index_path)
+        .map_err(|e| CliError::Io(e.error))?;
+    Ok(())
+}
+
+/// Check that `path` is a loadable Geonames index with metadata - the same checks
+/// `index-check` and the geocoding subcommands rely on.
+fn verify_index_file(path: &Path) -> CliResult<()> {
+    let storage = storage::Storage::new();
+    let metadata = storage
+        .read_metadata(path)
+        .map_err(|e| CliError::Other(format!("Rebuilt Geonames index is invalid: {e}")))?;
+    if metadata.is_none() {
+        return fail_clierror!("Rebuilt Geonames index has no metadata.");
+    }
+    let engine_data = storage
+        .load_from(path)
+        .map_err(|e| CliError::Other(format!("Rebuilt Geonames index cannot be loaded: {e}")))?;
+    engine_data.as_engine().map_err(|e| {
+        CliError::Other(format!("Rebuilt Geonames index cannot be initialized: {e}"))
+    })?;
+    Ok(())
 }
 
 /// Geonames population floors for which qsv publishes a prebuilt index as a release asset, and
@@ -4407,6 +4469,76 @@ mod tests {
         assert_eq!(parse_relative_age("2h"), Some(Duration::from_secs(7_200)));
         assert_eq!(parse_relative_age("3d"), Some(Duration::from_secs(259_200)));
         assert_eq!(parse_relative_age("1w"), Some(Duration::from_secs(604_800)));
+    }
+
+    /// `EngineData` for the committed mini Geonames fixture, with metadata like `IndexUpdater`
+    /// sets on a rebuilt index.
+    fn mini_engine_data() -> EngineData {
+        let mini = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/test/geonames-mini");
+        let index_data = geosuggest_core::index::IndexData::new_from_files(
+            geosuggest_core::index::SourceFileOptions {
+                cities:           mini.join("cities.txt"),
+                names:            Some(mini.join("alternateNames.txt")),
+                countries:        Some(mini.join("countryInfo.txt")),
+                admin1_codes:     Some(mini.join("admin1CodesASCII.txt")),
+                admin2_codes:     Some(mini.join("admin2Codes.txt")),
+                filter_languages: vec!["en"],
+            },
+        )
+        .expect("parse mini Geonames fixture");
+        let mut engine_data = EngineData::try_from(index_data).expect("serialize mini index");
+        engine_data.metadata = Some(geosuggest_core::EngineMetadata::default());
+        engine_data
+    }
+
+    #[test]
+    fn write_index_file_produces_a_loadable_index() {
+        let dir = tempdir().unwrap();
+        let index_path = dir.path().join("rebuilt.rkyv");
+        fs::write(&index_path, b"previous index").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // neither tempfile's 0600 nor the usual umask default, so a carried-over mode is
+            // distinguishable from both
+            fs::set_permissions(&index_path, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        write_index_file(&index_path, &mini_engine_data()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&index_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(
+                mode, 0o640,
+                "rebuilt index must keep the replaced index's mode"
+            );
+        }
+
+        // assert on the artifact, not on success (#4433): metadata readable, engine usable
+        let storage = storage::Storage::new();
+        assert!(storage.read_metadata(&index_path).unwrap().is_some());
+        let loaded = storage.load_from(&index_path).unwrap();
+        let engine = loaded.as_engine().unwrap();
+        let hits = engine.suggest::<&str>("Pittsburgh", 1, None, None);
+        assert_eq!(hits.first().map(|c| c.name.as_str()), Some("Pittsburgh"));
+    }
+
+    #[test]
+    fn write_index_file_leaves_existing_index_on_failure() {
+        let dir = tempdir().unwrap();
+        let index_path = dir.path().join("active.rkyv");
+        fs::write(&index_path, b"previous index").unwrap();
+
+        let mut engine_data = mini_engine_data();
+        let half = engine_data.data.len() / 2;
+        let mut truncated = rkyv::util::AlignedVec::<128>::new();
+        truncated.extend_from_slice(&engine_data.data[..half]);
+        engine_data.data = truncated;
+
+        assert!(write_index_file(&index_path, &engine_data).is_err());
+        assert_eq!(fs::read(&index_path).unwrap(), b"previous index");
+        // the temp file was cleaned up, not left beside the index
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

@@ -609,6 +609,13 @@ geosuggest-core = "0.8"
 
 [features]
 default = ["jemallocator"]
+# NOTE: no publish workflow builds the prebuilt `qsv` with distrib_features. Each one passes an
+# explicit --features list that INTENTIONALLY leaves out `get`, `get_cloud` and `geoconnex`
+# (see #4737). So the prebuilt `qsv`/`qsvpy*` binaries have no `get` command, no `dc:` inputs,
+# no s3:///gs:///az:// sources and no `profile --profile geoconnex`. Users who need them can
+# use the prebuilt `qsvdp` (get + get_cloud) or build from source with
+# -F distrib_features, or selectively with -F feature_capable,get[,get_cloud] /
+# -F feature_capable,geoconnex (the `qsv` bin requires feature_capable).
 distrib_features = [
     "feature_capable",
     "apply",
@@ -630,8 +637,8 @@ distrib_features = [
 all_features = ["distrib_features", "magika", "self_update", "ui"]
 # NOTE: `get` AND `get_cloud` are both deliberately absent - removing only `get` would be a
 # no-op, since `get_cloud = ["get", ...]` re-enables it. `get_cloud` turns on object_store's
-# aws/azure/gcp backends, which is the largest feature delta between this build and the
-# prebuilt `qsv` (object_store is in BOTH dependency graphs, so it never shows up in a crate
+# aws/azure/gcp backends, which is the largest feature delta between this build and a
+# distrib_features `qsv` build (object_store is in BOTH dependency graphs, so it never shows up in a crate
 # count - only in a resolved-feature comparison). Dropping it costs qsvmcp the `get` command,
 # `dc:` cache-prefix inputs, and s3:///gs://az:// sources.
 qsvmcp = [
@@ -672,8 +679,9 @@ foreach = []
 get = ["zstd", "flate2", "glob"]
 # get_cloud: adds cloud object-storage sources (s3://, gs://, az://) to `get`,
 # via the object_store crate. Opt-in so a bare `-F get` build stays lean;
-# included in distrib_features/qsvmcp/datapusher_plus (where polars already
-# pulls object_store). See `qsv get --help`.
+# included in distrib_features/datapusher_plus (where polars already pulls
+# object_store). NOT in qsvmcp, and NOT in the prebuilt `qsv` (see the NOTE
+# above distrib_features). See `qsv get --help`.
 get_cloud = ["get", "dep:object_store"]
 geocode = [
     "bytemuck",
@@ -704,8 +712,9 @@ profile = ["dep:sha2", "polars", "yaml_serde"]
 # features (https://docs.geoconnex.us/). Embeds the Geoconnex SHACL
 # shapes (~10KB Turtle bundle) so `qsv profile --profile geoconnex
 # --validate` can spawn `pyshacl` without external file deps.
-# Requires `profile`. Available in qsv (via distrib_features) and as an
-# opt-in for qsvdp; NOT in qsvlite or qsvmcp.
+# Requires `profile`. Available in source builds of qsv (via distrib_features)
+# and as an opt-in for qsvdp; NOT in qsvlite, qsvmcp, or any prebuilt binary
+# (see the NOTE above distrib_features).
 geoconnex  = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
 to         = ["csvs_convert", "dep:spreadsheet-ods"]

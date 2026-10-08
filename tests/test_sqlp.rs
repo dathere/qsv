@@ -2066,20 +2066,22 @@ fn sqlp_div_sign() {
         r#"
         SELECT
             a / b AS a_div_b,
-            a // b AS a_floordiv_b,
+            a // b AS a_intdiv_b,
             SIGN(b) AS b_sign,
         FROM test
 "#,
     );
 
+    // `//` truncates toward zero, as SQL integer division does. Before
+    // pola-rs/polars#29536 (py-2.0.0) it floored, giving -1 and -16 below.
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
-        svec!["a_div_b", "a_floordiv_b", "b_sign"],
-        svec!["-0.09950248756218906", "-1", "-1.0"],
+        svec!["a_div_b", "a_intdiv_b", "b_sign"],
+        svec!["-0.09950248756218906", "0", "-1.0"],
         svec!["2.857142857142857", "2", "1.0"],
         svec!["12.0", "12", "1.0"],
         svec!["", "", ""],
-        svec!["-15.92356687898089", "-16", "-1.0"],
+        svec!["-15.92356687898089", "-15", "-1.0"],
     ];
 
     assert_eq!(got, expected);
@@ -3934,14 +3936,16 @@ fn sqlp_named_window_references() {
       WINDOW w AS (PARTITION BY category ORDER BY value)
       ORDER BY category, value"#,
     );
+    // AVG honors the ORDER BY's running frame like SUM and MIN do. Before
+    // pola-rs/polars#29720 (py-2.0.0) it returned the whole-partition average.
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["category", "value", "w:sum", "w:min", "w:avg"],
-        svec!["A", "10", "10", "10", "20.0"],
-        svec!["A", "20", "30", "10", "20.0"],
+        svec!["A", "10", "10", "10", "10.0"],
+        svec!["A", "20", "30", "10", "15.0"],
         svec!["A", "30", "60", "10", "20.0"],
-        svec!["B", "15", "15", "15", "31.666666666666668"],
-        svec!["B", "30", "45", "15", "31.666666666666668"],
+        svec!["B", "15", "15", "15", "15.0"],
+        svec!["B", "30", "45", "15", "22.5"],
         svec!["B", "50", "95", "15", "31.666666666666668"],
         svec!["C", "35", "35", "35", "35.0"],
     ];
@@ -3962,6 +3966,8 @@ fn sqlp_named_window_references() {
         w3 AS ()
       ORDER BY category, value"#,
     );
+    // The two value-30 rows are peers under w2, so both get the same running sum
+    // (105). Before pola-rs/polars#29736 (py-2.0.0) A/30 got 75.
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
@@ -3973,7 +3979,7 @@ fn sqlp_named_window_references() {
         ],
         svec!["A", "10", "20.0", "10", "7"],
         svec!["A", "20", "20.0", "45", "7"],
-        svec!["A", "30", "20.0", "75", "7"],
+        svec!["A", "30", "20.0", "105", "7"],
         svec!["B", "15", "31.666666666666668", "25", "7"],
         svec!["B", "30", "31.666666666666668", "105", "7"],
         svec!["B", "50", "31.666666666666668", "190", "7"],
@@ -5184,11 +5190,12 @@ fn sqlp_window_order_by_nulls_last() {
     // `grp` is deliberately NOT projected. The two null-`a` rows are peers in
     // this window, so which one gets rn 5 vs rn 6 is unspecified -- but `a`,
     // `rn`, `cnt` and `total` are identical either way, so the assertion is a
-    // total order on what it actually asserts. Adding a second window ORDER BY
-    // key as a tiebreak is NOT an option: polars silently ignores
-    // NULLS FIRST/LAST once a window has more than one key (pinned by
-    // sqlp_window_order_by_multiple_keys_limitation), which would invert the
-    // very property under test.
+    // total order on what it actually asserts. (Multi-key window ORDER BY is
+    // covered by sqlp_window_order_by_multiple_keys.)
+    //
+    // Peers share a running aggregate (SQL's default RANGE frame), so both null
+    // rows get cnt 6. Before pola-rs/polars#29736 (py-2.0.0) polars counted peers
+    // row by row and gave them 5 and 6.
     let mut cmd = wrk.command("sqlp");
     cmd.arg("wnulls.csv").arg(
         "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn, COUNT(*) OVER (ORDER BY a \
@@ -5202,7 +5209,7 @@ fn sqlp_window_order_by_nulls_last() {
         svec!["20.0", "2", "2", "30.0"],
         svec!["30.0", "3", "3", "60.0"],
         svec!["40.0", "4", "4", "100.0"],
-        svec!["", "5", "5", "100.0"],
+        svec!["", "5", "6", "100.0"],
         svec!["", "6", "6", "100.0"],
     ];
     assert_eq!(got, expected);
@@ -5957,48 +5964,16 @@ fn sqlp_grouping_distinguishes_a_data_null() {
 }
 
 #[test]
-fn sqlp_window_order_by_multiple_keys_limitation() {
-    // Found while hardening the #29159 tests, and the reason they project only
-    // determinate columns instead of adding a tiebreak key.
-    //
-    // A window ORDER BY honors NULLS FIRST/LAST only with a SINGLE key. Add a
-    // second key and the NULLS clause is SILENTLY IGNORED -- the nulls move to
-    // the front even when every key says NULLS LAST. A top-level ORDER BY with
-    // two keys honors it correctly, so this is specific to the window path.
-    //
-    // Mixing directions or NULLS placement across window keys is rejected
-    // outright. If a future polars fixes any of this, these assertions fail and
-    // the tiebreak workaround becomes available.
-    //
-    // Reported upstream as pola-rs/polars#29390. Root cause:
-    // Expr::over_with_options collapses several ORDER BY keys into a single
-    // as_struct(...), and a struct holding a null field is not itself null, so
-    // SortOptions::nulls_last has nothing to act on. `descending` survives the
-    // same path, which is why only the null placement is wrong.
-    let wrk = Workdir::new("sqlp_window_order_by_multiple_keys_limitation");
+fn sqlp_window_order_by_multiple_keys() {
+    // Up to rev 9d5804d, a window ORDER BY honored NULLS FIRST/LAST only with a SINGLE
+    // key: with a second key the clause was silently dropped and nulls led, and mixing
+    // directions or NULLS placement across keys was rejected outright. Reported upstream
+    // as pola-rs/polars#29390 and fixed by pola-rs/polars#29417 (in py-2.0.0). `grp` is
+    // the tiebreak key in every query below, so each result is a total order.
+    let wrk = Workdir::new("sqlp_window_order_by_multiple_keys");
     window_nulls_fixture(&wrk);
 
-    // Single key: NULLS LAST is honored -- nulls get rn 5 and 6.
-    let mut single_cmd = wrk.command("sqlp");
-    single_cmd
-        .arg("wnulls.csv")
-        .arg("SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST) AS rn FROM wnulls ORDER BY rn");
-    let got_single: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut single_cmd);
-    assert_eq!(
-        got_single,
-        vec![
-            svec!["a", "rn"],
-            svec!["10.0", "1"],
-            svec!["20.0", "2"],
-            svec!["30.0", "3"],
-            svec!["40.0", "4"],
-            svec!["", "5"],
-            svec!["", "6"],
-        ]
-    );
-
-    // Two keys, BOTH spelled NULLS LAST: the clause is dropped and the nulls
-    // lead. This is the bug -- it is pinned, not endorsed.
+    // Two keys, both NULLS LAST: the nulls trail.
     let mut multi_cmd = wrk.command("sqlp");
     multi_cmd.arg("wnulls.csv").arg(
         "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS LAST, grp NULLS LAST) AS rn FROM \
@@ -6007,6 +5982,26 @@ fn sqlp_window_order_by_multiple_keys_limitation() {
     let got_multi: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut multi_cmd);
     assert_eq!(
         got_multi,
+        vec![
+            svec!["grp", "a", "rn"],
+            svec!["x", "10.0", "1"],
+            svec!["x", "20.0", "2"],
+            svec!["y", "30.0", "3"],
+            svec!["y", "40.0", "4"],
+            svec!["x", "", "5"],
+            svec!["y", "", "6"],
+        ]
+    );
+
+    // Mixed NULLS placement across keys (used to be a hard error).
+    let mut mixed_nulls_cmd = wrk.command("sqlp");
+    mixed_nulls_cmd.arg("wnulls.csv").arg(
+        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST, grp) AS rn FROM wnulls ORDER \
+         BY rn",
+    );
+    let got_mixed_nulls: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut mixed_nulls_cmd);
+    assert_eq!(
+        got_mixed_nulls,
         vec![
             svec!["grp", "a", "rn"],
             svec!["x", "", "1"],
@@ -6018,48 +6013,24 @@ fn sqlp_window_order_by_multiple_keys_limitation() {
         ]
     );
 
-    // The same two-key ORDER BY at the TOP level honors NULLS LAST, which is
-    // what makes the above a window-specific defect rather than a syntax quirk.
-    let mut top_cmd = wrk.command("sqlp");
-    top_cmd
-        .arg("wnulls.csv")
-        .arg("SELECT grp, a FROM wnulls ORDER BY a NULLS LAST, grp");
-    let got_top: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut top_cmd);
-    assert_eq!(
-        got_top,
-        vec![
-            svec!["grp", "a"],
-            svec!["x", "10.0"],
-            svec!["x", "20.0"],
-            svec!["y", "30.0"],
-            svec!["y", "40.0"],
-            svec!["x", ""],
-            svec!["y", ""],
-        ]
-    );
-
-    // Mixed NULLS placement across window keys is a hard error.
-    let mut mixed_nulls_cmd = wrk.command("sqlp");
-    mixed_nulls_cmd.arg("wnulls.csv").arg(
-        "SELECT a, ROW_NUMBER() OVER (ORDER BY a NULLS FIRST, grp) AS rn FROM wnulls ORDER BY rn",
-    );
-    let mixed_nulls_stderr = wrk.stderr_on_error(&mut mixed_nulls_cmd);
-    assert!(
-        mixed_nulls_stderr
-            .contains("OVER does not (yet) support mixed NULLS FIRST/LAST ordering for ORDER BY"),
-        "unexpected stderr: {mixed_nulls_stderr}"
-    );
-
-    // So is a mixed asc/desc window ORDER BY.
+    // Mixed asc/desc across keys (used to be a hard error).
     let mut mixed_dir_cmd = wrk.command("sqlp");
     mixed_dir_cmd.arg("wnulls.csv").arg(
-        "SELECT a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST, grp) AS rn FROM wnulls ORDER \
-         BY rn",
+        "SELECT grp, a, ROW_NUMBER() OVER (ORDER BY a DESC NULLS FIRST, grp) AS rn FROM wnulls \
+         ORDER BY rn",
     );
-    let mixed_dir_stderr = wrk.stderr_on_error(&mut mixed_dir_cmd);
-    assert!(
-        mixed_dir_stderr.contains("OVER does not (yet) support mixed asc/desc directions"),
-        "unexpected stderr: {mixed_dir_stderr}"
+    let got_mixed_dir: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut mixed_dir_cmd);
+    assert_eq!(
+        got_mixed_dir,
+        vec![
+            svec!["grp", "a", "rn"],
+            svec!["x", "", "1"],
+            svec!["y", "", "2"],
+            svec!["y", "40.0", "3"],
+            svec!["y", "30.0", "4"],
+            svec!["x", "20.0", "5"],
+            svec!["x", "10.0", "6"],
+        ]
     );
 }
 
@@ -6298,4 +6269,108 @@ fn sqlp_cache_schema_large_floats_not_inf_issue_4752() {
     cmd.arg("t.csv").arg("select x from _t_1");
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "x\n1.5e+40\n2.5e+40");
+}
+
+// ---------------------------------------------------------------------------
+// Polars SQL behavior changed between rev 9d5804d and py-2.0.0. One test per
+// upstream change; the upstream PR is cited so the next bump can diff against
+// it. Behavior changes that broke existing tests are annotated in place:
+// sqlp_div_sign (#29536), sqlp_named_window_references (#29720),
+// sqlp_window_order_by_nulls_last (#29736) and
+// sqlp_window_order_by_multiple_keys (#29417).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sqlp_exact_numeric_literals_are_decimal() {
+    // pola-rs/polars#29536: an exact numeric literal is typed Decimal, so
+    // arithmetic on it is exact and keeps the literal's scale. An
+    // approximate literal (`1.5e0`) is still a float.
+    let wrk = Workdir::new("sqlp_exact_numeric_literals_are_decimal");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv").arg(
+        "SELECT 1.10 AS a, 0.1 + 0.2 AS b, 1.5e0 * 2 AS f, value * 1.25 AS c FROM groups ORDER BY \
+         value LIMIT 2",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["a", "b", "f", "c"],
+        svec!["1.10", "0.3", "3.0", "1.25"],
+        svec!["1.10", "0.3", "3.0", "2.50"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_modulo_truncates() {
+    // pola-rs/polars#29536: `%` is a truncating remainder (the result takes the
+    // dividend's sign), as in standard SQL.
+    let wrk = Workdir::new("sqlp_modulo_truncates");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg("SELECT -7 % 3 AS i, 7 % -3 AS j, -7.5 % 2 AS f");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["i", "j", "f"], svec!["-1", "1", "-1.5"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_qualify_before_projection() {
+    // pola-rs/polars#29746: QUALIFY is evaluated before the projection, so its
+    // window can use a column (`value`) that the SELECT list drops.
+    let wrk = Workdir::new("sqlp_qualify_before_projection");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv").arg(
+        "SELECT category FROM groups QUALIFY ROW_NUMBER() OVER (PARTITION BY category ORDER BY \
+         value DESC) = 1 ORDER BY category",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["category"], svec!["a"], svec!["b"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_percent_rank_cume_dist_ntile() {
+    // pola-rs/polars#29729 added PERCENT_RANK, CUME_DIST and NTILE.
+    // CUME_DIST is rounded because it yields sixths here.
+    let wrk = Workdir::new("sqlp_percent_rank_cume_dist_ntile");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv").arg(
+        "SELECT value, PERCENT_RANK() OVER (ORDER BY value) AS pr, ROUND(CUME_DIST() OVER (ORDER \
+         BY value), 2) AS cd, NTILE(2) OVER (ORDER BY value) AS nt FROM groups ORDER BY value",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["value", "pr", "cd", "nt"],
+        svec!["1", "0.0", "0.17", "1"],
+        svec!["2", "0.2", "0.33", "1"],
+        svec!["3", "0.4", "0.5", "1"],
+        svec!["4", "0.6", "0.67", "2"],
+        svec!["5", "0.8", "0.83", "2"],
+        svec!["6", "1.0", "1.0", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_nested_aggregate_errors() {
+    // pola-rs/polars#29751: nesting one aggregate call in another is an error.
+    let wrk = Workdir::new("sqlp_nested_aggregate_errors");
+    grouping_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("groups.csv")
+        .arg("SELECT SUM(MAX(value)) FROM groups");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("aggregate function calls cannot be nested"),
+        "unexpected stderr: {stderr}"
+    );
 }

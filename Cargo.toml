@@ -515,8 +515,13 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 [patch.crates-io]
 # polars-readstat-rs depends on these directly; redirect them onto the same git polars
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io.
-polars-core  = { git = "https://github.com/pola-rs/polars", rev = "9d5804d3589a04b7805bac624934bde54b545b91" }
-polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "9d5804d3589a04b7805bac624934bde54b545b91" }
+polars-core  = { git = "https://github.com/pola-rs/polars", rev = "22a147de3d2bb2e44b97338a2510816c7105c9f2" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "22a147de3d2bb2e44b97338a2510816c7105c9f2" }
+# Polars (since py-2.0.0) calls HashTable::prefetch_{get,insert}, which exist only in its
+# hashbrown fork (https://github.com/rust-lang/hashbrown/pull/727). Polars' own workspace
+# [patch] doesn't propagate to dependents, so mirror it here; keep the rev in sync with the
+# [patch.crates-io] section of the pinned polars rev's Cargo.toml. Drop once #727 is released.
+hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # for details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
@@ -566,9 +571,9 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.44.2:9d5804d3589a04b7805bac624934bde54b545b91
-# polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.44.2", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "9d5804d3589a04b7805bac624934bde54b545b91", optional = true }
+# QSV_POLARS_REV=py-2.0.0
+# polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.0.0", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "22a147de3d2bb2e44b97338a2510816c7105c9f2", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

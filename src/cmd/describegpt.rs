@@ -2336,6 +2336,23 @@ fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
     out.join(" ")
 }
 
+/// Substitute `{GENERATED_BY_SIGNATURE}` in a raw LLM response. Shared by the live path and
+/// `--process-response` (MCP sampling) so both render the attribution the prompts ask for.
+fn substitute_response_attribution(
+    response: &str,
+    kind: PromptType,
+    args: &Args,
+    model: &str,
+    base_url: &str,
+) -> String {
+    let format = if kind == PromptType::Prompt && args.flag_prompt.is_some() {
+        AttributionFormat::SqlComment
+    } else {
+        AttributionFormat::Markdown
+    };
+    replace_attribution_placeholder(response, args, model, base_url, format, kind)
+}
+
 /// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
 fn replace_attribution_placeholder(
     text: &str,
@@ -3237,22 +3254,8 @@ fn get_completion(
         elapsed:    llm_response.elapsed_ms,
     };
 
-    // Determine format based on prompt type and flag_prompt
-    let format = if kind == PromptType::Prompt && args.flag_prompt.is_some() {
-        AttributionFormat::SqlComment
-    } else {
-        AttributionFormat::Markdown
-    };
-
-    // Replace attribution placeholder using unified function
-    let completion = replace_attribution_placeholder(
-        &llm_response.content,
-        args,
-        model,
-        &base_url,
-        format,
-        kind,
-    );
+    let completion =
+        substitute_response_attribution(&llm_response.content, kind, args, model, &base_url);
 
     Ok(CompletionResponse {
         response: completion,
@@ -7153,14 +7156,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // the dictionary output carries the dataset-language fields, and attribution reports
         // the same language the step-1 prompt asked for.
         //
-        // Detection stays gated on a Dictionary phase because the dataset-language fields and
-        // the attribution block are BOTH dictionary-only on this path — description/tags
-        // responses are emitted verbatim, with no attribution. Resolution is ungated so a
-        // bare threshold float can never reach attribution regardless of which phases ran.
+        // Detection is ungated, as on the live path: every phase's attribution block (the
+        // dictionary's, and the {GENERATED_BY_SIGNATURE} substituted into description/tags/
+        // prompt responses below) reports the resolved language. Resolution also keeps a bare
+        // threshold float out of attribution.
         #[cfg(feature = "whatlang")]
-        if input.phases.iter().any(|p| p.kind == "Dictionary") {
-            detect_dataset_language(&input.analysis_results, args.flag_language.as_ref());
-        }
+        detect_dataset_language(&input.analysis_results, args.flag_language.as_ref());
         resolve_output_language(&mut args);
 
         for phase in &input.phases {
@@ -7170,7 +7171,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map_err(|_| CliError::Other(format!("Unknown phase kind: {}", phase.kind)))?;
 
             let completion = CompletionResponse {
-                response:    phase.response.clone(),
+                response:    substitute_response_attribution(
+                    &phase.response,
+                    kind,
+                    &args,
+                    model,
+                    &base_url,
+                ),
                 reasoning:   phase.reasoning.clone(),
                 token_usage: phase.token_usage.clone(),
             };

@@ -2263,7 +2263,8 @@ async fn rebuild_index(
 /// The storage framing - `<u32 BE metadata length><rkyv metadata><rkyv payload>` - is written
 /// here rather than via geosuggest-core 0.8 `Storage::dump_to`, which writes the metadata LENGTH
 /// but gates the metadata BYTES behind its `tracing` feature, producing an unloadable index
-/// (the corruption behind qsv issue #4433).
+/// (the corruption behind qsv issue #4433). Reported upstream as estin/geosuggest#50 - once
+/// a fixed release is in Cargo.lock, this can go back to `Storage::dump_to`.
 fn write_index_file(index_path: &Path, engine_data: &EngineData) -> CliResult<()> {
     use std::io::Write;
 

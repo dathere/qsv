@@ -157,6 +157,7 @@ pub fn record_write_error(stream: &str, e: &io::Error) {
     let _ = WRITE_ERROR.set(format!("error writing to {stream}: {e}"));
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum QsvExitCode {
     Good           = 0,
@@ -188,14 +189,119 @@ impl Termination for QsvExitCode {
         // panicked on. This is the one place all three binaries' `main` funnels through, so
         // the check cannot be forgotten by a new exit path.
         let write_error = WRITE_ERROR.get();
+        let code = effective_exit_code(self as u8, write_error.is_some());
         if let Some(err) = write_error {
-            use std::io::Write;
+            if json_errors() {
+                log::error!("{err}");
+                emit_json_error("write", err, code, false);
+            } else {
+                use std::io::Write;
 
-            log::error!("{err}");
-            let _ = writeln!(&mut io::stderr(), "{err}");
+                log::error!("{err}");
+                let _ = writeln!(&mut io::stderr(), "{err}");
+            }
         }
-        ExitCode::from(effective_exit_code(self as u8, write_error.is_some()))
+        ExitCode::from(code)
     }
+}
+
+/// `QSV_ERROR_FORMAT=json` switches a failed run's final diagnostic from free text to a single
+/// JSON line on stderr, so programs driving qsv as a subprocess can classify failures without
+/// scraping prose. Read once, after `.env` processing has had a chance to set it.
+fn json_errors() -> bool {
+    static JSON: OnceLock<bool> = OnceLock::new();
+    *JSON.get_or_init(|| {
+        std::env::var("QSV_ERROR_FORMAT").is_ok_and(|v| v.trim().eq_ignore_ascii_case("json"))
+    })
+}
+
+fn json_error_line(kind: &str, message: &str, exit_code: u8, warning: bool) -> String {
+    serde_json::json!({
+        "error": {
+            "kind": kind,
+            "level": if warning { "warning" } else { "error" },
+            "message": message,
+            "exit_code": exit_code,
+            "command": CURRENT_COMMAND.get(),
+            "qsv_version": env!("CARGO_PKG_VERSION"),
+        }
+    })
+    .to_string()
+}
+
+fn emit_json_error(kind: &str, message: &str, exit_code: u8, warning: bool) {
+    use std::io::Write;
+
+    let _ = writeln!(
+        &mut io::stderr(),
+        "{}",
+        json_error_line(kind, message, exit_code, warning)
+    );
+}
+
+/// Report a command's error on stderr and return the exit code it maps to.
+///
+/// Shared by every binary's `main` so the error→exit-code mapping cannot drift between them.
+/// In text mode the output is exactly what each `main` used to print inline.
+pub fn report_cli_error(err: CliError) -> QsvExitCode {
+    // (kind, text-mode prefix, message, exit code)
+    let (kind, prefix, message, code) = match err {
+        CliError::Help(usage_text) => {
+            wout!("{usage_text}");
+            return QsvExitCode::Good;
+        },
+        CliError::Flag(err) => ("usage", "", err.to_string(), QsvExitCode::IncorrectUsage),
+        CliError::IncorrectUsage(msg) => {
+            ("usage", "usage error: ", msg, QsvExitCode::IncorrectUsage)
+        },
+        CliError::Csv(err) => ("csv", "csv error: ", err.to_string(), QsvExitCode::Bad),
+        CliError::Io(ref err) if err.kind() == io::ErrorKind::BrokenPipe => {
+            if json_errors() {
+                log::warn!("broken pipe warning");
+                emit_json_error(
+                    "broken_pipe",
+                    "broken pipe warning",
+                    QsvExitCode::Warning as u8,
+                    true,
+                );
+            } else {
+                wwarn!("broken pipe warning");
+            }
+            return QsvExitCode::Warning;
+        },
+        CliError::Io(err) => ("io", "io error: ", err.to_string(), QsvExitCode::Bad),
+        CliError::NoMatch() => {
+            // text mode stays silent (the exit code is the signal, as for grep), but a JSON
+            // consumer must be able to tell "no match" from a failure that printed nothing
+            if json_errors() {
+                emit_json_error("no_match", "no match found", QsvExitCode::Bad as u8, false);
+            }
+            return QsvExitCode::Bad;
+        },
+        CliError::Other(msg) => ("other", "", msg, QsvExitCode::Bad),
+        CliError::Network(msg) => ("network", "network error: ", msg, QsvExitCode::NetworkError),
+        CliError::OutOfMemory(msg) => (
+            "out_of_memory",
+            "out of memory error: ",
+            msg,
+            QsvExitCode::OutOfMemory,
+        ),
+        CliError::Encoding(msg) => (
+            "encoding",
+            "encoding error: ",
+            msg,
+            QsvExitCode::EncodingError,
+        ),
+        #[cfg(not(feature = "lite"))]
+        CliError::Inference(msg) => ("inference", "inference error: ", msg, QsvExitCode::Bad),
+    };
+    if json_errors() {
+        log::error!("{prefix}{message}");
+        emit_json_error(kind, &message, code as u8, false);
+    } else {
+        werr!("{prefix}{message}");
+    }
+    code
 }
 
 #[cfg(test)]

@@ -207,6 +207,10 @@ QSV_MEMORY_CHECK = False
 # Set to opt out (RSS-constrained environments or diagnostics).
 # QSV_NO_ALLOC_TUNING = False
 
+# set to `json` to report a failed run's final error as one JSON line on stderr
+# (for programs driving qsv as a subprocess). Default: text.
+# QSV_ERROR_FORMAT = json
+
 # desired level (default - off; `error`, `warn`, `info`, `trace`, `debug`).
 # QSV_LOG_LEVEL = debug
 

@@ -70,6 +70,7 @@ mod test_diff;
 mod test_edit;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_enumerate;
+mod test_error_format;
 mod test_excel;
 mod test_exclude;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]

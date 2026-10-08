@@ -2257,13 +2257,27 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
     )
 }
 
+/// Stands in for a secret option value in the provenance command line.
+const REDACTED_ARG: &str = "[REDACTED]";
+
 fn provenance_command_line() -> String {
     normalize_command_line(std::env::args())
 }
 
 /// The pure half of [`provenance_command_line`], split out so it is testable without mutating the
 /// process's own argv.
+///
+/// The values of secret-bearing options (`-k`/`--api-key`, `--ckan-token`) are replaced with
+/// [`REDACTED_ARG`]: the command line is copied into every generated artifact, which is meant to be
+/// shared. qsv's docopt rejects abbreviated long options, but accepts `--opt=value` and stuck or
+/// clustered short options (`-kKEY`, `-Ak KEY`), so all of those spellings are covered.
 fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
+    const SECRET_LONG_OPTS: [&str; 2] = ["--api-key", "--ckan-token"];
+    const SECRET_SHORT_OPT: char = 'k';
+    // describegpt's short options that take a value; in a cluster, the rest of the token (or the
+    // next argument) is that value
+    const VALUE_SHORT_OPTS: &str = "kmoptu";
+
     let Some(argv0) = args.next() else {
         return String::new();
     };
@@ -2272,10 +2286,54 @@ fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
     let program = std::path::Path::new(&argv0)
         .file_name()
         .map_or_else(|| argv0.clone(), |n| n.to_string_lossy().into_owned());
-    std::iter::once(program)
-        .chain(args)
-        .collect::<Vec<_>>()
-        .join(" ")
+
+    let mut out = vec![program];
+    let mut redact_next = false;
+    let mut positional_only = false;
+    for arg in args {
+        if redact_next {
+            out.push(REDACTED_ARG.to_string());
+            redact_next = false;
+        } else if positional_only || arg == "-" || !arg.starts_with('-') {
+            out.push(arg);
+        } else if arg == "--" {
+            positional_only = true;
+            out.push(arg);
+        } else if arg.starts_with("--") {
+            let (name, value) = arg
+                .split_once('=')
+                .map_or((arg.as_str(), None), |(n, v)| (n, Some(v)));
+            if SECRET_LONG_OPTS.contains(&name) {
+                if value.is_some() {
+                    out.push(format!("{name}={REDACTED_ARG}"));
+                } else {
+                    out.push(arg);
+                    redact_next = true;
+                }
+            } else {
+                out.push(arg);
+            }
+        } else {
+            // a short option cluster, e.g. `-q`, `-kKEY`, `-Ak KEY` or `-m` `model`
+            let mut redacted = None;
+            for (i, c) in arg.char_indices().skip(1) {
+                if !VALUE_SHORT_OPTS.contains(c) {
+                    continue;
+                }
+                if c == SECRET_SHORT_OPT {
+                    let end = i + c.len_utf8();
+                    if end == arg.len() {
+                        redact_next = true;
+                    } else {
+                        redacted = Some(format!("{}{REDACTED_ARG}", &arg[..end]));
+                    }
+                }
+                break;
+            }
+            out.push(redacted.unwrap_or(arg));
+        }
+    }
+    out.join(" ")
 }
 
 /// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
@@ -7755,6 +7813,108 @@ mod tests {
         assert_eq!(line(&[]), "");
         assert_eq!(line(&[""]), "");
         assert_eq!(line(&["..", "x"]), ".. x");
+    }
+
+    /// The provenance command line is copied into every generated (shareable) artifact, so the
+    /// values of secret-bearing options must never appear in it, however they were spelled.
+    #[test]
+    fn normalize_command_line_redacts_secret_option_values() {
+        let line = |v: &[&str]| normalize_command_line(v.iter().map(ToString::to_string));
+        let key = "sk-or-v1-0123456789abcdef";
+
+        for (argv, expected) in [
+            (
+                vec!["qsv", "describegpt", "in.csv", "--api-key", key, "--all"],
+                "qsv describegpt in.csv --api-key [REDACTED] --all",
+            ),
+            (
+                vec![
+                    "qsv",
+                    "describegpt",
+                    "in.csv",
+                    "--api-key=sk-or-v1-0123456789abcdef",
+                ],
+                "qsv describegpt in.csv --api-key=[REDACTED]",
+            ),
+            (
+                vec!["qsv", "describegpt", "-k", key, "in.csv"],
+                "qsv describegpt -k [REDACTED] in.csv",
+            ),
+            (
+                vec![
+                    "qsv",
+                    "describegpt",
+                    "-ksk-or-v1-0123456789abcdef",
+                    "in.csv",
+                ],
+                "qsv describegpt -k[REDACTED] in.csv",
+            ),
+            // `-A` is a flag, so `-Ak` is `--all` followed by `-k`
+            (
+                vec!["qsv", "describegpt", "-Ak", key, "in.csv"],
+                "qsv describegpt -Ak [REDACTED] in.csv",
+            ),
+            (
+                vec![
+                    "qsv",
+                    "describegpt",
+                    "-qAksk-or-v1-0123456789abcdef",
+                    "in.csv",
+                ],
+                "qsv describegpt -qAk[REDACTED] in.csv",
+            ),
+            (
+                vec![
+                    "qsv",
+                    "describegpt",
+                    "--ckan-token",
+                    "tok-123",
+                    "--ckan-token=tok-456",
+                ],
+                "qsv describegpt --ckan-token [REDACTED] --ckan-token=[REDACTED]",
+            ),
+        ] {
+            let got = line(&argv);
+            assert_eq!(got, expected, "{argv:?}");
+            assert!(
+                !got.contains("sk-or-v1") && !got.contains("tok-"),
+                "{argv:?}"
+            );
+        }
+
+        // not secrets: values of other options, including ones containing a `k`, are verbatim
+        for argv in [
+            // `-m` takes a value, so the `k` in `-mkimi` is part of the model name
+            vec![
+                "qsv",
+                "describegpt",
+                "-mkimi-k2",
+                "-u",
+                "http://localhost:1234/v1",
+            ],
+            vec!["qsv", "describegpt", "-p", "rank by kWh", "--model", "k"],
+            // only exact option names: `--ckan-api` is not `--ckan-token`
+            vec![
+                "qsv",
+                "describegpt",
+                "--ckan-api",
+                "https://ckan.example/api/3/action",
+            ],
+            vec!["qsv", "describegpt", "in.csv", "-"],
+        ] {
+            assert_eq!(line(&argv), argv.join(" "), "{argv:?}");
+        }
+
+        // after `--`, everything is a positional argument
+        assert_eq!(
+            line(&["qsv", "describegpt", "--", "-k", "--api-key"]),
+            "qsv describegpt -- -k --api-key"
+        );
+        // a trailing secret option with no value: nothing to redact, and no panic
+        assert_eq!(
+            line(&["qsv", "describegpt", "--api-key"]),
+            "qsv describegpt --api-key"
+        );
     }
 
     #[test]

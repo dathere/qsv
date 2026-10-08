@@ -421,7 +421,8 @@ impl Args {
 
             if match_row_ctr == 0 && !flag_not_one {
                 return Err(CliError::NoMatch());
-            } else if flag_quick {
+            } else if flag_quick && match_row_ctr > 0 {
+                // with --not-one and no match, there is no row to report
                 if !self.flag_quiet {
                     eprintln!("{row_ctr}");
                 }

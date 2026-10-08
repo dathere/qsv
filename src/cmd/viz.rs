@@ -351,7 +351,10 @@ choropleth options:
                            https://github.com/dathere/qsv/wiki/Visualization#census-boundaries
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
                            entry in the locations column, or that labels each binned
-                           region (e.g. id, properties.fips). [default: id]
+                           region (e.g. id, properties.fips). With --geojson auto the
+                           key is set for you; an explicit key overrides it, except that
+                           county or place names resolve to properties.GEOID and refuse
+                           any other key. [default: id]
     --feature-name-key <k>  GeoJSON property path whose value is shown as the
                            human-readable region label in choropleth hover (e.g.
                            properties.name). When omitted, common name keys are
@@ -5260,6 +5263,30 @@ fn effective_feature_id_key<'a>(
     }
 }
 
+/// Refuse an explicit `--feature-id-key` that differs from the key an alias-synthesizing resolver
+/// (county names, geocoded place names) fetched with. Those resolvers map each name to a Census
+/// GEOID, so the aliases can only ever match under that key: honoring another one would pass the
+/// coverage gate and then silently drop every row at render.
+fn refuse_explicit_key_on_synthesized_aliases(
+    args: &Args,
+    feature_id_key_explicit: bool,
+    boundaries: &crate::cmd::viz_census::BoundarySet,
+    spec: &str,
+    what: &str,
+) -> CliResult<()> {
+    match args.flag_feature_id_key.as_deref() {
+        Some(key) if feature_id_key_explicit && key != boundaries.feature_id_key => {
+            fail_incorrectusage_clierror!(
+                "--geojson {spec} resolves {what} to Census GEOIDs, which match only on '{}'; \
+                 --feature-id-key '{key}' cannot match them. Omit --feature-id-key with --geojson \
+                 {spec}.",
+                boundaries.feature_id_key
+            )
+        },
+        _ => Ok(()),
+    }
+}
+
 fn score_region_code_coverage(
     geojson: &serde_json::Value,
     feature_id_key: &str,
@@ -5558,7 +5585,7 @@ fn resolve_auto_geojson(
     // geocode them to county FIPS first (issue #4417 Part A).
     #[cfg(feature = "geocode")]
     if args.flag_geocode {
-        return resolve_auto_geojson_geocoded(args, spec, auto_spec);
+        return resolve_auto_geojson_geocoded(args, spec, auto_spec, feature_id_key_explicit);
     }
     #[cfg(not(feature = "geocode"))]
     if args.flag_geocode {
@@ -5615,7 +5642,12 @@ fn resolve_auto_geojson(
         // resolve-and-see-what-sticks rule could clear the coverage gate and render a map keyed
         // to the wrong geography entirely.
         if looks_like_county_names(&codes) || args.flag_region_state.is_some() {
-            return resolve_auto_geojson_county_names(args, spec, auto_spec);
+            return resolve_auto_geojson_county_names(
+                args,
+                spec,
+                auto_spec,
+                feature_id_key_explicit,
+            );
         }
         let sample = codes
             .iter()
@@ -5701,10 +5733,8 @@ fn resolve_auto_geojson(
     // recorded for the provenance note beneath the map, and so the reader can tell an
     // auto-resolved boundary set from one they supplied
     let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
-    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
-        &boundaries.geojson,
-        &boundaries.feature_id_key,
-    ));
+    // under the RENDER key: framing compares these ids against the drawn features' ids
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(&boundaries.geojson, match_key));
     log::info!(
         "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
         boundaries.provenance,
@@ -5885,6 +5915,7 @@ fn resolve_auto_geojson_geocoded(
     args: &Args,
     spec: &str,
     auto_spec: crate::cmd::viz_census::AutoSpec,
+    feature_id_key_explicit: bool,
 ) -> CliResult<(String, Option<String>)> {
     use crate::cmd::viz_census::{AutoSpec, Layer};
 
@@ -5960,6 +5991,13 @@ fn resolve_auto_geojson_geocoded(
             layer:   Some(Layer::County),
             vintage: auto_spec.vintage,
         },
+    )?;
+    refuse_explicit_key_on_synthesized_aliases(
+        args,
+        feature_id_key_explicit,
+        &boundaries,
+        spec,
+        "--locations place names",
     )?;
 
     // The honesty gate, scored END-TO-END over the original distinct names (via the aliases), so
@@ -6343,6 +6381,7 @@ fn resolve_auto_geojson_county_names(
     args: &Args,
     spec: &str,
     auto_spec: crate::cmd::viz_census::AutoSpec,
+    feature_id_key_explicit: bool,
 ) -> CliResult<(String, Option<String>)> {
     use crate::cmd::viz_census::{AutoSpec, Layer};
 
@@ -6427,6 +6466,13 @@ fn resolve_auto_geojson_county_names(
             layer:   Some(Layer::County),
             vintage: Some(table.vintage),
         },
+    )?;
+    refuse_explicit_key_on_synthesized_aliases(
+        args,
+        feature_id_key_explicit,
+        &boundaries,
+        spec,
+        "--locations county names",
     )?;
 
     // The honesty gate, scored END-TO-END over the original distinct names (via the aliases), so
@@ -7073,6 +7119,17 @@ fn resolve_smart_auto_geojson(
             #[cfg(feature = "geocode")]
             match resolve_smart_city_candidate(region_codes, auto_spec.vintage) {
                 Ok((boundaries, matched, total, unmatched_sample, aliases, breakdown)) => {
+                    // a later STATE slot may still serve the explicit key, so fall through
+                    if let Err(e) = refuse_explicit_key_on_synthesized_aliases(
+                        args,
+                        feature_id_key_explicit,
+                        &boundaries,
+                        &spec,
+                        "place names",
+                    ) {
+                        failures.push((label_of(slot), e));
+                        continue;
+                    }
                     geocoded = Some((aliases, breakdown));
                     resolved = Some((
                         boundaries,
@@ -7110,6 +7167,16 @@ fn resolve_smart_auto_geojson(
                 auto_spec.vintage,
             ) {
                 Ok((boundaries, matched, total, unmatched_sample, aliases, breakdown)) => {
+                    if let Err(e) = refuse_explicit_key_on_synthesized_aliases(
+                        args,
+                        feature_id_key_explicit,
+                        &boundaries,
+                        &spec,
+                        "county names",
+                    ) {
+                        failures.push((label_of(slot), e));
+                        continue;
+                    }
                     county_named = Some((aliases, breakdown));
                     resolved = Some((
                         boundaries,
@@ -7145,13 +7212,21 @@ fn resolve_smart_auto_geojson(
         // plausible-but-nonexistent codes must not render a map that shades nothing and exits 0.
         let match_key = effective_feature_id_key(args, feature_id_key_explicit, &boundaries);
         let name_aliases = state_name_aliases(&boundaries.geojson, match_key, region_codes);
-        let (matched, total, unmatched_sample) = score_region_code_coverage(
+        // Errs when an explicit --feature-id-key is on no feature of THIS layer (e.g. STUSAB on
+        // counties) — a statement about this candidate, so another column may still serve it.
+        let (matched, total, unmatched_sample) = match score_region_code_coverage(
             &boundaries.geojson,
             match_key,
             region_codes,
             Some(&name_aliases),
             None,
-        )?;
+        ) {
+            Ok(scored) => scored,
+            Err(e) => {
+                failures.push((label_of(slot), e));
+                continue;
+            },
+        };
         #[allow(clippy::cast_precision_loss)]
         let fraction = if total == 0 {
             0.0
@@ -7270,9 +7345,10 @@ fn resolve_smart_auto_geojson(
     let provenance = provenance;
 
     let _ = AUTO_BOUNDARY_PROVENANCE.set(provenance.clone());
+    // under the RENDER key: framing compares these ids against the drawn features' ids
     let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
         &boundaries.geojson,
-        &boundaries.feature_id_key,
+        effective_feature_id_key(args, feature_id_key_explicit, &boundaries),
     ));
     log::info!(
         "--geojson {spec} resolved: {provenance} -> {} ({matched}/{total} codes matched)",

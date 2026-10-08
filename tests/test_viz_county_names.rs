@@ -650,3 +650,89 @@ fn viz_smart_code_column_region_filter_is_unqualified() {
         );
     });
 }
+
+/// #4735: county names resolve to GEOID aliases, so an explicit --feature-id-key naming another
+/// property can never match them. It used to pass the coverage gate (scored on GEOID) and then
+/// render a map that silently dropped every row; now it is refused. Naming the key auto would
+/// pick anyway is not a mismatch and still resolves.
+#[test]
+#[serial]
+fn viz_county_names_refuse_a_mismatched_explicit_feature_id_key() {
+    let wrk = Workdir::new("viz_county_names_refuse_a_mismatched_explicit_feature_id_key");
+    wrk.create_from_string(
+        "c.csv",
+        "county,cases\nAllegheny County,10\nPhiladelphia County,20\n",
+    );
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--feature-id-key", "properties.NAME"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(!out.status.success(), "NAME key must be refused: {stderr}");
+        assert!(
+            stderr.contains("resolves --locations county names to Census GEOIDs")
+                && stderr.contains("'properties.GEOID'"),
+            "{stderr}"
+        );
+
+        let mut cmd = county_cmd(&wrk, base, "c.csv");
+        cmd.args(["--feature-id-key", "properties.GEOID"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "the auto key itself is fine: {stderr}"
+        );
+        assert!(String::from_utf8_lossy(&out.stdout).contains("42003"));
+    });
+}
+
+/// #4735: the same refusal on `viz smart`'s county-name candidate, which wins before the shared
+/// coverage gate and so was never checked under the explicit key.
+#[test]
+#[serial]
+fn viz_smart_county_names_refuse_a_mismatched_explicit_feature_id_key() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "state": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_refuse_a_mismatched_explicit_feature_id_key");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nAllegheny County,PA,10\nAllegheny County,PA,15\nWashington \
+         County,PA,20\nWashington County,PA,25\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "c.csv",
+            "--geojson",
+            "auto",
+            "--feature-id-key",
+            "properties.NAME",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            !out.status.success(),
+            "must not render a map that drops every county row: {stderr}"
+        );
+        assert!(
+            stderr.contains("resolves county names to Census GEOIDs"),
+            "{stderr}"
+        );
+    });
+}

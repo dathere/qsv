@@ -692,3 +692,26 @@ fn viz_geojson_auto_geocode_city_suffix_is_not_a_county() {
         );
     });
 }
+
+// #4735: geocoded place names resolve to county GEOIDs, so an explicit --feature-id-key naming
+// another property can never match them. It used to pass the coverage gate (scored on GEOID) and
+// render a map that dropped every row; now it is refused.
+#[test]
+#[serial]
+fn viz_geojson_auto_geocode_refuses_a_mismatched_explicit_feature_id_key() {
+    let wrk = Workdir::new("viz_geojson_auto_geocode_refuses_a_mismatched_explicit_feature_id_key");
+    wrk.create_from_string("cities.csv", "city,cases\nPittsburgh,10\nPhiladelphia,20\n");
+    let cache_dir = build_mini_geocode_index(&wrk);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = geocode_auto_cmd(&wrk, base, &cache_dir, "cities.csv");
+        cmd.args(["--feature-id-key", "properties.NAME"]);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(!out.status.success(), "NAME key must be refused: {stderr}");
+        assert!(
+            stderr.contains("resolves --locations place names to Census GEOIDs"),
+            "{stderr}"
+        );
+    });
+}

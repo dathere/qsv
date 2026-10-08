@@ -547,7 +547,7 @@ qsv geocode --help
 | &nbsp;`‑‑invalid‑result`&nbsp; | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. | `120` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update - raise it on slow connections. | `120` |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
 
 <a name="cache-prune-only-option"></a>

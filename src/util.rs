@@ -755,73 +755,145 @@ pub fn transform_github_url(url: &str) -> String {
     }
 }
 
-pub fn version() -> String {
-    let mut enabled_features = String::new();
+/// A compiled-in optional feature, as reported by `--version` and `--capabilities`.
+pub struct EnabledFeature {
+    /// stable, machine-readable feature name (e.g. `polars`)
+    pub name:    &'static str,
+    /// version detail, where the feature has one (e.g. the Polars version)
+    pub version: Option<String>,
+    /// the token `--version` has always printed for this feature
+    pub token:   String,
+}
+
+impl EnabledFeature {
+    #[allow(dead_code)] // a featureless qsvlite build enables no plain features
+    fn plain(name: &'static str) -> Self {
+        Self {
+            name,
+            version: None,
+            token: name.to_string(),
+        }
+    }
+}
+
+/// The optional features compiled into this binary, in `--version` order. Single source for
+/// both the `--version` string and `--capabilities`, so the two cannot drift.
+#[allow(clippy::vec_init_then_push)] // every push is cfg-gated
+pub fn enabled_features() -> Vec<EnabledFeature> {
+    #[allow(unused_mut)]
+    let mut features: Vec<EnabledFeature> = Vec::new();
 
     #[cfg(all(feature = "apply", not(feature = "lite")))]
-    enabled_features.push_str("apply;");
+    features.push(EnabledFeature::plain("apply"));
     #[cfg(all(feature = "fetch", not(feature = "lite")))]
-    enabled_features.push_str("fetch;");
+    features.push(EnabledFeature::plain("fetch"));
     #[cfg(all(feature = "foreach", not(feature = "lite")))]
-    enabled_features.push_str("foreach;");
+    features.push(EnabledFeature::plain("foreach"));
     #[cfg(all(feature = "geocode", not(feature = "lite")))]
-    enabled_features.push_str("geocode;");
+    features.push(EnabledFeature::plain("geocode"));
 
     #[cfg(all(feature = "luau", not(feature = "lite")))]
     {
         let luau = mlua::Lua::new();
-        match luau.load("return _VERSION").eval() {
-            Ok(version_info) => {
-                match version_info {
-                    mlua::Value::String(luaustring_val) => {
-                        let string_val = luaustring_val.to_string_lossy();
-                        if string_val == "Luau" {
-                            enabled_features.push_str("Luau - version not specified;");
-                        } else {
-                            // safety: safe to unwrap as we're just using it to append to
-                            // enabled_features
-                            write!(enabled_features, "{string_val};").unwrap();
-                        }
-                    },
-                    _ => {
-                        enabled_features.push_str("Luau - ?;");
-                    },
+        let (version, token) = match luau.load("return _VERSION").eval() {
+            Ok(mlua::Value::String(luaustring_val)) => {
+                let string_val = luaustring_val.to_string_lossy();
+                if string_val == "Luau" {
+                    (None, "Luau - version not specified".to_string())
+                } else {
+                    (
+                        string_val.strip_prefix("Luau ").map(str::to_string),
+                        string_val.to_string(),
+                    )
                 }
             },
-            // safety: safe to unwrap as we're just using it to append to enabled_features
-            Err(e) => write!(enabled_features, "Luau - cannot retrieve version: {e};").unwrap(),
-        }
+            Ok(_) => (None, "Luau - ?".to_string()),
+            Err(e) => (None, format!("Luau - cannot retrieve version: {e}")),
+        };
+        features.push(EnabledFeature {
+            name: "luau",
+            version,
+            token,
+        });
     }
     #[cfg(all(feature = "magika", feature = "feature_capable"))]
-    enabled_features.push_str("magika;");
+    features.push(EnabledFeature::plain("magika"));
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
-    enabled_features.push_str("prompt;");
+    features.push(EnabledFeature::plain("prompt"));
 
     #[cfg(all(feature = "python", not(feature = "lite")))]
     {
-        enabled_features.push_str("python-");
-        pyo3::Python::attach(|_| {
-            enabled_features.push_str(pyo3::Python::version_str());
-            enabled_features.push(';');
+        let pyversion = pyo3::Python::attach(|_| pyo3::Python::version_str().to_string());
+        features.push(EnabledFeature {
+            name:    "python",
+            token:   format!("python-{pyversion}"),
+            version: Some(pyversion),
         });
     }
     #[cfg(all(feature = "to", not(feature = "lite")))]
-    enabled_features.push_str("to;");
+    features.push(EnabledFeature::plain("to"));
     #[cfg(all(feature = "viz", not(feature = "lite")))]
-    enabled_features.push_str("viz;");
+    features.push(EnabledFeature::plain("viz"));
     #[cfg(all(feature = "viz_static", not(feature = "lite")))]
-    enabled_features.push_str("viz_static;");
+    features.push(EnabledFeature::plain("viz_static"));
     #[allow(clippy::const_is_empty)]
     #[cfg(all(feature = "polars", not(feature = "lite")))]
-    if QSV_POLARS_REV.is_empty() {
-        enabled_features.push_str(format!("polars-{};", polars::VERSION).as_str());
-    } else {
-        enabled_features
-            .push_str(format!("polars-{}:{};", polars::VERSION, QSV_POLARS_REV).as_str());
+    {
+        let detail = if QSV_POLARS_REV.is_empty() {
+            polars::VERSION.to_string()
+        } else {
+            format!("{}:{}", polars::VERSION, QSV_POLARS_REV)
+        };
+        features.push(EnabledFeature {
+            name:    "polars",
+            token:   format!("polars-{detail}"),
+            version: Some(polars::VERSION.to_string()),
+        });
     }
     #[cfg(feature = "self_update")]
-    enabled_features.push_str("self_update");
-    enabled_features.push('-');
+    features.push(EnabledFeature::plain("self_update"));
+
+    features
+}
+
+/// `--capabilities`: a machine-readable summary of this binary, for programs that drive qsv
+/// as a subprocess and need to know what it can do without parsing `--version`.
+pub fn capabilities_json(commands: &[&str]) -> String {
+    let features = enabled_features();
+    let feature_versions: serde_json::Map<String, serde_json::Value> = features
+        .iter()
+        .filter_map(|f| {
+            f.version
+                .as_ref()
+                .map(|v| (f.name.to_string(), serde_json::Value::String(v.clone())))
+        })
+        .collect();
+    let caps = serde_json::json!({
+        "binary": option_env!("CARGO_BIN_NAME").unwrap_or("qsv"),
+        "version": env!("CARGO_PKG_VERSION"),
+        "target": TARGET,
+        "kind": QSV_KIND,
+        "features": features.iter().map(|f| f.name).collect::<Vec<_>>(),
+        "feature_versions": feature_versions,
+        "commands": commands,
+        "error_formats": ["text", "json"],
+        "max_jobs": max_jobs(),
+        "num_cpus": num_cpus(),
+    });
+    // safety: serializing a serde_json::Value cannot fail
+    serde_json::to_string_pretty(&caps).unwrap()
+}
+
+pub fn version() -> String {
+    let mut feature_tokens = String::new();
+    for feature in enabled_features() {
+        feature_tokens.push_str(&feature.token);
+        // historical format: every token is `;`-terminated except self_update, which is last
+        if feature.name != "self_update" {
+            feature_tokens.push(';');
+        }
+    }
+    feature_tokens.push('-');
 
     // get max_file_size & memory info. max_file_size is based on QSV_FREEMEMORY_HEADROOM_PCT
     // setting and is only enforced when qsv is running in "non-streaming" mode (i.e. needs to
@@ -870,7 +942,7 @@ pub fn version() -> String {
     {
         if pre.is_empty() {
             format!(
-                "{qsvtype} {maj}.{min}.{pat}-{malloc_kind}-{enabled_features}{maxjobs}-{numcpus};\
+                "{qsvtype} {maj}.{min}.{pat}-{malloc_kind}-{feature_tokens}{maxjobs}-{numcpus};\
                  {max_file_size}-{free_swap}-{avail_mem}-{total_mem} ({TARGET} compiled with Rust \
                  {rustversion};{os_version}-{kernel_version};{cpu_brand}-{physical_cpu_count}) \
                  {QSV_KIND}",
@@ -884,7 +956,7 @@ pub fn version() -> String {
         } else {
             format!(
                 "{qsvtype} {maj}.{min}.\
-                 {pat}-{pre}-{malloc_kind}-{enabled_features}{maxjobs}-{numcpus};\
+                 {pat}-{pre}-{malloc_kind}-{feature_tokens}{maxjobs}-{numcpus};\
                  {max_file_size}-{free_swap}-{avail_mem}-{total_mem} ({TARGET} compiled with Rust \
                  {rustversion}) {QSV_KIND}",
                 maxjobs = max_jobs(),

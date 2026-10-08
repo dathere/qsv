@@ -32,7 +32,7 @@
         clippy::option_if_let_else,
     )
 )]
-use std::{env, io, time::Instant};
+use std::{env, time::Instant};
 
 extern crate qsv_docopt as docopt;
 use docopt::Docopt;
@@ -74,6 +74,7 @@ Usage:
 Options:
     --list               List all commands available.
     --envlist            List all qsv-relevant environment variables.
+    --capabilities       Print version, features & installed commands as JSON.
     -u, --update         Check for the latest qsv release.
     -U, --updatenow      Update qsv to the latest release from GitHub without confirming.
     -h, --help           Display this message
@@ -82,11 +83,12 @@ Options:
                          max_jobs, num_cpus, build info then exit"#;
 #[derive(Deserialize)]
 struct Args {
-    arg_command:    Option<Command>,
-    flag_list:      bool,
-    flag_envlist:   bool,
-    flag_update:    bool,
-    flag_updatenow: bool,
+    arg_command:       Option<Command>,
+    flag_list:         bool,
+    flag_envlist:      bool,
+    flag_capabilities: bool,
+    flag_update:       bool,
+    flag_updatenow:    bool,
 }
 
 /// Build the "Installed commands:" listing dynamically so feature-gated commands
@@ -218,6 +220,11 @@ fn main() -> QsvExitCode {
         util::show_env_vars();
         util::log_end(qsv_args, now);
         return QsvExitCode::Good;
+    } else if args.flag_capabilities {
+        use strum::VariantNames;
+        wout!("{}", util::capabilities_json(Command::VARIANTS));
+        util::log_end(qsv_args, now);
+        return QsvExitCode::Good;
     }
     if args.flag_update || args.flag_updatenow {
         util::log_end(qsv_args, now);
@@ -239,77 +246,20 @@ fn main() -> QsvExitCode {
             util::log_end(qsv_args, now);
             QsvExitCode::Good
         },
-        Some(cmd) => match cmd.run() {
-            Ok(()) => {
-                util::log_end(qsv_args, now);
-                QsvExitCode::Good
-            },
-            Err(CliError::Help(usage_text)) => {
-                wout!("{usage_text}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Good
-            },
-            Err(CliError::Flag(err)) => {
-                werr!("{err}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::IncorrectUsage
-            },
-            Err(CliError::IncorrectUsage(err)) => {
-                werr!("usage error: {err}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::IncorrectUsage
-            },
-            Err(CliError::Csv(err)) => {
-                werr!("csv error: {err}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
-            Err(CliError::Io(ref err)) if err.kind() == io::ErrorKind::BrokenPipe => {
-                wwarn!("broken pipe warning");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Warning
-            },
-            Err(CliError::Io(err)) => {
-                werr!("io error: {err}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
-            Err(CliError::NoMatch()) => {
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
-            Err(CliError::Other(msg)) => {
-                werr!("{msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
-            Err(CliError::Network(msg)) => {
-                werr!("network error: {msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::NetworkError
-            },
-            Err(CliError::OutOfMemory(msg)) => {
-                werr!("out of memory error: {msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::OutOfMemory
-            },
-            Err(CliError::Encoding(msg)) => {
-                werr!("encoding error: {msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::EncodingError
-            },
-            #[cfg(not(feature = "lite"))]
-            Err(CliError::Inference(msg)) => {
-                werr!("inference error: {msg}");
-                util::log_end(qsv_args, now);
-                QsvExitCode::Bad
-            },
+        Some(cmd) => {
+            let code = match cmd.run() {
+                Ok(()) => QsvExitCode::Good,
+                Err(err) => clitypes::report_cli_error(err),
+            };
+            util::log_end(qsv_args, now);
+            code
         },
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, strum_macros::VariantNames)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 enum Command {
     ApplyDP,
     Blake3,

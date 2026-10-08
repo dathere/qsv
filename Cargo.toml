@@ -614,7 +614,8 @@ default = ["jemallocator"]
 # (see #4737). So the prebuilt `qsv`/`qsvpy*` binaries have no `get` command, no `dc:` inputs,
 # no s3:///gs:///az:// sources and no `profile --profile geoconnex`. Users who need them can
 # use the prebuilt `qsvdp` (get + get_cloud) or build from source with
-# -F distrib_features / -F get[,get_cloud] / -F geoconnex.
+# -F distrib_features, or selectively with -F feature_capable,get[,get_cloud] /
+# -F feature_capable,geoconnex (the `qsv` bin requires feature_capable).
 distrib_features = [
     "feature_capable",
     "apply",

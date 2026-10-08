@@ -6337,14 +6337,16 @@ fn sqlp_qualify_before_projection() {
 #[test]
 fn sqlp_percent_rank_cume_dist_ntile() {
     // pola-rs/polars#29729 added PERCENT_RANK, CUME_DIST and NTILE.
-    // CUME_DIST is rounded because it yields sixths here.
+    // CUME_DIST is rounded because it yields sixths here. PERCENT_RANK is rounded too: its last bit
+    // differs by architecture (x86_64 gives 0.6000000000000001 for value 4, aarch64 gives 0.6).
     let wrk = Workdir::new("sqlp_percent_rank_cume_dist_ntile");
     grouping_fixture(&wrk);
 
     let mut cmd = wrk.command("sqlp");
     cmd.arg("groups.csv").arg(
-        "SELECT value, PERCENT_RANK() OVER (ORDER BY value) AS pr, ROUND(CUME_DIST() OVER (ORDER \
-         BY value), 2) AS cd, NTILE(2) OVER (ORDER BY value) AS nt FROM groups ORDER BY value",
+        "SELECT value, ROUND(PERCENT_RANK() OVER (ORDER BY value), 2) AS pr, ROUND(CUME_DIST() \
+         OVER (ORDER BY value), 2) AS cd, NTILE(2) OVER (ORDER BY value) AS nt FROM groups ORDER \
+         BY value",
     );
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![

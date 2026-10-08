@@ -380,6 +380,8 @@ async fn serve_state_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResp
             48.0,
         ),
         ("78", "VI", "United States Virgin Islands", 50.0),
+        // far from the rest, so it is an extent outlier once 8+ states are drawn (#4735)
+        ("02", "AK", "Alaska", -150.0),
     ]
     .iter()
     .filter(|(geoid, ..)| where_clause.contains(&format!("'{geoid}'")))
@@ -1630,7 +1632,7 @@ fn viz_smart_census_firewall_refusal_is_not_blamed_on_the_column() {
 
 /// Every choropleth trace in a rendered page (run with `QSV_VIZ_NO_COMPRESS` so figures are plain
 /// JSON), in document order.
-fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
+pub(crate) fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
     for chunk in html.split("Plotly.newPlot(").skip(1) {
         let Some(comma) = chunk.find(", ") else {
@@ -1654,7 +1656,7 @@ fn choropleth_traces(html: &str) -> Vec<serde_json::Value> {
 }
 
 /// `location -> z` for one trace.
-fn z_by_location(trace: &serde_json::Value) -> std::collections::HashMap<String, f64> {
+pub(crate) fn z_by_location(trace: &serde_json::Value) -> std::collections::HashMap<String, f64> {
     let locs = trace["locations"].as_array().cloned().unwrap_or_default();
     let z = trace["z"].as_array().cloned().unwrap_or_default();
     locs.iter()
@@ -1948,6 +1950,91 @@ fn viz_geojson_auto_honors_an_explicit_feature_id_key() {
             "FIPS codes cannot match STUSAB; the gate must refuse: {stderr}"
         );
         assert!(stderr.contains("only 0 of 2"), "{stderr}");
+    });
+}
+
+// #4735: extent outliers must be recorded under the key the map RENDERS with. A state-name column
+// auto-keys on GEOID, so before the fix Alaska was recorded as `02` while the frame compared the
+// drawn features' STUSAB ids — `AK` was never excluded, though the note said it was.
+#[test]
+#[serial]
+fn viz_geojson_auto_outliers_use_an_explicit_feature_id_key() {
+    let wrk = Workdir::new("viz_geojson_auto_outliers_use_an_explicit_feature_id_key");
+    wrk.create_from_string(
+        "names.csv",
+        "state,cases\nCalifornia,1\nMaryland,2\nNew York,3\nPennsylvania,4\nGuam,5\nCommonwealth \
+         of the Northern Mariana Islands,6\nUnited States Virgin Islands,7\nAlaska,8\n",
+    );
+    let key = ["--feature-id-key", "properties.STUSAB"];
+
+    with_mock_tigerweb(|base, _observed| {
+        let out = state_choropleth_with(&wrk, base, "names.csv", "census:state", &key);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            html.contains("1 region(s) lie far outside the rest (AK)"),
+            "Alaska must be recorded under the render key"
+        );
+    });
+}
+
+// #4735: in `viz smart`, an explicit --feature-id-key that a candidate's layer does not carry
+// (STUSAB on counties) is a statement about THAT candidate: the next column must still be tried,
+// not the whole run aborted.
+#[test]
+#[serial]
+fn viz_smart_explicit_feature_id_key_falls_through_to_a_column_that_carries_it() {
+    let wrk =
+        Workdir::new("viz_smart_explicit_feature_id_key_falls_through_to_a_column_that_carries_it");
+    wrk.create_from_string(
+        "mixed.csv",
+        "st,fips,cases\nPA,42003,10\nNY,42101,20\nPA,42003,30\nNY,42101,40\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "st": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "mixed.csv",
+            "--geojson",
+            "auto",
+            "--feature-id-key",
+            "properties.STUSAB",
+            "-o",
+            "m.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        let html = std::fs::read_to_string(wrk.path("m.html")).unwrap();
+        let traces = choropleth_traces(&html);
+        assert!(!traces.is_empty(), "no region map drawn");
+        assert_eq!(traces[0]["featureidkey"], "properties.STUSAB");
+        assert!(
+            z_by_location(&traces[0]).contains_key("PA"),
+            "the state column must draw the map"
+        );
     });
 }
 

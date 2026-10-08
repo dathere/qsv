@@ -566,10 +566,13 @@ impl Args {
         // Handle quick mode separately. --json implies --quiet per USAGE,
         // so the row-number print is also suppressed when --json is set.
         if self.flag_quick {
-            if !(self.flag_quiet || self.flag_json) {
-                eprintln!("{row_ctr}");
+            // with no match there is no row to report (row_ctr is then the row count)
+            if match_ctr > 0 {
+                if !(self.flag_quiet || self.flag_json) {
+                    eprintln!("{row_ctr}");
+                }
+                info!("quick search first match at {row_ctr}");
             }
-            info!("quick search first match at {row_ctr}");
             if match_ctr == 0 && !self.flag_not_one {
                 return Err(CliError::NoMatch());
             }

@@ -305,6 +305,41 @@ fn searchset_quick_nomatch() {
     wrk.assert_err(&mut cmd);
 }
 
+/// With no match, --quick reports no row: plain --quick fails silently (exit 1), and
+/// --not-one succeeds silently. Before, the sequential path printed the row COUNT with
+/// --not-one, which a caller reads as the row of a match.
+#[test]
+fn searchset_quick_nomatch_reports_no_row() {
+    let wrk = Workdir::new("searchset_quick_nomatch_reports_no_row");
+    wrk.create("data.csv", data(true));
+    wrk.create("regexset.txt", regexset_no_match_file());
+
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt").arg("--quick").arg("data.csv");
+    assert_eq!(wrk.stderr_on_error(&mut cmd), "");
+
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt")
+        .arg("--quick")
+        .arg("--not-one")
+        .arg("data.csv");
+    let (got, got_err): (String, String) = wrk.stdout_and_stderr_on_success(&mut cmd);
+    assert_eq!(got_err, "");
+    assert_eq!(got, "");
+
+    // the indexed (parallel) path agrees
+    let mut idx = wrk.command("index");
+    idx.arg("data.csv");
+    wrk.assert_success(&mut idx);
+    let mut cmd = wrk.command("searchset");
+    cmd.arg("regexset.txt")
+        .arg("--quick")
+        .arg("--not-one")
+        .args(["--jobs", "2"])
+        .arg("data.csv");
+    assert_eq!(wrk.stderr_on_success(&mut cmd), "");
+}
+
 #[test]
 fn searchset_unicode() {
     let wrk = Workdir::new("searchset");

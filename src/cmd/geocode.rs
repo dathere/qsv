@@ -2916,24 +2916,11 @@ fn add_dyncols(
                 record.push_field(lookup_us_state_fips_code(us_state_code).unwrap_or_default());
             },
             "us_county_fips_code" => {
-                let us_county_fips_code = if let Some(admin2) = cityrecord.admin2_division.as_ref()
-                {
-                    if admin2.code.starts_with("US.") && admin2.code.len() == 9 {
-                        // admin2 code is a US county code, the three-digit county code
-                        // is the last three characters of the admin2 code
-                        // start at index 7 to skip the US. prefix
-                        // e.g. US.NY.061 -> 061
-                        format!("{:0>3}", &admin2.code[7..])
-                    } else {
-                        // admin2 code is not a US county code
-                        // set to empty string
-                        String::new()
-                    }
-                } else {
-                    // no admin2 code
-                    // set to empty string
-                    String::new()
-                };
+                let us_county_fips_code = cityrecord
+                    .admin2_division
+                    .as_ref()
+                    .and_then(|admin2| us_county_fips_part(&admin2.code))
+                    .unwrap_or_default();
                 record.push_field(&us_county_fips_code);
             },
 
@@ -3119,28 +3106,14 @@ fn format_result(
                 },
 
                 // set US county FIPS code
-                "us_county_fips_code" => cityrecord_map.insert("us_county_fips_code", {
-                    match cityrecord.admin2_division.as_ref() {
-                        Some(admin2) => {
-                            if admin2.code.starts_with("US.") && admin2.code.len() == 9 {
-                                // admin2 code is a US county code, the three-digit county code
-                                // is the last three characters of the admin2 code
-                                // start at index 7 to skip the US. prefix
-                                // e.g. US.NY.061 -> 061
-                                format!("{:0>3}", &admin2.code[7..])
-                            } else {
-                                // admin2 code is not a US county code
-                                // set to empty string
-                                String::new()
-                            }
-                        },
-                        None => {
-                            // no admin2 code
-                            // set to empty string
-                            String::new()
-                        },
-                    }
-                }),
+                "us_county_fips_code" => cityrecord_map.insert(
+                    "us_county_fips_code",
+                    cityrecord
+                        .admin2_division
+                        .as_ref()
+                        .and_then(|admin2| us_county_fips_part(&admin2.code))
+                        .unwrap_or_default(),
+                ),
 
                 // countryrecord fields
                 "iso3" => cityrecord_map.insert("iso3", countryrecord.info.iso3.to_string()),
@@ -4373,6 +4346,21 @@ fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
     US_STATES_FIPS_CODES.get(state).copied()
 }
 
+/// The zero-padded 3-digit county part of a Geonames US admin2 code (`US.MD.510` -> `510`), or
+/// `None` when the code isn't a US county code. Takes the LAST dotted segment rather than a fixed
+/// byte offset: a fixed offset of 7 skipped the county's first digit, so every county numbered
+/// 100 or more silently became a different county (`510` -> `010`, issue #4771).
+fn us_county_fips_part(admin2_code: &str) -> Option<String> {
+    admin2_code
+        .strip_prefix("US.")
+        .and_then(|rest| rest.rsplit_once('.'))
+        .map(|(_state, county)| county)
+        .filter(|county| {
+            (1..=3).contains(&county.len()) && county.bytes().all(|b| b.is_ascii_digit())
+        })
+        .map(|county| format!("{county:0>3}"))
+}
+
 /// Derive `(us_state_fips, us_county_fips)` string codes for a matched city, for the enriched
 /// [`GeoLabel`]. Thin wrapper over [`us_fips_from_codes`] that pulls the admin1/admin2 codes off
 /// the record.
@@ -4406,10 +4394,8 @@ fn us_fips_from_codes(admin1_code: Option<&str>, admin2_code: Option<&str>) -> (
         return (String::new(), String::new());
     }
     let us_county_fips = admin2_code
-        .filter(|code| code.starts_with("US."))
-        .and_then(|code| code.rsplit('.').next())
-        .filter(|county| !county.is_empty() && county.bytes().all(|b| b.is_ascii_digit()))
-        .map_or_else(String::new, |county| format!("{state_fips}{county:0>3}"));
+        .and_then(us_county_fips_part)
+        .map_or_else(String::new, |county| format!("{state_fips}{county}"));
     (state_fips.to_string(), us_county_fips)
 }
 
@@ -4427,20 +4413,12 @@ fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_
             serde_json::Value::String(code.to_string())
         });
 
-    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format).
-    // require ASCII so the byte-index slice at 7 lands on a char boundary
-    let us_county_fips_code = match cityrecord.admin2_division.as_ref() {
-        Some(admin2)
-            if admin2.code.is_ascii()
-                && admin2.code.len() == 9
-                && admin2.code.starts_with("US.") =>
-        {
-            // skip the "US." prefix and 2-letter state code (7 ASCII bytes),
-            // e.g. US.NY.061 -> 061
-            serde_json::Value::String(format!("{:0>3}", &admin2.code[7..]))
-        },
-        _ => serde_json::Value::Null,
-    };
+    // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format)
+    let us_county_fips_code = cityrecord
+        .admin2_division
+        .as_ref()
+        .and_then(|admin2| us_county_fips_part(&admin2.code))
+        .map_or(serde_json::Value::Null, serde_json::Value::String);
     json!(
     {
         "us_state_code": us_state_code,
@@ -4548,10 +4526,15 @@ mod tests {
             us_fips_from_codes(Some("US.PA"), Some("US.PA.003")),
             ("42".to_string(), "42003".to_string())
         );
-        // county code whose LAST segment does NOT lead with 0 must not be mangled (New York County)
+        // New York County
         assert_eq!(
             us_fips_from_codes(Some("US.NY"), Some("US.NY.061")),
             ("36".to_string(), "36061".to_string())
+        );
+        // a county code that does NOT lead with 0 must keep its first digit (Baltimore city, #4771)
+        assert_eq!(
+            us_fips_from_codes(Some("US.MD"), Some("US.MD.510")),
+            ("24".to_string(), "24510".to_string())
         );
         // a 2-digit county segment is left-padded to 3 before combining
         assert_eq!(
@@ -4573,6 +4556,23 @@ mod tests {
             us_fips_from_codes(Some("US.PA"), Some("XX.PA.003")),
             ("42".to_string(), String::new())
         );
+    }
+
+    #[test]
+    fn us_county_fips_part_keeps_every_digit() {
+        // #4771: a fixed byte offset of 7 dropped the first digit of every county >= 100
+        assert_eq!(us_county_fips_part("US.MD.510").as_deref(), Some("510"));
+        assert_eq!(us_county_fips_part("US.AL.101").as_deref(), Some("101"));
+        assert_eq!(us_county_fips_part("US.CT.170").as_deref(), Some("170"));
+        assert_eq!(us_county_fips_part("US.PA.003").as_deref(), Some("003"));
+        // short segments are left-padded
+        assert_eq!(us_county_fips_part("US.CA.37").as_deref(), Some("037"));
+        // not a US county code
+        assert_eq!(us_county_fips_part("CA.ON.123"), None);
+        assert_eq!(us_county_fips_part("US.PA"), None);
+        assert_eq!(us_county_fips_part("US.PA.abc"), None);
+        assert_eq!(us_county_fips_part("US.PA.1234"), None);
+        assert_eq!(us_county_fips_part("US.PA."), None);
     }
 
     #[test]

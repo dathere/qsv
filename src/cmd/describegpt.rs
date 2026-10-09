@@ -2505,22 +2505,24 @@ fn replace_attribution_placeholder(
 
     // In a JSON response the placeholder sits inside a string literal (e.g. the tags prompt's
     // "attribution" key), so the attribution must be JSON-escaped: a quote in the command line
-    // would otherwise end the string and break the object. The placeholder itself starts with
-    // `{`, so it is removed before the check (callers also pass the bare placeholder).
-    let without_placeholder = text.replace("{GENERATED_BY_SIGNATURE}", "");
-    let trimmed = without_placeholder.trim_start();
-    let looks_like_json = trimmed.starts_with('{')
-        || trimmed.starts_with('[')
-        || trimmed
-            .strip_prefix("```json")
-            .is_some_and(|rest| rest.trim_start().starts_with(['{', '[']));
-    if looks_like_json {
-        let escaped = serde_json::to_string(&attribution).unwrap_or_default();
-        let escaped = escaped
+    // would otherwise end the string and break the object. The escaped form is used only when
+    // the result actually parses as JSON (bare or in a code fence), so prose that merely starts
+    // with `[` or `{` keeps the raw attribution.
+    if text.contains("{GENERATED_BY_SIGNATURE}") {
+        let quoted = serde_json::to_string(&attribution).unwrap_or_default();
+        let escaped = quoted
             .strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
-            .unwrap_or(&escaped);
-        return text.replace("{GENERATED_BY_SIGNATURE}", escaped);
+            .unwrap_or(&quoted);
+        let escaped_text = text.replace("{GENERATED_BY_SIGNATURE}", escaped);
+        let body = escaped_text.trim();
+        let body = body.strip_prefix("```").map_or(body, |rest| {
+            let rest = rest.strip_prefix("json").unwrap_or(rest);
+            rest.strip_suffix("```").unwrap_or(rest).trim()
+        });
+        if serde_json::from_str::<serde_json::Value>(body).is_ok() {
+            return escaped_text;
+        }
     }
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
 }

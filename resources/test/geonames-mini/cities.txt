@@ -3,3 +3,5 @@
 4951788	Springfield	Springfield		42.10148	-72.58981	P	PPL	US		MA	013			154341		21	America/New_York	2019-09-05
 4250542	Springfield	Springfield		39.80172	-89.64371	P	PPLA	US		IL	167			208000		180	America/Chicago	2019-09-05
 2643743	London	London		51.50853	-0.12574	P	PPLC	GB		ENG	GLA			8961989		25	Europe/London	2019-09-05
+5391811	San Diego	San Diego	Davisport	32.71571	-117.16472	P	PPLA2	US		CA	073			1394928		16	America/Los_Angeles	2019-09-05
+5341704	Davis	Davis		38.54491	-121.74052	P	PPL	US		CA	113			66850		16	America/Los_Angeles	2019-09-05

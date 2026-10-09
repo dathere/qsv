@@ -560,7 +560,7 @@ Common options:
 use std::{
     collections::HashMap,
     fs,
-    net::{IpAddr, Ipv4Addr},
+    net::IpAddr,
     num::NonZeroU32,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
@@ -995,6 +995,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    if (args.cmd_countryinfo || args.cmd_countryinfonow)
+        && args.flag_formatstr.starts_with("%dyncols:")
+    {
+        return fail_incorrectusage_clierror!(
+            "The '%dyncols:' --formatstr option is not supported by the countryinfo subcommands."
+        );
+    }
+
     // validate & resolve options for the opencage/opencagenow subcommands
     if args.cmd_opencage || args.cmd_opencagenow {
         // resolve the API key: the --api-key flag takes precedence over the
@@ -1404,7 +1412,11 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                 // reset geocode index by deleting the current local copy
                 // and downloading the default geocode index for the current qsv version
                 winfo!("Resetting Geonames index to default: {geocode_index_file}...");
-                fs::remove_file(&geocode_index_file)?;
+                if let Err(e) = fs::remove_file(&geocode_index_file)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    return Err(e.into());
+                }
                 load_engine_data(geocode_index_file.clone().into(), &progress).await?;
                 winfo!("Default Geonames index file successfully reset to {QSV_VERSION} release.");
             },
@@ -1485,11 +1497,29 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     let dyncols_len = if args.flag_formatstr.starts_with("%dyncols:") {
         for column in args.flag_formatstr[9..].split(',') {
             let column = column.trim();
-            let column_key_value: Vec<&str> = column.split(':').collect();
-            if column_key_value.len() == 2 {
-                column_names.push(column_key_value[0].trim_matches('{'));
-                column_values.push(column_key_value[1].trim_matches('}'));
+            if column.is_empty() {
+                continue;
             }
+            let column_key_value: Vec<&str> = column.split(':').collect();
+            if column_key_value.len() != 2 {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. Expected a single '{{col_name:key}}' \
+                     pair."
+                );
+            }
+            let column_name = column_key_value[0].trim_matches('{').trim();
+            if column_name.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "Invalid '%dyncols:' pair: {column:?}. The column name is empty."
+                );
+            }
+            column_names.push(column_name);
+            column_values.push(column_key_value[1].trim_matches('}').trim());
+        }
+        if column_values.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "Invalid '%dyncols:' format - expected one or more '{{col_name:key}}' pairs."
+            );
         }
 
         // now, validate the column values
@@ -1611,13 +1641,16 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     || geocode_cmd == GeocodeSubCmd::CountryInfoNow
                 {
                     // we're doing a countryinfo or countryinfonow subcommand
-                    cell = get_countryinfo(
+                    if let Some(countryinfo) = get_countryinfo(
                         &engine,
                         &cell.to_ascii_uppercase(),
                         &args.flag_language,
                         &args.flag_formatstr,
-                    )
-                    .unwrap_or(cell);
+                    ) {
+                        cell = countryinfo;
+                    } else if !invalid_result.is_empty() {
+                        cell.clone_from(&invalid_result);
+                    }
                 } else if dyncols_len > 0 {
                     // we're in dyncols mode, so use search_index_NO_CACHE fn
                     // as we need to inject the column values into each row of the output csv
@@ -1943,6 +1976,10 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     };
     let countrycode = args.flag_country.as_deref();
 
+    // network errors, 429s and 5xx only reach log::warn!, which is hidden by default - count
+    // them so a failed run doesn't pass for a successful one
+    let mut transient_failures: u64 = 0;
+
     let mut record = csv::StringRecord::new();
     while rdr.read_record(&mut record)? {
         let cell = record.get(column_index).unwrap_or_default().to_string();
@@ -1973,6 +2010,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
                     Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
                     Err(OcError::Transient(msg)) => {
                         log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
+                        transient_failures += 1;
                         None
                     },
                 }
@@ -2015,6 +2053,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
                     Err(OcError::Fatal(msg)) => return fail_clierror!("{msg}"),
                     Err(OcError::Transient(msg)) => {
                         log::warn!("OpenCage lookup failed for {cell:?}: {msg}");
+                        transient_failures += 1;
                         if invalid_result.is_empty() {
                             cell.clone()
                         } else {
@@ -2045,6 +2084,18 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
 
     if show_progress {
         util::finish_progress(&progress);
+    }
+    if transient_failures > 0 {
+        wwarn!(
+            "{transient_failures} OpenCage lookup(s) failed (network error, rate limit or server \
+             error), so those rows were {}. Set QSV_LOG_LEVEL=warn to log each failure to the qsv \
+             log file.",
+            if invalid_result.is_empty() {
+                "left unchanged"
+            } else {
+                "set to --invalid-result"
+            }
+        );
     }
     Ok(wtr.flush()?)
 }
@@ -2469,12 +2520,11 @@ async fn load_engine_data_resolved(
             );
         }
 
-        // `util::download_file` streams whatever the server returns and never calls
-        // `error_for_status`, so a release that does NOT carry this prebuilt leaves a few bytes of
-        // "Not Found" on disk and returns Ok - which surfaced much later, and much less usefully,
-        // as "Alternate Geonames index file <n> is invalid". The prebuilts are uploaded per
-        // release, so a floor THIS binary knows about can still be missing from the release it was
-        // built from. Check the Snappy framing magic and say what actually happened.
+        // `util::download_file` rejects non-2xx responses, but a 2xx whose body is not the index
+        // (an error page behind a proxy, a truncated asset) would otherwise surface much later,
+        // and much less usefully, as "Alternate Geonames index file <n> is invalid". The prebuilts
+        // are uploaded per release, so a floor THIS binary knows about can still be missing from
+        // the release it was built from. Check the Snappy framing magic and say what happened.
         let downloaded_snappy_index = {
             let mut header = [0_u8; 10];
             fs::File::open(&geocode_index_file)
@@ -2557,20 +2607,11 @@ async fn load_engine_data_resolved(
 
     let storage = storage::Storage::new();
 
+    // `load_from` skips the metadata block, so `engine.metadata` is always None here; callers that
+    // need the metadata read it with `Storage::read_metadata` (see `index-load`, issue #4431).
     let engine = storage
         .load_from(geocode_index_file.clone())
         .map_err(|e| format!("On load index file: {e}"))?;
-
-    if let Some(metadata) = &engine.metadata {
-        let now = std::time::SystemTime::now();
-        let age = now.duration_since(metadata.created_at).unwrap();
-        let created_at_formatted = util::format_systemtime(metadata.created_at, "%+");
-
-        progressbar.println(format!(
-            "Geonames index loaded. Created: {created_at_formatted}  Age: {}",
-            indicatif::HumanDuration(age)
-        ));
-    }
 
     Ok((engine, geocode_index_file))
 }
@@ -2867,12 +2908,8 @@ fn search_index_uncached(
 )]
 fn cached_dns_lookup(host: &str) -> Option<IpAddr> {
     dns_lookup::lookup_host(host)
-        .map(|ips| {
-            ips.into_iter()
-                .next()
-                .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
-        })
         .ok()
+        .and_then(|ips| ips.into_iter().next())
 }
 
 /// "%dyncols:" formatstr used. Adds dynamic columns to CSV.
@@ -3895,13 +3932,13 @@ pub struct GeoRegion {
 
 /// How many candidates the HINTED forward path scores before applying an admin1 hint.
 ///
-/// Deliberately separate from [`SUGGEST_ADMIN1_POOL`], which feeds `search_index_uncached`'s
-/// `unwrap_or(first_result)` fallback — raising that would change which record `geocode suggest`
-/// returns. Generous here because geosuggest sorts and dedupes the FULL candidate set before
-/// `take(limit)` (geosuggest-core `Engine::suggest`), so a larger limit costs one longer `Vec` and
-/// no extra scanning or scoring. It has to be generous: a prefix match scores exactly 1.0 and ties
-/// break by population descending, so a small town in the hinted subdivision sits below every
-/// same-named larger city (measured: `Springfield` + `US.CO` needs far more than 10).
+/// Deliberately separate from [`SUGGEST_ADMIN1_POOL`], which sizes `geocode suggest --admin1`'s
+/// candidate pool in `search_index_uncached`. Generous here because geosuggest sorts and dedupes
+/// the FULL candidate set before `take(limit)` (geosuggest-core `Engine::suggest`), so a larger
+/// limit costs one longer `Vec` and no extra scanning or scoring. It has to be generous: a prefix
+/// match scores exactly 1.0 and ties break by population descending, so a small town in the hinted
+/// subdivision sits below every same-named larger city (measured: `Springfield` + `US.CO` needs far
+/// more than 10).
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 static SUGGEST_HINT_LIMIT: usize = 250;
 
@@ -4176,9 +4213,9 @@ fn validate_hint_countries<'a>(
 /// Earth, which is how this behaved before issue #4427) or exactly one [`RegionHint`] per name.
 ///
 /// A hinted lookup is STRICT: when the hint excludes every candidate the result is
-/// [`ForwardMatch::HintRejected`], never a silent fallback to the top hit. That is the one place
-/// this diverges from `geocode suggest`, whose `--admin1` filter is advisory by design
-/// (`search_index_uncached`'s `unwrap_or(first_result)`) and stays that way.
+/// [`ForwardMatch::HintRejected`], never a silent fallback to the top hit. `geocode suggest
+/// --admin1` is strict too (issue #4687); the difference is that this reports WHAT the hint
+/// rejected, where `geocode suggest` just counts the miss.
 ///
 /// `lang` selects the localized-name language. `Err` only on a hard setup failure, or on a hint the
 /// engine cannot honor.
@@ -4240,8 +4277,8 @@ pub fn forward_geocode_regions(
 ///
 /// Mirrors `search_index_uncached`'s admin1 scan (which is a `starts_with` over admin1 codes and
 /// names) with two deliberate differences: hint codes are compared for EQUALITY, since
-/// [`RegionHint::parse`] has already qualified them, and there is no `unwrap_or(first_result)` —
-/// an excluded candidate is reported, not substituted.
+/// [`RegionHint::parse`] has already qualified them, and an excluded candidate is reported as
+/// [`ForwardMatch::HintRejected`] rather than just dropped.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn resolve_hinted_name(
     engine: &Engine,

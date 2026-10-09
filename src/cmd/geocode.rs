@@ -2486,6 +2486,7 @@ async fn load_engine_data_resolved(
     // `--cache-dir` cannot be passed to it and cannot disagree with this. If index-load ever gains
     // options, thread the caller's already-resolved cache dir in rather than widening this.
     let mut geocode_index_file = geocode_index_file;
+    let mut downloaded_default_index = false;
     if let Some(shortcut) = numeric_shortcut {
         geocode_index_file =
             resolve_geocode_cache_dir("~/.qsv-cache")?.join(format!("cities{shortcut}.rkyv.sz"));
@@ -2561,14 +2562,7 @@ async fn load_engine_data_resolved(
             None,
         )
         .await?;
-
-        // a new release's index just arrived, so this is when the old ones become dead weight
-        if let (Some(dir), Some(active)) = (
-            geocode_index_file.parent(),
-            geocode_index_file.file_name().and_then(|n| n.to_str()),
-        ) {
-            prune_old_geocode_indexes(dir, active);
-        }
+        downloaded_default_index = true;
     }
 
     // check if the geocode_index_file is snappy compressed; decompress it if so.
@@ -2620,6 +2614,18 @@ async fn load_engine_data_resolved(
     let engine = storage
         .load_from(geocode_index_file.clone())
         .map_err(|e| format!("On load index file: {e}"))?;
+
+    // A new release's index just arrived AND loaded, so the old ones are now dead weight. Pruning
+    // only after the load means a bad download (a 2xx carrying a broken index) can't count toward
+    // the kept releases and evict an older, working one.
+    if downloaded_default_index
+        && let (Some(dir), Some(active)) = (
+            geocode_index_file.parent(),
+            geocode_index_file.file_name().and_then(|n| n.to_str()),
+        )
+    {
+        prune_old_geocode_indexes(dir, active);
+    }
 
     Ok((engine, geocode_index_file))
 }

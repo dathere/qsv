@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Building qsv from source now also patches `hashbrown` to Polars' fork (the same pin Polars itself uses), because Polars 2.0 relies on prefetch APIs that aren't in a hashbrown release yet ([rust-lang/hashbrown#727](https://github.com/rust-lang/hashbrown/pull/727)).
 
 ### Fixed
-- **`geocode` fixes from a review of the command:**
+- **`geocode` fixes from a review of the command** ([#4773](https://github.com/dathere/qsv/pull/4773)):
   - **`countryinfo` now rejects `--formatstr "%dyncols:..."`** with a usage error. It used to add the extra headers but never the fields, so the run aborted on the first row with a CSV error after part of the output was written.
   - **`countryinfo` honors `--invalid-result`** for a code it doesn't recognize. The code used to be passed through unchanged. (`iplookup` still passes through an IP with no GeoIP2 match, as before.)
   - **`opencage` reports failed lookups.** A network error, rate limit (HTTP 429) or server error used to leave the row unchanged (or set it to `--invalid-result`) with no message unless `QSV_LOG_LEVEL` was set, so an outage produced a clean-looking run. The count of failed lookups is now printed at the end.

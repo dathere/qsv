@@ -1387,6 +1387,86 @@ fn geocode_countryinfo() {
 
 #[test]
 #[serial]
+fn geocode_countryinfo_invalid_result() {
+    let wrk = Workdir::new("geocode_countryinfo_invalid_result");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Country"], svec!["US"], svec!["ZZ"], svec![""]],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("countryinfo")
+        .arg("Country")
+        .args(["--invalid-result", "<BAD>"])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["Country"],
+        svec!["United States"],
+        svec!["<BAD>"],
+        svec![""], // an empty cell is left untouched
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+fn geocode_countryinfo_dyncols_rejected() {
+    // countryinfo used to add the %dyncols headers but never the fields, so the CSV writer
+    // aborted on the first row
+    let wrk = Workdir::new("geocode_countryinfo_dyncols_rejected");
+    wrk.create("data.csv", vec![svec!["Country"], svec!["US"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("countryinfo")
+        .arg("Country")
+        .args(["-f", "%dyncols: {cap:capital}, {cont:continent}"])
+        .arg("data.csv");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("not supported by the countryinfo subcommands"));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+#[serial]
+fn geocode_suggest_dyncols_malformed_pair_rejected() {
+    // a malformed pair (no colon separator) used to be silently dropped
+    let wrk = Workdir::new("geocode_suggest_dyncols_malformed_pair_rejected");
+    wrk.create("data.csv", vec![svec!["city"], svec!["Brooklyn"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("suggest")
+        .arg("city")
+        .args(["-f", "%dyncols: {city_col name}, {state_col:admin1}"])
+        .arg("data.csv");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid '%dyncols:' pair"));
+}
+
+#[test]
+#[serial]
+fn geocode_suggest_dyncols_empty_rejected() {
+    // an empty "%dyncols:" list used to fall back to non-dyncols mode
+    let wrk = Workdir::new("geocode_suggest_dyncols_empty_rejected");
+    wrk.create("data.csv", vec![svec!["city"], svec!["Brooklyn"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("suggest")
+        .arg("city")
+        .args(["-f", "%dyncols: "])
+        .arg("data.csv");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("expected one or more"));
+}
+
+#[test]
+#[serial]
 fn geocode_countryinfo_formatstr() {
     let wrk = Workdir::new("geocode_countryinfo_formatstr");
     wrk.create(
@@ -2258,6 +2338,37 @@ fn geocode_opencage_dyncols_empty_col_name_rejected() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("column name is empty"));
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_transient_failure_reported() {
+    // this runs in CI without network access to OpenCage: a dead proxy turns every lookup into a
+    // network (transient) error. Those used to reach only log::warn!, so the run looked clean.
+    let wrk = Workdir::new("geocode_opencage_transient_failure_reported");
+    wrk.create("data.csv", vec![svec!["address"], svec!["Brooklyn, NY"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage")
+        .arg("address")
+        .arg("data.csv")
+        .args(["--api-key", "dummy-key-for-transient-test"])
+        .arg("--no-cache")
+        .args(["--timeout", "5"])
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("https_proxy", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
+
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 OpenCage lookup(s) failed"),
+        "stderr: {stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Brooklyn, NY"));
 }
 
 #[test]

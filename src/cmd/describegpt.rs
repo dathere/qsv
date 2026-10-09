@@ -140,7 +140,7 @@ https://github.com/dathere/qsv/wiki/AI-and-Documentation#describegpt
 Usage:
     qsv describegpt [options] [<input>]
     qsv describegpt --prepare-context [options] [<input>]
-    qsv describegpt --process-response [options]
+    qsv describegpt --process-response [options] [<input>]
     qsv describegpt (--redis-cache) (--flush-cache)
     qsv describegpt --help
 

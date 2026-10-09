@@ -2568,7 +2568,9 @@ fn describegpt_process_response_substitutes_signature() {
 
 /// The tags prompt asks for the placeholder as a JSON string value. The attribution carries the
 /// command line, so a quote in an argument must be JSON-escaped or it ends the string, the
-/// object fails to parse, and the extractor falls back to the nested tags array.
+/// object fails to parse, and the extractor falls back to the nested tags array. That holds
+/// whether the JSON is bare, fenced, or surrounded by the LLM's own prose (including a
+/// bracketed `[3]` that is itself valid JSON but does not hold the placeholder).
 #[test]
 fn describegpt_process_response_json_tags_signature_is_escaped() {
     let wrk = Workdir::new("describegpt_procresp_json_tags_escaped");
@@ -2582,7 +2584,12 @@ fn describegpt_process_response_json_tags_signature_is_escaped() {
     );
 
     let tags_json = r#"{"tags": ["people"], "attribution": "{GENERATED_BY_SIGNATURE}"}"#;
-    for llm_response in [tags_json.to_string(), format!("```\n{tags_json}\n```")] {
+    for llm_response in [
+        tags_json.to_string(),
+        format!("```\n{tags_json}\n```"),
+        format!("{tags_json}\nDone."),
+        format!("Here are [3] tags for the data:\n```json\n{tags_json}\n```\nLet me know!"),
+    ] {
         let stdout = process_response_phase_stdout(
             &wrk,
             &["--tags"],

@@ -2336,6 +2336,23 @@ fn normalize_command_line<I: Iterator<Item = String>>(mut args: I) -> String {
     out.join(" ")
 }
 
+/// Substitute `{GENERATED_BY_SIGNATURE}` in a raw LLM response. Shared by the live path and
+/// `--process-response` (MCP sampling) so both render the attribution the prompts ask for.
+fn substitute_response_attribution(
+    response: &str,
+    kind: PromptType,
+    args: &Args,
+    model: &str,
+    base_url: &str,
+) -> String {
+    let format = if kind == PromptType::Prompt && args.flag_prompt.is_some() {
+        AttributionFormat::SqlComment
+    } else {
+        AttributionFormat::Markdown
+    };
+    replace_attribution_placeholder(response, args, model, base_url, format, kind)
+}
+
 /// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
 fn replace_attribution_placeholder(
     text: &str,
@@ -2480,11 +2497,54 @@ fn replace_attribution_placeholder(
         },
         qsv_variant = util::CARGO_BIN_NAME,
         qsv_version = util::CARGO_PKG_VERSION,
-        command_line = provenance_command_line(),
+        // A multi-line --prompt is in the command line verbatim; in a SQL comment, each of its
+        // lines needs the comment marker or the rest of the prompt becomes SQL.
+        command_line = provenance_command_line().replace('\n', &format!("\n{att_prefix}")),
         ts = chrono::Utc::now().to_rfc3339(),
     );
 
+    // In a JSON response the placeholder sits inside a string literal (e.g. the tags prompt's
+    // "attribution" key), so the attribution must be JSON-escaped there: a quote in the command
+    // line would otherwise end the string and break the object. Only the JSON value holding the
+    // placeholder is escaped; prose around it (an LLM's preamble, a code fence, a closing
+    // remark) and prose that merely starts with `[` or `{` keep the raw attribution.
+    if let Some((start, end)) = json_value_span_containing(text, "{GENERATED_BY_SIGNATURE}") {
+        let quoted = serde_json::to_string(&attribution).unwrap_or_default();
+        let escaped = quoted
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .unwrap_or(&quoted);
+        return format!(
+            "{}{}{}",
+            text[..start].replace("{GENERATED_BY_SIGNATURE}", &attribution),
+            text[start..end].replace("{GENERATED_BY_SIGNATURE}", escaped),
+            text[end..].replace("{GENERATED_BY_SIGNATURE}", &attribution),
+        );
+    }
     text.replace("{GENERATED_BY_SIGNATURE}", &attribution)
+}
+
+/// Byte span of the first JSON object or array in `text` that contains `needle`, wherever it
+/// sits in surrounding prose (mirrors `extract_json_from_output`, which also tolerates text
+/// before and after the JSON). Only starts before the first `needle` can qualify, and attempts
+/// are capped so a long bracket-heavy response stays cheap.
+fn json_value_span_containing(text: &str, needle: &str) -> Option<(usize, usize)> {
+    const MAX_ATTEMPTS: usize = 64;
+    let first_needle = text.find(needle)?;
+    text[..first_needle]
+        .match_indices(['{', '['])
+        .take(MAX_ATTEMPTS)
+        .find_map(|(start, _)| {
+            let mut stream =
+                serde_json::Deserializer::from_str(&text[start..]).into_iter::<serde_json::Value>();
+            match stream.next() {
+                Some(Ok(serde_json::Value::Object(_) | serde_json::Value::Array(_))) => {
+                    let end = start + stream.byte_offset();
+                    (end > first_needle).then_some((start, end))
+                },
+                _ => None,
+            }
+        })
 }
 
 /// Format token usage and reasoning as comment lines for TSV
@@ -3237,22 +3297,8 @@ fn get_completion(
         elapsed:    llm_response.elapsed_ms,
     };
 
-    // Determine format based on prompt type and flag_prompt
-    let format = if kind == PromptType::Prompt && args.flag_prompt.is_some() {
-        AttributionFormat::SqlComment
-    } else {
-        AttributionFormat::Markdown
-    };
-
-    // Replace attribution placeholder using unified function
-    let completion = replace_attribution_placeholder(
-        &llm_response.content,
-        args,
-        model,
-        &base_url,
-        format,
-        kind,
-    );
+    let completion =
+        substitute_response_attribution(&llm_response.content, kind, args, model, &base_url);
 
     Ok(CompletionResponse {
         response: completion,
@@ -7153,14 +7199,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // the dictionary output carries the dataset-language fields, and attribution reports
         // the same language the step-1 prompt asked for.
         //
-        // Detection stays gated on a Dictionary phase because the dataset-language fields and
-        // the attribution block are BOTH dictionary-only on this path — description/tags
-        // responses are emitted verbatim, with no attribution. Resolution is ungated so a
-        // bare threshold float can never reach attribution regardless of which phases ran.
+        // Detection is ungated, as on the live path: every phase's attribution block (the
+        // dictionary's, and the {GENERATED_BY_SIGNATURE} substituted into description/tags/
+        // prompt responses below) reports the resolved language. Resolution also keeps a bare
+        // threshold float out of attribution.
         #[cfg(feature = "whatlang")]
-        if input.phases.iter().any(|p| p.kind == "Dictionary") {
-            detect_dataset_language(&input.analysis_results, args.flag_language.as_ref());
-        }
+        detect_dataset_language(&input.analysis_results, args.flag_language.as_ref());
         resolve_output_language(&mut args);
 
         for phase in &input.phases {
@@ -7170,7 +7214,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map_err(|_| CliError::Other(format!("Unknown phase kind: {}", phase.kind)))?;
 
             let completion = CompletionResponse {
-                response:    phase.response.clone(),
+                response:    substitute_response_attribution(
+                    &phase.response,
+                    kind,
+                    &args,
+                    model,
+                    &base_url,
+                ),
                 reasoning:   phase.reasoning.clone(),
                 token_usage: phase.token_usage.clone(),
             };

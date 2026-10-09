@@ -4279,6 +4279,10 @@ pub fn forward_geocode_regions(
 /// names) with two deliberate differences: hint codes are compared for EQUALITY, since
 /// [`RegionHint::parse`] has already qualified them, and an excluded candidate is reported as
 /// [`ForwardMatch::HintRejected`] rather than just dropped.
+///
+/// Like `geocode suggest`, it prefers a candidate whose own name IS the query
+/// ([`pick_exact_name`]): a prefix match scores a flat 1.0 and ties go to population, so the
+/// engine's top hit for "Davis" is San Diego (an alternate name starting with "davis").
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn resolve_hinted_name(
     engine: &Engine,
@@ -4286,49 +4290,53 @@ fn resolve_hinted_name(
     hint: &RegionHint,
     lang_lookup: &str,
 ) -> ForwardMatch {
-    // An admin1 hint needs a deep candidate list (see SUGGEST_HINT_LIMIT); without one, the top
-    // match is all that is ever inspected, exactly as before.
+    // An admin1 hint needs a deep candidate list (see SUGGEST_HINT_LIMIT); without one, a pool as
+    // wide as `geocode suggest`'s is enough for the exact-name preference.
     let limit = if hint.admin1.is_some() {
         SUGGEST_HINT_LIMIT
     } else {
-        1
+        SUGGEST_EXACT_POOL
     };
+    let query = name.trim().to_lowercase();
     let candidates = engine.suggest(name, limit, None, hint.countries.as_deref());
 
-    let Some(first) = candidates.first().copied() else {
+    let Some(best) = pick_exact_name(&candidates, &query) else {
         // Under a country prefilter an empty result cannot distinguish "no such place anywhere"
         // from "none in the hinted country". Probe unfiltered so the caller can report which —
         // a place that exists elsewhere is a rejected hint, not a missing name.
-        if hint.countries.is_some()
-            && let Some(elsewhere) = engine
-                .suggest::<String>(name, 1, None, None)
-                .into_iter()
-                .next()
+        if hint.countries.is_some() {
+            let elsewhere = engine.suggest::<String>(name, SUGGEST_EXACT_POOL, None, None);
+            if let Some(region) = pick_exact_name(&elsewhere, &query)
                 .and_then(|cr| cityrecord_to_region(engine, cr, lang_lookup))
-        {
-            return ForwardMatch::HintRejected(elsewhere);
+            {
+                return ForwardMatch::HintRejected(region);
+            }
         }
         return ForwardMatch::NoMatch;
     };
 
     if let Some(filters) = hint.admin1.as_ref() {
-        let in_admin1 = candidates.iter().copied().find(|cr| {
-            cr.admin_division.as_ref().is_some_and(|ad| {
-                filters
-                    .iter()
-                    .any(|f| ad.code.as_str() == f.admin1_string.as_str())
+        let in_admin1: Vec<&CitiesRecord> = candidates
+            .iter()
+            .copied()
+            .filter(|cr| {
+                cr.admin_division.as_ref().is_some_and(|ad| {
+                    filters
+                        .iter()
+                        .any(|f| ad.code.as_str() == f.admin1_string.as_str())
+                })
             })
-        });
-        return match in_admin1 {
+            .collect();
+        return match pick_exact_name(&in_admin1, &query) {
             Some(cr) => cityrecord_to_region(engine, cr, lang_lookup)
                 .map_or(ForwardMatch::NoMatch, ForwardMatch::Matched),
             // the name resolves in this country, just not in the hinted subdivision
-            None => cityrecord_to_region(engine, first, lang_lookup)
+            None => cityrecord_to_region(engine, best, lang_lookup)
                 .map_or(ForwardMatch::NoMatch, ForwardMatch::HintRejected),
         };
     }
 
-    cityrecord_to_region(engine, first, lang_lookup)
+    cityrecord_to_region(engine, best, lang_lookup)
         .map_or(ForwardMatch::NoMatch, ForwardMatch::Matched)
 }
 
@@ -4554,6 +4562,42 @@ mod tests {
         assert_eq!(fs::read(&index_path).unwrap(), b"previous index");
         // the temp file was cleaned up, not left beside the index
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// "Davis" prefix-matches San Diego's alternate name `Davisport` in the fixture. A prefix match
+    /// scores a flat 1.0 and ties go to population, so the engine's top hit is San Diego; the
+    /// region resolver must prefer the place whose own name IS the query, as `geocode suggest`
+    /// does (issue #4687). On the real 24.0.0 index `viz --geocode` mapped Davis to 06073.
+    #[test]
+    #[cfg(all(feature = "viz", feature = "feature_capable"))]
+    fn resolve_hinted_name_prefers_exact_name() {
+        let engine_data = mini_engine_data();
+        let engine = engine_data.as_engine().unwrap();
+
+        // precondition: without the exact-name preference, San Diego wins
+        let top = engine.suggest::<&str>("Davis", 1, None, None);
+        assert_eq!(top.first().map(|c| c.name.as_str()), Some("San Diego"));
+
+        let matched_fips = |m: ForwardMatch| match m {
+            ForwardMatch::Matched(r) => r.us_county_fips,
+            other => panic!("expected a match, got {other:?}"),
+        };
+
+        // no hint
+        let found = resolve_hinted_name(&engine, "Davis", &RegionHint::default(), "en");
+        assert_eq!(matched_fips(found), "06113");
+
+        // an admin1 hint that admits both candidates
+        let ca = RegionHint::parse(Some("US"), Some("CA"), None).unwrap();
+        let found = resolve_hinted_name(&engine, "Davis", &ca, "en");
+        assert_eq!(matched_fips(found), "06113");
+
+        // a hint that excludes both reports the exact-name place, not the population winner
+        let pa = RegionHint::parse(Some("US"), Some("PA"), None).unwrap();
+        match resolve_hinted_name(&engine, "Davis", &pa, "en") {
+            ForwardMatch::HintRejected(r) => assert_eq!(r.us_county_fips, "06113"),
+            other => panic!("expected a hint rejection, got {other:?}"),
+        }
     }
 
     #[test]

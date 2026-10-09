@@ -517,6 +517,9 @@ geocode options:
                                 and the persistent on-disk OpenCage result cache.
                                 If the directory does not exist, qsv will attempt to create it.
                                 If the QSV_CACHE_DIR envvar is set, it will be used instead.
+                                The index file is named for the qsv release, so each upgrade
+                                downloads a new one. When it does, qsv deletes the index files
+                                of all but the 5 most recent releases found in this directory.
                                 [default: ~/.qsv-cache]
 
                                 CACHE-PRUNE only option:
@@ -2483,6 +2486,7 @@ async fn load_engine_data_resolved(
     // `--cache-dir` cannot be passed to it and cannot disagree with this. If index-load ever gains
     // options, thread the caller's already-resolved cache dir in rather than widening this.
     let mut geocode_index_file = geocode_index_file;
+    let mut downloaded_default_index = false;
     if let Some(shortcut) = numeric_shortcut {
         geocode_index_file =
             resolve_geocode_cache_dir("~/.qsv-cache")?.join(format!("cities{shortcut}.rkyv.sz"));
@@ -2558,6 +2562,7 @@ async fn load_engine_data_resolved(
             None,
         )
         .await?;
+        downloaded_default_index = true;
     }
 
     // check if the geocode_index_file is snappy compressed; decompress it if so.
@@ -2610,7 +2615,123 @@ async fn load_engine_data_resolved(
         .load_from(geocode_index_file.clone())
         .map_err(|e| format!("On load index file: {e}"))?;
 
+    // A new release's index just arrived AND loaded, so the old ones are now dead weight. Pruning
+    // only after the load means a bad download (a 2xx carrying a broken index) can't count toward
+    // the kept releases and evict an older, working one.
+    if downloaded_default_index
+        && let (Some(dir), Some(active)) = (
+            geocode_index_file.parent(),
+            geocode_index_file.file_name().and_then(|n| n.to_str()),
+        )
+    {
+        prune_old_geocode_indexes(dir, active);
+    }
+
     Ok((engine, geocode_index_file))
+}
+
+/// How many qsv releases' Geonames indexes [`prune_old_geocode_indexes`] keeps in the cache dir.
+/// The index filename is version-keyed, so every upgrade downloads a fresh ~25-170 MB set and
+/// nothing removed the old ones.
+static GEOCODE_INDEX_KEEP_RELEASES: usize = 5;
+
+/// Matches the index files qsv itself names: `qsv-X.Y.Z-geocode-index.rkyv`, and the
+/// `.citiesN` / `.citiesN.sz` siblings older releases left beside it. Anything else in the cache
+/// dir - a user's `.bak` copy, a hand-named index - never matches, so it is never pruned.
+static VERSIONED_INDEX_REGEX: fn() -> &'static Regex =
+    || regex_oncelock!(r"^qsv-(\d+)\.(\d+)\.(\d+)-geocode-index\.rkyv(?:\.cities\d+(?:\.sz)?)?$");
+
+/// Parse `X.Y.Z` (ignoring any pre-release/build suffix) into a sortable tuple.
+fn parse_release(version: &str) -> Option<(u64, u64, u64)> {
+    let core = version.split(['-', '+']).next()?;
+    let mut parts = core.split('.').map(str::parse::<u64>);
+    let release = (
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+        parts.next()?.ok()?,
+    );
+    parts.next().is_none().then_some(release)
+}
+
+/// The file names in `file_names` that belong to a qsv release outside the newest `keep` releases
+/// present. The `current_version`'s files and the `active` index are always kept, whatever their
+/// version (a downgraded qsv, or `QSV_GEOCODE_INDEX_FILENAME` pointing at an older release).
+fn stale_geocode_index_files<'a>(
+    file_names: &'a [String],
+    current_version: &str,
+    active: &str,
+    keep: usize,
+) -> Vec<&'a str> {
+    let re = VERSIONED_INDEX_REGEX();
+    let release_of = |name: &str| -> Option<(u64, u64, u64)> {
+        let caps = re.captures(name)?;
+        Some((
+            caps[1].parse().ok()?,
+            caps[2].parse().ok()?,
+            caps[3].parse().ok()?,
+        ))
+    };
+
+    let mut releases: Vec<(u64, u64, u64)> =
+        file_names.iter().filter_map(|n| release_of(n)).collect();
+    releases.sort_unstable_by(|a, b| b.cmp(a));
+    releases.dedup();
+    let mut kept: Vec<(u64, u64, u64)> = releases.into_iter().take(keep).collect();
+    if let Some(current) = parse_release(current_version) {
+        kept.push(current);
+    }
+
+    file_names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| *name != active)
+        .filter(|name| release_of(name).is_some_and(|r| !kept.contains(&r)))
+        .collect()
+}
+
+/// Delete Geonames index files left by qsv releases older than the newest
+/// [`GEOCODE_INDEX_KEEP_RELEASES`] in `cache_dir`. Best effort: a file that can't be listed or
+/// removed is logged and skipped, never an error - pruning must not fail a geocoding run.
+fn prune_old_geocode_indexes(cache_dir: &Path, active: &str) {
+    let Ok(entries) = fs::read_dir(cache_dir) else {
+        return;
+    };
+    let file_names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+
+    let mut removed = 0_usize;
+    let mut freed = 0_u64;
+    for name in stale_geocode_index_files(
+        &file_names,
+        QSV_VERSION,
+        active,
+        GEOCODE_INDEX_KEEP_RELEASES,
+    ) {
+        let path = cache_dir.join(name);
+        let size = fs::metadata(&path).map(|m| m.len()).unwrap_or_default();
+        match fs::remove_file(&path) {
+            Ok(()) => {
+                removed += 1;
+                freed += size;
+            },
+            Err(e) => log::warn!(
+                "Could not remove old Geonames index {}: {e}",
+                path.display()
+            ),
+        }
+    }
+    if removed > 0 {
+        // always shown (not via the progress bar, which is usually hidden): deleting files in the
+        // user's cache dir must never be silent
+        winfo!(
+            "Removed {removed} Geonames index file(s) from qsv releases older than the last \
+             {GEOCODE_INDEX_KEEP_RELEASES}, freeing {}.",
+            HumanBytes(freed)
+        );
+    }
 }
 
 /// `search_index` returns a geocode result for a given cell value, used by the
@@ -4593,6 +4714,89 @@ mod tests {
         match resolve_hinted_name(&engine, "Davis", &pa, "en") {
             ForwardMatch::HintRejected(r) => assert_eq!(r.us_county_fips, "06113"),
             other => panic!("expected a hint rejection, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_release_versions() {
+        assert_eq!(parse_release("24.0.0"), Some((24, 0, 0)));
+        assert_eq!(parse_release("25.1.2-rc1"), Some((25, 1, 2)));
+        assert_eq!(parse_release("24.0"), None);
+        assert_eq!(parse_release("24.0.0.1"), None);
+    }
+
+    #[test]
+    fn stale_geocode_index_files_keeps_the_newest_releases() {
+        // modeled on a real ~/.qsv-cache after years of upgrades
+        let names: Vec<String> = [
+            "qsv-9.1.0-geocode-index.rkyv",
+            "qsv-9.1.0-geocode-index.rkyv.cities15000",
+            "qsv-9.1.0-geocode-index.rkyv.cities15000.sz",
+            "qsv-20.0.0-geocode-index.rkyv",
+            "qsv-21.0.0-geocode-index.rkyv",
+            "qsv-21.1.0-geocode-index.rkyv.kiddo5-bak", // a hand-made backup: never touched
+            "qsv-22.0.0-geocode-index.rkyv",
+            "qsv-22.0.0-new-geocode-index.rkyv", // hand-named: never touched
+            "qsv-22.0.1-geocode-index.rkyv",
+            "qsv-22.0.1-geocode-index.rkyv.cities1000.sz",
+            "qsv-23.0.0-geocode-index.rkyv",
+            "qsv-24.0.0-geocode-index.rkyv",
+            "cities1000.rkyv",     // the index-load shortcut's staging file
+            "geocode-opencage_v1", // the OpenCage cache
+        ]
+        .map(String::from)
+        .to_vec();
+
+        let mut stale =
+            stale_geocode_index_files(&names, "24.0.0", "qsv-24.0.0-geocode-index.rkyv", 5);
+        stale.sort_unstable();
+        // kept: 24.0.0, 23.0.0, 22.0.1, 22.0.0, 21.0.0 - semver order, not string order (9.1.0
+        // would sort above 24.0.0 as a string)
+        assert_eq!(
+            stale,
+            vec![
+                "qsv-20.0.0-geocode-index.rkyv",
+                "qsv-9.1.0-geocode-index.rkyv",
+                "qsv-9.1.0-geocode-index.rkyv.cities15000",
+                "qsv-9.1.0-geocode-index.rkyv.cities15000.sz",
+            ]
+        );
+
+        // the active index and the running release are kept even when they are not the newest -
+        // a downgraded qsv, or QSV_GEOCODE_INDEX_FILENAME pointing at an old release
+        let stale = stale_geocode_index_files(&names, "9.1.0", "qsv-20.0.0-geocode-index.rkyv", 5);
+        assert!(!stale.iter().any(|n| n.starts_with("qsv-9.1.0-")));
+        assert!(!stale.contains(&"qsv-20.0.0-geocode-index.rkyv"));
+        assert!(stale.is_empty());
+    }
+
+    #[test]
+    fn prune_old_geocode_indexes_removes_only_stale_files() {
+        let dir = tempdir().unwrap();
+        let keep = [
+            "qsv-24.0.0-geocode-index.rkyv",
+            "qsv-23.0.0-geocode-index.rkyv",
+            "qsv-22.0.0-geocode-index.rkyv",
+            "qsv-21.0.0-geocode-index.rkyv",
+            "qsv-20.0.0-geocode-index.rkyv",
+            "qsv-19.0.0-geocode-index.rkyv.bak",
+            "notes.txt",
+        ];
+        let gone = [
+            "qsv-19.0.0-geocode-index.rkyv",
+            "qsv-19.0.0-geocode-index.rkyv.cities15000.sz",
+        ];
+        for name in keep.iter().chain(gone.iter()) {
+            fs::write(dir.path().join(name), b"x").unwrap();
+        }
+
+        prune_old_geocode_indexes(dir.path(), "qsv-24.0.0-geocode-index.rkyv");
+
+        for name in keep {
+            assert!(dir.path().join(name).exists(), "{name} was removed");
+        }
+        for name in gone {
+            assert!(!dir.path().join(name).exists(), "{name} was kept");
         }
     }
 

@@ -566,10 +566,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use cached::{
-    ConcurrentCacheBase, ConcurrentCached, RedbCache,
-    macros::{cached, concurrent_cached},
-};
+use cached::{ConcurrentCacheBase, ConcurrentCached, RedbCache, macros::concurrent_cached};
 use dynfmt2::Format;
 use geosuggest_core::{
     Engine, EngineData,
@@ -2986,10 +2983,6 @@ fn add_dyncols(
 }
 
 /// format the geocoded result based on formatstr if its not %+
-#[cached(
-    key = "String",
-    convert = r#"{ format!("{}-{}-{}", cityrecord.id, formatstr, suggest_mode) }"#
-)]
 fn format_result(
     engine: &Engine,
     cityrecord: &CitiesRecord,
@@ -3624,7 +3617,11 @@ async fn opencage_lookup_dyncols(
 
 /// `get_countryinfo` is a cached function that returns a countryinfo result for a given cell value.
 /// It is used by the countryinfo/countryinfonow subcommands.
-#[cached(key = "String", convert = r#"{ format!("{cell}-{formatstr}") }"#)]
+///
+/// Keys are few (one per distinct country cell) and `%json` serializes the whole record, so this
+/// keeps a cache - but a `ShardedUnboundCache`, whose hits take only a shared read lock. The old
+/// single-lock `#[cached]` store made `countryinfo` slower at 12 jobs than at 1.
+#[concurrent_cached(key = "String", convert = r#"{ format!("{cell}-{formatstr}") }"#)]
 fn get_countryinfo(
     engine: &Engine,
     cell: &str,
@@ -3737,15 +3734,14 @@ fn get_countryinfo(
     }
 }
 
-/// `get_cityrecord_name_in_lang` is a cached function that returns a `NamesLang` struct
+/// `get_cityrecord_name_in_lang` returns a `NamesLang` struct
 /// containing the city, admin1, admin2, and country names in the specified language.
+/// Deliberately uncached, like `format_result`: four map lookups cost about what building a cache
+/// key does, and the single-lock `#[cached]` store serialized the rayon pipeline (2.4x slower at
+/// 12 jobs on 1M unique reverse-geocoded points).
 /// Note that the index file needs to be built with the desired languages for this to work.
 /// Use the "index-update" subcommand with the --languages option to rebuild the index
 /// with the desired languages. Otherwise, all names will be in English (en)
-#[cached(
-    key = "String",
-    convert = r#"{ format!("{}-{lang_lookup}", cityrecord.id) }"#
-)]
 fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> NamesLang {
     let cityname = cityrecord
         .names

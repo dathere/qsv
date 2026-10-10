@@ -624,10 +624,12 @@ fn validate_split_ragged_refuses_inputs_with_the_same_split_files() {
     cmd.arg("--split-ragged").arg("data.csv").arg("./data.csv");
 
     let stderr = wrk.stderr_on_error(&mut cmd);
-    assert!(
-        stderr.contains("`data.csv` and `./data.csv` would both write `./data.csv.valid`"),
-        "stderr: {stderr}"
+    // the inputs are shown as given; the split file is joined with the OS separator
+    let expected = format!(
+        "`data.csv` and `./data.csv` would both write `{}`",
+        std::path::Path::new(".").join("data.csv.valid").display()
     );
+    assert!(stderr.contains(&expected), "stderr: {stderr}");
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
 }

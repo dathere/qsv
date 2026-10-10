@@ -3023,6 +3023,19 @@ pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     }
 }
 
+/// A new, empty file in `tmpdir` for one `decompress_snappy_file` call. It is
+/// created exclusively under a random name, so it never overwrites another
+/// input's scratch or final file, and it ends in `file_stem` so callers that
+/// read the extension (e.g. `joinp`) still see it.
+fn snappy_scratch_file(tmpdir: &Path, file_stem: &str) -> std::io::Result<(File, PathBuf)> {
+    tempfile::Builder::new()
+        .prefix("qsv_temp_decompressed_")
+        .suffix(&format!("__{file_stem}"))
+        .tempfile_in(tmpdir)?
+        .keep()
+        .map_err(std::io::Error::from)
+}
+
 /// Decompresses a Snappy-compressed file to a temporary directory.
 ///
 /// # Arguments
@@ -3075,16 +3088,17 @@ pub fn decompress_snappy_file(
             path.display()
         );
 
-        // Copy to the same scratch name the decompression path uses, not the final
-        // name: `process_input` renames it, so two same-named inputs must not meet here.
+        // Copy to a scratch file, not the final name: `process_input` renames it,
+        // and `joinp` decompresses both inputs into one tmpdir.
         let file_stem = Path::new(&path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("plain_file");
-        let fallback_filepath = tmpdir
-            .path()
-            .join(format!("qsv_temp_decompressed__{file_stem}"));
-        std::fs::copy(path, &fallback_filepath)?;
+        let (mut fallback_file, fallback_filepath) = snappy_scratch_file(tmpdir.path(), file_stem)?;
+        std::io::copy(&mut File::open(path)?, &mut fallback_file)?;
+        fallback_file.flush()?;
+        // Windows: release the write handle before anything re-opens the path
+        drop(fallback_file);
         return Ok(format!("{}", fallback_filepath.display()));
     }
 
@@ -3093,10 +3107,8 @@ pub fn decompress_snappy_file(
     let mut snappy_reader = snap::read::FrameDecoder::new(&mut snappy_file);
     // safety: we know that file_stem() will not be None as we opened the file above
     let file_stem = Path::new(&path).file_stem().unwrap().to_string_lossy();
-    let decompressed_filepath = tmpdir
-        .path()
-        .join(format!("qsv_temp_decompressed__{file_stem}"));
-    let mut decompressed_file = std::fs::File::create(decompressed_filepath.clone())?;
+    let (mut decompressed_file, decompressed_filepath) =
+        snappy_scratch_file(tmpdir.path(), &file_stem)?;
 
     match std::io::copy(&mut snappy_reader, &mut decompressed_file) {
         Ok(num_bytes) => {

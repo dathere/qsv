@@ -1021,6 +1021,69 @@ fn cat_rows_same_named_sz_inputs_keep_their_data() {
     assert_eq!(got, expected);
 }
 
+// An input whose final name looks like a decompression scratch file must not be
+// overwritten by the next input's scratch file (#4779).
+#[test]
+fn cat_rows_sz_input_named_like_scratch_file_keeps_its_data() {
+    let wrk = Workdir::new("cat_rows_sz_input_named_like_scratch_file_keeps_its_data");
+    wrk.create_from_string(
+        "qsv_temp_decompressed__data.csv",
+        "src\nfrom_scratch_named\n",
+    );
+    wrk.create_from_string("data.csv", "src\nfrom_data\n");
+    snappy_compress(&wrk, "qsv_temp_decompressed__data.csv");
+    snappy_compress(&wrk, "data.csv");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("qsv_temp_decompressed__data.csv.sz")
+        .arg("data.csv.sz");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["src"],
+        svec!["from_scratch_named"],
+        svec!["from_data"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// stdin is read only when its turn comes: a missing earlier input must fail
+// without waiting for stdin to close.
+#[test]
+fn cat_rows_missing_input_fails_before_reading_stdin() {
+    let wrk = Workdir::new("cat_rows_missing_input_fails_before_reading_stdin");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("missing.csv")
+        .arg("-")
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    // keep stdin open: an eager read would block until it closes
+    let stdin_handle = child.stdin.take().unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("cat blocked on stdin instead of failing on the missing input");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    drop(stdin_handle);
+
+    assert!(!status.success());
+    let output = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("missing.csv"), "stderr: {stderr}");
+}
+
 // Same-named zips extract to the same directory name (#4779).
 #[test]
 fn cat_rows_same_named_zip_inputs_keep_their_data() {

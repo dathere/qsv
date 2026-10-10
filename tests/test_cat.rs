@@ -858,6 +858,78 @@ fn cat_rowskey_no_headers_ragged_later_row_wider() {
     assert_eq!(got, expected);
 }
 
+// A record wider than the ones before it must fail BEFORE it is written: the
+// csv writer checks width only after writing a record's fields, which left a
+// half-written, unterminated record in the output. The error names the file.
+#[test]
+fn cat_rows_width_mismatch_across_files_no_partial_write() {
+    let wrk = Workdir::new("cat_rows_width_mismatch_across_files_no_partial_write");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    wrk.create_from_string("in2.csv", "h1,h2\n7,8,9\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("in1.csv")
+        .arg("in2.csv")
+        .args(["-o", "out.csv"]);
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`in2.csv` line 2: found a record with 3 fields")
+            && stderr.contains("have 2"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "h1,h2\nv1,v2\n");
+}
+
+#[test]
+fn cat_rows_width_mismatch_within_file_names_file() {
+    let wrk = Workdir::new("cat_rows_width_mismatch_within_file_names_file");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    wrk.create_from_string("in2.csv", "h1,h2\nw1,w2\nx1\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("in1.csv").arg("in2.csv");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`in2.csv` line 3: found a record with 1 fields"),
+        "stderr: {stderr}"
+    );
+}
+
+// stdin is materialized to a temp file; the error must not show that path.
+#[test]
+fn cat_rows_width_mismatch_names_stdin() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_rows_width_mismatch_names_stdin");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("in1.csv")
+        .arg("-")
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"h1,h2\n7,8,9\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`<stdin>` line 2: found a record with 3 fields"),
+        "stderr: {stderr}"
+    );
+}
+
 // An empty (0-byte) first input must not cost the output its header: the
 // header comes from the first non-empty input.
 #[test]

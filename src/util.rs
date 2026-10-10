@@ -3395,20 +3395,26 @@ pub fn process_input(
         arg_input
     };
 
-    // Copy stdin to `tmpdir/stdin.csv` before unpacking anything else, so stdin
-    // always owns that path whatever the argument order (`cat` relies on it to
-    // label stdin) and a decompressed `stdin.csv.sz` gets a `dup<n>/` path instead.
+    // Reserve `tmpdir/stdin.csv` before unpacking anything else, so stdin always
+    // owns that path whatever the argument order (`cat` relies on it to label
+    // stdin) and a decompressed `stdin.csv.sz` gets a `dup<n>/` path instead.
+    // stdin itself is still read only when its turn comes.
     let stdin_path = tmpdir.path().join("stdin.csv");
     if work_input.iter().any(|p| p == "-") {
-        let mut tmp_file = std::fs::File::create(&stdin_path)?;
-        std::io::copy(&mut std::io::stdin(), &mut tmp_file)?;
-        tmp_file.flush()?;
+        std::fs::File::create(&stdin_path)?;
     }
+    let mut stdin_copied = false;
 
     // check the input files
     for path in work_input {
         // check if the path is "-" (stdin)
         if &path == "-" {
+            if !stdin_copied {
+                let mut tmp_file = std::fs::File::create(&stdin_path)?;
+                std::io::copy(&mut std::io::stdin(), &mut tmp_file)?;
+                tmp_file.flush()?;
+                stdin_copied = true;
+            }
             processed_input.push(stdin_path.clone());
             continue;
         }

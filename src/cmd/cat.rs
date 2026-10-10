@@ -73,6 +73,14 @@ cat options:
                              which will be used as the first column in the output. This is useful
                              when you want to know which file a row came from. Valid values are
                              'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'.
+                             For a file at /data/2024/jan/sales.csv, 'fullpath' gives
+                             '/data/2024/jan/sales.csv', 'parentdirfname' gives 'jan/sales.csv',
+                             'parentdirfstem' gives 'jan/sales', 'fname' gives 'sales.csv' and
+                             'fstem' gives 'sales'.
+                             'fullpath' and the parentdir kinds use the file's real location
+                             (symlinks and relative paths resolved), so the result does not
+                             depend on how the path was typed. Use a parentdir kind to tell
+                             apart same-named files in different directories.
                              A new column will be added to the beginning of each row using --group-name.
                              If 'none' is specified, no grouping column will be added.
                              [default: none]
@@ -130,8 +138,11 @@ enum GroupKind {
     None,
 }
 
-fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
-    //safety: we know that this is a valid pathbuf
+fn get_parentdir_and_file(path: &Path, stem_only: bool) -> std::io::Result<String> {
+    // Resolve on disk so the parent is the file's real directory however the
+    // path was spelled (`data.csv`, `./data.csv`, `../jan/data.csv`, absolute).
+    let path = path.canonicalize()?;
+    // safety: a canonicalized path to a file always has a file name
     let file_info = if stem_only {
         path.file_stem()
     } else {
@@ -139,9 +150,13 @@ fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
     }
     .unwrap();
 
-    let parent_dir = path.parent().unwrap();
-
-    parent_dir.join(file_info).to_string_lossy().into_owned()
+    // a file at the filesystem root has no parent directory name
+    Ok(match path.parent().and_then(Path::file_name) {
+        Some(parent_name) => Path::new(parent_name).join(file_info),
+        None => PathBuf::from(file_info),
+    }
+    .to_string_lossy()
+    .into_owned())
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -367,10 +382,10 @@ impl Args {
                     grouping_value.push_str(&conf_pathbuf.canonicalize()?.to_string_lossy());
                 },
                 GroupKind::ParentDirFName => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, false);
+                    grouping_value = get_parentdir_and_file(&conf_pathbuf, false)?;
                 },
                 GroupKind::ParentDirFStem => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, true);
+                    grouping_value = get_parentdir_and_file(&conf_pathbuf, true)?;
                 },
                 GroupKind::FName => {
                     grouping_value.clear();

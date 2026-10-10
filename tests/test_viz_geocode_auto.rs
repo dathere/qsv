@@ -25,15 +25,16 @@ fn build_mini_geocode_index(wrk: &Workdir) -> String {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/test/geonames-mini");
     let index_data = geosuggest_core::index::IndexData::new_from_files(
         geosuggest_core::index::SourceFileOptions {
-            cities:           mini.join("cities.txt"),
+            cities:                 mini.join("cities.txt"),
             // localized names, like the published prebuilt (built English-only): without them
             // admin1/country names come back empty and the hint-rejection exemplars degrade to
             // bare ISO codes
-            names:            Some(mini.join("alternateNames.txt")),
-            countries:        Some(mini.join("countryInfo.txt")),
-            admin1_codes:     Some(mini.join("admin1CodesASCII.txt")),
-            admin2_codes:     Some(mini.join("admin2Codes.txt")),
-            filter_languages: vec!["en"],
+            names:                  Some(mini.join("alternateNames.txt")),
+            countries:              Some(mini.join("countryInfo.txt")),
+            admin1_codes:           Some(mini.join("admin1CodesASCII.txt")),
+            admin2_codes:           Some(mini.join("admin2Codes.txt")),
+            filter_languages:       vec!["en"],
+            excluded_feature_codes: geosuggest_core::index::DEFAULT_EXCLUDED_FEATURE_CODES.to_vec(),
         },
     )
     .expect("parse mini Geonames fixture");

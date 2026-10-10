@@ -1224,19 +1224,20 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         info!("geocode_index_file: {geocode_index_file} Languages: {languages_vec:?}");
 
         let indexupdater_settings = IndexUpdaterSettings {
-            http_timeout_ms:  util::timeout_secs(args.flag_timeout)? * 1000,
-            cities:           SourceItem {
+            http_timeout_ms:        util::timeout_secs(args.flag_timeout)? * 1000,
+            cities:                 SourceItem {
                 url:      &args.flag_cities_url,
                 filename: &cities_filename,
             },
-            names:            Some(SourceItem {
+            names:                  Some(SourceItem {
                 url:      DEFAULT_CITIES_NAMES_URL,
                 filename: DEFAULT_CITIES_NAMES_FILENAME,
             }),
-            countries_url:    Some(DEFAULT_COUNTRY_INFO_URL),
-            admin1_codes_url: Some(DEFAULT_ADMIN1_CODES_URL),
-            admin2_codes_url: Some(DEFAULT_ADMIN2_CODES_URL),
-            filter_languages: languages_vec.clone(),
+            countries_url:          Some(DEFAULT_COUNTRY_INFO_URL),
+            admin1_codes_url:       Some(DEFAULT_ADMIN1_CODES_URL),
+            admin2_codes_url:       Some(DEFAULT_ADMIN2_CODES_URL),
+            filter_languages:       languages_vec.clone(),
+            excluded_feature_codes: geosuggest_core::index::DEFAULT_EXCLUDED_FEATURE_CODES.to_vec(),
         };
 
         let updater = IndexUpdater::new(indexupdater_settings.clone())
@@ -4617,12 +4618,14 @@ mod tests {
         let mini = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/test/geonames-mini");
         let index_data = geosuggest_core::index::IndexData::new_from_files(
             geosuggest_core::index::SourceFileOptions {
-                cities:           mini.join("cities.txt"),
-                names:            Some(mini.join("alternateNames.txt")),
-                countries:        Some(mini.join("countryInfo.txt")),
-                admin1_codes:     Some(mini.join("admin1CodesASCII.txt")),
-                admin2_codes:     Some(mini.join("admin2Codes.txt")),
-                filter_languages: vec!["en"],
+                cities:                 mini.join("cities.txt"),
+                names:                  Some(mini.join("alternateNames.txt")),
+                countries:              Some(mini.join("countryInfo.txt")),
+                admin1_codes:           Some(mini.join("admin1CodesASCII.txt")),
+                admin2_codes:           Some(mini.join("admin2Codes.txt")),
+                filter_languages:       vec!["en"],
+                excluded_feature_codes: geosuggest_core::index::DEFAULT_EXCLUDED_FEATURE_CODES
+                    .to_vec(),
             },
         )
         .expect("parse mini Geonames fixture");

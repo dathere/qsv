@@ -13,6 +13,26 @@ fn pad(cmd: &mut process::Command) {
     cmd.arg("--pad");
 }
 
+/// Name of the real directory holding `path`, as `parentdirfname` sees it.
+fn parentdir_name(path: &std::path::Path) -> String {
+    path.canonicalize()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// An expected rowskey output row: the grouping value, then the data fields.
+fn grouped(group: &str, rest: &[&str]) -> Vec<String> {
+    std::iter::once(group)
+        .chain(rest.iter().copied())
+        .map(String::from)
+        .collect()
+}
+
 fn run_cat<X, Y, Z, F>(test_name: &str, which: &str, rows1: X, rows2: Y, modify_cmd: F) -> Z
 where
     X: Csv,
@@ -435,29 +455,22 @@ fn cat_rowskey_grouping_parentdirfname() {
         .arg("testdir/in3.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // on Windows, the directory separator is backslash, which is an escape character in CSV
-    // strings. So we get double backslashes in the output.
-    #[cfg(windows)]
+    // the parent is the file's real directory, so files given as bare names
+    // get the work directory's own name, not an empty parent.
+    let wd = parentdir_name(&wrk.path("in1.csv"));
+    let sep = std::path::MAIN_SEPARATOR;
+    let in1 = format!("{wd}{sep}in1.csv");
+    let in2 = format!("{wd}{sep}in2.tsv");
+    let in3 = format!("testdir{sep}in3.csv");
     let expected = vec![
         svec!["file", "a", "b", "c", "d"],
-        svec!["in1.csv", "1", "2", "3", ""],
-        svec!["in1.csv", "2", "3", "4", ""],
-        svec!["in2.tsv", "1", "2", "3", ""],
-        svec!["in2.tsv", "2", "3", "4", ""],
-        svec!["testdir\\in3.csv", "1", "2", "3", "4"],
-        svec!["testdir\\in3.csv", "2", "3", "4", "5"],
-        svec!["testdir\\in3.csv", "z", "y", "x", "w"],
-    ];
-    #[cfg(not(windows))]
-    let expected = vec![
-        svec!["file", "a", "b", "c", "d"],
-        svec!["in1.csv", "1", "2", "3", ""],
-        svec!["in1.csv", "2", "3", "4", ""],
-        svec!["in2.tsv", "1", "2", "3", ""],
-        svec!["in2.tsv", "2", "3", "4", ""],
-        svec!["testdir/in3.csv", "1", "2", "3", "4"],
-        svec!["testdir/in3.csv", "2", "3", "4", "5"],
-        svec!["testdir/in3.csv", "z", "y", "x", "w"],
+        grouped(&in1, &["1", "2", "3", ""]),
+        grouped(&in1, &["2", "3", "4", ""]),
+        grouped(&in2, &["1", "2", "3", ""]),
+        grouped(&in2, &["2", "3", "4", ""]),
+        grouped(&in3, &["1", "2", "3", "4"]),
+        grouped(&in3, &["2", "3", "4", "5"]),
+        grouped(&in3, &["z", "y", "x", "w"]),
     ];
     assert_eq!(got, expected);
 }
@@ -504,29 +517,46 @@ fn cat_rowskey_grouping_parentdirfstem() {
         .arg("testdir/in3.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    // on Windows, the directory separator is backslash, which is an escape character in CSV
-    // strings. So we get double backslashes in the output.
-    #[cfg(windows)]
+    let wd = parentdir_name(&wrk.path("in1.csv"));
+    let sep = std::path::MAIN_SEPARATOR;
+    let in1 = format!("{wd}{sep}in1");
+    let in2 = format!("{wd}{sep}in2");
+    let in3 = format!("testdir{sep}in3");
     let expected = vec![
         svec!["file", "a", "b", "c", "d"],
-        svec!["in1", "1", "2", "3", ""],
-        svec!["in1", "2", "3", "4", ""],
-        svec!["in2", "1", "2", "3", ""],
-        svec!["in2", "2", "3", "4", ""],
-        svec!["testdir\\in3", "1", "2", "3", "4"],
-        svec!["testdir\\in3", "2", "3", "4", "5"],
-        svec!["testdir\\in3", "z", "y", "x", "w"],
+        grouped(&in1, &["1", "2", "3", ""]),
+        grouped(&in1, &["2", "3", "4", ""]),
+        grouped(&in2, &["1", "2", "3", ""]),
+        grouped(&in2, &["2", "3", "4", ""]),
+        grouped(&in3, &["1", "2", "3", "4"]),
+        grouped(&in3, &["2", "3", "4", "5"]),
+        grouped(&in3, &["z", "y", "x", "w"]),
     ];
-    #[cfg(not(windows))]
+    assert_eq!(got, expected);
+}
+
+// #1506: same-named files in sibling directories are told apart by their
+// immediate parent, however deep or however the path is spelled.
+#[test]
+fn cat_rowskey_grouping_parentdirfname_immediate_parent() {
+    let wrk = Workdir::new("cat_rowskey_grouping_parentdirfname_immediate_parent");
+    let sep = std::path::MAIN_SEPARATOR;
+    wrk.create_subdir(&format!("2024{sep}jan")).unwrap();
+    wrk.create_subdir(&format!("2024{sep}feb")).unwrap();
+    wrk.create_from_string(&format!("2024{sep}jan{sep}data.csv"), "a\n1\n");
+    wrk.create_from_string(&format!("2024{sep}feb{sep}data.csv"), "a\n2\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .args(["--group", "parentdirfname"])
+        .arg(format!("2024{sep}jan{sep}data.csv"))
+        .arg(format!(".{sep}2024{sep}jan{sep}..{sep}feb{sep}data.csv"));
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
-        svec!["file", "a", "b", "c", "d"],
-        svec!["in1", "1", "2", "3", ""],
-        svec!["in1", "2", "3", "4", ""],
-        svec!["in2", "1", "2", "3", ""],
-        svec!["in2", "2", "3", "4", ""],
-        svec!["testdir/in3", "1", "2", "3", "4"],
-        svec!["testdir/in3", "2", "3", "4", "5"],
-        svec!["testdir/in3", "z", "y", "x", "w"],
+        svec!["file", "a"],
+        grouped(&format!("jan{sep}data.csv"), &["1"]),
+        grouped(&format!("feb{sep}data.csv"), &["2"]),
     ];
     assert_eq!(got, expected);
 }
@@ -802,6 +832,49 @@ fn cat_rowskey_no_headers_narrowerfirst() {
         svec!["a", "b", "c", "d", "e"],
         svec!["1", "2", "3", "4", "5"],
     ];
+    assert_eq!(got, expected);
+}
+
+// A row wider than its file's first row must not lose its extra fields:
+// rowskey reads flexibly, so the synthetic width must be the file's widest row.
+#[test]
+fn cat_rowskey_no_headers_ragged_later_row_wider() {
+    let wrk = Workdir::new("cat_rowskey_no_headers_ragged_later_row_wider");
+    wrk.create_from_string("in1.csv", "x,y\n1,2,3,4\n");
+    wrk.create_from_string("in2.csv", "p,q,r\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--no-headers")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["x", "y", "", ""],
+        svec!["1", "2", "3", "4"],
+        svec!["p", "q", "r", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+// An empty (0-byte) first input must not cost the output its header: the
+// header comes from the first non-empty input.
+#[test]
+fn cat_rows_empty_first_file_keeps_header() {
+    let wrk = Workdir::new("cat_rows_empty_first_file_keeps_header");
+    wrk.create_from_string("empty.csv", "");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    wrk.create_from_string("in2.csv", "h1,h2\nw1,w2\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("empty.csv")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["h1", "h2"], svec!["v1", "v2"], svec!["w1", "w2"]];
     assert_eq!(got, expected);
 }
 

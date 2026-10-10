@@ -73,6 +73,14 @@ cat options:
                              which will be used as the first column in the output. This is useful
                              when you want to know which file a row came from. Valid values are
                              'fullpath', 'parentdirfname', 'parentdirfstem', 'fname', 'fstem' and 'none'.
+                             For a file at /data/2024/jan/sales.csv, 'fullpath' gives
+                             '/data/2024/jan/sales.csv', 'parentdirfname' gives 'jan/sales.csv',
+                             'parentdirfstem' gives 'jan/sales', 'fname' gives 'sales.csv' and
+                             'fstem' gives 'sales'.
+                             'fullpath' and the parentdir kinds use the file's real location
+                             (symlinks and relative paths resolved), so the result does not
+                             depend on how the path was typed. Use a parentdir kind to tell
+                             apart same-named files in different directories.
                              A new column will be added to the beginning of each row using --group-name.
                              If 'none' is specified, no grouping column will be added.
                              [default: none]
@@ -130,8 +138,11 @@ enum GroupKind {
     None,
 }
 
-fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
-    //safety: we know that this is a valid pathbuf
+fn get_parentdir_and_file(path: &Path, stem_only: bool) -> std::io::Result<String> {
+    // Resolve on disk so the parent is the file's real directory however the
+    // path was spelled (`data.csv`, `./data.csv`, `../jan/data.csv`, absolute).
+    let path = path.canonicalize()?;
+    // safety: a canonicalized path to a file always has a file name
     let file_info = if stem_only {
         path.file_stem()
     } else {
@@ -139,9 +150,13 @@ fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
     }
     .unwrap();
 
-    let parent_dir = path.parent().unwrap();
-
-    parent_dir.join(file_info).to_string_lossy().into_owned()
+    // a file at the filesystem root has no parent directory name
+    Ok(match path.parent().and_then(Path::file_name) {
+        Some(parent_name) => Path::new(parent_name).join(file_info),
+        None => PathBuf::from(file_info),
+    }
+    .to_string_lossy()
+    .into_owned())
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -184,14 +199,19 @@ impl Args {
 
         let mut configs = self.configs()?.into_iter();
 
-        // the first file is special, as it has the headers
-        // if --no-headers is set, we just write the first file
-        if let Some(conf) = configs.next() {
+        // The first non-empty file supplies the headers. An empty (0-byte) file
+        // has no header, so taking it as the source would write none, and the
+        // next file's reader would then skip its header row as a duplicate.
+        for conf in configs.by_ref() {
             rdr = conf.reader()?;
+            if rdr.byte_headers()?.is_empty() {
+                continue;
+            }
             conf.write_headers(&mut rdr, &mut wtr)?;
             while rdr.read_byte_record(&mut row)? {
                 wtr.write_byte_record(&row)?;
             }
+            break;
         }
 
         // the rest of the files are just written
@@ -233,8 +253,7 @@ impl Args {
         }
 
         // synthetic headers per file when --no-headers is set; we keep a Vec
-        // so the second pass can re-use the exact widths discovered in the
-        // first pass (re-scanning the file is O(rows) and we already scanned).
+        // so the second pass can re-use the widths found by the first pass's scan.
         let configs = self.configs()?;
         let mut synthetic_headers: Vec<csv::ByteRecord> = if self.flag_no_headers {
             Vec::with_capacity(configs.len())
@@ -252,11 +271,16 @@ impl Args {
             let mut rdr = conf.reader()?;
 
             if self.flag_no_headers {
-                // synthesize "_c_1", "_c_2", ... from the width of this file's first row.
-                let mut first = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut first)?;
-                let mut th = csv::ByteRecord::with_capacity(64, first.len());
-                for n in 0..first.len() {
+                // synthesize "_c_1", "_c_2", ... from the width of this file's WIDEST row.
+                // rowskey reads flexibly, so a later row can be wider than the first;
+                // sizing from the first row alone silently dropped the extra fields.
+                let mut rec = csv::ByteRecord::new();
+                let mut width = 0;
+                while rdr.read_byte_record(&mut rec)? {
+                    width = width.max(rec.len());
+                }
+                let mut th = csv::ByteRecord::with_capacity(64, width);
+                for n in 0..width {
                     th.push_field(format!("_c_{}", n + 1).as_bytes());
                 }
                 for field in &th {
@@ -358,10 +382,10 @@ impl Args {
                     grouping_value.push_str(&conf_pathbuf.canonicalize()?.to_string_lossy());
                 },
                 GroupKind::ParentDirFName => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, false);
+                    grouping_value = get_parentdir_and_file(&conf_pathbuf, false)?;
                 },
                 GroupKind::ParentDirFStem => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, true);
+                    grouping_value = get_parentdir_and_file(&conf_pathbuf, true)?;
                 },
                 GroupKind::FName => {
                     grouping_value.clear();

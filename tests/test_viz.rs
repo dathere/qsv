@@ -5357,7 +5357,7 @@ fn viz_smart_correlation_keeps_near_unique_float_measures() {
     let wrk = Workdir::new("viz_smart_correlation_keeps_near_unique_float_measures");
     let mut rows = String::from("price,qty\n");
     for i in 0..60_u32 {
-        let price = 1.0 + f64::from(i) * 1.618_034 + f64::from(i % 7) * 0.013;
+        let price = 1.0 + f64::from(i) * std::f64::consts::GOLDEN_RATIO + f64::from(i % 7) * 0.013;
         let qty = 200.0 - 1.5 * price + f64::from(i % 5) * 0.271;
         rows.push_str(&format!("{price:.6},{qty:.6}\n"));
     }

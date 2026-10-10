@@ -161,10 +161,10 @@ fn get_parentdir_and_file(path: &Path, stem_only: bool) -> std::io::Result<Strin
 
 /// Name an input for an error message: stdin and inputs that `process_input`
 /// decompressed or extracted live in `tmpdir`, whose path means nothing to the user.
-fn input_display_name(path: Option<&Path>, tmpdir: &Path) -> String {
+fn input_display_name(path: Option<&Path>, tmpdir: &Path, stdin_given: bool) -> String {
     match path {
         None => "<stdin>".to_string(),
-        Some(p) if p == tmpdir.join("stdin.csv") => "<stdin>".to_string(),
+        Some(p) if stdin_given && p == tmpdir.join("stdin.csv") => "<stdin>".to_string(),
         Some(p) if p.starts_with(tmpdir) => p.file_name().map_or_else(
             || p.display().to_string(),
             |f| f.to_string_lossy().into_owned(),
@@ -177,9 +177,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
+    let stdin_given = args.arg_input.iter().any(|p| p.as_os_str() == "-");
     args.arg_input = util::process_input(args.arg_input, &tmpdir, "")?;
     if args.cmd_rows {
-        args.cat_rows(tmpdir.path())
+        args.cat_rows(tmpdir.path(), stdin_given)
     } else if args.cmd_rowskey {
         args.cat_rowskey()
     } else if args.cmd_columns {
@@ -205,8 +206,10 @@ impl Args {
     }
 
     /// `tmpdir` is where `process_input` materialized stdin (and decompressed
-    /// inputs), used only to name those inputs readably in errors.
-    fn cat_rows(&self, tmpdir: &Path) -> CliResult<()> {
+    /// inputs), used only to name those inputs readably in errors. `stdin_given`
+    /// says whether stdin was among the inputs, so a decompressed `stdin.csv.sz`
+    /// is not mistaken for it.
+    fn cat_rows(&self, tmpdir: &Path, stdin_given: bool) -> CliResult<()> {
         let mut row = csv::ByteRecord::new();
         let mut wtr = Config::new(self.flag_output.as_ref())
             .flexible(self.flag_flexible)
@@ -222,6 +225,14 @@ impl Args {
 
         for conf in configs {
             let mut rdr = conf.reader()?;
+            // A file's records must match its own header too, as a strict reader
+            // would require, not just the output width: a later file whose
+            // header is skipped must not pass with records that contradict it.
+            let file_width = if self.flag_no_headers {
+                None
+            } else {
+                Some(rdr.byte_headers()?.len())
+            };
             if !have_headers {
                 // The first non-empty file supplies the headers. An empty (0-byte)
                 // file has none, so taking it as the source would write none, and
@@ -238,19 +249,24 @@ impl Args {
             }
             while rdr.read_byte_record(&mut row)? {
                 if !self.flag_flexible {
-                    match width {
-                        None => width = Some(row.len()),
-                        Some(w) if w != row.len() => {
-                            return fail_clierror!(
-                                "`{}` line {}: found a record with {} fields, but the records \
-                                 before it have {w}. Use --flexible to allow records of different \
-                                 lengths, or fix the input with 'fixlengths' or 'select'.",
-                                input_display_name(conf.path.as_deref(), tmpdir),
-                                row.position().map_or(0, csv::Position::line),
-                                row.len(),
-                            );
+                    let expected = match (file_width, width) {
+                        (Some(fw), _) if fw != row.len() => Some((fw, "its header has")),
+                        (_, Some(w)) if w != row.len() => Some((w, "the records before it have")),
+                        (_, None) => {
+                            width = Some(row.len());
+                            None
                         },
-                        Some(_) => {},
+                        _ => None,
+                    };
+                    if let Some((n, what)) = expected {
+                        return fail_clierror!(
+                            "`{}` line {}: found a record with {} fields, but {what} {n}. Use \
+                             --flexible to allow records of different lengths, or fix the input \
+                             with 'fixlengths' or 'select'.",
+                            input_display_name(conf.path.as_deref(), tmpdir, stdin_given),
+                            row.position().map_or(0, csv::Position::line),
+                            row.len(),
+                        );
                     }
                 }
                 wtr.write_byte_record(&row)?;

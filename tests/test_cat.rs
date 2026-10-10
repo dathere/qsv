@@ -865,7 +865,8 @@ fn cat_rowskey_no_headers_ragged_later_row_wider() {
 fn cat_rows_width_mismatch_across_files_no_partial_write() {
     let wrk = Workdir::new("cat_rows_width_mismatch_across_files_no_partial_write");
     wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
-    wrk.create_from_string("in2.csv", "h1,h2\n7,8,9\n");
+    // in2.csv is consistent with its own header, but wider than the output
+    wrk.create_from_string("in2.csv", "h1,h2,h3\n7,8,9\n");
 
     let mut cmd = wrk.command("cat");
     cmd.arg("rows")
@@ -894,6 +895,48 @@ fn cat_rows_width_mismatch_within_file_names_file() {
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("`in2.csv` line 3: found a record with 1 fields"),
+        "stderr: {stderr}"
+    );
+}
+
+// A later file's header is skipped, but its records must still match it: a
+// record that fits the output width yet contradicts its own file's header is
+// malformed input, as a strict reader would report.
+#[test]
+fn cat_rows_record_must_match_its_own_header() {
+    let wrk = Workdir::new("cat_rows_record_must_match_its_own_header");
+    wrk.create_from_string("in1.csv", "x,y\n1,2\n");
+    wrk.create_from_string("in2.csv", "a,b,c\n1,2\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("in1.csv").arg("in2.csv");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`in2.csv` line 2: found a record with 2 fields, but its header has 3"),
+        "stderr: {stderr}"
+    );
+}
+
+// A decompressed `stdin.csv.sz` lands in the temp dir as `stdin.csv`, the same
+// name piped stdin gets; without piped input it must be named as itself.
+#[test]
+fn cat_rows_width_mismatch_compressed_stdin_named_file_is_not_stdin() {
+    let wrk = Workdir::new("cat_rows_width_mismatch_compressed_stdin_named_file_is_not_stdin");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    wrk.create_from_string("stdin.csv", "h1,h2\n7,8,9\n");
+    let mut snappy = wrk.command("snappy");
+    snappy
+        .args(["compress", "stdin.csv"])
+        .args(["-o", "stdin.csv.sz"]);
+    wrk.assert_success(&mut snappy);
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("in1.csv").arg("stdin.csv.sz");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`stdin.csv` line 2: found a record with 3 fields"),
         "stderr: {stderr}"
     );
 }

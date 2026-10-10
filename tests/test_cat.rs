@@ -1188,10 +1188,11 @@ fn cat_rowskey_parentdirfname_sz_inputs_use_their_directory() {
         .args(["jan/data.csv.sz", "feb/data.csv.sz"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let sep = std::path::MAIN_SEPARATOR;
     let expected = vec![
         svec!["file", "src"],
-        svec!["jan/data.csv", "j"],
-        svec!["feb/data.csv", "f"],
+        vec![format!("jan{sep}data.csv"), "j".to_string()],
+        vec![format!("feb{sep}data.csv"), "f".to_string()],
     ];
     assert_eq!(got, expected);
 }
@@ -1233,11 +1234,12 @@ fn cat_rowskey_zip_entries_grouped_as_archive_directory() {
         zw.finish().unwrap();
     }
     let feb = wrk.path("feb").canonicalize().unwrap();
+    let sep = std::path::MAIN_SEPARATOR;
 
     for (group, expected) in [
         (
             "parentdirfname",
-            ["mar/data.csv".to_string(), "sub/x.csv".to_string()],
+            [format!("mar{sep}data.csv"), format!("sub{sep}x.csv")],
         ),
         (
             "fullpath",

@@ -232,6 +232,11 @@ Validate options:
                                non-UTF-8 data still abort validation. Works in both RFC 4180 and
                                JSON Schema validation modes. The split files are written next to
                                each input file, so this is intended for on-disk file input(s).
+                               A compressed input keeps its full name (data.csv.sz.valid). In RFC
+                               4180 mode, which checks every entry in a zip archive, an entry is
+                               named for both (data.zip.data.csv.valid).
+                               Piped stdin's are 'stdin.csv.*' in the current directory. Inputs that
+                               would write the same split files are refused before any is written.
     --json                     When validating without a JSON Schema, return the RFC 4180 check
                                as a JSON file instead of a message.
     --pretty-json              Same as --json, but pretty printed.
@@ -315,11 +320,12 @@ Common options:
 "#;
 
 use std::{
+    collections::HashMap,
     env,
     fmt::Write as _,
     fs::File,
     io::{BufReader, BufWriter, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     str,
     sync::{
         OnceLock,
@@ -356,7 +362,7 @@ use crate::lookup::{LookupTableOptions, load_lookup_table};
 use crate::{
     CliError, CliResult,
     config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
-    util,
+    util::{self, InputSource},
 };
 
 // to save on repeated init/allocs
@@ -2170,7 +2176,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
     use tempfile::tempdir;
 
     let tmpdir = tempdir()?;
-    let processed_inputs = util::process_input(args.arg_input.clone(), &tmpdir, "")?;
+    let processed_inputs = util::process_input_with_sources(args.arg_input.clone(), &tmpdir, "")?;
     let input_count = processed_inputs.len();
 
     let flag_json = args.flag_json || args.flag_pretty_json;
@@ -2187,16 +2193,24 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
         .clone()
         .unwrap_or_else(|| "invalid".to_string());
 
+    // computed for every input before any is validated, so a clash writes nothing
+    let output_bases = if split_ragged {
+        split_output_bases(&processed_inputs)?
+    } else {
+        vec![String::new(); input_count]
+    };
+
     let mut all_valid = true;
     let mut total_files = 0;
     let mut valid_files = 0;
     let mut total_split_count: u64 = 0;
 
-    for input_path in processed_inputs {
+    for ((input_path, source), output_base) in processed_inputs.into_iter().zip(output_bases) {
         total_files += 1;
+        let input_name = source.display_name();
 
         if !args.flag_quiet && input_count > 1 {
-            woutinfo!("Validating: {}", input_path.display());
+            woutinfo!("Validating: {input_name}");
         }
 
         let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
@@ -2223,9 +2237,9 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                     let file_error = json!({
                         "errors": [{
                             "title": "File validation error",
-                            "detail": format!("Cannot read file {}: {}", input_path.display(), e),
+                            "detail": format!("Cannot read file {input_name}: {e}"),
                             "meta": {
-                                "file": input_path.to_string_lossy()
+                                "file": input_name
                             }
                         }]
                     });
@@ -2237,29 +2251,8 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                     };
                     return fail_clierror!("{json_error}");
                 }
-                return fail_clierror!("Cannot read file {}: {}", input_path.display(), e);
+                return fail_clierror!("Cannot read file {input_name}: {e}");
             },
-        };
-
-        // `output_base` is only used (and its parent dirs only created) in --split-ragged mode;
-        // computing it unconditionally would create stray directories on the normal validate path.
-        // stdin ("-"), snappy-decompressed, and zip-extracted inputs are materialized inside
-        // `tmpdir`, which is removed on exit — writing split files next to them would silently
-        // lose them. For those, write the split files under the input's tmpdir-*relative* subpath
-        // in the current directory (creating parent dirs as needed). Preserving the subpath keeps
-        // stdin on `stdin.csv.*` while avoiding collisions between distinct entries that share a
-        // base name (e.g. a zip's `a/data.csv` and `b/data.csv`).
-        let output_base = if !split_ragged {
-            String::new()
-        } else if let Ok(rel) = input_path.strip_prefix(tmpdir.path()) {
-            if let Some(parent) = rel.parent()
-                && !parent.as_os_str().is_empty()
-            {
-                std::fs::create_dir_all(parent)?;
-            }
-            rel.to_string_lossy().to_string()
-        } else {
-            input_path.to_string_lossy().to_string()
         };
 
         // Validate the file
@@ -2284,13 +2277,13 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                 all_valid = false;
                 total_split_count += n;
                 if !args.flag_quiet && input_count > 1 {
-                    woutinfo!("⚠ {}: {n} ragged row(s) quarantined", input_path.display());
+                    woutinfo!("⚠ {input_name}: {n} ragged row(s) quarantined");
                 }
             },
             Err(e) => {
                 all_valid = false;
                 if !args.flag_quiet && input_count > 1 {
-                    woutinfo!("❌ {}: {}", input_path.display(), e);
+                    woutinfo!("❌ {input_name}: {e}");
                 }
                 // For single files, return the error directly to maintain backward compatibility
                 if input_count == 1 {
@@ -2332,6 +2325,46 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
         // For single files, just return the error without the summary message
         Err(CliError::Other("Validation failed".to_string()))
     }
+}
+
+/// Where each input's `--split-ragged` files go: next to the input, named for it
+/// as given (a `.sz` file keeps its `.sz`, as in JSON Schema mode), never in the
+/// temp dir `process_input` unpacked it into, which is removed on exit. A zip
+/// entry's are named `<archive>.<entry file name>`; stdin's are `stdin.csv.*` in
+/// the current directory. Errors if two inputs would write the same files.
+fn split_output_bases(inputs: &[(PathBuf, InputSource)]) -> CliResult<Vec<String>> {
+    let mut bases = Vec::with_capacity(inputs.len());
+    // keyed by the real directory, so `data.csv` and `./data.csv` clash
+    let mut seen: HashMap<PathBuf, String> = HashMap::with_capacity(inputs.len());
+    for (_, source) in inputs {
+        let base = match source {
+            InputSource::Stdin => PathBuf::from("stdin.csv"),
+            InputSource::File(p) | InputSource::Snappy(p) => p.clone(),
+            InputSource::ZipEntry { archive, entry } => {
+                let mut base = archive.clone().into_os_string();
+                base.push(".");
+                base.push(entry.file_name().unwrap_or_default());
+                PathBuf::from(base)
+            },
+        };
+        let dir = match base.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d,
+            _ => Path::new("."),
+        };
+        let key = dir
+            .canonicalize()?
+            .join(base.file_name().unwrap_or_default());
+        let name = source.display_name();
+        if let Some(other) = seen.insert(key, name.clone()) {
+            return fail_incorrectusage_clierror!(
+                "--split-ragged: `{other}` and `{name}` would both write their split files to \
+                 `{}.*`. Validate them in separate runs.",
+                base.display()
+            );
+        }
+        bases.push(base.to_string_lossy().into_owned());
+    }
+    Ok(bases)
 }
 
 /// Validate a single file in RFC 4180 mode

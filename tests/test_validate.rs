@@ -466,8 +466,9 @@ fn validate_split_ragged_explicit_stdin() {
 
 #[test]
 fn validate_split_ragged_snappy_input() {
-    // a snappy-compressed input is materialized under a tempdir; its split output must land in
-    // the cwd under the input's (relative) name, not be lost in the tempdir (roborev #3706)
+    // a snappy-compressed input is unpacked into a tempdir; its split output must land next to
+    // the input, named for it as given (keeping `.sz`), not be lost in the tempdir
+    // (roborev #3706, #4783)
     let wrk = Workdir::new("validate_split_ragged_snappy_input").flexible(true);
     wrk.create(
         "data.csv",
@@ -486,14 +487,26 @@ fn validate_split_ragged_snappy_input() {
     cmd.arg("--split-ragged").arg("data.csv.sz");
     wrk.assert_err(&mut cmd);
 
-    let valid: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    // the split files are plain CSV, though `.sz` is in their name
+    let valid: Vec<Vec<String>> = wrk.read_csv("data.csv.sz.valid");
     assert_eq!(valid, vec![svec!["1", "2"]]);
-    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    let invalid = wrk.read_to_string("data.csv.sz.invalid").unwrap();
     assert_eq!(invalid, "x,y\n3\n");
+    assert!(!wrk.path("data.csv.invalid").exists());
 }
 
-// A `.sz` file that isn't snappy is read as plain text; with no name clash its
-// split output keeps the plain name, not a `dup<n>/` one (#4779).
+/// Write `path` (ending in `.sz`, relative to `wrk`) holding `data`, snappy-compressed.
+fn create_snappy(wrk: &Workdir, path: &str, data: &str) {
+    let plain = path.strip_suffix(".sz").unwrap();
+    wrk.create_from_string(plain, data);
+    let mut compress = wrk.command("snappy");
+    compress.arg("compress").arg(plain).args(["--output", path]);
+    wrk.assert_success(&mut compress);
+    std::fs::remove_file(wrk.path(plain)).unwrap();
+}
+
+// A `.sz` file that isn't snappy is read as plain text; its split files are
+// named for it the same way (#4783).
 #[test]
 fn validate_split_ragged_plain_sz_input() {
     let wrk = Workdir::new("validate_split_ragged_plain_sz_input").flexible(true);
@@ -503,25 +516,18 @@ fn validate_split_ragged_plain_sz_input() {
     cmd.arg("--split-ragged").arg("data.csv.sz");
     wrk.assert_err(&mut cmd);
 
-    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    let invalid = wrk.read_to_string("data.csv.sz.invalid").unwrap();
     assert_eq!(invalid, "x,y\n3\n");
-    assert!(!wrk.path("dup1").exists());
 }
 
-// Same-named .sz inputs each get their own split files: the second one's go
-// under `dup1/` (#4779).
+// Same-named .sz inputs in different directories each write next to their own
+// input, not into the current directory (#4783).
 #[test]
 fn validate_split_ragged_same_named_sz_inputs() {
     let wrk = Workdir::new("validate_split_ragged_same_named_sz_inputs").flexible(true);
     for (dir, data) in [("a", "x,y\n1,2\n3\n"), ("b", "x,y\n5,6\n7,8,9\n")] {
         wrk.create_subdir(dir).unwrap();
-        wrk.create_from_string(&format!("{dir}/data.csv"), data);
-        let mut compress = wrk.command("snappy");
-        compress
-            .arg("compress")
-            .arg(format!("{dir}/data.csv"))
-            .args(["--output", &format!("{dir}/data.csv.sz")]);
-        wrk.assert_success(&mut compress);
+        create_snappy(&wrk, &format!("{dir}/data.csv.sz"), data);
     }
 
     let mut cmd = wrk.command("validate");
@@ -530,10 +536,127 @@ fn validate_split_ragged_same_named_sz_inputs() {
         .arg("b/data.csv.sz");
     wrk.assert_err(&mut cmd);
 
-    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    let invalid = wrk.read_to_string("a/data.csv.sz.invalid").unwrap();
     assert_eq!(invalid, "x,y\n3\n");
-    let invalid = wrk.read_to_string("dup1/data.csv.invalid").unwrap();
+    let invalid = wrk.read_to_string("b/data.csv.sz.invalid").unwrap();
     assert_eq!(invalid, "x,y\n7,8,9\n");
+    assert!(!wrk.path("data.csv.sz.invalid").exists());
+    assert!(!wrk.path("data.csv.invalid").exists());
+    assert!(!wrk.path("dup1").exists());
+}
+
+// A plain file and a `.sz` file of the same name used to write the same split
+// files, the second silently replacing the first's (#4783).
+#[test]
+fn validate_split_ragged_plain_and_sz_same_name_keep_their_data() {
+    let wrk =
+        Workdir::new("validate_split_ragged_plain_and_sz_same_name_keep_their_data").flexible(true);
+    wrk.create_from_string("data.csv", "x,y\n1,2\n3\n");
+    create_snappy(&wrk, "other.csv.sz", "x,y\n5,6\n7,8,9\n");
+    std::fs::rename(wrk.path("other.csv.sz"), wrk.path("data.csv.sz")).unwrap();
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv").arg("data.csv.sz");
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+
+    assert_eq!(wrk.read_to_string("data.csv.invalid").unwrap(), "x,y\n3\n");
+    assert_eq!(
+        wrk.read_to_string("data.csv.sz.invalid").unwrap(),
+        "x,y\n7,8,9\n"
+    );
+    // progress messages name the input as given, not its temp file
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Validating: data.csv.sz\n"),
+        "stdout: {stdout}"
+    );
+}
+
+// Each zip entry writes next to the archive, as `<archive>.<entry file name>.*` (#4783).
+#[test]
+fn validate_split_ragged_zip_entries_write_next_to_archive() {
+    use std::io::Write;
+
+    let wrk =
+        Workdir::new("validate_split_ragged_zip_entries_write_next_to_archive").flexible(true);
+    wrk.create_subdir("mar").unwrap();
+    let zf = std::fs::File::create(wrk.path("mar/data.zip")).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    for (entry, data) in [
+        ("data.csv", "x,y\n1,2\n3\n"),
+        ("sub/x.csv", "x,y\n9,9\n8\n"),
+    ] {
+        zw.start_file(entry, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zw.write_all(data.as_bytes()).unwrap();
+    }
+    zw.finish().unwrap();
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("mar/data.zip");
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(
+        wrk.read_to_string("mar/data.zip.data.csv.invalid").unwrap(),
+        "x,y\n3\n"
+    );
+    assert_eq!(
+        wrk.read_to_string("mar/data.zip.x.csv.invalid").unwrap(),
+        "x,y\n8\n"
+    );
+    // nothing in the current directory
+    assert!(!wrk.path("data").exists());
+    assert!(!wrk.path("data.csv.invalid").exists());
+}
+
+// Two inputs that would write the same split files are refused before anything
+// is written (#4783).
+#[test]
+fn validate_split_ragged_refuses_inputs_with_the_same_split_files() {
+    let wrk = Workdir::new("validate_split_ragged_refuses_inputs_with_the_same_split_files")
+        .flexible(true);
+    wrk.create_from_string("data.csv", "x,y\n1,2\n3\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv").arg("./data.csv");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`data.csv` and `./data.csv` would both write their split files"),
+        "stderr: {stderr}"
+    );
+    assert!(!wrk.path("data.csv.invalid").exists());
+    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+}
+
+// Piped stdin's split files are `stdin.csv.*` in the current directory, the same
+// as an input named `stdin.csv` there (#4783).
+#[test]
+fn validate_split_ragged_refuses_stdin_and_stdin_csv() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("validate_split_ragged_refuses_stdin_and_stdin_csv").flexible(true);
+    wrk.create_from_string("stdin.csv", "x,y\n1,2\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .arg("-")
+        .arg("stdin.csv")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(b"x,y\n1\n").unwrap();
+    let output = child.wait_with_output().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`<stdin>` and `stdin.csv` would both write their split files"),
+        "stderr: {stderr}"
+    );
+    assert!(!wrk.path("stdin.csv.invalid").exists());
 }
 
 #[test]

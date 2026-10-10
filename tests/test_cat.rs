@@ -1197,14 +1197,15 @@ fn cat_rowskey_parentdirfname_sz_inputs_use_their_directory() {
 }
 
 #[test]
-fn cat_rowskey_fullpath_sz_input_uses_its_directory() {
-    let wrk = monthly_sz_workdir("cat_rowskey_fullpath_sz_input_uses_its_directory");
+fn cat_rowskey_fullpath_sz_input_names_the_real_file() {
+    let wrk = monthly_sz_workdir("cat_rowskey_fullpath_sz_input_names_the_real_file");
 
     let mut cmd = wrk.command("cat");
     cmd.args(["rowskey", "--group", "fullpath", "jan/data.csv.sz"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected_path = wrk.path("jan").canonicalize().unwrap().join("data.csv");
+    // the real file, not the `jan/data.csv` it decompresses to, which may be another file
+    let expected_path = wrk.path("jan/data.csv.sz").canonicalize().unwrap();
     let expected = vec![
         svec!["file", "src"],
         vec![
@@ -1215,8 +1216,8 @@ fn cat_rowskey_fullpath_sz_input_uses_its_directory() {
     assert_eq!(got, expected);
 }
 
-// A zip archive is grouped as a directory named for the archive holding its
-// entries: the parentdir kinds keep the labels they had (#4781).
+// A zip entry's parentdir kinds name it as if the archive were a directory
+// named for it (the labels they had); `fullpath` names the archive (#4781).
 #[test]
 fn cat_rowskey_zip_entries_grouped_as_archive_directory() {
     use std::io::Write;
@@ -1241,11 +1242,11 @@ fn cat_rowskey_zip_entries_grouped_as_archive_directory() {
         (
             "fullpath",
             [
-                feb.join("mar")
+                feb.join("mar.zip")
                     .join("data.csv")
                     .to_string_lossy()
                     .into_owned(),
-                feb.join("nested")
+                feb.join("nested.zip")
                     .join("sub")
                     .join("x.csv")
                     .to_string_lossy()

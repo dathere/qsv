@@ -3397,6 +3397,19 @@ impl InputSource {
         })
     }
 
+    /// Where the input really is: the file itself (a `.sz` file keeps its `.sz`),
+    /// or for a zip entry the archive joined with the entry, which names one
+    /// source unambiguously where `resolved_path` may not (`jan/data.csv.sz`
+    /// resolves to the same path as `jan/data.csv`). Symlinks and relative paths
+    /// resolved; `None` for stdin.
+    pub fn source_path(&self) -> std::io::Result<Option<PathBuf>> {
+        Ok(match self {
+            Self::Stdin => None,
+            Self::File(p) | Self::Snappy(p) => Some(p.canonicalize()?),
+            Self::ZipEntry { archive, entry } => Some(archive.canonicalize()?.join(entry)),
+        })
+    }
+
     /// How to name the input to the user: as given, a zip entry as `archive/entry`.
     pub fn display_name(&self) -> String {
         match self {

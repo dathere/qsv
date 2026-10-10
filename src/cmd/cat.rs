@@ -81,10 +81,11 @@ cat options:
                              (symlinks and relative paths resolved), so the result does not
                              depend on how the path was typed. Use a parentdir kind to tell
                              apart same-named files in different directories.
-                             A compressed input is named as if unpacked in place: jan/sales.csv.sz
-                             as jan/sales.csv, and an entry sales.csv in jan/2024.zip as
-                             jan/2024/sales.csv. Piped stdin is named 'stdin.csv'
-                             ('<stdin>' for 'fullpath').
+                             For a compressed input, 'fullpath' names the real file
+                             (/data/jan/sales.csv.sz, or /data/jan/2024.zip/sales.csv for an entry
+                             sales.csv in a zip archive). The other kinds treat it as if unpacked
+                             in place, so 'parentdirfname' gives jan/sales.csv and 2024/sales.csv.
+                             Piped stdin is named 'stdin.csv' ('<stdin>' for 'fullpath').
                              A new column will be added to the beginning of each row using --group-name.
                              If 'none' is specified, no grouping column will be added.
                              [default: none]
@@ -163,8 +164,9 @@ fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
     .into_owned()
 }
 
-/// The `--group` value for an input. Stdin and unpacked inputs are named as if
-/// unpacked in place (see `InputSource::logical_path`), not by their temp file.
+/// The `--group` value for an input, never its temp file. `fullpath` names the
+/// real source (`InputSource::source_path`); the other kinds name an unpacked
+/// input as if unpacked in place (`InputSource::logical_path`).
 fn group_value(group_kind: &GroupKind, source: &InputSource) -> std::io::Result<String> {
     // stdin has no location: its parentdir kinds give a bare `stdin.csv`, as for
     // a file at the filesystem root
@@ -180,7 +182,7 @@ fn group_value(group_kind: &GroupKind, source: &InputSource) -> std::io::Result<
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
     };
     Ok(match group_kind {
-        GroupKind::FullPath => source.resolved_path()?.map_or_else(
+        GroupKind::FullPath => source.source_path()?.map_or_else(
             || "<stdin>".to_string(),
             |p| p.to_string_lossy().into_owned(),
         ),

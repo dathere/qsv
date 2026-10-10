@@ -184,14 +184,19 @@ impl Args {
 
         let mut configs = self.configs()?.into_iter();
 
-        // the first file is special, as it has the headers
-        // if --no-headers is set, we just write the first file
-        if let Some(conf) = configs.next() {
+        // The first non-empty file supplies the headers. An empty (0-byte) file
+        // has no header, so taking it as the source would write none, and the
+        // next file's reader would then skip its header row as a duplicate.
+        for conf in configs.by_ref() {
             rdr = conf.reader()?;
+            if rdr.byte_headers()?.is_empty() {
+                continue;
+            }
             conf.write_headers(&mut rdr, &mut wtr)?;
             while rdr.read_byte_record(&mut row)? {
                 wtr.write_byte_record(&row)?;
             }
+            break;
         }
 
         // the rest of the files are just written
@@ -233,8 +238,7 @@ impl Args {
         }
 
         // synthetic headers per file when --no-headers is set; we keep a Vec
-        // so the second pass can re-use the exact widths discovered in the
-        // first pass (re-scanning the file is O(rows) and we already scanned).
+        // so the second pass can re-use the widths found by the first pass's scan.
         let configs = self.configs()?;
         let mut synthetic_headers: Vec<csv::ByteRecord> = if self.flag_no_headers {
             Vec::with_capacity(configs.len())
@@ -252,11 +256,16 @@ impl Args {
             let mut rdr = conf.reader()?;
 
             if self.flag_no_headers {
-                // synthesize "_c_1", "_c_2", ... from the width of this file's first row.
-                let mut first = csv::ByteRecord::new();
-                rdr.read_byte_record(&mut first)?;
-                let mut th = csv::ByteRecord::with_capacity(64, first.len());
-                for n in 0..first.len() {
+                // synthesize "_c_1", "_c_2", ... from the width of this file's WIDEST row.
+                // rowskey reads flexibly, so a later row can be wider than the first;
+                // sizing from the first row alone silently dropped the extra fields.
+                let mut rec = csv::ByteRecord::new();
+                let mut width = 0;
+                while rdr.read_byte_record(&mut rec)? {
+                    width = width.max(rec.len());
+                }
+                let mut th = csv::ByteRecord::with_capacity(64, width);
+                for n in 0..width {
                     th.push_field(format!("_c_{}", n + 1).as_bytes());
                 }
                 for field in &th {

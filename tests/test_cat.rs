@@ -805,6 +805,49 @@ fn cat_rowskey_no_headers_narrowerfirst() {
     assert_eq!(got, expected);
 }
 
+// A row wider than its file's first row must not lose its extra fields:
+// rowskey reads flexibly, so the synthetic width must be the file's widest row.
+#[test]
+fn cat_rowskey_no_headers_ragged_later_row_wider() {
+    let wrk = Workdir::new("cat_rowskey_no_headers_ragged_later_row_wider");
+    wrk.create_from_string("in1.csv", "x,y\n1,2,3,4\n");
+    wrk.create_from_string("in2.csv", "p,q,r\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rowskey")
+        .arg("--no-headers")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["x", "y", "", ""],
+        svec!["1", "2", "3", "4"],
+        svec!["p", "q", "r", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+// An empty (0-byte) first input must not cost the output its header: the
+// header comes from the first non-empty input.
+#[test]
+fn cat_rows_empty_first_file_keeps_header() {
+    let wrk = Workdir::new("cat_rows_empty_first_file_keeps_header");
+    wrk.create_from_string("empty.csv", "");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    wrk.create_from_string("in2.csv", "h1,h2\nw1,w2\n");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .arg("empty.csv")
+        .arg("in1.csv")
+        .arg("in2.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["h1", "h2"], svec!["v1", "v2"], svec!["w1", "w2"]];
+    assert_eq!(got, expected);
+}
+
 // Regression test: a column whose header collides with --group-name should
 // still produce valid output (the file's value wins for its own rows) and
 // emit a warning to stderr so the user notices.

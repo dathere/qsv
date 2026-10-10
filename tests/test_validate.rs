@@ -573,7 +573,8 @@ fn validate_split_ragged_plain_and_sz_same_name_keep_their_data() {
     );
 }
 
-// Each zip entry writes next to the archive, as `<archive>.<entry file name>.*` (#4783).
+// Each zip entry writes next to the archive, as `<archive>.<entry path>.*`; a
+// nested entry's go in a folder named that way (#4783).
 #[test]
 fn validate_split_ragged_zip_entries_write_next_to_archive() {
     use std::io::Write;
@@ -602,7 +603,8 @@ fn validate_split_ragged_zip_entries_write_next_to_archive() {
         "x,y\n3\n"
     );
     assert_eq!(
-        wrk.read_to_string("mar/data.zip.x.csv.invalid").unwrap(),
+        wrk.read_to_string("mar/data.zip.sub/x.csv.invalid")
+            .unwrap(),
         "x,y\n8\n"
     );
     // nothing in the current directory
@@ -623,11 +625,109 @@ fn validate_split_ragged_refuses_inputs_with_the_same_split_files() {
 
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
-        stderr.contains("`data.csv` and `./data.csv` would both write their split files"),
+        stderr.contains("`data.csv` and `./data.csv` would both write `./data.csv.valid`"),
         "stderr: {stderr}"
     );
     assert!(!wrk.path("data.csv.invalid").exists());
     assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+}
+
+/// Write a zip archive at `path` (relative to `wrk`) holding `entries`.
+fn create_zip(wrk: &Workdir, path: &str, entries: &[(&str, &str)]) {
+    use std::io::Write;
+
+    let zf = std::fs::File::create(wrk.path(path)).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    for (entry, data) in entries {
+        zw.start_file(*entry, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zw.write_all(data.as_bytes()).unwrap();
+    }
+    zw.finish().unwrap();
+}
+
+// Same-named entries in different folders of one archive keep apart; RFC 4180
+// mode checks every entry, so refusing them would leave no way to run (#4783).
+#[test]
+fn validate_split_ragged_zip_same_named_nested_entries() {
+    let wrk = Workdir::new("validate_split_ragged_zip_same_named_nested_entries").flexible(true);
+    create_zip(
+        &wrk,
+        "n.zip",
+        &[
+            ("a/data.csv", "x,y\n1,2\n1\n"),
+            ("b/data.csv", "x,y\n3,4\n2\n"),
+        ],
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("n.zip");
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(
+        wrk.read_to_string("n.zip.a/data.csv.invalid").unwrap(),
+        "x,y\n1\n"
+    );
+    assert_eq!(
+        wrk.read_to_string("n.zip.b/data.csv.invalid").unwrap(),
+        "x,y\n2\n"
+    );
+}
+
+// A nested entry's folder is not left behind when the entry has no ragged rows.
+#[test]
+fn validate_split_ragged_clean_nested_zip_entry_leaves_no_folder() {
+    let wrk = Workdir::new("validate_split_ragged_clean_nested_zip_entry_leaves_no_folder")
+        .flexible(true);
+    create_zip(&wrk, "ok.zip", &[("s/t/ok.csv", "x,y\n1,2\n")]);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("ok.zip");
+    wrk.assert_success(&mut cmd);
+
+    assert!(!wrk.path("ok.zip.s").exists());
+}
+
+// A split file that would overwrite another input is refused before that input
+// is read (#4783).
+#[test]
+fn validate_split_ragged_refuses_overwriting_an_input() {
+    let wrk = Workdir::new("validate_split_ragged_refuses_overwriting_an_input").flexible(true);
+    wrk.create_from_string("data.csv", "x,y\n1,2\n3\n");
+    wrk.create_from_string("data.csv.valid", "x,y\n5,6\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .arg("data.csv")
+        .arg("data.csv.valid");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("would write `data.csv.valid`, overwriting input `data.csv.valid`"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(wrk.read_to_string("data.csv.valid").unwrap(), "x,y\n5,6\n");
+}
+
+// Collisions are checked on the files actually written, with the chosen
+// suffixes: here one input's `.invalid` is the other's `.valid` (#4783).
+#[test]
+fn validate_split_ragged_refuses_suffix_collisions() {
+    let wrk = Workdir::new("validate_split_ragged_refuses_suffix_collisions").flexible(true);
+    wrk.create_from_string("data.csv", "x,y\n1,2\n3\n");
+    wrk.create_from_string("data.csv.sz", "x,y\n5,6\n7,8,9\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--split-ragged", "--valid", "csv", "--invalid", "sz.csv"])
+        .arg("data.csv")
+        .arg("data.csv.sz");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("`data.csv` and `data.csv.sz` would both write `data.csv.sz.csv`"),
+        "stderr: {stderr}"
+    );
+    assert!(!wrk.path("data.csv.sz.csv").exists());
 }
 
 // Piped stdin's split files are `stdin.csv.*` in the current directory, the same
@@ -653,7 +753,7 @@ fn validate_split_ragged_refuses_stdin_and_stdin_csv() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("`<stdin>` and `stdin.csv` would both write their split files"),
+        stderr.contains("`<stdin>` and `stdin.csv` would both write `stdin.csv.valid`"),
         "stderr: {stderr}"
     );
     assert!(!wrk.path("stdin.csv.invalid").exists());

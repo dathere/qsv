@@ -234,9 +234,10 @@ Validate options:
                                each input file, so this is intended for on-disk file input(s).
                                A compressed input keeps its full name (data.csv.sz.valid). In RFC
                                4180 mode, which checks every entry in a zip archive, an entry is
-                               named for both (data.zip.data.csv.valid).
-                               Piped stdin's are 'stdin.csv.*' in the current directory. Inputs that
-                               would write the same split files are refused before any is written.
+                               named for both (data.zip.data.csv.valid; data.zip.sub/x.csv.valid
+                               for an entry in a folder). Piped stdin's are 'stdin.csv.*' in the
+                               current directory. If any split file would be written twice, or
+                               would overwrite an input, nothing is written.
     --json                     When validating without a JSON Schema, return the RFC 4180 check
                                as a JSON file instead of a message.
     --pretty-json              Same as --json, but pretty printed.
@@ -2195,7 +2196,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
 
     // computed for every input before any is validated, so a clash writes nothing
     let output_bases = if split_ragged {
-        split_output_bases(&processed_inputs)?
+        split_output_bases(&processed_inputs, &valid_suffix, &invalid_suffix)?
     } else {
         vec![String::new(); input_count]
     };
@@ -2255,6 +2256,24 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             },
         };
 
+        // a nested zip entry's split files go in a folder next to the archive. Note the
+        // folders this creates (deepest first), to remove them again if nothing is written.
+        let mut created_dirs = Vec::new();
+        if split_ragged
+            && let Some(parent) = Path::new(&output_base).parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let mut dir = parent;
+            while !dir.exists() {
+                created_dirs.push(dir.to_path_buf());
+                match dir.parent() {
+                    Some(p) if !p.as_os_str().is_empty() => dir = p,
+                    _ => break,
+                }
+            }
+            std::fs::create_dir_all(parent)?;
+        }
+
         // Validate the file
         let validation_result = validate_single_file_rfc4180(
             &mut rdr,
@@ -2267,6 +2286,10 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             &invalid_suffix,
             &output_base,
         );
+        // remove_dir only removes an empty folder, so this never removes split files
+        for dir in &created_dirs {
+            let _ = std::fs::remove_dir(dir);
+        }
 
         match validation_result {
             Ok(0) => {
@@ -2330,37 +2353,87 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
 /// Where each input's `--split-ragged` files go: next to the input, named for it
 /// as given (a `.sz` file keeps its `.sz`, as in JSON Schema mode), never in the
 /// temp dir `process_input` unpacked it into, which is removed on exit. A zip
-/// entry's are named `<archive>.<entry file name>`; stdin's are `stdin.csv.*` in
-/// the current directory. Errors if two inputs would write the same files.
-fn split_output_bases(inputs: &[(PathBuf, InputSource)]) -> CliResult<Vec<String>> {
-    let mut bases = Vec::with_capacity(inputs.len());
-    // keyed by the real directory, so `data.csv` and `./data.csv` clash
-    let mut seen: HashMap<PathBuf, String> = HashMap::with_capacity(inputs.len());
+/// entry's are named `<archive>.<entry path>` (a nested entry's go in a folder
+/// next to the archive); stdin's are `stdin.csv.*` in the current directory.
+///
+/// Errors before anything is written if any split file would be written twice,
+/// or would overwrite an input. Paths are compared by their real directory, so
+/// `data.csv` and `./data.csv` are the same file.
+fn split_output_bases(
+    inputs: &[(PathBuf, InputSource)],
+    valid_suffix: &str,
+    invalid_suffix: &str,
+) -> CliResult<Vec<String>> {
+    let real = |dir: &Path, name: &Path| -> std::io::Result<PathBuf> {
+        let dir = if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        };
+        Ok(dir.canonicalize()?.join(name))
+    };
+    let parent_and_name = |p: &Path| {
+        (
+            p.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
+            PathBuf::from(p.file_name().unwrap_or_default()),
+        )
+    };
+
+    enum Owner {
+        Input(String),
+        SplitFileOf(String),
+    }
+    // every input's real file, so no split file overwrites one before it is read
+    let mut taken: HashMap<PathBuf, Owner> = HashMap::new();
     for (_, source) in inputs {
-        let base = match source {
-            InputSource::Stdin => PathBuf::from("stdin.csv"),
-            InputSource::File(p) | InputSource::Snappy(p) => p.clone(),
+        let file = match source {
+            InputSource::Stdin => continue,
+            InputSource::File(p) | InputSource::Snappy(p) => p,
+            InputSource::ZipEntry { archive, .. } => archive,
+        };
+        taken.insert(
+            file.canonicalize()?,
+            Owner::Input(file.display().to_string()),
+        );
+    }
+
+    let mut bases = Vec::with_capacity(inputs.len());
+    for (_, source) in inputs {
+        // the directory the split files go in (as given), and their name in it
+        let (dir, name) = match source {
+            InputSource::Stdin => (PathBuf::new(), PathBuf::from("stdin.csv")),
+            InputSource::File(p) | InputSource::Snappy(p) => parent_and_name(p),
             InputSource::ZipEntry { archive, entry } => {
-                let mut base = archive.clone().into_os_string();
-                base.push(".");
-                base.push(entry.file_name().unwrap_or_default());
-                PathBuf::from(base)
+                let (dir, archive_name) = parent_and_name(archive);
+                let mut name = archive_name.into_os_string();
+                name.push(".");
+                name.push(entry.as_os_str());
+                (dir, PathBuf::from(name))
             },
         };
-        let dir = match base.parent() {
-            Some(d) if !d.as_os_str().is_empty() => d,
-            _ => Path::new("."),
-        };
-        let key = dir
-            .canonicalize()?
-            .join(base.file_name().unwrap_or_default());
-        let name = source.display_name();
-        if let Some(other) = seen.insert(key, name.clone()) {
-            return fail_incorrectusage_clierror!(
-                "--split-ragged: `{other}` and `{name}` would both write their split files to \
-                 `{}.*`. Validate them in separate runs.",
-                base.display()
-            );
+        let base = dir.join(&name);
+        let real_base = real(&dir, &name)?;
+        let input_name = source.display_name();
+        for suffix in [valid_suffix, invalid_suffix, "validation-errors.tsv"] {
+            let mut file = real_base.clone().into_os_string();
+            file.push(".");
+            file.push(suffix);
+            let shown = format!("{}.{suffix}", base.display());
+            match taken.insert(PathBuf::from(file), Owner::SplitFileOf(input_name.clone())) {
+                None => {},
+                Some(Owner::Input(other)) => {
+                    return fail_incorrectusage_clierror!(
+                        "--split-ragged: `{input_name}` would write `{shown}`, overwriting input \
+                         `{other}` before it is read."
+                    );
+                },
+                Some(Owner::SplitFileOf(other)) => {
+                    return fail_incorrectusage_clierror!(
+                        "--split-ragged: `{other}` and `{input_name}` would both write `{shown}`. \
+                         Validate them in separate runs, or change --valid/--invalid."
+                    );
+                },
+            }
         }
         bases.push(base.to_string_lossy().into_owned());
     }

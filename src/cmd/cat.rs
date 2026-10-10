@@ -81,6 +81,10 @@ cat options:
                              (symlinks and relative paths resolved), so the result does not
                              depend on how the path was typed. Use a parentdir kind to tell
                              apart same-named files in different directories.
+                             A compressed input is named as if unpacked in place: jan/sales.csv.sz
+                             as jan/sales.csv, and an entry sales.csv in jan/2024.zip as
+                             jan/2024/sales.csv. Piped stdin is named 'stdin.csv'
+                             ('<stdin>' for 'fullpath').
                              A new column will be added to the beginning of each row using --group-name.
                              If 'none' is specified, no grouping column will be added.
                              [default: none]
@@ -109,7 +113,7 @@ use strum_macros::EnumString;
 use crate::{
     CliResult,
     config::{Config, Delimiter},
-    util,
+    util::{self, InputSource},
 };
 
 #[derive(Deserialize)]
@@ -120,6 +124,9 @@ struct Args {
     flag_group:      String,
     flag_group_name: String,
     arg_input:       Vec<PathBuf>,
+    /// where each `arg_input` path came from, after `process_input`
+    #[serde(skip)]
+    input_sources:   Vec<InputSource>,
     flag_pad:        bool,
     flag_flexible:   bool,
     flag_output:     Option<String>,
@@ -138,49 +145,65 @@ enum GroupKind {
     None,
 }
 
-fn get_parentdir_and_file(path: &Path, stem_only: bool) -> std::io::Result<String> {
-    // Resolve on disk so the parent is the file's real directory however the
-    // path was spelled (`data.csv`, `./data.csv`, `../jan/data.csv`, absolute).
-    let path = path.canonicalize()?;
-    // safety: a canonicalized path to a file always has a file name
+/// `path` must already be resolved (see `InputSource::resolved_path`).
+fn get_parentdir_and_file(path: &Path, stem_only: bool) -> String {
     let file_info = if stem_only {
         path.file_stem()
     } else {
         path.file_name()
     }
-    .unwrap();
+    .unwrap_or_default();
 
     // a file at the filesystem root has no parent directory name
-    Ok(match path.parent().and_then(Path::file_name) {
+    match path.parent().and_then(Path::file_name) {
         Some(parent_name) => Path::new(parent_name).join(file_info),
         None => PathBuf::from(file_info),
     }
     .to_string_lossy()
-    .into_owned())
+    .into_owned()
 }
 
-/// Name an input for an error message: stdin and inputs that `process_input`
-/// decompressed or extracted live in `tmpdir`, whose path means nothing to the user.
-fn input_display_name(path: Option<&Path>, tmpdir: &Path, stdin_given: bool) -> String {
-    match path {
-        None => "<stdin>".to_string(),
-        Some(p) if stdin_given && p == tmpdir.join("stdin.csv") => "<stdin>".to_string(),
-        Some(p) if p.starts_with(tmpdir) => p.file_name().map_or_else(
-            || p.display().to_string(),
-            |f| f.to_string_lossy().into_owned(),
+/// The `--group` value for an input. Stdin and unpacked inputs are named as if
+/// unpacked in place (see `InputSource::logical_path`), not by their temp file.
+fn group_value(group_kind: &GroupKind, source: &InputSource) -> std::io::Result<String> {
+    // stdin has no location: its parentdir kinds give a bare `stdin.csv`, as for
+    // a file at the filesystem root
+    let logical = source
+        .logical_path()
+        .unwrap_or_else(|| PathBuf::from("stdin.csv"));
+    let name = |stem_only: bool| {
+        if stem_only {
+            logical.file_stem()
+        } else {
+            logical.file_name()
+        }
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+    };
+    Ok(match group_kind {
+        GroupKind::FullPath => source.resolved_path()?.map_or_else(
+            || "<stdin>".to_string(),
+            |p| p.to_string_lossy().into_owned(),
         ),
-        Some(p) => p.display().to_string(),
-    }
+        GroupKind::ParentDirFName | GroupKind::ParentDirFStem => {
+            let resolved = source.resolved_path()?.unwrap_or_else(|| logical.clone());
+            get_parentdir_and_file(&resolved, *group_kind == GroupKind::ParentDirFStem)
+        },
+        GroupKind::FName => name(false),
+        GroupKind::FStem => name(true),
+        GroupKind::None => String::new(),
+    })
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
-    let stdin_given = args.arg_input.iter().any(|p| p.as_os_str() == "-");
-    args.arg_input = util::process_input(args.arg_input, &tmpdir, "")?;
+    (args.arg_input, args.input_sources) =
+        util::process_input_with_sources(args.arg_input, &tmpdir, "")?
+            .into_iter()
+            .unzip();
     if args.cmd_rows {
-        args.cat_rows(tmpdir.path(), stdin_given)
+        args.cat_rows()
     } else if args.cmd_rowskey {
         args.cat_rowskey()
     } else if args.cmd_columns {
@@ -205,11 +228,7 @@ impl Args {
         .map_err(From::from)
     }
 
-    /// `tmpdir` is where `process_input` materialized stdin (and decompressed
-    /// inputs), used only to name those inputs readably in errors. `stdin_given`
-    /// says whether stdin was among the inputs, so a decompressed `stdin.csv.sz`
-    /// is not mistaken for it.
-    fn cat_rows(&self, tmpdir: &Path, stdin_given: bool) -> CliResult<()> {
+    fn cat_rows(&self) -> CliResult<()> {
         let mut row = csv::ByteRecord::new();
         let mut wtr = Config::new(self.flag_output.as_ref())
             .flexible(self.flag_flexible)
@@ -223,7 +242,7 @@ impl Args {
         let mut width: Option<usize> = None;
         let mut have_headers = false;
 
-        for conf in configs {
+        for (conf, source) in configs.zip(&self.input_sources) {
             let mut rdr = conf.reader()?;
             // A file's records must match its own header too, as a strict reader
             // would require, not just the output width: a later file whose
@@ -263,7 +282,7 @@ impl Args {
                             "`{}` line {}: found a record with {} fields, but {what} {n}. Use \
                              --flexible to allow records of different lengths, or fix the input \
                              with 'fixlengths' or 'select'.",
-                            input_display_name(conf.path.as_deref(), tmpdir, stdin_given),
+                            source.display_name(),
                             row.position().map_or(0, csv::Position::line),
                             row.len(),
                         );
@@ -292,9 +311,6 @@ impl Args {
         };
         let group_flag = group_kind != GroupKind::None;
 
-        // stdin is already materialized to a real file by util::process_input()
-        // before we get here, so all configs have a Some(path).
-
         let mut columns_global: FhashIndexSet<Box<[u8]>> = FhashIndexSet::default();
 
         if group_flag {
@@ -312,11 +328,8 @@ impl Args {
 
         // First pass: collect the global column set in insertion order.
         let group_name_bytes = self.flag_group_name.as_bytes();
-        for conf in &configs {
-            let path_display = conf
-                .path
-                .as_deref()
-                .map_or_else(|| "<stdin>".to_string(), |p| p.display().to_string());
+        for (conf, source) in configs.iter().zip(&self.input_sources) {
+            let path_display = source.display_name();
             let mut rdr = conf.reader()?;
 
             if self.flag_no_headers {
@@ -377,16 +390,12 @@ impl Args {
         }
 
         // amortize allocations across files
-        let mut grouping_value = String::new();
         let mut columns_of_this_file: FhashIndexMap<Box<[u8]>, usize> = FhashIndexMap::default();
         columns_of_this_file.reserve(num_columns_global);
         let mut col_map: Vec<Option<usize>> = Vec::with_capacity(num_columns_global);
         let mut row = csv::ByteRecord::with_capacity(4096, num_columns_global);
 
-        for (file_idx, conf) in configs.into_iter().enumerate() {
-            let conf_pathbuf = conf.path.clone().ok_or_else(|| {
-                crate::CliError::Other("cat rowskey: input is missing a file path".to_string())
-            })?;
+        for (file_idx, (conf, source)) in configs.into_iter().zip(&self.input_sources).enumerate() {
             let mut rdr = conf.reader()?;
 
             // Build columns_of_this_file from either the synthesized header
@@ -408,7 +417,7 @@ impl Args {
                         wwarn!(
                             "Duplicate column `{}` name in file `{}`.",
                             util::bytes_to_cow_str(field),
-                            conf_pathbuf.display(),
+                            source.display_name(),
                         );
                     }
                 }
@@ -423,33 +432,8 @@ impl Args {
                     .map(|c| columns_of_this_file.get(c).copied()),
             );
 
-            // set grouping_value
             // canonicalize() can fail (broken symlink, perms); propagate instead of panic.
-            match group_kind {
-                GroupKind::FullPath => {
-                    grouping_value.clear();
-                    grouping_value.push_str(&conf_pathbuf.canonicalize()?.to_string_lossy());
-                },
-                GroupKind::ParentDirFName => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, false)?;
-                },
-                GroupKind::ParentDirFStem => {
-                    grouping_value = get_parentdir_and_file(&conf_pathbuf, true)?;
-                },
-                GroupKind::FName => {
-                    grouping_value.clear();
-                    if let Some(name) = conf_pathbuf.file_name() {
-                        grouping_value.push_str(&name.to_string_lossy());
-                    }
-                },
-                GroupKind::FStem => {
-                    grouping_value.clear();
-                    if let Some(stem) = conf_pathbuf.file_stem() {
-                        grouping_value.push_str(&stem.to_string_lossy());
-                    }
-                },
-                GroupKind::None => {},
-            }
+            let grouping_value = group_value(&group_kind, source)?;
             let grouping_value_bytes = grouping_value.as_bytes();
 
             while rdr.read_byte_record(&mut row)? {

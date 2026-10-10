@@ -298,6 +298,8 @@ Fields:
     29:  Text      source"#;
 
     assert!(dos2unix(&got).trim_end().ends_with(expected_end.trim_end()));
+    // the original name, not the temp file it was decompressed to
+    assert!(got.starts_with("Path: boston311-100.csv\n"), "got: {got}");
 
     // Explicit field assertions for boston311 dataset
     assert!(got.contains("Num Fields: 29"));

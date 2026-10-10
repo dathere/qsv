@@ -3307,3 +3307,40 @@ fn joinp_cache_schema_floats_keep_f64_precision_issue_4752() {
         ]
     );
 }
+
+// joinp decompresses both inputs into one temp dir before running the join;
+// same-named .sz inputs, snappy or not, must not overwrite each other (#4779).
+#[test]
+fn joinp_same_named_sz_inputs() {
+    let wrk = Workdir::new("joinp_same_named_sz_inputs");
+    for dir in ["a", "b", "c"] {
+        wrk.create_subdir(dir).unwrap();
+    }
+    wrk.create_from_string("a/data.csv", "id,a\n1,from_a\n");
+    wrk.create_from_string("b/data.csv", "id,b\n1,from_b\n");
+    for dir in ["a", "b"] {
+        let mut snappy = wrk.command("snappy");
+        snappy
+            .args(["compress", &format!("{dir}/data.csv")])
+            .args(["-o", &format!("{dir}/data.csv.sz")]);
+        wrk.assert_success(&mut snappy);
+    }
+    // a .sz file that isn't snappy is read as plain text
+    wrk.create_from_string("c/data.csv.sz", "id,c\n1,from_c\n");
+
+    for (right, expected) in [
+        (
+            "b/data.csv.sz",
+            vec![svec!["id", "a", "b"], svec!["1", "from_a", "from_b"]],
+        ),
+        (
+            "c/data.csv.sz",
+            vec![svec!["id", "a", "c"], svec!["1", "from_a", "from_c"]],
+        ),
+    ] {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["id", "a/data.csv.sz", "id", right]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got, expected, "right input: {right}");
+    }
+}

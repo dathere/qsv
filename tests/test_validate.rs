@@ -492,6 +492,50 @@ fn validate_split_ragged_snappy_input() {
     assert_eq!(invalid, "x,y\n3\n");
 }
 
+// A `.sz` file that isn't snappy is read as plain text; with no name clash its
+// split output keeps the plain name, not a `dup<n>/` one (#4779).
+#[test]
+fn validate_split_ragged_plain_sz_input() {
+    let wrk = Workdir::new("validate_split_ragged_plain_sz_input").flexible(true);
+    wrk.create_from_string("data.csv.sz", "x,y\n1,2\n3\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv.sz");
+    wrk.assert_err(&mut cmd);
+
+    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid, "x,y\n3\n");
+    assert!(!wrk.path("dup1").exists());
+}
+
+// Same-named .sz inputs each get their own split files: the second one's go
+// under `dup1/` (#4779).
+#[test]
+fn validate_split_ragged_same_named_sz_inputs() {
+    let wrk = Workdir::new("validate_split_ragged_same_named_sz_inputs").flexible(true);
+    for (dir, data) in [("a", "x,y\n1,2\n3\n"), ("b", "x,y\n5,6\n7,8,9\n")] {
+        wrk.create_subdir(dir).unwrap();
+        wrk.create_from_string(&format!("{dir}/data.csv"), data);
+        let mut compress = wrk.command("snappy");
+        compress
+            .arg("compress")
+            .arg(format!("{dir}/data.csv"))
+            .args(["--output", &format!("{dir}/data.csv.sz")]);
+        wrk.assert_success(&mut compress);
+    }
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .arg("a/data.csv.sz")
+        .arg("b/data.csv.sz");
+    wrk.assert_err(&mut cmd);
+
+    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid, "x,y\n3\n");
+    let invalid = wrk.read_to_string("dup1/data.csv.invalid").unwrap();
+    assert_eq!(invalid, "x,y\n7,8,9\n");
+}
+
 #[test]
 fn validate_split_ragged_compressed_valid_suffix() {
     // a `.sz` custom --valid suffix must produce a genuinely snappy-compressed file, consistent

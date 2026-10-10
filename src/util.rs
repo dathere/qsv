@@ -3023,6 +3023,20 @@ pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     }
 }
 
+/// A new, empty file for one `decompress_snappy_file` call, in its own
+/// exclusively created subdirectory of `tmpdir`, so it never overwrites another
+/// input's scratch or final file. The name stays `qsv_temp_decompressed__<stem>`:
+/// `sniff` recovers the original name from it, and callers that read the
+/// extension (e.g. `joinp`) still see it.
+fn snappy_scratch_file(tmpdir: &Path, file_stem: &str) -> std::io::Result<(File, PathBuf)> {
+    let dir = tempfile::Builder::new()
+        .prefix("qsv_snappy_")
+        .tempdir_in(tmpdir)?
+        .keep();
+    let path = dir.join(format!("qsv_temp_decompressed__{file_stem}"));
+    Ok((File::create(&path)?, path))
+}
+
 /// Decompresses a Snappy-compressed file to a temporary directory.
 ///
 /// # Arguments
@@ -3075,13 +3089,17 @@ pub fn decompress_snappy_file(
             path.display()
         );
 
-        // Copy the file to temp directory with original name (without .sz)
+        // Copy to a scratch file, not the final name: `process_input` renames it,
+        // and `joinp` decompresses both inputs into one tmpdir.
         let file_stem = Path::new(&path)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("plain_file");
-        let fallback_filepath = tmpdir.path().join(file_stem);
-        std::fs::copy(path, &fallback_filepath)?;
+        let (mut fallback_file, fallback_filepath) = snappy_scratch_file(tmpdir.path(), file_stem)?;
+        std::io::copy(&mut File::open(path)?, &mut fallback_file)?;
+        fallback_file.flush()?;
+        // Windows: release the write handle before anything re-opens the path
+        drop(fallback_file);
         return Ok(format!("{}", fallback_filepath.display()));
     }
 
@@ -3090,10 +3108,8 @@ pub fn decompress_snappy_file(
     let mut snappy_reader = snap::read::FrameDecoder::new(&mut snappy_file);
     // safety: we know that file_stem() will not be None as we opened the file above
     let file_stem = Path::new(&path).file_stem().unwrap().to_string_lossy();
-    let decompressed_filepath = tmpdir
-        .path()
-        .join(format!("qsv_temp_decompressed__{file_stem}"));
-    let mut decompressed_file = std::fs::File::create(decompressed_filepath.clone())?;
+    let (mut decompressed_file, decompressed_filepath) =
+        snappy_scratch_file(tmpdir.path(), &file_stem)?;
 
     match std::io::copy(&mut snappy_reader, &mut decompressed_file) {
         Ok(num_bytes) => {
@@ -3286,6 +3302,31 @@ fn is_supported_file(path: &Path) -> bool {
     }
 }
 
+/// Where `process_input` should put an unpacked input named `name` (a file, or a
+/// zip's extraction directory): `tmpdir/name` if it is free, else
+/// `tmpdir/dup<n>/name` for the first free `n`. Keeping the first claimant at the
+/// root leaves paths unchanged when nothing clashes; `validate --split-ragged`
+/// derives its output names from the tmpdir-relative path.
+fn unique_unpack_path(tmpdir: &Path, name: &std::ffi::OsStr) -> std::io::Result<PathBuf> {
+    let candidate = tmpdir.join(name);
+    if !candidate.exists() {
+        return Ok(candidate);
+    }
+    for n in 1_u32.. {
+        let dir = tmpdir.join(format!("dup{n}"));
+        // an unpacked input may itself be named `dup<n>`
+        if dir.exists() && !dir.is_dir() {
+            continue;
+        }
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            std::fs::create_dir_all(&dir)?;
+            return Ok(candidate);
+        }
+    }
+    unreachable!("ran out of dup<n> directory names")
+}
+
 /// Process the input files and return a vector of paths to the input files.
 ///
 /// If the input is empty, try to copy stdin to a file named stdin in the passed temp directory.
@@ -3367,21 +3408,25 @@ pub fn process_input(
         arg_input
     };
 
-    let mut stdin_path = PathBuf::new();
-    let mut stdin_file_created = false;
+    // Reserve `tmpdir/stdin.csv` before unpacking anything else, so stdin always
+    // owns that path whatever the argument order (`cat` relies on it to label
+    // stdin) and a decompressed `stdin.csv.sz` gets a `dup<n>/` path instead.
+    // stdin itself is still read only when its turn comes.
+    let stdin_path = tmpdir.path().join("stdin.csv");
+    if work_input.iter().any(|p| p == "-") {
+        std::fs::File::create(&stdin_path)?;
+    }
+    let mut stdin_copied = false;
 
     // check the input files
     for path in work_input {
         // check if the path is "-" (stdin)
         if &path == "-" {
-            if !stdin_file_created {
-                // if stdin was not copied to a file, copy stdin to a file named "stdin"
-                let tmp_filename = tmpdir.path().join("stdin.csv");
-                let mut tmp_file = std::fs::File::create(&tmp_filename)?;
+            if !stdin_copied {
+                let mut tmp_file = std::fs::File::create(&stdin_path)?;
                 std::io::copy(&mut std::io::stdin(), &mut tmp_file)?;
                 tmp_file.flush()?;
-                stdin_file_created = true;
-                stdin_path = tmp_filename;
+                stdin_copied = true;
             }
             processed_input.push(stdin_path.clone());
             continue;
@@ -3418,7 +3463,7 @@ pub fn process_input(
             // safety: we know the path has a filename
             let original_filename = original_filepath.file_name().unwrap();
 
-            let final_decompressed_filepath = tmpdir.path().join(original_filename);
+            let final_decompressed_filepath = unique_unpack_path(tmpdir.path(), original_filename)?;
             std::fs::rename(&decompressed_filepath, &final_decompressed_filepath)?;
 
             processed_input.push(final_decompressed_filepath);
@@ -5643,7 +5688,8 @@ fn extract_all_zip_entries(
     tmpdir: &tempfile::TempDir,
 ) -> Result<Vec<PathBuf>, CliError> {
     // A per-archive subdirectory keeps each entry's relative path (zips may carry
-    // nested directories) and avoids name collisions across multiple zip inputs.
+    // nested directories); `unique_unpack_path` keeps it apart from other inputs
+    // unpacked under the same name (e.g. `a/data.zip` and `b/data.zip`).
     let zip_stem = path
         .file_name()
         .and_then(std::ffi::OsStr::to_str)
@@ -5656,7 +5702,7 @@ fn extract_all_zip_entries(
                     .to_string()
             },
         );
-    let zip_extract_dir = tmpdir.path().join(&zip_stem);
+    let zip_extract_dir = unique_unpack_path(tmpdir.path(), zip_stem.as_ref())?;
     std::fs::create_dir_all(&zip_extract_dir)?;
 
     let mut archive = zip::ZipArchive::new(File::open(path)?)?;

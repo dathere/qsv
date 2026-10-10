@@ -3023,17 +3023,18 @@ pub fn is_valid_snappy_file(path: &PathBuf) -> Result<bool, CliError> {
     }
 }
 
-/// A new, empty file in `tmpdir` for one `decompress_snappy_file` call. It is
-/// created exclusively under a random name, so it never overwrites another
-/// input's scratch or final file, and it ends in `file_stem` so callers that
-/// read the extension (e.g. `joinp`) still see it.
+/// A new, empty file for one `decompress_snappy_file` call, in its own
+/// exclusively created subdirectory of `tmpdir`, so it never overwrites another
+/// input's scratch or final file. The name stays `qsv_temp_decompressed__<stem>`:
+/// `sniff` recovers the original name from it, and callers that read the
+/// extension (e.g. `joinp`) still see it.
 fn snappy_scratch_file(tmpdir: &Path, file_stem: &str) -> std::io::Result<(File, PathBuf)> {
-    tempfile::Builder::new()
-        .prefix("qsv_temp_decompressed_")
-        .suffix(&format!("__{file_stem}"))
-        .tempfile_in(tmpdir)?
-        .keep()
-        .map_err(std::io::Error::from)
+    let dir = tempfile::Builder::new()
+        .prefix("qsv_snappy_")
+        .tempdir_in(tmpdir)?
+        .keep();
+    let path = dir.join(format!("qsv_temp_decompressed__{file_stem}"));
+    Ok((File::create(&path)?, path))
 }
 
 /// Decompresses a Snappy-compressed file to a temporary directory.

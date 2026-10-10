@@ -3344,6 +3344,88 @@ pub fn process_input(
     tmpdir: &tempfile::TempDir,
     custom_empty_stdin_errmsg: &str,
 ) -> Result<Vec<PathBuf>, CliError> {
+    Ok(
+        process_input_with_sources(arg_input, tmpdir, custom_empty_stdin_errmsg)?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect(),
+    )
+}
+
+/// Where a path returned by `process_input_with_sources` came from. Stdin and
+/// unpacked inputs live in the temp dir, whose path means nothing to the user.
+#[derive(Clone, Debug, PartialEq)]
+pub enum InputSource {
+    Stdin,
+    /// A file read in place (including a resolved `dc:` disk-cache reference).
+    File(PathBuf),
+    /// A decompressed `.sz` file, as given.
+    Snappy(PathBuf),
+    /// An entry extracted from a zip archive: the archive as given, and the
+    /// entry's path inside it.
+    ZipEntry {
+        archive: PathBuf,
+        entry:   PathBuf,
+    },
+}
+
+// only `cat` reads these, and qsvdp has no `cat`
+#[cfg_attr(feature = "datapusher_plus", allow(dead_code))]
+impl InputSource {
+    /// The path the input would have if it were unpacked in place: a `.sz` file
+    /// without its `.sz`, a zip entry inside a directory named for the archive.
+    /// `None` for stdin.
+    pub fn logical_path(&self) -> Option<PathBuf> {
+        match self {
+            Self::Stdin => None,
+            Self::File(p) => Some(p.clone()),
+            Self::Snappy(p) => Some(p.with_extension("")),
+            Self::ZipEntry { archive, entry } => Some(archive.with_extension("").join(entry)),
+        }
+    }
+
+    /// `logical_path`, anchored at the real location of the file on disk
+    /// (symlinks and relative paths resolved). `None` for stdin.
+    pub fn resolved_path(&self) -> std::io::Result<Option<PathBuf>> {
+        Ok(match self {
+            Self::Stdin => None,
+            Self::File(p) => Some(p.canonicalize()?),
+            Self::Snappy(p) => Some(p.canonicalize()?.with_extension("")),
+            Self::ZipEntry { archive, entry } => {
+                Some(archive.canonicalize()?.with_extension("").join(entry))
+            },
+        })
+    }
+
+    /// Where the input really is: the file itself (a `.sz` file keeps its `.sz`),
+    /// or for a zip entry the archive joined with the entry, which names one
+    /// source unambiguously where `resolved_path` may not (`jan/data.csv.sz`
+    /// resolves to the same path as `jan/data.csv`). Symlinks and relative paths
+    /// resolved; `None` for stdin.
+    pub fn source_path(&self) -> std::io::Result<Option<PathBuf>> {
+        Ok(match self {
+            Self::Stdin => None,
+            Self::File(p) | Self::Snappy(p) => Some(p.canonicalize()?),
+            Self::ZipEntry { archive, entry } => Some(archive.canonicalize()?.join(entry)),
+        })
+    }
+
+    /// How to name the input to the user: as given, a zip entry as `archive/entry`.
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::Stdin => "<stdin>".to_string(),
+            Self::File(p) | Self::Snappy(p) => p.display().to_string(),
+            Self::ZipEntry { archive, entry } => archive.join(entry).display().to_string(),
+        }
+    }
+}
+
+/// `process_input`, also returning where each path came from.
+pub fn process_input_with_sources(
+    arg_input: Vec<PathBuf>,
+    tmpdir: &tempfile::TempDir,
+    custom_empty_stdin_errmsg: &str,
+) -> Result<Vec<(PathBuf, InputSource)>, CliError> {
     let mut processed_input = Vec::with_capacity(arg_input.len());
 
     let work_input = if arg_input.len() == 1 {
@@ -3428,7 +3510,7 @@ pub fn process_input(
                 tmp_file.flush()?;
                 stdin_copied = true;
             }
-            processed_input.push(stdin_path.clone());
+            processed_input.push((stdin_path.clone(), InputSource::Stdin));
             continue;
         }
 
@@ -3440,7 +3522,8 @@ pub fn process_input(
         // resolved temp CSV ships a sibling .idx, so indexed commands work too.
         #[cfg(feature = "get")]
         if let Some(dc_name) = path.to_str().and_then(|s| s.strip_prefix("dc:")) {
-            processed_input.push(crate::diskcache::resolve_dc_path(dc_name)?);
+            let resolved = crate::diskcache::resolve_dc_path(dc_name)?;
+            processed_input.push((resolved.clone(), InputSource::File(resolved)));
             continue;
         }
 
@@ -3466,7 +3549,7 @@ pub fn process_input(
             let final_decompressed_filepath = unique_unpack_path(tmpdir.path(), original_filename)?;
             std::fs::rename(&decompressed_filepath, &final_decompressed_filepath)?;
 
-            processed_input.push(final_decompressed_filepath);
+            processed_input.push((final_decompressed_filepath, InputSource::Snappy(path)));
         }
         // is the input file a zip archive?
         else if path
@@ -3478,15 +3561,23 @@ pub fn process_input(
             // `Config`/`select_zip_entry` "first tabular entry" path agree on what
             // a zip's entries are. Issue #3988.
             log::info!("Extracting files from zip archive: {}", path.display());
-            let entries = extract_all_zip_entries(&path, tmpdir)?;
+            let (extract_dir, entries) = extract_all_zip_entries(&path, tmpdir)?;
             log::info!(
                 "Extracted {} usable entries from zip archive {}",
                 entries.len(),
                 path.display()
             );
-            processed_input.extend(entries);
+            processed_input.extend(entries.into_iter().map(|extracted| {
+                // safety: every entry was extracted under `extract_dir`
+                let entry = extracted.strip_prefix(&extract_dir).unwrap().to_path_buf();
+                let source = InputSource::ZipEntry {
+                    archive: path.clone(),
+                    entry,
+                };
+                (extracted, source)
+            }));
         } else {
-            processed_input.push(path);
+            processed_input.push((path.clone(), InputSource::File(path)));
         }
     }
 
@@ -5669,8 +5760,8 @@ pub fn extract_zip_to_temp(
 }
 
 /// Extract a zip archive's usable entries into a temp subdirectory and return
-/// their paths, **tabular entries first** (CSV/TSV/TAB/SSV in archive order),
-/// followed by other supported entries (special formats parquet/avro/json/…, in
+/// that subdirectory and the entries' paths, **tabular entries first** (CSV/TSV/TAB/SSV in archive
+/// order), followed by other supported entries (special formats parquet/avro/json/…, in
 /// archive order — or *any* file when `QSV_SKIP_FORMAT_CHECK` is set, via
 /// `is_supported_file`). Directories, system files (`__MACOSX`, `.DS_Store`, …),
 /// zip-slip entries, and unsupported file types are skipped. Errors with a clear
@@ -5686,7 +5777,7 @@ pub fn extract_zip_to_temp(
 fn extract_all_zip_entries(
     path: &Path,
     tmpdir: &tempfile::TempDir,
-) -> Result<Vec<PathBuf>, CliError> {
+) -> Result<(PathBuf, Vec<PathBuf>), CliError> {
     // A per-archive subdirectory keeps each entry's relative path (zips may carry
     // nested directories); `unique_unpack_path` keeps it apart from other inputs
     // unpacked under the same name (e.g. `a/data.zip` and `b/data.zip`).
@@ -5767,7 +5858,7 @@ fn extract_all_zip_entries(
     // Tabular entries first, so a single-input consumer's first element matches
     // the reader-level `select_zip_entry` choice (the first CSV/TSV/TAB/SSV entry).
     tabular.extend(other_supported);
-    Ok(tabular)
+    Ok((zip_extract_dir, tabular))
 }
 
 /// Converts files in special formats (Parquet, Avro, Arrow IPC, JSONL, JSON, or compressed CSV)
@@ -7405,7 +7496,7 @@ mod tests {
         );
 
         let work = tempfile::tempdir().unwrap();
-        let got = extract_all_zip_entries(&zip_path, &work).unwrap();
+        let (_, got) = extract_all_zip_entries(&zip_path, &work).unwrap();
         let names: Vec<String> = got
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())

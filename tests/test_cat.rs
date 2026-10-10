@@ -919,7 +919,7 @@ fn cat_rows_record_must_match_its_own_header() {
 }
 
 // A decompressed `stdin.csv.sz` lands in the temp dir as `stdin.csv`, the same
-// name piped stdin gets; without piped input it must be named as itself.
+// name piped stdin gets; it must be named as given, not as stdin.
 #[test]
 fn cat_rows_width_mismatch_compressed_stdin_named_file_is_not_stdin() {
     let wrk = Workdir::new("cat_rows_width_mismatch_compressed_stdin_named_file_is_not_stdin");
@@ -936,7 +936,7 @@ fn cat_rows_width_mismatch_compressed_stdin_named_file_is_not_stdin() {
 
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
-        stderr.contains("`stdin.csv` line 2: found a record with 3 fields"),
+        stderr.contains("`stdin.csv.sz` line 2: found a record with 3 fields"),
         "stderr: {stderr}"
     );
 }
@@ -983,11 +983,17 @@ fn snappy_compress(wrk: &Workdir, input: &str) {
 
 /// Run `cat rows` over `args`, piping `stdin_data` in for `-`.
 fn cat_rows_with_stdin(wrk: &Workdir, args: &[&str], stdin_data: &str) -> process::Output {
+    let mut all_args = vec!["rows"];
+    all_args.extend_from_slice(args);
+    cat_with_stdin(wrk, &all_args, stdin_data)
+}
+
+/// Run `cat` with `args`, piping `stdin_data` in for `-`.
+fn cat_with_stdin(wrk: &Workdir, args: &[&str], stdin_data: &str) -> process::Output {
     use std::io::Write;
 
     let mut cmd = wrk.command("cat");
-    cmd.arg("rows")
-        .args(args)
+    cmd.args(args)
         .stdin(process::Stdio::piped())
         .stdout(process::Stdio::piped())
         .stderr(process::Stdio::piped());
@@ -1146,7 +1152,7 @@ fn cat_rows_width_mismatch_stdin_and_stdin_named_sz_are_named_apart() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("`stdin.csv` line 2: found a record with 3 fields"),
+        stderr.contains("`stdin.csv.sz` line 2: found a record with 3 fields"),
         "stderr: {stderr}"
     );
 
@@ -1158,6 +1164,151 @@ fn cat_rows_width_mismatch_stdin_and_stdin_named_sz_are_named_apart() {
         stderr.contains("`<stdin>` line 2: found a record with 3 fields"),
         "stderr: {stderr}"
     );
+}
+
+/// Two months' `data.csv`, snappy-compressed in `jan/` and `feb/`.
+fn monthly_sz_workdir(name: &str) -> Workdir {
+    let wrk = Workdir::new(name);
+    for (dir, data) in [("jan", "src\nj\n"), ("feb", "src\nf\n")] {
+        wrk.create_subdir(dir).unwrap();
+        wrk.create_from_string(&format!("{dir}/data.csv"), data);
+        snappy_compress(&wrk, &format!("{dir}/data.csv"));
+    }
+    wrk
+}
+
+// A .sz input is grouped as the file it decompresses to, in its own directory,
+// not by its temp file (#4781).
+#[test]
+fn cat_rowskey_parentdirfname_sz_inputs_use_their_directory() {
+    let wrk = monthly_sz_workdir("cat_rowskey_parentdirfname_sz_inputs_use_their_directory");
+
+    let mut cmd = wrk.command("cat");
+    cmd.args(["rowskey", "--group", "parentdirfname"])
+        .args(["jan/data.csv.sz", "feb/data.csv.sz"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let sep = std::path::MAIN_SEPARATOR;
+    let expected = vec![
+        svec!["file", "src"],
+        vec![format!("jan{sep}data.csv"), "j".to_string()],
+        vec![format!("feb{sep}data.csv"), "f".to_string()],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn cat_rowskey_fullpath_sz_input_names_the_real_file() {
+    let wrk = monthly_sz_workdir("cat_rowskey_fullpath_sz_input_names_the_real_file");
+
+    let mut cmd = wrk.command("cat");
+    cmd.args(["rowskey", "--group", "fullpath", "jan/data.csv.sz"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // the real file, not the `jan/data.csv` it decompresses to, which may be another file
+    let expected_path = wrk.path("jan/data.csv.sz").canonicalize().unwrap();
+    let expected = vec![
+        svec!["file", "src"],
+        vec![
+            expected_path.to_string_lossy().into_owned(),
+            "j".to_string(),
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+// A zip entry's parentdir kinds name it as if the archive were a directory
+// named for it (the labels they had); `fullpath` names the archive (#4781).
+#[test]
+fn cat_rowskey_zip_entries_grouped_as_archive_directory() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_rowskey_zip_entries_grouped_as_archive_directory");
+    wrk.create_subdir("feb").unwrap();
+    for (archive, entry) in [("feb/mar.zip", "data.csv"), ("feb/nested.zip", "sub/x.csv")] {
+        let zf = std::fs::File::create(wrk.path(archive)).unwrap();
+        let mut zw = zip::ZipWriter::new(zf);
+        zw.start_file(entry, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zw.write_all(b"src\nf\n").unwrap();
+        zw.finish().unwrap();
+    }
+    let feb = wrk.path("feb").canonicalize().unwrap();
+    let sep = std::path::MAIN_SEPARATOR;
+
+    for (group, expected) in [
+        (
+            "parentdirfname",
+            [format!("mar{sep}data.csv"), format!("sub{sep}x.csv")],
+        ),
+        (
+            "fullpath",
+            [
+                feb.join("mar.zip")
+                    .join("data.csv")
+                    .to_string_lossy()
+                    .into_owned(),
+                feb.join("nested.zip")
+                    .join("sub")
+                    .join("x.csv")
+                    .to_string_lossy()
+                    .into_owned(),
+            ],
+        ),
+    ] {
+        let mut cmd = wrk.command("cat");
+        cmd.args(["rowskey", "--group", group])
+            .args(["feb/mar.zip", "feb/nested.zip"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let got_groups: Vec<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
+        assert_eq!(got_groups, expected, "--group {group}");
+    }
+}
+
+// Piped stdin has no location (#4781).
+#[test]
+fn cat_rowskey_stdin_group_values() {
+    let wrk = Workdir::new("cat_rowskey_stdin_group_values");
+
+    for (group, expected) in [
+        ("fullpath", "<stdin>"),
+        ("parentdirfname", "stdin.csv"),
+        ("parentdirfstem", "stdin"),
+        ("fname", "stdin.csv"),
+    ] {
+        let output = cat_with_stdin(&wrk, &["rowskey", "--group", group, "-"], "src\np\n");
+        assert!(output.status.success(), "--group {group}: {output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            format!("file,src\n{expected},p\n"),
+            "--group {group}"
+        );
+    }
+}
+
+// Errors name a zip entry as `archive/entry` (#4781).
+#[test]
+fn cat_rows_width_mismatch_names_zip_entry() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_rows_width_mismatch_names_zip_entry");
+    wrk.create_from_string("in1.csv", "h1,h2\nv1,v2\n");
+    let zf = std::fs::File::create(wrk.path("bad.zip")).unwrap();
+    let mut zw = zip::ZipWriter::new(zf);
+    zw.start_file("bad.csv", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zw.write_all(b"h1,h2\n7,8,9\n").unwrap();
+    zw.finish().unwrap();
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("in1.csv").arg("bad.zip");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    let expected = format!(
+        "`{}` line 2: found a record with 3 fields",
+        std::path::Path::new("bad.zip").join("bad.csv").display()
+    );
+    assert!(stderr.contains(&expected), "stderr: {stderr}");
 }
 
 // An empty (0-byte) first input must not cost the output its header: the

@@ -973,6 +973,130 @@ fn cat_rows_width_mismatch_names_stdin() {
     );
 }
 
+fn snappy_compress(wrk: &Workdir, input: &str) {
+    let mut snappy = wrk.command("snappy");
+    snappy
+        .args(["compress", input])
+        .args(["-o", &format!("{input}.sz")]);
+    wrk.assert_success(&mut snappy);
+}
+
+/// Run `cat rows` over `args`, piping `stdin_data` in for `-`.
+fn cat_rows_with_stdin(wrk: &Workdir, args: &[&str], stdin_data: &str) -> process::Output {
+    use std::io::Write;
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows")
+        .args(args)
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin_data.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+// Same-named .sz inputs in different directories decompress to the same file
+// name; each must keep its own data (#4779).
+#[test]
+fn cat_rows_same_named_sz_inputs_keep_their_data() {
+    let wrk = Workdir::new("cat_rows_same_named_sz_inputs_keep_their_data");
+    wrk.create_subdir("a").unwrap();
+    wrk.create_subdir("b").unwrap();
+    wrk.create_from_string("a/data.csv", "src\nfrom_a\n");
+    wrk.create_from_string("b/data.csv", "src\nfrom_b\n");
+    snappy_compress(&wrk, "a/data.csv");
+    snappy_compress(&wrk, "b/data.csv");
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("a/data.csv.sz").arg("b/data.csv.sz");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["src"], svec!["from_a"], svec!["from_b"]];
+    assert_eq!(got, expected);
+}
+
+// Same-named zips extract to the same directory name (#4779).
+#[test]
+fn cat_rows_same_named_zip_inputs_keep_their_data() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_rows_same_named_zip_inputs_keep_their_data");
+    for (dir, data) in [("a", "src\nfrom_a\n"), ("b", "src\nfrom_b\n")] {
+        wrk.create_subdir(dir).unwrap();
+        let zf = std::fs::File::create(wrk.path(&format!("{dir}/data.zip"))).unwrap();
+        let mut zw = zip::ZipWriter::new(zf);
+        zw.start_file("data.csv", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zw.write_all(data.as_bytes()).unwrap();
+        zw.finish().unwrap();
+    }
+
+    let mut cmd = wrk.command("cat");
+    cmd.arg("rows").arg("a/data.zip").arg("b/data.zip");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["src"], svec!["from_a"], svec!["from_b"]];
+    assert_eq!(got, expected);
+}
+
+// Piped stdin and a decompressed `stdin.csv.sz` both want `stdin.csv`; in
+// either argument order each must keep its own data (#4779).
+#[test]
+fn cat_rows_stdin_and_stdin_named_sz_keep_their_data() {
+    let wrk = Workdir::new("cat_rows_stdin_and_stdin_named_sz_keep_their_data");
+    wrk.create_from_string("stdin.csv", "src\nfrom_sz\n");
+    snappy_compress(&wrk, "stdin.csv");
+
+    for (args, expected) in [
+        (["-", "stdin.csv.sz"], "src\nfrom_pipe\nfrom_sz\n"),
+        (["stdin.csv.sz", "-"], "src\nfrom_sz\nfrom_pipe\n"),
+    ] {
+        let output = cat_rows_with_stdin(&wrk, &args, "src\nfrom_pipe\n");
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            expected,
+            "{args:?}"
+        );
+    }
+}
+
+// With both present, errors still tell `stdin.csv.sz` and piped stdin apart,
+// even when the .sz file is unpacked first.
+#[test]
+fn cat_rows_width_mismatch_stdin_and_stdin_named_sz_are_named_apart() {
+    let wrk = Workdir::new("cat_rows_width_mismatch_stdin_and_stdin_named_sz_are_named_apart");
+    wrk.create_from_string("stdin.csv", "h1,h2\n7,8,9\n");
+    snappy_compress(&wrk, "stdin.csv");
+    wrk.create_subdir("ok").unwrap();
+    wrk.create_from_string("ok/stdin.csv", "h1,h2\nv1,v2\n");
+    snappy_compress(&wrk, "ok/stdin.csv");
+
+    // the .sz file is bad, stdin is good
+    let output = cat_rows_with_stdin(&wrk, &["stdin.csv.sz", "-"], "h1,h2\nv1,v2\n");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`stdin.csv` line 2: found a record with 3 fields"),
+        "stderr: {stderr}"
+    );
+
+    // stdin is bad, the .sz file is good
+    let output = cat_rows_with_stdin(&wrk, &["ok/stdin.csv.sz", "-"], "h1,h2\n7,8,9\n");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`<stdin>` line 2: found a record with 3 fields"),
+        "stderr: {stderr}"
+    );
+}
+
 // An empty (0-byte) first input must not cost the output its header: the
 // header comes from the first non-empty input.
 #[test]

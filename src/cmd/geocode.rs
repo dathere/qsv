@@ -1390,13 +1390,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     // copy it to the default geocode index file
 
                     if metadata.is_some() {
-                        // COPY the file; do not re-serialize the loaded engine.
-                        // `Storage::dump_to` rewrote the index 696 bytes shorter (for every
-                        // index, whatever its size) and the result could not be loaded at all -
-                        // "Error initializing Engine: subtree pointer overran range". Since its
-                        // return value was also discarded, `index-load` reported success and left
-                        // an unusable index in place. The source is already a valid index file, so
-                        // copying it is exact and cannot corrupt it.
+                        // COPY the file; do not re-serialize the loaded engine. The source is
+                        // already a valid index file, so copying it is exact. (Re-serializing
+                        // with geosuggest-core < 0.8.5 `Storage::dump_to` dropped the metadata
+                        // bytes and left an unloadable index in place - issue #4433.)
                         let active_index_path = PathBuf::from(&active_geocode_index_file);
                         let same_file = loaded_index_file
                             .canonicalize()
@@ -2464,20 +2461,12 @@ async fn rebuild_index(
 /// Write `engine_data` as a Geonames index file at `index_path`, replacing it atomically.
 ///
 /// The index is written to a sibling temp file, loaded back to prove it is usable, and only then
-/// renamed over `index_path`, so a failed write never clobbers a working index.
-///
-/// The storage framing - `<u32 BE metadata length><rkyv metadata><rkyv payload>` - is written
-/// here rather than via geosuggest-core 0.8 `Storage::dump_to`, which writes the metadata LENGTH
-/// but gates the metadata BYTES behind its `tracing` feature, producing an unloadable index
-/// (the corruption behind qsv issue #4433). Reported upstream as estin/geosuggest#50 - once
-/// a fixed release is in Cargo.lock, this can go back to `Storage::dump_to`.
+/// renamed over `index_path`, so a failed write never clobbers a working index. (`Storage::dump_to`
+/// would truncate the active index in place.) geosuggest-core 0.8.5 fixed `Storage::dump` dropping
+/// the metadata bytes without its `tracing` feature (estin/geosuggest#50, qsv issue #4433); the
+/// verify step would still catch any such regression before the rename.
 fn write_index_file(index_path: &Path, engine_data: &EngineData) -> CliResult<()> {
     use std::io::Write;
-
-    let metadata = rkyv::to_bytes::<rkyv::rancor::Error>(&engine_data.metadata)
-        .map_err(|e| CliError::Other(format!("Cannot serialize Geonames index metadata: {e}")))?;
-    let metadata_len = u32::try_from(metadata.len())
-        .map_err(|_| CliError::Other("Geonames index metadata is too large".to_string()))?;
 
     let index_dir = index_path
         .parent()
@@ -2486,9 +2475,9 @@ fn write_index_file(index_path: &Path, engine_data: &EngineData) -> CliResult<()
     let mut tmp = tempfile::NamedTempFile::new_in(index_dir)?;
     {
         let mut wtr = std::io::BufWriter::new(tmp.as_file_mut());
-        wtr.write_all(&metadata_len.to_be_bytes())?;
-        wtr.write_all(&metadata)?;
-        wtr.write_all(&engine_data.data)?;
+        storage::Storage::new()
+            .dump(&mut wtr, engine_data)
+            .map_err(|e| CliError::Other(format!("Cannot write the Geonames index: {e}")))?;
         wtr.flush()?;
     }
     tmp.as_file().sync_all()?;
@@ -4899,9 +4888,7 @@ mod tests {
 
         let mut engine_data = mini_engine_data();
         let half = engine_data.data.len() / 2;
-        let mut truncated = rkyv::util::AlignedVec::<128>::new();
-        truncated.extend_from_slice(&engine_data.data[..half]);
-        engine_data.data = truncated;
+        engine_data.data.resize(half, 0);
 
         assert!(write_index_file(&index_path, &engine_data).is_err());
         assert_eq!(fs::read(&index_path).unwrap(), b"previous index");

@@ -3928,6 +3928,48 @@ fn decode_lookup_cache(encoded: &str) -> Option<String> {
     }
 }
 
+/// Cap on an online geocoder's response body. `OpenCage` and Geoclient responses are a few KB;
+/// anything bigger is a broken or hostile server (or a compression bomb - reqwest decompresses
+/// brotli/gzip/deflate/zstd transparently, so the cap applies to the decompressed size).
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+
+/// Why a response body could not be read.
+enum BodyError {
+    /// Over the cap: a broken or hostile server - retrying would not help.
+    TooLarge(usize),
+    /// The connection failed mid-body (reset, timeout) - worth a retry.
+    Transport(String),
+}
+
+/// Read a response body, refusing more than `cap` bytes (decompressed) instead of buffering it all.
+async fn read_capped(mut resp: reqwest::Response, cap: usize) -> Result<Vec<u8>, BodyError> {
+    if resp.content_length().is_some_and(|n| n > cap as u64) {
+        return Err(BodyError::TooLarge(cap));
+    }
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| BodyError::Transport(e.to_string()))?
+    {
+        if buf.len() + chunk.len() > cap {
+            return Err(BodyError::TooLarge(cap));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
+/// The `OpenCage` geocoding endpoint. `QSV_OPENCAGE_API_URL` overrides it - for testing only,
+/// so the response handling can run against a local mock.
+fn opencage_api_url() -> String {
+    std::env::var("QSV_OPENCAGE_API_URL")
+        .ok()
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| "https://api.opencagedata.com/geocode/v1/json".to_string())
+}
+
 /// Call the `OpenCage` Geocoding API for a single (already normalized) query.
 /// The same `q` parameter does forward geocoding for an address and reverse
 /// geocoding for a "lat,long" coordinate.
@@ -3957,12 +3999,11 @@ async fn opencage_fetch(
         params.push(("countrycode", cc.as_str()));
     }
 
-    let url = Url::parse_with_params("https://api.opencagedata.com/geocode/v1/json", &params)
-        .map_err(|e| {
-            OcError::Transient(util::redact_api_key(&format!(
-                "OpenCage URL build error: {e}"
-            )))
-        })?;
+    let url = Url::parse_with_params(&opencage_api_url(), &params).map_err(|e| {
+        OcError::Transient(util::redact_api_key(&format!(
+            "OpenCage URL build error: {e}"
+        )))
+    })?;
     let resp = client.get(url).send().await.map_err(|e| {
         OcError::Transient(util::redact_api_key(&format!(
             "OpenCage network error: {e}"
@@ -3996,11 +4037,20 @@ async fn opencage_fetch(
         },
     }
 
-    let parsed: OpencageResponse = resp.json().await.map_err(|e| {
-        OcError::Transient(util::redact_api_key(&format!(
-            "OpenCage response error: {e}"
-        )))
-    })?;
+    // read through the size cap: resp.json() would buffer whatever the server sends
+    let body = read_capped(resp, MAX_BODY_BYTES)
+        .await
+        .map_err(|e| match e {
+            BodyError::TooLarge(cap) => OcError::Transient(format!(
+                "OpenCage response body is larger than {cap} bytes."
+            )),
+            // reqwest errors quote the request URL, which carries the key
+            BodyError::Transport(e) => OcError::Transient(util::redact_api_key(&format!(
+                "OpenCage response error: {e}"
+            ))),
+        })?;
+    let parsed: OpencageResponse = serde_json::from_slice(&body)
+        .map_err(|e| OcError::Transient(format!("OpenCage response is not valid JSON: {e}")))?;
 
     // OpenCage also echoes the status code in the JSON body
     match parsed.status.code {

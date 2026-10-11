@@ -26,8 +26,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use super::{
-    Args, OPENCAGE_FORMATSTR_REGEX, add_fields, decode_lookup_cache, encode_lookup_cache,
-    first_selected_column, json_dotpath, parse_dyncols_spec,
+    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, add_fields, decode_lookup_cache,
+    encode_lookup_cache, first_selected_column, json_dotpath, parse_dyncols_spec, read_capped,
 };
 use crate::{
     CliError, CliResult,
@@ -44,9 +44,6 @@ pub(super) const GEOCLIENT_CACHE_NAME: &str = "geocode-geoclient";
 
 /// Default requests/second: under the public gateway's 2,500/minute cap (41.6/s).
 pub(super) const DEFAULT_GEOCLIENT_RATE_LIMIT: u32 = 40;
-
-/// Responses are a few KB; anything bigger is a broken or hostile server (or a compression bomb).
-const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 
 /// Retries after the first attempt, for 429/408/5xx/network errors.
 const MAX_RETRIES: u32 = 3;
@@ -472,33 +469,6 @@ fn extract_result(endpoint: Endpoint, body: &Value) -> Option<Value> {
         }
     }
     Some(obj)
-}
-
-/// Why a response body could not be read.
-enum BodyError {
-    /// Over the cap: a broken or hostile server - retrying would not help.
-    TooLarge(usize),
-    /// The connection failed mid-body (reset, timeout) - worth a retry.
-    Transport(String),
-}
-
-/// Read a response body, refusing more than `cap` bytes (decompressed) instead of buffering it all.
-async fn read_capped(mut resp: reqwest::Response, cap: usize) -> Result<Vec<u8>, BodyError> {
-    if resp.content_length().is_some_and(|n| n > cap as u64) {
-        return Err(BodyError::TooLarge(cap));
-    }
-    let mut buf = Vec::new();
-    while let Some(chunk) = resp
-        .chunk()
-        .await
-        .map_err(|e| BodyError::Transport(e.to_string()))?
-    {
-        if buf.len() + chunk.len() > cap {
-            return Err(BodyError::TooLarge(cap));
-        }
-        buf.extend_from_slice(&chunk);
-    }
-    Ok(buf)
 }
 
 fn retry_base() -> Duration {

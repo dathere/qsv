@@ -76,6 +76,11 @@ fn with_sql_backend<R>(f: impl FnOnce(&SqlBackend) -> Result<R, Error>) -> Resul
 /// Register every filter + global on the environment. Called once per
 /// `evaluate_spec` invocation by `formula_engine::evaluate_spec`.
 pub fn register(env: &mut Environment) {
+    // Python-style methods (`s.split(',')`, `s.upper()`, `d.items()`, ...)
+    // that bundled profiles use, e.g. dcat-us-v3's comma-separated
+    // bureauCode/programCode. Without this they fail with "unknown method".
+    env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+
     // --- filters ------------------------------------------------------
     env.add_filter("truncate_with_ellipsis", truncate_with_ellipsis);
     env.add_filter("format_number", format_number);

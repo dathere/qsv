@@ -104,11 +104,14 @@ QSV_NO_HEADERS = False
 # defaults to 80 when output is redirected.
 # QSV_TERMWIDTH = 120
 
-# The directory to use for caching various qsv files.
-# Used by the `geocode` command for downloaded geocoding resources.
-# Used by the `luau`` command for downloaded lookup_table resources using
-# the `luau` qsv_register_lookup() helper function and the `geocode` command
-# for downloaded geocoding resources.
+# The directory qsv uses for its persistent caches. It holds:
+#   * lookup tables downloaded by `luau` (qsv_register_lookup()), `template` & `validate`
+#   * `geocode`'s Geonames index and its online OpenCage result cache
+#   * `get`'s download cache
+#   * `describegpt`'s downloaded tag vocabularies and its LLM completion cache
+#   * `viz`'s Census boundary and population caches
+# It takes precedence over the --cache-dir option of `geocode`, `luau`, `template`,
+# `validate` & `describegpt`, while `get`'s --cache-dir overrides it.
 # QSV_CACHE_DIR = ~/.qsv-cache
 
 # The CKAN Action API endpoint to use with the `luau` qsv_register_lookup()
@@ -145,10 +148,12 @@ QSV_COMMENT_CHAR = '#'
 # Otherwise, you can just use the character without enclosing it in single quotes
 # QSV_COMMENT_CHAR = !
 
-# number of jobs to use for multithreaded commands (currently `apply`, `applydp`, 
-# `dedup`, `diff`, `extsort`, `frequency`, `joinp`, `schema`, `snappy`, `sort`, `split`,
-# `stats`, `to`, `tojsonl` & # `validate`). If not set, max_jobs is set to the detected
-# number of logical processors.  See PERFORMANCE-Multithreading section for more info.
+# number of jobs to use for multithreaded commands (currently `apply`, `applydp`,
+# `blake3`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`,
+# `joinp`, `jsonl`, `moarstats`, `pragmastat`, `replace`, `schema`, `search`,
+# `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl`,
+# `validate` & `writestat`). If not set, max_jobs is set to the detected number of
+# logical processors.  See PERFORMANCE-Multithreading section for more info.
 # QSV_MAX_JOBS = 8
 
 # The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,
@@ -226,9 +231,11 @@ QSV_MEMORY_CHECK = False
 # See https://docs.rs/flexi_logger/latest/flexi_logger/enum.WriteMode.html for details.
 QSV_LOG_UNBUFFERED = False
 
-# if true, enable the --progressbar option on the `apply`, `fetch`, `fetchpost`,
-# `foreach`, `luau`, `py`, `replace`, `search`, `searchset`, `sortcheck` &
-# `validate` commands.
+# if true, enable the --progressbar option on the `apply`, `datefmt`, `fetch`,
+# `fetchpost`, `foreach`, `geocode`, `luau`, `moarstats`, `py`, `replace`, `search`,
+# `searchset`, `sniff`, `sortcheck`, `template` & `validate` commands.
+# `viz` is the exception: its spinner is ON by default, and setting this to a
+# falsy value (e.g. False, 0, no, off) disables it.
 QSV_PROGRESSBAR = False
 
 # set time-to-live of diskcache cached values (default (seconds): 2419200 (28 days)).
@@ -261,8 +268,9 @@ QSV_REDIS_TTL_SECS = 2419200
 # if true, enables cache hits to refresh TTL of Redis cached values.
 QSV_REDIS_TTL_REFRESH = False
 
-# for commands with a --timeout option (`fetch`, `fetchpost`, `luau`, `sniff` &
-# `validate`), the number of seconds before a web request times out (default: 30).
+# for commands with a --timeout option (`describegpt`, `fetch`, `fetchpost`, `geocode`,
+# `luau`, `sample`, `snappy`, `sniff`, `template`, `validate` & `viz`), the number of
+# seconds before a web request times out (default: 30).
 QSV_TIMEOUT = 30
 
 # the user agent string to use for web requests.

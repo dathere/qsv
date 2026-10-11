@@ -2712,6 +2712,45 @@ fn geocode_index_load_invalid_shortcut() {
 
 #[test]
 #[serial]
+fn geocode_index_load_accepts_timeout() {
+    // `--timeout` must parse for index-load (it was rejected as "Invalid arguments"); an invalid
+    // shortcut then fails fast, before any download
+    let wrk = Workdir::new("geocode_index_load_accepts_timeout");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("index-load")
+        .arg("--timeout")
+        .arg("300")
+        .arg("5000");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("Invalid index shortcut"),
+        "--timeout must be accepted by index-load, got: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_index_reset_forwards_timeout() {
+    // index-reset must accept --timeout AND pass it to the index download: 0 is rejected by the
+    // download's own validation, so reaching that error proves the value got there - no network.
+    // The cache is isolated, as index-reset deletes the active index.
+    let wrk = Workdir::new("geocode_index_reset_forwards_timeout");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env_remove("QSV_TIMEOUT");
+    cmd.arg("index-reset").arg("--timeout").arg("0");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("Timeout cannot be zero"),
+        "--timeout must reach the index download, got: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
 fn geocode_index_load_numeric_named_file_not_shortcut() {
     // a real local file whose name happens to be numeric (e.g. `15000.rkyv`) must be
     // loaded as a file, NOT mistaken for the `15000` download shortcut - which would

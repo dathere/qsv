@@ -302,10 +302,10 @@ qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
 qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode opencagenow [options] <location>
-qsv geocode index-load <index-file>
+qsv geocode index-load [--timeout=<seconds>] <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
-qsv geocode index-reset
+qsv geocode index-reset [--timeout=<seconds>]
 qsv geocode cache-clear [options]
 qsv geocode cache-prune --older-than=<val> [options]
 qsv geocode cache-info [options]
@@ -513,8 +513,9 @@ geocode options:
                                 [default: 50000]
     --timeout <seconds>         Timeout for downloading Geonames cities index.
                                 Also applies to each Geonames source file downloaded
-                                when rebuilding the index with index-update - raise it
-                                on slow connections.
+                                when rebuilding the index with index-update, and to the
+                                prebuilt index downloaded by index-load and index-reset -
+                                raise it on slow connections.
                                 [default: 120]
     --cache-dir <dir>           The directory to use for caching the Geonames cities index
                                 and the persistent on-disk OpenCage result cache.
@@ -2640,9 +2641,10 @@ async fn load_engine_data_resolved(
     //
     // The `~/.qsv-cache` here is the FALLBACK, not the answer: `resolve_geocode_cache_dir` reads
     // QSV_CACHE_DIR first, which is the only way to relocate the cache for this subcommand -
-    // `qsv geocode index-load <index-file>` takes no `[options]` in the USAGE pattern, so
-    // `--cache-dir` cannot be passed to it and cannot disagree with this. If index-load ever gains
-    // options, thread the caller's already-resolved cache dir in rather than widening this.
+    // `qsv geocode index-load [--timeout=<seconds>] <index-file>` takes no other options in the
+    // USAGE pattern, so `--cache-dir` cannot be passed to it and cannot disagree with this. If
+    // index-load ever gains `--cache-dir`, thread the caller's already-resolved cache dir in rather
+    // than widening this.
     let mut geocode_index_file = geocode_index_file;
     let mut downloaded_default_index = false;
     if let Some(shortcut) = numeric_shortcut {

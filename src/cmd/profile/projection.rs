@@ -12,7 +12,7 @@
 //! `ProjectionWarning` entries so the orchestrator can re-emit them in
 //! the `projection_warnings` array.
 
-use minijinja::Environment;
+use minijinja::{Environment, value::Serde};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -98,7 +98,7 @@ pub fn project(
     formula_helpers::register(&mut env);
     register_profile_helpers(&mut env, profile);
 
-    let mj_ctx = minijinja::Value::from_serialize(ctx);
+    let mj_ctx = minijinja::Value::from(Serde(ctx));
     let mut warnings: Vec<ProjectionWarning> = Vec::new();
 
     // 1. Build the Dataset core. Fields with `on_dataset: false` skip.
@@ -279,7 +279,7 @@ fn emit_recordset(
     let mut entries: Vec<Value> = Vec::with_capacity(columns.len());
     for col in columns {
         let scoped = json!({ "column": col });
-        let mj_scoped = minijinja::Value::from_serialize(&scoped);
+        let mj_scoped = minijinja::Value::from(Serde(&scoped));
         match render_to_string(env, &mj_scoped, &rs.template) {
             Ok(s) if !s.trim().is_empty() => {
                 entries.push(coerce_json_or_string(&s));
@@ -336,7 +336,7 @@ pub fn wrap_as_catalog(
     // layering contexts inside minijinja instead of merging at the
     // JSON layer.
     let ctx_with_inner = build_ctx_with_inner(analysis_ctx, &dataset);
-    let mj_with_inner = minijinja::Value::from_serialize(&ctx_with_inner);
+    let mj_with_inner = minijinja::Value::from(Serde(&ctx_with_inner));
 
     // Title derived from the catalog template if any; otherwise fall back
     // to the legacy "Catalog of <inner title>" convention reading from
@@ -523,14 +523,14 @@ fn lookup_in_vocab(
     let candidates: [&str; 3] = [key, &key_lower, &primary];
     for candidate in candidates {
         if let Some(v) = entry.get(candidate) {
-            return Some(minijinja::Value::from_serialize(v));
+            return Some(minijinja::Value::from(Serde(v)));
         }
         // Case-insensitive scan for non-canonical capitalization.
         if let Some((_k, v)) = entry
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(candidate))
         {
-            return Some(minijinja::Value::from_serialize(v));
+            return Some(minijinja::Value::from(Serde(v)));
         }
     }
     None

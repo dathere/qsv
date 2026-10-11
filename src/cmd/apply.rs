@@ -1142,7 +1142,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
         ctx.insert("QSV_ROWNO", rowno_str.as_str());
 
         let user_prompt = template
-            .render(&ctx)
+            .render(minijinja::value::Serde(&ctx))
             .map_err(|e| CliError::Other(format!("Prompt render error (row {row_number}): {e}")))?;
 
         // cache key: base_url | model | max_tokens | addl_props | rendered prompt

@@ -150,7 +150,7 @@ use std::{
     io::{BufWriter, Write},
     path::PathBuf,
     sync::{
-        OnceLock, RwLock,
+        Arc, OnceLock, RwLock,
         atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering},
     },
 };
@@ -158,14 +158,13 @@ use std::{
 use foldhash::{HashMap, HashMapExt};
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
-use minijinja::{Environment, Value, value::ValueKind};
-use minijinja_contrib::pycompat::unknown_method_callback;
-use rayon::{
-    iter::{IndexedParallelIterator, ParallelIterator},
-    prelude::IntoParallelRefIterator,
+use minijinja::{
+    Environment, Value,
+    value::{Enumerator, Object, Serde, ValueKind},
 };
+use minijinja_contrib::pycompat::unknown_method_callback;
+use rayon::iter::{IndexedParallelIterator, ParallelDrainRange, ParallelIterator};
 use serde::Deserialize;
-use simd_json::{BorrowedValue, json};
 
 use crate::{
     CliError, CliResult,
@@ -232,6 +231,92 @@ static CKAN_API: OnceLock<String> = OnceLock::new();
 static CKAN_TOKEN: OnceLock<Option<String>> = OnceLock::new();
 static DELIMITER: OnceLock<Option<Delimiter>> = OnceLock::new();
 
+/// Template variable names, resolved once per run and shared by every row.
+#[derive(Debug)]
+struct RowKeys {
+    no_headers: bool,
+    /// sanitized header -> field index; a later duplicate header wins
+    index:      HashMap<String, usize>,
+    headers:    Vec<String>,
+}
+
+/// The per-row render context, exposed to MiniJinja as a native map object.
+/// Fields are converted to `Value`s lazily — only the ones a template actually
+/// references — instead of materializing and serializing a whole map per row.
+#[derive(Debug)]
+struct RowContext {
+    keys:    Arc<RowKeys>,
+    record:  csv::StringRecord,
+    globals: Option<Value>,
+}
+
+impl RowContext {
+    fn field_index(&self, key: &str) -> Option<usize> {
+        if self.keys.no_headers {
+            // the last field is the QSV_ROWNO appended by the batch producer
+            let last = self.record.len().checked_sub(1)?;
+            if key == QSV_ROWNO {
+                return Some(last);
+            }
+            let digits = key.strip_prefix("_c")?;
+            // only the exact `_c{N}` spellings, so e.g. `_c01` stays undefined
+            if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let col: usize = digits.parse().ok()?;
+            (col >= 1 && col <= last).then(|| col - 1)
+        } else {
+            self.keys
+                .index
+                .get(key)
+                .copied()
+                .filter(|&i| i < self.record.len())
+        }
+    }
+
+    fn key_names(&self) -> Vec<Value> {
+        let mut names = Vec::with_capacity(self.record.len() + 1);
+        if self.globals.is_some() {
+            names.push(Value::from("qsv_g"));
+        }
+        if self.keys.no_headers {
+            let last = self.record.len().saturating_sub(1);
+            names.extend((1..=last).map(|c| Value::from(format!("_c{c}"))));
+            if !self.record.is_empty() {
+                names.push(Value::from(QSV_ROWNO));
+            }
+        } else {
+            names.extend(
+                self.keys
+                    .headers
+                    .iter()
+                    .enumerate()
+                    .filter(|&(i, h)| i < self.record.len() && self.keys.index.get(h) == Some(&i))
+                    .map(|(_, h)| Value::from(h.as_str())),
+            );
+        }
+        names
+    }
+}
+
+impl Object for RowContext {
+    fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
+        let key = key.as_str()?;
+        // record fields shadow `qsv_g`, matching the old map-insertion order
+        if let Some(i) = self.field_index(key) {
+            return self.record.get(i).map(Value::from);
+        }
+        if key == "qsv_g" {
+            return self.globals.clone();
+        }
+        None
+    }
+
+    fn enumerate(self: &Arc<Self>) -> Enumerator {
+        Enumerator::Values(self.key_names())
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
@@ -269,26 +354,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ordering::Relaxed,
     );
 
-    // setup globals JSON context if specified
-    let mut globals_flag = false;
-    let globals_ctx = if let Some(globals_json) = args.flag_globals_json {
-        globals_flag = true;
+    // setup globals JSON context if specified; converted to a MiniJinja value
+    // once, so each row only clones an Arc
+    let globals_ctx: Option<Value> = if let Some(globals_json) = args.flag_globals_json {
         match std::fs::read(globals_json) {
-            Ok(mut bytes) => match simd_json::from_slice(&mut bytes) {
-                Ok(json) => json,
+            Ok(mut bytes) => match simd_json::from_slice::<simd_json::OwnedValue>(&mut bytes) {
+                Ok(json) => Some(Value::from(Serde(json))),
                 Err(e) => return fail_clierror!("Failed to parse globals JSON file: {e}"),
             },
             Err(e) => return fail_clierror!("Failed to read globals JSON file: {e}"),
         }
     } else {
-        json!("")
+        None
     };
-
-    let globals_ctx_borrowed: simd_json::BorrowedValue = globals_ctx.into();
 
     // Set up minijinja environment with qsv's custom functions/filters
     // see https://docs.rs/minijinja-contrib/latest/minijinja_contrib/
     let mut env = Environment::new();
+    // name the expression that produced an undefined value in rendering errors
+    env.set_debug(true);
     register_qsv_extensions(&mut env);
     env.add_template("template", &template_content)?;
     let template = env.get_template("template")?;
@@ -330,7 +414,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         sanitized_headers.push(QSV_ROWNO.to_owned());
         csv::StringRecord::from(sanitized_headers)
     };
-    let headers_len = headers.len();
+
+    // resolve the template variable names once; every row context shares them
+    let row_keys = Arc::new(RowKeys {
+        no_headers: args.flag_no_headers,
+        index:      headers
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (h.to_owned(), i))
+            .collect(),
+        headers:    headers.iter().map(str::to_owned).collect(),
+    });
 
     // Set up output handling
     let output_to_dir = args.arg_outdir.is_some();
@@ -351,6 +445,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let filename_template = if output_to_dir && !use_rowno_filename {
         // actually init the MiniJinja environment with default filters, tests and globals loaded
         filename_env = Environment::new();
+        filename_env.set_debug(true);
 
         minijinja_contrib::add_to_environment(&mut filename_env);
         filename_env.set_unknown_method_callback(unknown_method_callback);
@@ -422,8 +517,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         width
     };
 
-    let no_headers = args.flag_no_headers;
-
     // main loop to read CSV and construct batches for parallel processing.
     // each batch is processed via Rayon parallel iterator.
     // loop exits when batch is empty.
@@ -451,63 +544,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             break 'batch_loop;
         }
 
-        // do actual template rendering via Rayon parallel iterator
+        let batch_len = batch.len() as u64;
+
+        // do actual template rendering via Rayon parallel iterator.
+        // Records are moved (not copied) into their row contexts.
         batch
-            .par_iter()
+            .par_drain(..)
             .with_min_len(1024)
             .map(|record| {
-                let curr_record = record;
+                // The QSV_ROWNO field was appended to the record by the producer
+                // above using itoa, so it is always a valid u64.
+                let row_number = record
+                    .get(record.len() - 1)
+                    .and_then(|f| atoi_simd::parse::<u64, false, false>(f.as_bytes()).ok())
+                    .expect("QSV_ROWNO is set by the batch producer");
 
-                let mut context = simd_json::borrowed::Object::default();
-                // Add globals context to the record context
-                if globals_flag {
-                    context.insert(
-                        std::borrow::Cow::Borrowed("qsv_g"),
-                        globals_ctx_borrowed.clone(),
-                    );
-                }
-                context.reserve(headers_len);
-                let mut row_number = 0_u64;
-
-                // add the fields of the current record to the context
-                if no_headers {
-                    // Use numeric, column 1-based indices (e.g. _c1, _c2, etc.)
-                    let headers_len = curr_record.len();
-
-                    for (i, field) in curr_record.iter().enumerate() {
-                        if i == headers_len - 1 {
-                            // set the last field to QSV_ROWNO
-                            // The QSV_ROWNO field was just appended to the record by the
-                            // producer above using itoa, so it is always a valid u64.
-                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
-                                .expect("QSV_ROWNO is set by the batch producer");
-                            context.insert(
-                                std::borrow::Cow::Borrowed(QSV_ROWNO),
-                                BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
-                            );
-                        } else {
-                            context.insert(
-                                format!("_c{}", i + 1).into(),
-                                BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
-                            );
-                        }
-                    }
-                } else {
-                    // Use header names as template variables
-                    for (header, field) in headers.iter().zip(curr_record.iter()) {
-                        context.insert(
-                            std::borrow::Cow::Borrowed(header),
-                            BorrowedValue::String(std::borrow::Cow::Borrowed(field)),
-                        );
-                        // when headers are defined, the last one is QSV_ROWNO
-                        if header == QSV_ROWNO {
-                            // The QSV_ROWNO field was just appended to the record by the
-                            // producer above using itoa, so it is always a valid u64.
-                            row_number = atoi_simd::parse::<u64, false, false>(field.as_bytes())
-                                .expect("QSV_ROWNO is set by the batch producer");
-                        }
-                    }
-                }
+                let context = Value::from_object(RowContext {
+                    keys: Arc::clone(&row_keys),
+                    record,
+                    globals: globals_ctx.clone(),
+                });
 
                 let rendered = match template.render(&context) {
                     Ok(s) => s,
@@ -540,7 +596,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         // First row number in this batch (1-based). Subdir numbering is computed from
         // this global row number so subdirs stay correct across batch boundaries.
-        let batch_start_row = row_no - batch.len() as u64 + 1;
+        let batch_start_row = row_no - batch_len + 1;
 
         for (idx, result_record) in batch_results.iter().enumerate() {
             if output_to_dir {
@@ -582,7 +638,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         if show_progress {
-            progress.inc(batch.len() as u64);
+            progress.inc(batch_len);
         }
 
         batch.clear();

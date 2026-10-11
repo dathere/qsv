@@ -29,7 +29,10 @@
 use std::cell::RefCell;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, SecondsFormat};
-use minijinja::{Environment, Error, ErrorKind, Value, value::Kwargs};
+use minijinja::{
+    Environment, Error, ErrorKind, Value,
+    value::{Kwargs, Serde, ValueOrKwargs},
+};
 
 use super::sql_backend::SqlBackend;
 
@@ -73,6 +76,11 @@ fn with_sql_backend<R>(f: impl FnOnce(&SqlBackend) -> Result<R, Error>) -> Resul
 /// Register every filter + global on the environment. Called once per
 /// `evaluate_spec` invocation by `formula_engine::evaluate_spec`.
 pub fn register(env: &mut Environment) {
+    // Python-style methods (`s.split(',')`, `s.upper()`, `d.items()`, ...)
+    // that bundled profiles use, e.g. dcat-us-v3's comma-separated
+    // bureauCode/programCode. Without this they fail with "unknown method".
+    env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+
     // --- filters ------------------------------------------------------
     env.add_filter("truncate_with_ellipsis", truncate_with_ellipsis);
     env.add_filter("format_number", format_number);
@@ -189,7 +197,7 @@ fn format_date(value: Value, format: Option<String>, kwargs: Kwargs) -> Result<V
         .unwrap_or_else(|| "%Y-%m-%d".to_string());
     kwargs.assert_all_used()?;
     if value.is_none() || value.is_undefined() {
-        return Ok(Value::from_serialize(&Option::<String>::None));
+        return Ok(Value::from(Serde(&Option::<String>::None)));
     }
     let Some(s) = value.as_str() else {
         return Ok(value);
@@ -332,25 +340,21 @@ fn spatial_extent_wkt(
 ///   * `spatial_extent_feature_collection("Name", bbox, "manual")`
 ///   * `spatial_extent_feature_collection(name="X", bbox=[...], feature_type="m")`
 ///
-/// Both shapes are supported. minijinja's `Function` impls don't route
-/// `Rest<Value> + Kwargs` cleanly (Rest swallows the kwargs container),
-/// so we accept `Rest<Value>` only and detect a trailing kwargs-shaped
-/// `Value` ourselves via `Kwargs::extract`.
+/// Both shapes are supported: `Rest<ValueOrKwargs>` captures positional
+/// args and the trailing kwargs container alike, and we split them here.
 fn spatial_extent_feature_collection(
-    args: minijinja::value::Rest<Value>,
+    args: minijinja::value::Rest<ValueOrKwargs>,
     state: &minijinja::State,
 ) -> Result<String, Error> {
-    // Separate positional args from a trailing kwargs container.
-    // `Kwargs::try_from(Value)` succeeds only on the synthetic kwargs
-    // marker minijinja emits for `name=...` syntax — which lets us
-    // tell apart `func([1,2,3,4])` (a real bbox list as the only
-    // positional) from `func(bbox=[1,2,3,4])` (kwargs).
+    let args = args.into_values();
+    // `is_kwargs` distinguishes `func([1,2,3,4])` (a real bbox list as the
+    // only positional) from `func(bbox=[1,2,3,4])` (kwargs).
     let (positional, kwargs): (&[Value], Option<Kwargs>) = match args.last() {
-        Some(last) => match Kwargs::try_from(last.clone()) {
-            Ok(kw) => (&args[..args.len() - 1], Some(kw)),
-            Err(_) => (&args[..], None),
-        },
-        None => (&args[..], None),
+        Some(last) if last.is_kwargs() => (
+            &args[..args.len() - 1],
+            Some(Kwargs::try_from(last.clone())?),
+        ),
+        _ => (&args[..], None),
     };
 
     // ---- name -------------------------------------------------------
@@ -498,9 +502,9 @@ fn map_tags_to_themes(state: &minijinja::State) -> Result<Value, Error> {
         .collect();
 
     if themes.is_empty() {
-        Ok(Value::from_serialize(&Option::<Vec<String>>::None))
+        Ok(Value::from(Serde(&Option::<Vec<String>>::None)))
     } else {
-        Ok(Value::from_serialize(&themes))
+        Ok(Value::from(Serde(&themes)))
     }
 }
 
@@ -604,7 +608,7 @@ fn get_column_stats(
             let v = field_stats.get_attr(&n).unwrap_or_else(|_| Value::from(0));
             out.insert(n, v);
         }
-        return Ok(Value::from_serialize(&out));
+        return Ok(Value::from(Serde(&out)));
     }
     Ok(field_stats)
 }
@@ -1214,7 +1218,7 @@ fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
             })
         })
         .collect();
-    minijinja::Value::from_serialize(serde_json::json!({ "columns": columns }))
+    minijinja::Value::from(Serde(serde_json::json!({ "columns": columns })))
 }
 
 /// Mirror of the legacy `dcat::csvw_datatype` — maps qsv stats type
@@ -1282,10 +1286,10 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
         "POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} \
          {min_lat}, {min_lon} {min_lat}))"
     );
-    minijinja::Value::from_serialize(serde_json::json!([{
+    minijinja::Value::from(Serde(serde_json::json!([{
         "@type": "Location",
         "bbox": polygon,
-    }]))
+    }])))
 }
 
 /// `temporal_from_dpps` global — derives a `PeriodOfTime` array, one
@@ -1329,7 +1333,7 @@ fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijin
     if out.is_empty() {
         return minijinja::Value::UNDEFINED;
     }
-    minijinja::Value::from_serialize(out)
+    minijinja::Value::from(Serde(out))
 }
 
 /// `build_croissant_fields` global — walks a stats map (column-name →
@@ -1379,7 +1383,7 @@ fn build_croissant_fields(stats: minijinja::Value) -> minijinja::Value {
             })
         })
         .collect();
-    minijinja::Value::from_serialize(fields)
+    minijinja::Value::from(Serde(fields))
 }
 
 // =====================================================================
@@ -1393,7 +1397,7 @@ mod tests {
 
     fn render(env: &Environment, src: &str, ctx: serde_json::Value) -> Result<String, Error> {
         let tmpl = env.template_from_str(src)?;
-        tmpl.render(Value::from_serialize(&ctx))
+        tmpl.render(Value::from(Serde(&ctx)))
     }
 
     fn build_env() -> Environment<'static> {

@@ -633,6 +633,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let payload_env = if let Some(template_file) = args.flag_payload_tpl {
         template_content = fs::read_to_string(template_file)?;
         let mut env = Environment::new();
+        env.set_debug(true);
         env.set_unknown_method_callback(unknown_method_callback);
         crate::minijinja_filters::register(&mut env);
         env.add_template("template", &template_content)?;
@@ -921,7 +922,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if payload_content_type != ContentType::Form {
             let rendered_template = payload_env
                 .get_template("template")?
-                .render(&form_body_jsonmap)?;
+                .render(minijinja::value::Serde(&form_body_jsonmap))?;
             rendered_json = if payload_content_type == ContentType::Json {
                 serde_json::from_str::<serde_json::Value>(&rendered_template).map_err(|e| {
                     CliError::Other(format!("Invalid JSON payload: {e}\n{rendered_template}"))

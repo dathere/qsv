@@ -3935,3 +3935,41 @@ fn third_party_notices_pin_matches_the_manifest() {
          `{table_cell}`",
     );
 }
+
+#[test]
+fn profile_dcat_us_v3_splits_comma_separated_codes() {
+    // CKAN also stores bureauCode/programCode as comma-separated strings;
+    // the dcat-us-v3 templates split them with Python's `str.split`.
+    let wrk = Workdir::new("profile_dcat_us_v3_split_codes");
+    seed_geo_csv(&wrk);
+
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"package": {"title": "T", "notes": "N", "name": "t",
+            "bureauCode": "015:11, 015:12", "programCode": "015:000"}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+
+    assert_eq!(
+        out.pointer("/projection/dcat-us:bureauCode"),
+        Some(&serde_json::json!(["015:11", "015:12"])),
+        "{out:#}"
+    );
+    assert_eq!(
+        out.pointer("/projection/dcat-us:programCode"),
+        Some(&serde_json::json!(["015:000"])),
+        "{out:#}"
+    );
+}

@@ -11,7 +11,7 @@
 //! so the rest of the profile pipeline (`profile.rs::run`,
 //! `merge_formula_results`) is untouched.
 
-use minijinja::Environment;
+use minijinja::{Environment, value::Serde};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -91,7 +91,7 @@ pub fn evaluate_spec(
     formula_helpers::register(&mut env);
 
     // 4. convert the context JSON Value into a minijinja Value once.
-    let mj_context = minijinja::Value::from_serialize(context);
+    let mj_context = minijinja::Value::from(Serde(context));
 
     // 5. evaluate each formula
     let mut out: Vec<FormulaResult> = Vec::with_capacity(formulas.len());

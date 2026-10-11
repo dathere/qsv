@@ -1585,3 +1585,47 @@ fn template_regex_invalid_pattern() {
     let got: String = wrk.stdout(&mut cmd);
     assert!(got.contains("RENDERING ERROR"), "got: {got}");
 }
+
+#[test]
+fn template_no_headers_rowno_and_out_of_range_column() {
+    let wrk = Workdir::new("template_no_headers_rowno_oob");
+    wrk.create_from_string("data.csv", "a,b\nc,d\n");
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{QSV_ROWNO}}:{{_c1}}{{_c2}}[{{_c3}}][{{_c0}}][{{_c01}}]\n\n")
+        .arg("--no-headers")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "1:ab[][][]\n2:cd[][][]");
+}
+
+#[test]
+fn template_duplicate_sanitized_headers_last_wins() {
+    let wrk = Workdir::new("template_dup_headers");
+    // "a b" and "a_b" both sanitize to `a_b`
+    wrk.create_from_string("data.csv", "a b,a_b,c\n1,2,3\n");
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{a_b}}-{{c}}-{{QSV_ROWNO}}\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2-3-1");
+}
+
+#[test]
+fn template_render_error_names_undefined_expression() {
+    let wrk = Workdir::new("template_undefined_origin");
+    wrk.create_from_string("data.csv", "a\n1\n");
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ (a|int) + cfg.limit }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got,
+        "RENDERING ERROR (1): undefined value: `cfg` is undefined (in template:1)"
+    );
+}

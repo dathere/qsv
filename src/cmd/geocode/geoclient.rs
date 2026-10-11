@@ -555,10 +555,31 @@ async fn geoclient_fetch(
                         },
                     },
                     401 | 403 => {
+                        // the gateway says WHY ("missing" vs "invalid subscription key" vs an
+                        // inactive subscription) - each points to a different fix, so pass it on
+                        let body = read_capped(resp, 4096).await.unwrap_or_default();
+                        let reason = serde_json::from_slice::<Value>(&body)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("message").and_then(Value::as_str).map(String::from)
+                            })
+                            .unwrap_or_else(|| String::from_utf8_lossy(&body).into_owned());
+                        let reason: String = reason
+                            .trim()
+                            .trim_end_matches('.')
+                            .chars()
+                            .take(200)
+                            .collect();
                         return Err(GcError::Fatal(format!(
-                            "Geoclient rejected the request (HTTP {status}): check --api-key or \
-                             the QSV_GEOCLIENT_API_KEY environment variable, and that your key \
-                             is subscribed to \"Geoclient V2 User\" at https://api-portal.nyc.gov."
+                            "Geoclient rejected the request (HTTP {status}){}. Check --api-key or \
+                             the QSV_GEOCLIENT_API_KEY environment variable, and that your key is \
+                             for an active \"Geoclient V2 User\" subscription at \
+                             https://api-portal.nyc.gov.",
+                            if reason.is_empty() {
+                                String::new()
+                            } else {
+                                format!(": {reason}")
+                            }
                         )));
                     },
                     404 => {

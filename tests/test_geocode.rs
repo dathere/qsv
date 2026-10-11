@@ -3232,6 +3232,8 @@ fn geocode_geoclient_bad_key_is_fatal() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("HTTP 401"), "stderr: {stderr}");
+    // the gateway's own reason is passed through
+    assert!(stderr.contains("Access denied"), "stderr: {stderr}");
     assert!(stderr.contains("api-portal.nyc.gov"), "stderr: {stderr}");
     // aborted on the first response instead of failing every row
     assert_eq!(mock.requests(), 1);
@@ -3541,7 +3543,8 @@ fn geocode_geoclient_live() {
         .args(["-f", "%bbl"])
         .arg("--no-cache")
         .env_remove("QSV_GEOCLIENT_API_URL");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // on_success: a rejected key must fail with qsv's message, not an index panic
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // Shape-only assertions: the exact values come from live city data and were not pinned when
     // this was written. A Manhattan BBL is 10 digits starting with 1.
     let bbl = &got[1][0];
@@ -3556,7 +3559,7 @@ fn geocode_geoclient_live() {
         .arg(bbl)
         .arg("--no-cache")
         .env_remove("QSV_GEOCLIENT_API_URL");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // a Manhattan BIN is 7 digits starting with 1
     let bin = &got[1][0];
     assert!(

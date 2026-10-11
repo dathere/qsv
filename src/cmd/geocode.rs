@@ -365,7 +365,8 @@ geocode options:
                                 inside them is left unchanged (or set to the invalid-result value),
                                 and the number of such values is reported on stderr.
     
-                                If all uppercase, it will be treated as an admin1 code (e.g. US.NY, JP.40, CN.23).
+                                If it has the form CC.CODE, it will be treated as an admin1 code
+                                (e.g. US.NY, JP.40, CN.23 - case-insensitive, so us.ny also works).
                                 Otherwise, it will be treated as an admin1 name (e.g New York, Tokyo, Shanghai).
                                 US territories, which Geonames files as countries of their own, are
                                 accepted as US.PR, US.VI, US.GU, US.AS and US.MP.
@@ -378,9 +379,11 @@ geocode options:
                                 A place inside any of them qualifies, and the best-scoring one is
                                 returned, preferring a place whose name is exactly the value.
 
-                                Matches are made using a starts_with() comparison (i.e. "US" will match "US.NY",
+                                Matches are made using a starts_with() comparison (i.e. "US.N" will match "US.NY",
                                 "US.NJ", etc. for admin1 code. "New" will match "New York", "New Jersey",
-                                "Newfoundland", etc. for admin1 name.)
+                                "Newfoundland", etc. for admin1 name.) Note that a few full Geonames codes are
+                                prefixes of others (e.g. KZ.12 also matches KZ.12510143), so such a code
+                                also admits the longer codes it prefixes.
 
                                 admin1 is the second priority filter, and will be applied after country filters.
                                 See https://download.geonames.org/export/dump/admin1CodesASCII.txt for
@@ -532,11 +535,14 @@ geocode options:
                                 INDEX-UPDATE only options:
     --languages <lang-list>     The comma-delimited, case-insensitive list of languages to use when building
                                 the Geonames cities index.
-                                The languages are specified as a comma-separated list of ISO 639-2 codes.
+                                The languages are specified as Geonames language codes - the ISO 639-1
+                                2-letter code where one exists (e.g. en,fr,de,es), else the ISO 639-2/3 code.
                                 See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes
                                 and https://download.geonames.org/export/dump/alternatenames/ for the supported
                                 language files. 253 languages are currently supported.
-                                [default: en]
+                                If not set, the languages the current index was built with are used
+                                (en if there is no current index).
+                                Setting it to a different list than the current index's forces a rebuild.
     --cities-url <url>          The URL to download the Geonames cities file from. There are several
                                 available at https://download.geonames.org/export/dump/.
                                   cities500.zip   - cities with populations > 500; ~200k cities, 56mb
@@ -547,9 +553,12 @@ geocode options:
                                 lookup times will be slower, and the search results will be different.
                                 For convenience, if this is set to 500, 1000, 5000 or 15000, it will be 
                                 converted to a geonames cities URL.
-                                [default: https://download.geonames.org/export/dump/cities15000.zip]
+                                If not set, the cities file the current index was built from is used
+                                (cities15000.zip if there is no current index).
+                                Setting it to a different URL than the current index's forces a rebuild.
     --force                     Force update the Geonames cities index. If not set, qsv will check if there
                                 are updates available at Geonames.org before updating the index.
+                                With --force, the index is built even if there is no current index.
 
 Common options:
     -h, --help                  Display this message
@@ -572,7 +581,7 @@ use std::{
 use cached::{ConcurrentCacheBase, ConcurrentCached, RedbCache, macros::concurrent_cached};
 use dynfmt2::Format;
 use geosuggest_core::{
-    Engine, EngineData,
+    Engine, EngineData, EngineMetadata,
     index::{ArchivedCitiesRecord as CitiesRecord, ArchivedCountryRecord as CountryRecord},
     storage,
 };
@@ -654,8 +663,8 @@ struct Args {
     flag_batch:          usize,
     flag_timeout:        u16,
     flag_cache_dir:      String,
-    flag_languages:      String,
-    flag_cities_url:     String,
+    flag_languages:      Option<String>,
+    flag_cities_url:     Option<String>,
     flag_force:          bool,
     flag_jobs:           Option<usize>,
     flag_new_column:     Option<String>,
@@ -724,9 +733,11 @@ fn parse_region_filters(
                 });
                 continue;
             }
-            let is_code_flag = admin1_code_re.is_match(temp_s);
+            // codes are case-insensitive like everything else here: `us.ca` is `US.CA`
+            let upper_s = temp_s.to_ascii_uppercase();
+            let is_code_flag = admin1_code_re.is_match(&upper_s);
             if is_code_flag {
-                let prefix = temp_s[0..2].to_string();
+                let prefix = upper_s[0..2].to_string();
                 if !prefixes.contains(&prefix) {
                     prefixes.push(prefix);
                 }
@@ -735,7 +746,7 @@ fn parse_region_filters(
             }
             list.push(Admin1Filter {
                 admin1_string: if is_code_flag {
-                    temp_s.to_string()
+                    upper_s
                 } else {
                     // its an admin1 name, lowercase it for case-insensitive starts_with()
                     temp_s.to_lowercase()
@@ -841,6 +852,7 @@ static DEFAULT_GEOCODE_INDEX_FILENAME: &str =
     concat!("qsv-", env!("CARGO_PKG_VERSION"), "-geocode-index.rkyv");
 static GEOIP2_FILENAME: &str = "GeoLite2-City.mmdb";
 
+static DEFAULT_CITIES_URL: &str = "https://download.geonames.org/export/dump/cities15000.zip";
 static DEFAULT_CITIES_NAMES_URL: &str =
     "https://download.geonames.org/export/dump/alternateNamesV2.zip";
 static DEFAULT_CITIES_NAMES_FILENAME: &str = "alternateNamesV2.txt";
@@ -995,6 +1007,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // Geonames `isolanguage` codes are lowercase and the lookup is an exact map key, so `-l FR`
+    // matched nothing. OpenCage passes --language through to its API (IETF tags like `pt-BR`), so
+    // leave its value alone.
+    if !(args.cmd_opencage || args.cmd_opencagenow) {
+        args.flag_language = args.flag_language.trim().to_ascii_lowercase();
+    }
+
     if (args.cmd_countryinfo || args.cmd_countryinfonow)
         && args.flag_formatstr.starts_with("%dyncols:")
     {
@@ -1035,28 +1054,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // if args.flag_cities_url is a number and is 500, 1000, 5000 or 15000,
-    // its a geonames cities file ID and convert it to a URL
-    // we do this as a convenience shortcut for users
-    if args.flag_cities_url.parse::<u16>().is_ok() {
-        let cities_id = args.flag_cities_url;
-        // ensure its a valid cities_id - 500, 1000, 5000 or 15000
-        if cities_id != "500" && cities_id != "1000" && cities_id != "5000" && cities_id != "15000"
-        {
-            return fail_incorrectusage_clierror!(
-                "Invalid --cities-url: {cities_id} - must be one of 500, 1000, 5000 or 15000"
-            );
-        }
-        args.flag_cities_url =
-            format!("https://download.geonames.org/export/dump/cities{cities_id}.zip");
+    if let Some(cities_url) = args.flag_cities_url.as_deref() {
+        args.flag_cities_url = Some(resolve_cities_url(cities_url)?);
     }
-
-    if let Err(err) = Url::parse(&args.flag_cities_url) {
-        return fail_incorrectusage_clierror!(
-            "Invalid --cities-url: {url} - {err}",
-            url = args.flag_cities_url,
-            err = err
-        );
+    if let Some(languages) = args.flag_languages.as_deref() {
+        let languages = parse_languages(languages);
+        if languages.is_empty() {
+            return fail_incorrectusage_clierror!("--languages must name at least one language.");
+        }
+        args.flag_languages = Some(languages.join(","));
     }
 
     // --older-than is only valid with cache-prune. Validate it eagerly so a bad
@@ -1208,25 +1214,52 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     }
 
     if index_cmd {
+        let index_storage = storage::Storage::new();
+
+        // A rebuild/check uses the city set and languages the CURRENT index was built with unless
+        // the user names others. Defaulting to cities15000 + en silently downgraded a cities1000 or
+        // multi-language index on a plain `index-update`.
+        let index_metadata = if Path::new(&geocode_index_file).exists() {
+            index_storage
+                .read_metadata(&geocode_index_file)
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let config_change = index_metadata.as_ref().and_then(|m| {
+            index_config_change(
+                m,
+                args.flag_cities_url.as_deref(),
+                args.flag_languages.as_deref(),
+            )
+        });
+        let (cities_url, languages) = effective_index_config(
+            index_metadata.as_ref(),
+            args.flag_cities_url.as_deref(),
+            args.flag_languages.as_deref(),
+        );
+
         // cities_filename is derived from the cities_url
         // the filename is the last component of the URL with a .txt extension
         // e.g. https://download.geonames.org/export/dump/cities15000.zip -> cities15000.txt
-        let cities_filename = args
-            .flag_cities_url
+        let cities_filename = cities_url
             .split('/')
             .next_back()
             .unwrap_or("cities15000.zip")
             .replace(".zip", ".txt");
 
-        // setup languages
-        let languages_vec: Vec<&str> = args.flag_languages.split(',').map(AsRef::as_ref).collect();
+        let languages_vec: Vec<&str> = languages.iter().map(String::as_str).collect();
 
-        info!("geocode_index_file: {geocode_index_file} Languages: {languages_vec:?}");
+        info!(
+            "geocode_index_file: {geocode_index_file} Cities: {cities_url} Languages: \
+             {languages_vec:?}"
+        );
 
         let indexupdater_settings = IndexUpdaterSettings {
             http_timeout_ms:        util::timeout_secs(args.flag_timeout)? * 1000,
             cities:                 SourceItem {
-                url:      &args.flag_cities_url,
+                url:      &cities_url,
                 filename: &cities_filename,
             },
             names:                  Some(SourceItem {
@@ -1242,8 +1275,6 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
         let updater = IndexUpdater::new(indexupdater_settings.clone())
             .map_err(|_| CliError::Other("Error initializing IndexUpdater".to_string()))?;
-
-        let index_storage = storage::Storage::new();
 
         match geocode_cmd {
             // check if Geoname index needs to be updated from the Geonames website
@@ -1294,12 +1325,18 @@ async fn geocode_main(args: Args) -> CliResult<()> {
             },
             GeocodeSubCmd::IndexUpdate => {
                 // update/rebuild Geonames index from Geonames website
-                // will only update if there are changes unless --force is specified
-                check_index_file(&geocode_index_file)?;
+                // will only update if there are changes unless --force is specified.
+                // --force builds from scratch, so it does not need an existing index.
+                if !(args.flag_force && !Path::new(&geocode_index_file).exists()) {
+                    check_index_file(&geocode_index_file)?;
+                }
 
                 let timeout_secs = util::timeout_secs(args.flag_timeout)?;
                 if args.flag_force {
                     winfo!("Forcing a rebuild of the Geonames index...");
+                    rebuild_index(updater, &geocode_index_file, timeout_secs).await?;
+                } else if let Some(reason) = config_change {
+                    winfo!("Rebuilding the Geonames index: {reason}");
                     rebuild_index(updater, &geocode_index_file, timeout_secs).await?;
                 } else {
                     winfo!("Checking main Geonames website for updates...");
@@ -1329,8 +1366,12 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     // the load itself is the parse check - it errors on anything the engine
                     // cannot read - so the returned data is deliberately unused; what we need
                     // from it is the resolved path
-                    let (_engine_data, loaded_index_file) =
-                        load_engine_data_resolved(index_file.clone().into(), &progress).await?;
+                    let (_engine_data, loaded_index_file) = load_engine_data_resolved(
+                        index_file.clone().into(),
+                        &progress,
+                        args.flag_timeout,
+                    )
+                    .await?;
 
                     // Validate through the SAME API `index-check` uses. `Storage::load_from` does
                     // not populate `EngineData::metadata`, so the old `engine_data.metadata`
@@ -1418,7 +1459,12 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                 {
                     return Err(e.into());
                 }
-                load_engine_data(geocode_index_file.clone().into(), &progress).await?;
+                load_engine_data(
+                    geocode_index_file.clone().into(),
+                    &progress,
+                    args.flag_timeout,
+                )
+                .await?;
                 winfo!("Default Geonames index file successfully reset to {QSV_VERSION} release.");
             },
             // index_cmd is true, so we should never get a non-index subcommand
@@ -1429,7 +1475,12 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     // we're not doing an index subcommand, so we're doing a suggest/now, reverse/now,
     // countryinfo/now or iplookup/now subcommand. Load the current local Geonames index
-    let mut engine_data = load_engine_data(geocode_index_file.clone().into(), &progress).await?;
+    let mut engine_data = load_engine_data(
+        geocode_index_file.clone().into(),
+        &progress,
+        args.flag_timeout,
+    )
+    .await?;
     if iplookup_cmd {
         // load the GeoIP2 database
         engine_data
@@ -1439,6 +1490,26 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     r#"Error loading GeoIP2 database "{geoip2_filename}": {e}"#
                 ))
             })?;
+    }
+
+    // An index only carries alternate names for the languages it was built with; any other
+    // --language silently returns the default Geonames names. Say so rather than leave the user
+    // wondering why `-l fr` printed English.
+    if let Ok(Some(m)) = storage::Storage::new().read_metadata(&geocode_index_file)
+        && !m.source.filter_languages.is_empty()
+        && !m
+            .source
+            .filter_languages
+            .iter()
+            .any(|l| l == &args.flag_language)
+    {
+        wwarn!(
+            "The Geonames index has no '{lang}' names (it was built with: {built}), so default \
+             Geonames names are used. Rebuild it with `qsv geocode index-update --languages \
+             {built},{lang}` for '{lang}' names.",
+            lang = args.flag_language,
+            built = m.source.filter_languages.join(",")
+        );
     }
 
     let engine = engine_data
@@ -2283,6 +2354,88 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     Ok(())
 }
 
+/// Expand a `--cities-url` shortcut (500, 1000, 5000 or 15000) to its Geonames URL and validate it.
+fn resolve_cities_url(cities_url: &str) -> CliResult<String> {
+    let cities_url = if cities_url.parse::<u16>().is_ok() {
+        if !matches!(cities_url, "500" | "1000" | "5000" | "15000") {
+            return fail_incorrectusage_clierror!(
+                "Invalid --cities-url: {cities_url} - must be one of 500, 1000, 5000 or 15000"
+            );
+        }
+        format!("https://download.geonames.org/export/dump/cities{cities_url}.zip")
+    } else {
+        cities_url.to_string()
+    };
+    if let Err(err) = Url::parse(&cities_url) {
+        return fail_incorrectusage_clierror!("Invalid --cities-url: {cities_url} - {err}");
+    }
+    Ok(cities_url)
+}
+
+fn parse_languages(languages: &str) -> Vec<String> {
+    let mut parsed: Vec<String> = Vec::new();
+    for lang in languages.split(',').map(|l| l.trim().to_ascii_lowercase()) {
+        if !lang.is_empty() && !parsed.contains(&lang) {
+            parsed.push(lang);
+        }
+    }
+    parsed
+}
+
+/// The cities URL and languages an index-check/index-update should use: what the user passed, else
+/// what the current index was built with, else the defaults (cities15000, en).
+fn effective_index_config(
+    metadata: Option<&EngineMetadata>,
+    cities_url: Option<&str>,
+    languages: Option<&str>,
+) -> (String, Vec<String>) {
+    let cities_url = cities_url
+        .map(ToString::to_string)
+        .or_else(|| metadata.map(|m| m.source.cities.clone()))
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| DEFAULT_CITIES_URL.to_string());
+    let languages = languages
+        .map(parse_languages)
+        .or_else(|| metadata.map(|m| parse_languages(&m.source.filter_languages.join(","))))
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| vec!["en".to_string()]);
+    (cities_url, languages)
+}
+
+/// Why `index-update` must rebuild regardless of upstream `ETag`s: the user explicitly asked for a
+/// city set or language list other than the one the index was built with. `ETag`s alone cannot see
+/// this - `has_updates` only compares the `ETag`s of the URLs it is about to download.
+fn index_config_change(
+    metadata: &EngineMetadata,
+    cities_url: Option<&str>,
+    languages: Option<&str>,
+) -> Option<String> {
+    if let Some(url) = cities_url
+        && url != metadata.source.cities
+    {
+        return Some(format!(
+            "the index was built from {}, not {url}.",
+            metadata.source.cities
+        ));
+    }
+    if let Some(languages) = languages {
+        let mut wanted = parse_languages(languages);
+        let mut built = parse_languages(&metadata.source.filter_languages.join(","));
+        wanted.sort_unstable();
+        wanted.dedup();
+        built.sort_unstable();
+        built.dedup();
+        if wanted != built {
+            return Some(format!(
+                "the index was built with languages [{}], not [{}].",
+                built.join(","),
+                wanted.join(",")
+            ));
+        }
+    }
+    None
+}
+
 /// Download the Geonames sources, build a fresh index and install it at `geocode_index_file`.
 async fn rebuild_index(
     updater: IndexUpdater<'_>,
@@ -2437,10 +2590,13 @@ fn check_index_file(index_file: &str) -> CliResult<()> {
 async fn load_engine_data(
     geocode_index_file: PathBuf,
     progressbar: &ProgressBar,
+    download_timeout: u16,
 ) -> CliResult<EngineData> {
-    Ok(load_engine_data_resolved(geocode_index_file, progressbar)
-        .await?
-        .0)
+    Ok(
+        load_engine_data_resolved(geocode_index_file, progressbar, download_timeout)
+            .await?
+            .0,
+    )
 }
 
 /// [`load_engine_data`], additionally returning the path the index was actually loaded FROM.
@@ -2452,6 +2608,7 @@ async fn load_engine_data(
 async fn load_engine_data_resolved(
     geocode_index_file: PathBuf,
     progressbar: &ProgressBar,
+    download_timeout: u16,
 ) -> CliResult<(EngineData, PathBuf)> {
     // default cities index file
     static DEFAULT_GEONAMES_CITIES_INDEX: u16 = 15000;
@@ -2510,7 +2667,7 @@ async fn load_engine_data_resolved(
             geocode_index_file.clone(),
             !progressbar.is_hidden(),
             None,
-            Some(60),
+            Some(download_timeout),
             None,
         )
         .await
@@ -2559,7 +2716,7 @@ async fn load_engine_data_resolved(
             geocode_index_file.clone(),
             !progressbar.is_hidden(),
             None,
-            Some(60),
+            Some(download_timeout),
             None,
         )
         .await?;
@@ -3768,8 +3925,7 @@ fn get_countryinfo(
                 .names
                 .as_ref()
                 .and_then(|n| n.get(lang_lookup))
-                .map(ToString::to_string)
-                .unwrap_or_default(),
+                .map_or_else(|| countryrecord.info.name.to_string(), ToString::to_string),
         };
         Some(formatted)
     } else {
@@ -3798,8 +3954,7 @@ fn get_countryinfo(
                         .names
                         .as_ref()
                         .and_then(|n| n.get(lang_lookup))
-                        .map(ToString::to_string)
-                        .unwrap_or_default()
+                        .map_or_else(|| countryrecord.info.name.to_string(), ToString::to_string)
                 }),
                 "iso3" => countryrecord_map.insert("iso3", countryrecord.info.iso3.to_string()),
                 "fips" => countryrecord_map.insert("fips", countryrecord.info.fips.to_string()),
@@ -3856,38 +4011,36 @@ fn get_countryinfo(
     }
 }
 
-/// `get_cityrecord_name_in_lang` returns a `NamesLang` struct
-/// containing the city, admin1, admin2, and country names in the specified language.
-/// Deliberately uncached, like `format_result`: four map lookups cost about what building a cache
-/// key does, and the single-lock `#[cached]` store serialized the rayon pipeline (2.4x slower at
-/// 12 jobs on 1M unique reverse-geocoded points).
-/// Note that the index file needs to be built with the desired languages for this to work.
-/// Use the "index-update" subcommand with the --languages option to rebuild the index
-/// with the desired languages. Otherwise, all names will be in English (en)
 fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> NamesLang {
+    // Every name falls back to the record's own Geonames name when the index has no alternate
+    // name in `lang_lookup`. geosuggest fills the per-language maps ONLY from alternateNames, so a
+    // division with no `en` alternate name (Maputo City, most of Madagascar) printed blank even on
+    // the default English index.
     let cityname = cityrecord
         .names
         .as_ref()
         .and_then(|n| n.get(lang_lookup))
-        // Note that the city name is the default name if the language is not found.
         .unwrap_or(&cityrecord.name)
         .to_string();
     let admin1name = cityrecord
         .admin1_names
         .as_ref()
         .and_then(|n| n.get(lang_lookup))
+        .or_else(|| cityrecord.admin_division.as_ref().map(|a| &a.name))
         .map(ToString::to_string)
         .unwrap_or_default();
     let admin2name = cityrecord
         .admin2_names
         .as_ref()
         .and_then(|n| n.get(lang_lookup))
+        .or_else(|| cityrecord.admin2_division.as_ref().map(|a| &a.name))
         .map(ToString::to_string)
         .unwrap_or_default();
     let countryname = cityrecord
         .country_names
         .as_ref()
         .and_then(|n| n.get(lang_lookup))
+        .or_else(|| cityrecord.country.as_ref().map(|c| &c.name))
         .map(ToString::to_string)
         .unwrap_or_default();
 
@@ -3971,7 +4124,7 @@ pub fn reverse_geocode_points(
     // tokio runtime to drive it, mirroring geocode::run. The reverse lookups themselves are sync.
     let rt = tokio::runtime::Runtime::new()?;
     let progressbar = ProgressBar::hidden();
-    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar))?;
+    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar, 60))?;
     // `as_engine` borrows `engine_data`, so it must outlive `engine` and all lookups below.
     let engine = engine_data
         .as_engine()
@@ -4136,11 +4289,12 @@ impl RegionHint {
 
         let admin1 = match admin1 {
             None => None,
-            Some(a) if ADMIN1_CODE_REGEX().is_match(a) => {
+            Some(a) if ADMIN1_CODE_REGEX().is_match(&a.to_ascii_uppercase()) => {
+                let a = a.to_ascii_uppercase();
                 if effective_country.is_none() {
-                    effective_country = Some(a[0..2].to_ascii_uppercase());
+                    effective_country = Some(a[0..2].to_string());
                 }
-                Some(a.to_string())
+                Some(a)
             },
             Some(a) if ADMIN1_BARE_REGEX().is_match(a) => {
                 let Some(cc) = effective_country.as_ref() else {
@@ -4191,7 +4345,7 @@ where
     ));
     let rt = tokio::runtime::Runtime::new()?;
     let progressbar = ProgressBar::hidden();
-    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar))?;
+    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar, 60))?;
     let engine = engine_data
         .as_engine()
         .map_err(|e| CliError::Other(format!("Error initializing geocode Engine: {e}")))?;
@@ -4602,6 +4756,75 @@ fn add_fields(record: &mut csv::StringRecord, value: &str, count: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn metadata_with(cities: &str, languages: &[&str]) -> EngineMetadata {
+        let mut m = EngineMetadata::default();
+        m.source.cities = cities.to_string();
+        m.source.filter_languages = languages.iter().map(ToString::to_string).collect();
+        m
+    }
+
+    #[test]
+    fn parse_languages_normalizes() {
+        assert_eq!(parse_languages(" EN , fr,,De "), vec!["en", "fr", "de"]);
+        assert_eq!(parse_languages("en,fr,EN"), vec!["en", "fr"]);
+        assert!(parse_languages(" , ").is_empty());
+    }
+
+    #[test]
+    fn index_update_keeps_the_index_config_when_unset() {
+        let cities1000 = "https://download.geonames.org/export/dump/cities1000.zip";
+        let m = metadata_with(cities1000, &["en", "fr"]);
+        // a plain `index-update` must not downgrade to cities15000 + en
+        let (url, langs) = effective_index_config(Some(&m), None, None);
+        assert_eq!(url, cities1000);
+        assert_eq!(langs, vec!["en", "fr"]);
+        assert_eq!(index_config_change(&m, None, None), None);
+        // no index: the defaults
+        let (url, langs) = effective_index_config(None, None, None);
+        assert_eq!(url, DEFAULT_CITIES_URL);
+        assert_eq!(langs, vec!["en"]);
+    }
+
+    #[test]
+    fn index_update_rebuilds_on_explicit_config_change() {
+        let m = metadata_with(DEFAULT_CITIES_URL, &["en"]);
+        assert!(index_config_change(&m, None, Some("en,fr")).is_some());
+        assert!(
+            index_config_change(
+                &m,
+                Some("https://download.geonames.org/export/dump/cities1000.zip"),
+                None
+            )
+            .is_some()
+        );
+        // same set, different order/case: no rebuild
+        let m = metadata_with(DEFAULT_CITIES_URL, &["fr", "en"]);
+        assert_eq!(
+            index_config_change(&m, Some(DEFAULT_CITIES_URL), Some("EN,fr")),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_cities_url_shortcuts() {
+        assert_eq!(
+            resolve_cities_url("1000").unwrap(),
+            "https://download.geonames.org/export/dump/cities1000.zip"
+        );
+        assert!(resolve_cities_url("77").is_err());
+        assert!(resolve_cities_url("not a url").is_err());
+    }
+
+    #[test]
+    fn admin1_codes_are_case_insensitive() {
+        let (countries, filters) = parse_region_filters(None, Some("us.ca, US.ny")).unwrap();
+        assert_eq!(countries.unwrap(), vec!["US"]);
+        let filters = filters.unwrap();
+        assert!(filters.iter().all(|f| f.is_code));
+        assert_eq!(filters[0].admin1_string, "US.CA");
+        assert_eq!(filters[1].admin1_string, "US.NY");
+    }
 
     #[test]
     fn parse_relative_age_units() {

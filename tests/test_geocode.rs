@@ -101,6 +101,82 @@ fn geocode_suggestnow_default() {
 }
 
 #[test]
+fn geocode_admin1_without_alternate_name_falls_back() {
+    // Maputo City (MZ.11) has no `en` alternateName, so the default English index printed a blank
+    // admin1 ("Maputo,  MZ") although the record carries the division. Fall back to its own name.
+    let wrk = Workdir::new("geocode_admin1_without_alternate_name_falls_back");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("reversenow").arg("-25.9692, 32.5732");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["Location"], svec!["Maputo, Maputo City MZ"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn geocode_language_not_in_index_falls_back_and_warns() {
+    // the default index is English-only: `-l FR` (any case) must still print the admin1 name, and
+    // say why the names are not French
+    let wrk = Workdir::new("geocode_language_not_in_index_falls_back_and_warns");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("suggestnow").arg("-l").arg("FR").arg("Paris");
+
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("Paris, Île-de-France FR: 48.85341, 2.3488"),
+        "admin1 must fall back, not blank: {stdout}"
+    );
+    assert!(
+        stderr.contains("has no 'fr' names"),
+        "missing language warning: {stderr}"
+    );
+}
+
+#[test]
+fn geocode_countryinfonow_language_not_in_index_falls_back() {
+    let wrk = Workdir::new("geocode_countryinfonow_language_not_in_index_falls_back");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("countryinfonow").arg("-l").arg("fr").arg("FR");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["Location"], svec!["France"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn geocode_suggestnow_admin1_code_lowercase() {
+    // `us.pr` worked (territory path) but `us.ca` demanded --country: codes are case-insensitive
+    let wrk = Workdir::new("geocode_suggestnow_admin1_code_lowercase");
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("suggestnow")
+        .arg("--admin1")
+        .arg("us.ca")
+        .arg("San Juan");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["Location"],
+        svec!["San Juan Capistrano, California US: 33.50169, -117.66255"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn geocode_index_update_empty_languages() {
+    let wrk = Workdir::new("geocode_index_update_empty_languages");
+    let mut cmd = wrk.command("geocode");
+    // isolate the cache: should validation ever regress, index-update must not rebuild the real
+    // active index (it did, under a mutation test of parse_languages)
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+    cmd.arg("index-update").arg("--languages").arg(" , ");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("--languages must name at least one language"));
+}
+
+#[test]
 fn geocode_suggestnow_formatstr_dyncols() {
     let wrk = Workdir::new("geocode_suggestnow_formatstr_dyncols");
 
@@ -724,8 +800,8 @@ fn geocode_suggest_pretty_json() {
              \"CA,MX,CU\",\"equivalent_fips_code\": \"\"\n  },\"names\": {\n    \"en\": \"United \
              States\"\n  },\"capital_names\": {\n    \"en\": \"Washington D.C.\"\n  }\n},\n  \
              \"us_fips_codes\":{\n  \"us_state_code\": \"CT\",\n  \"us_state_name\": \
-             \"Connecticut\",\n  \"us_state_fips_code\": \"09\",\n  \"us_county\": \"\",\n  \
-             \"us_county_fips_code\": \"170\"\n}\n}"
+             \"Connecticut\",\n  \"us_state_fips_code\": \"09\",\n  \"us_county\": \"South \
+             Central Connecticut Planning Region\",\n  \"us_county_fips_code\": \"170\"\n}\n}"
         ],
         svec!["This is not a Location and it will not be geocoded"],
         svec!["95.213424, 190,1234565"],
@@ -750,7 +826,7 @@ fn geocode_suggest_pretty_json() {
              \"\"\n  },\"names\": {\n    \"en\": \"Philippines\"\n  },\"capital_names\": {\n    \
              \"en\": \"Manila\"\n  }\n},\n  \"us_fips_codes\":{\n  \"us_state_code\": null,\n  \
              \"us_state_name\": \"National Capital Region\",\n  \"us_state_fips_code\": null,\n  \
-             \"us_county\": \"\",\n  \"us_county_fips_code\": null\n}\n}"
+             \"us_county\": \"Southern Manila District\",\n  \"us_county_fips_code\": null\n}\n}"
         ],
     ];
     assert_eq!(got, expected);
@@ -855,10 +931,10 @@ fn geocode_suggest_fmt_json() {
 "{""cityrecord"":{""id"":4891010,""name"":""Elmhurst"",""latitude"":41.899471282958984,""longitude"":-87.94033813476562,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4896861,""code"":""US.IL"",""name"":""Illinois""},""admin2_division"":{""id"":4890213,""code"":""US.IL.043"",""name"":""DuPage County""},""timezone"":""America/Chicago"",""names"":{""en"":""Elmhurst""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Illinois""},""admin2_names"":{""en"":""DuPage County""},""population"":45957}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""IL"",""us_state_name"":""Illinois"",""us_state_fips_code"":""17"",""us_county"":""DuPage County"",""us_county_fips_code"":""043""}}"
 "{""cityrecord"":{""id"":4154008,""name"":""East Lake"",""latitude"":28.110849380493164,""longitude"":-82.69481658935547,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4155751,""code"":""US.FL"",""name"":""Florida""},""admin2_division"":{""id"":4168618,""code"":""US.FL.103"",""name"":""Pinellas County""},""timezone"":""America/New_York"",""names"":null,""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Florida""},""admin2_names"":{""en"":""Pinellas""},""population"":30962}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""FL"",""us_state_name"":""Florida"",""us_state_fips_code"":""12"",""us_county"":""Pinellas"",""us_county_fips_code"":""103""}}"
 "{""cityrecord"":{""id"":5128581,""name"":""New York City"",""latitude"":40.714271545410156,""longitude"":-74.00596618652344,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":5128638,""code"":""US.NY"",""name"":""New York""},""admin2_division"":null,""timezone"":""America/New_York"",""names"":{""en"":""New York""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""New York""},""admin2_names"":null,""population"":8804190}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""NY"",""us_state_name"":""New York"",""us_state_fips_code"":""36"",""us_county"":"""",""us_county_fips_code"":null}}"
-"{""cityrecord"":{""id"":4833425,""name"":""East Haven"",""latitude"":41.27621078491211,""longitude"":-72.8684310913086,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4831725,""code"":""US.CT"",""name"":""Connecticut""},""admin2_division"":{""id"":12809023,""code"":""US.CT.170"",""name"":""South Central Connecticut Planning Region""},""timezone"":""America/New_York"",""names"":{""en"":""East Haven""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Connecticut""},""admin2_names"":null,""population"":29257}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""CT"",""us_state_name"":""Connecticut"",""us_state_fips_code"":""09"",""us_county"":"""",""us_county_fips_code"":""170""}}"
+"{""cityrecord"":{""id"":4833425,""name"":""East Haven"",""latitude"":41.27621078491211,""longitude"":-72.8684310913086,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4831725,""code"":""US.CT"",""name"":""Connecticut""},""admin2_division"":{""id"":12809023,""code"":""US.CT.170"",""name"":""South Central Connecticut Planning Region""},""timezone"":""America/New_York"",""names"":{""en"":""East Haven""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Connecticut""},""admin2_names"":null,""population"":29257}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""CT"",""us_state_name"":""Connecticut"",""us_state_fips_code"":""09"",""us_county"":""South Central Connecticut Planning Region"",""us_county_fips_code"":""170""}}"
 This is not a Location and it will not be geocoded
 "40.71427, -74.00597"
-"{""cityrecord"":{""id"":1703417,""name"":""Makati City"",""latitude"":14.550270080566406,""longitude"":121.0326919555664,""country"":{""id"":1694008,""code"":""PH"",""name"":""Philippines""},""admin_division"":{""id"":7521311,""code"":""PH.NCR"",""name"":""National Capital Region""},""admin2_division"":{""id"":11395838,""code"":""PH.NCR.137600000"",""name"":""Southern Manila District""},""timezone"":""Asia/Manila"",""names"":{""en"":""Makati City""},""country_names"":{""en"":""Philippines""},""admin1_names"":{""en"":""National Capital Region""},""admin2_names"":null,""population"":510383}, ""countryrecord"":{""info"":{""iso"":""PH"",""iso3"":""PHL"",""iso_numeric"":""608"",""fips"":""RP"",""name"":""Philippines"",""capital"":""Manila"",""area"":""300000"",""population"":106651922,""continent"":""AS"",""tld"":"".ph"",""currency_code"":""PHP"",""currency_name"":""Peso"",""phone"":""63"",""postal_code_format"":""####"",""postal_code_regex"":""^(\\d{4})$"",""languages"":""tl,en-PH,fil,ceb,ilo,hil,war,pam,bik,bcl,pag,mrw,tsg,mdh,cbk,krj,sgd,msb,akl,ibg,yka,mta,abx"",""geonameid"":1694008,""neighbours"":"""",""equivalent_fips_code"":""""},""names"":{""en"":""Philippines""},""capital_names"":{""en"":""Manila""}}, ""us_fips_codes"":{""us_state_code"":null,""us_state_name"":""National Capital Region"",""us_state_fips_code"":null,""us_county"":"""",""us_county_fips_code"":null}}""######;
+"{""cityrecord"":{""id"":1703417,""name"":""Makati City"",""latitude"":14.550270080566406,""longitude"":121.0326919555664,""country"":{""id"":1694008,""code"":""PH"",""name"":""Philippines""},""admin_division"":{""id"":7521311,""code"":""PH.NCR"",""name"":""National Capital Region""},""admin2_division"":{""id"":11395838,""code"":""PH.NCR.137600000"",""name"":""Southern Manila District""},""timezone"":""Asia/Manila"",""names"":{""en"":""Makati City""},""country_names"":{""en"":""Philippines""},""admin1_names"":{""en"":""National Capital Region""},""admin2_names"":null,""population"":510383}, ""countryrecord"":{""info"":{""iso"":""PH"",""iso3"":""PHL"",""iso_numeric"":""608"",""fips"":""RP"",""name"":""Philippines"",""capital"":""Manila"",""area"":""300000"",""population"":106651922,""continent"":""AS"",""tld"":"".ph"",""currency_code"":""PHP"",""currency_name"":""Peso"",""phone"":""63"",""postal_code_format"":""####"",""postal_code_regex"":""^(\\d{4})$"",""languages"":""tl,en-PH,fil,ceb,ilo,hil,war,pam,bik,bcl,pag,mrw,tsg,mdh,cbk,krj,sgd,msb,akl,ibg,yka,mta,abx"",""geonameid"":1694008,""neighbours"":"""",""equivalent_fips_code"":""""},""names"":{""en"":""Philippines""},""capital_names"":{""en"":""Manila""}}, ""us_fips_codes"":{""us_state_code"":null,""us_state_name"":""National Capital Region"",""us_state_fips_code"":null,""us_county"":""Southern Manila District"",""us_county_fips_code"":null}}""######;
     assert_eq!(got, expected);
 }
 
@@ -1209,7 +1285,7 @@ fn geocode_suggest_dyncols_fmt() {
             "East Harlem, New York",
             "East Haven",
             "Connecticut",
-            "",
+            "South Central Connecticut Planning Region",
             "US",
             "NA",
             "USD"
@@ -1237,7 +1313,7 @@ fn geocode_suggest_dyncols_fmt() {
             "Makati, Metro Manila, Philippines",
             "Makati City",
             "National Capital Region",
-            "",
+            "Southern Manila District",
             "PH",
             "AS",
             "PHP"

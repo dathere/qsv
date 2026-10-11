@@ -2808,6 +2808,48 @@ async fn load_engine_data(
     )
 }
 
+/// A unique, not-yet-created path beside `dest` to stage a write in, deleted on drop unless it is
+/// installed with [`install_staged`].
+///
+/// Same directory as `dest`, so the final rename stays on one filesystem and is atomic. The path
+/// is not created here: the writer (`download_file`, `fs::copy`) creates it, so its permissions
+/// are exactly what writing `dest` directly produced before.
+fn staging_path_for(dest: &Path) -> CliResult<tempfile::TempPath> {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = dest.file_name().map_or_else(
+        || "geocode-index".into(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let staged = dest.with_file_name(format!(".{name}.{}-{seq}.partial", std::process::id()));
+    Ok(tempfile::TempPath::try_from_path(staged)?)
+}
+
+/// Move a fully written staged file into place at `dest` with one rename.
+///
+/// The Geonames index is downloaded (and decompressed) on first use into a SHARED cache dir, and
+/// other qsv processes load it as soon as `dest` exists. Writing `dest` in place let a process
+/// that started meanwhile load a half-written index ("failed to fill whole buffer", "unaligned
+/// pointer"...) - concurrent `geocode` runs on a fresh cache, e.g. parallel workers or tests. A
+/// rename means `dest` is either absent or complete. If the rename fails but `dest` now exists,
+/// another process installed it first (Windows cannot replace a file another process has open),
+/// so keep theirs - it was installed the same way.
+fn install_staged(staged: tempfile::TempPath, dest: &Path) -> CliResult<()> {
+    match staged.persist(dest) {
+        Ok(()) => Ok(()),
+        // dropping `e.path` deletes our staged copy
+        Err(e) if dest.exists() => {
+            log::info!(
+                "{} was installed by another process; keeping it ({})",
+                dest.display(),
+                e.error
+            );
+            Ok(())
+        },
+        Err(e) => Err(CliError::Io(e.error)),
+    }
+}
+
 /// [`load_engine_data`], additionally returning the path the index was actually loaded FROM.
 ///
 /// The caller cannot compute that path itself: a numeric shortcut is downloaded under the bare
@@ -2872,9 +2914,10 @@ async fn load_engine_data_resolved(
              release..."
         ));
 
+        let staged = staging_path_for(&geocode_index_file)?;
         if let Err(e) = util::download_file(
             &format!("{download_url}{shortcut}.sz"),
-            geocode_index_file.clone(),
+            staged.to_path_buf(),
             !progressbar.is_hidden(),
             None,
             Some(download_timeout),
@@ -2896,19 +2939,19 @@ async fn load_engine_data_resolved(
         // the release it was built from. Check the Snappy framing magic and say what happened.
         let downloaded_snappy_index = {
             let mut header = [0_u8; 10];
-            fs::File::open(&geocode_index_file)
+            fs::File::open(&staged)
                 .and_then(|mut file| std::io::Read::read_exact(&mut file, &mut header))
                 .is_ok_and(|()| header == *b"\xff\x06\x00\x00sNaPpY")
         };
         if !downloaded_snappy_index {
-            // don't leave the bogus payload behind to be mistaken for an index
-            let _ = fs::remove_file(&geocode_index_file);
+            // the bogus payload never reached `geocode_index_file`; dropping `staged` deletes it
             return fail_clierror!(
                 "The qsv {QSV_VERSION} release does not appear to carry the prebuilt \
                  cities{shortcut} index - what downloaded is not a Snappy-framed Geonames index. \
                  Build it locally instead with `qsv geocode index-update --cities-url {shortcut}`."
             );
         }
+        install_staged(staged, &geocode_index_file)?;
     } else if index_file_exists {
         // load existing local index
         progressbar.println(format!(
@@ -2921,15 +2964,19 @@ async fn load_engine_data_resolved(
             "Downloading default Geonames index for qsv {QSV_VERSION} release..."
         ));
 
+        // staged + renamed, never written in place: another process may be checking
+        // `index_file_exists` on this very path right now (see `install_staged`)
+        let staged = staging_path_for(&geocode_index_file)?;
         util::download_file(
             &format!("{download_url}{DEFAULT_GEONAMES_CITIES_INDEX}"),
-            geocode_index_file.clone(),
+            staged.to_path_buf(),
             !progressbar.is_hidden(),
             None,
             Some(download_timeout),
             None,
         )
         .await?;
+        install_staged(staged, &geocode_index_file)?;
         downloaded_default_index = true;
     }
 
@@ -2969,7 +3016,11 @@ async fn load_engine_data_resolved(
         ));
         let tmpdir = tempdir()?;
         let decompressed_tmpfile = util::decompress_snappy_file(&geocode_index_file, &tmpdir)?;
-        fs::copy(decompressed_tmpfile, &decompressed_geocode_index_file)?;
+        // the decompressed path is often the very file just downloaded, which other processes
+        // may already be loading - stage + rename rather than copy over it in place
+        let staged = staging_path_for(&decompressed_geocode_index_file)?;
+        fs::copy(decompressed_tmpfile, &staged)?;
+        install_staged(staged, &decompressed_geocode_index_file)?;
         decompressed_geocode_index_file
     } else {
         geocode_index_file
@@ -4972,6 +5023,53 @@ fn add_fields(record: &mut csv::StringRecord, value: &str, count: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_index_install_is_all_or_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("qsv-1.2.3-geocode-index.rkyv");
+
+        // staging never touches `dest`, and an abandoned stage leaves nothing behind
+        let staged = staging_path_for(&dest).unwrap();
+        let staged_path = staged.to_path_buf();
+        assert_eq!(staged_path.parent(), dest.parent(), "must be beside dest");
+        fs::write(&staged_path, b"partial").unwrap();
+        assert!(!dest.exists());
+        drop(staged);
+        assert!(!staged_path.exists());
+
+        // two stages for the same dest never collide
+        let a = staging_path_for(&dest).unwrap();
+        let b = staging_path_for(&dest).unwrap();
+        assert_ne!(a.to_path_buf(), b.to_path_buf());
+        drop((a, b));
+
+        // install renames the complete file into place and consumes the stage
+        let staged = staging_path_for(&dest).unwrap();
+        let staged_path = staged.to_path_buf();
+        fs::write(&staged_path, b"first").unwrap();
+        install_staged(staged, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"first");
+        assert!(!staged_path.exists());
+
+        // a later install replaces it whole
+        let staged = staging_path_for(&dest).unwrap();
+        fs::write(&staged, b"second").unwrap();
+        install_staged(staged, &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"second");
+
+        // only dest remains: no stray .partial files
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+
+        // the staged names never match the versioned-index prune pattern
+        let staged = staging_path_for(&dest).unwrap();
+        let name = staged.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(!VERSIONED_INDEX_REGEX().is_match(&name), "{name}");
+    }
 
     fn metadata_with(cities: &str, languages: &[&str]) -> EngineMetadata {
         let mut m = EngineMetadata::default();

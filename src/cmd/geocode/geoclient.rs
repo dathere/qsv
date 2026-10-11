@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 use super::{
     Args, OPENCAGE_FORMATSTR_REGEX, add_fields, decode_lookup_cache, encode_lookup_cache,
-    json_dotpath, parse_dyncols_spec,
+    first_selected_column, json_dotpath, parse_dyncols_spec,
 };
 use crate::{
     CliError, CliResult,
@@ -324,7 +324,9 @@ fn split_bbl(cell: &str) -> Option<(String, String, String)> {
             format!("{lot:0>4}"),
         )
     } else {
-        if cell.len() != 10 {
+        // check digits BEFORE slicing: a 10-byte cell holding a multi-byte character would
+        // otherwise be sliced through the middle of it and panic
+        if cell.len() != 10 || !cell.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
         (
@@ -472,15 +474,27 @@ fn extract_result(endpoint: Endpoint, body: &Value) -> Option<Value> {
     Some(obj)
 }
 
+/// Why a response body could not be read.
+enum BodyError {
+    /// Over the cap: a broken or hostile server - retrying would not help.
+    TooLarge(usize),
+    /// The connection failed mid-body (reset, timeout) - worth a retry.
+    Transport(String),
+}
+
 /// Read a response body, refusing more than `cap` bytes (decompressed) instead of buffering it all.
-async fn read_capped(mut resp: reqwest::Response, cap: usize) -> Result<Vec<u8>, String> {
+async fn read_capped(mut resp: reqwest::Response, cap: usize) -> Result<Vec<u8>, BodyError> {
     if resp.content_length().is_some_and(|n| n > cap as u64) {
-        return Err(format!("response body is larger than {cap} bytes"));
+        return Err(BodyError::TooLarge(cap));
     }
     let mut buf = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| BodyError::Transport(e.to_string()))?
+    {
         if buf.len() + chunk.len() > cap {
-            return Err(format!("response body is larger than {cap} bytes"));
+            return Err(BodyError::TooLarge(cap));
         }
         buf.extend_from_slice(&chunk);
     }
@@ -522,16 +536,23 @@ async fn geoclient_fetch(
             Ok(resp) => {
                 let status = resp.status().as_u16();
                 match status {
-                    200 => {
-                        let bytes = read_capped(resp, MAX_BODY_BYTES).await.map_err(|e| {
-                            GcError::Transient(util::redact_api_key(&format!(
-                                "Geoclient response error: {e}"
-                            )))
-                        })?;
-                        let body: Value = serde_json::from_slice(&bytes).map_err(|e| {
-                            GcError::Transient(format!("Geoclient response is not JSON: {e}"))
-                        })?;
-                        return Ok(extract_result(endpoint, &body));
+                    200 => match read_capped(resp, MAX_BODY_BYTES).await {
+                        Ok(bytes) => {
+                            let body: Value = serde_json::from_slice(&bytes).map_err(|e| {
+                                GcError::Transient(format!("Geoclient response is not JSON: {e}"))
+                            })?;
+                            return Ok(extract_result(endpoint, &body));
+                        },
+                        Err(BodyError::TooLarge(cap)) => {
+                            return Err(GcError::Transient(format!(
+                                "Geoclient response body is larger than {cap} bytes."
+                            )));
+                        },
+                        // a connection that dies mid-body is retried like one that never connected
+                        Err(BodyError::Transport(e)) => {
+                            last_error =
+                                util::redact_api_key(&format!("Geoclient response error: {e}"));
+                        },
                     },
                     401 | 403 => {
                         return Err(GcError::Fatal(format!(
@@ -699,7 +720,7 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
 
     let header_record = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&header_record)?;
-    let column_index = *sel.iter().next().unwrap();
+    let column_index = first_selected_column(&sel)?;
 
     let input_headers = rdr.headers()?.clone();
     let sources = resolve_param_sources(&params, &input_headers)?;
@@ -986,6 +1007,9 @@ mod tests {
         assert_eq!(split_bbl("1000670001.5"), None);
         assert_eq!(split_bbl("1-123456-1"), None); // block > 5 digits
         assert_eq!(split_bbl("A000670001"), None);
+        // 10 BYTES but not 10 chars: must be rejected, not sliced mid-character
+        assert_eq!(split_bbl("é12345678"), None);
+        assert_eq!(split_bbl("1-é-1"), None);
         assert_eq!(split_bbl(""), None);
     }
 

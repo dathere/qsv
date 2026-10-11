@@ -1717,7 +1717,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
-    let column_index = *sel.iter().next().unwrap();
+    let column_index = first_selected_column(&sel)?;
 
     let mut headers = rdr.headers()?.clone();
 
@@ -2038,6 +2038,14 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
+/// The column to geocode: the first selected one. An empty selection (e.g. `!Location` on a
+/// one-column file) is a usage error, not a panic.
+fn first_selected_column(sel: &crate::select::Selection) -> CliResult<usize> {
+    sel.iter().next().copied().ok_or_else(|| {
+        CliError::IncorrectUsage("The <column> selection does not match any column.".to_string())
+    })
+}
+
 /// Parse an online backend's `%dyncols: {col_name:key}, ...` --formatstr into (column names,
 /// keys). Key validity is backend-specific and checked by the caller.
 fn parse_dyncols_spec(formatstr: &str) -> CliResult<(Vec<String>, Vec<String>)> {
@@ -2162,7 +2170,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
 
     let header_record = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&header_record)?;
-    let column_index = *sel.iter().next().unwrap();
+    let column_index = first_selected_column(&sel)?;
 
     let mut headers = rdr.headers()?.clone();
     if let Some(new_name) = &args.flag_rename {

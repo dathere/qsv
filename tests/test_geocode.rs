@@ -2827,6 +2827,7 @@ fn geocode_index_load_numeric_named_file_not_shortcut() {
 //   down  - always 503.
 //   redirect - 302 to the same endpoint under `ok` (must NOT be followed: the key would go along);
 //   huge  - a 5 MiB body (must be refused, not buffered).
+//   truncate - the first response dies mid-body (must be retried), then normal.
 // A search `input` containing NOMATCH is a Geosupport reject (EE/EE), RC2ONLY succeeds only on
 // geosupportReturnCode2, and BADREQ gets an HTTP 400.
 // ---------------------------------------------------------------------------
@@ -2893,6 +2894,24 @@ mod geoclient_mock {
                 return HttpResponse::Found()
                     .insert_header(("Location", format!("/ok/geoclient/v2/{endpoint}")))
                     .finish();
+            },
+            "truncate" if n == 1 => {
+                // send the headers and a first chunk, THEN fail: failing at once makes actix drop
+                // the connection before the headers, which the client sees as a
+                // send error, not a mid-body one
+                let body = futures::stream::unfold(0u8, |step| async move {
+                    match step {
+                        0 => Some((Ok(web::Bytes::from_static(b"{\"results\": [")), 1)),
+                        1 => {
+                            rt::time::sleep(std::time::Duration::from_millis(200)).await;
+                            Some((Err(std::io::Error::other("connection dropped mid-body")), 2))
+                        },
+                        _ => None,
+                    }
+                });
+                return HttpResponse::Ok()
+                    .content_type("application/json")
+                    .streaming(body);
             },
             "huge" => {
                 let padding = "x".repeat(5 * 1024 * 1024);
@@ -3112,6 +3131,8 @@ fn geocode_geoclient_bbl_dyncols() {
             svec!["b", "1-67-1"],
             svec!["c", "not a bbl"],
             svec!["d", "6000670001"],
+            // 10 bytes, but not 10 digits: must not panic slicing through the multi-byte char
+            svec!["e", "é12345678"],
         ],
     );
     let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
@@ -3136,6 +3157,7 @@ fn geocode_geoclient_bbl_dyncols() {
         hit("b", "1-67-1"),
         svec!["c", "not a bbl", "", "", "", ""],
         svec!["d", "6000670001", "", "", "", ""],
+        svec!["e", "é12345678", "", "", "", ""],
     ];
     assert_eq!(got, expected);
     assert_eq!(
@@ -3490,6 +3512,17 @@ fn geocode_geoclient_arg_validation() {
         None,
         "only valid with the geoclient subcommands",
     );
+    // an empty column selection is a usage error, not a panic
+    fails_with(
+        &["geoclient", "!Location", "data.csv"],
+        Some(dead),
+        "does not match any column",
+    );
+    fails_with(
+        &["opencage", "!Location", "data.csv", "--api-key", "dummy"],
+        None,
+        "does not match any column",
+    );
 }
 
 #[test]
@@ -3564,4 +3597,21 @@ fn geocode_geoclient_no_redirects_no_huge_bodies() {
         // the redirect target (the `ok` route) was never requested
         assert_eq!(mock.requests(), 1, "{mode}: {:?}", mock.queries());
     }
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_retries_truncated_body() {
+    // a connection that drops in the middle of a 200's body is retried, not given up on
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_retries_truncated_body");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Wall St"]]);
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("truncate"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["Location"], svec!["40.798502, -73.972709"]]);
+    assert_eq!(mock.requests(), 2);
 }

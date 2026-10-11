@@ -7133,7 +7133,6 @@ dependencies = [
  "regex",
  "reqwest",
  "rfd",
- "rkyv",
  "rmp-serde",
  "rust-i18n",
  "rust_decimal",

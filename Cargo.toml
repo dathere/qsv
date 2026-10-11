@@ -435,9 +435,6 @@ reqwest = { version = "0.13", features = [
     "system-proxy",
 ], default-features = false }
 rfd = { version = "0.17", optional = true }
-# geocode writes its rebuilt Geonames index framing itself: geosuggest-core 0.8 `Storage::dump`
-# omits the metadata bytes (but not their length) unless its `tracing` feature is on (#4433).
-rkyv = { version = "0.8", optional = true }
 rmp-serde = { version = "1.3", optional = true }
 rust_decimal = { version = "1.42", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
@@ -495,11 +492,6 @@ actix-web = { version = "4.13", default-features = false, features = [
 assert-json-diff = "2.0"
 # for inflating the gzip+base64 payloads viz HTML embeds (see tests/test_viz.rs inflate helpers)
 base64-simd = "0.8"
-# rkyv writes the mini Geonames index's metadata framing by hand (Storage::dump_to omits it
-# without geosuggest's `tracing` feature — the qsv issue #4433 corruption). Also used by
-# tests/test_geocode.rs, and it pulls no big-endian-hostile crates, so it stays unconditional.
-# geosuggest-core itself lives in the big-endian-excluded dev-dependencies table below.
-rkyv = "0.8"
 # for verifying the pinned plotly.js CDN Subresource Integrity digest against the bundle qsv
 # actually embeds (see cmd::viz plotly_cdn_sri_matches_the_embedded_bundle). A dev-dependency, not
 # the optional `profile` sha2, so the oracle runs for EVERY viz test feature set rather than only
@@ -699,7 +691,6 @@ geocode = [
     "geosuggest-utils",
     "geozero",
     "governor",
-    "rkyv",
     "rmp-serde",
 ]
 # luau lookup tables auto-decompress remote .gz/.zlib/.zst/.zip/.sz sources, so

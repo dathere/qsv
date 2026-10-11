@@ -40,17 +40,9 @@ fn build_mini_geocode_index(wrk: &Workdir) -> String {
     .expect("parse mini Geonames fixture");
     let engine_data =
         geosuggest_core::EngineData::try_from(index_data).expect("serialize mini index");
-    // Write the storage's `<4-byte metadata len BE><metadata><payload>` framing BY HAND:
-    // `Storage::dump_to` without geosuggest's `tracing` feature writes the metadata LENGTH but
-    // not the metadata bytes (a misplaced `#[cfg]`), shifting the payload and making the index
-    // unloadable — the very corruption qsv issue #4433 works around by never re-serializing.
-    let metadata = rkyv::to_bytes::<rkyv::rancor::Error>(&engine_data.metadata)
-        .expect("serialize mini index metadata");
-    let mut bytes: Vec<u8> = Vec::with_capacity(4 + metadata.len() + engine_data.data.len());
-    bytes.extend_from_slice(&u32::try_from(metadata.len()).unwrap().to_be_bytes());
-    bytes.extend_from_slice(&metadata);
-    bytes.extend_from_slice(&engine_data.data);
-    std::fs::write(cache_dir.join(MINI_INDEX), bytes).expect("write mini index");
+    geosuggest_core::storage::Storage::new()
+        .dump_to(cache_dir.join(MINI_INDEX), &engine_data)
+        .expect("write mini index");
     cache_dir.to_string_lossy().to_string()
 }
 

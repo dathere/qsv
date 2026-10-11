@@ -3664,3 +3664,33 @@ fn geocode_opencage_caps_response_size() {
         assert_eq!(mock.requests(), 1, "{mode}");
     }
 }
+
+#[test]
+#[serial]
+fn geocode_opencage_url_override_ignored_unless_loopback() {
+    // OpenCage sends its key in the URL, so a non-local QSV_OPENCAGE_API_URL (e.g. from a planted
+    // .env) must be ignored, not followed. The dead proxy keeps the fallback request offline.
+    let wrk = Workdir::new("geocode_opencage_url_override_ignored_unless_loopback");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Brooklyn, NY"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--api-key", "dummy-key"])
+        .arg("--no-cache")
+        .args(["--timeout", "5"])
+        .env("QSV_OPENCAGE_API_URL", "http://example.com/geocode/v1/json")
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("https_proxy", "http://127.0.0.1:9")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env("http_proxy", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Ignoring QSV_OPENCAGE_API_URL"),
+        "stderr: {stderr}"
+    );
+}

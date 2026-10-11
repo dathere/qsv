@@ -1592,12 +1592,12 @@ fn template_no_headers_rowno_and_out_of_range_column() {
     wrk.create_from_string("data.csv", "a,b\nc,d\n");
     let mut cmd = wrk.command("template");
     cmd.arg("--template")
-        .arg("{{QSV_ROWNO}}:{{_c1}}{{_c2}}[{{_c3}}][{{_c0}}]\n\n")
+        .arg("{{QSV_ROWNO}}:{{_c1}}{{_c2}}[{{_c3}}][{{_c0}}][{{_c01}}]\n\n")
         .arg("--no-headers")
         .arg("data.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    assert_eq!(got, "1:ab[][]\n2:cd[][]");
+    assert_eq!(got, "1:ab[][][]\n2:cd[][][]");
 }
 
 #[test]

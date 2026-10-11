@@ -258,7 +258,12 @@ impl RowContext {
             if key == QSV_ROWNO {
                 return Some(last);
             }
-            let col: usize = key.strip_prefix("_c")?.parse().ok()?;
+            let digits = key.strip_prefix("_c")?;
+            // only the exact `_c{N}` spellings, so e.g. `_c01` stays undefined
+            if digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let col: usize = digits.parse().ok()?;
             (col >= 1 && col <= last).then(|| col - 1)
         } else {
             self.keys

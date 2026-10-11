@@ -108,10 +108,11 @@ QSV_NO_HEADERS = False
 #   * lookup tables downloaded by `luau` (qsv_register_lookup()), `template` & `validate`
 #   * `geocode`'s Geonames index and its online OpenCage result cache
 #   * `get`'s download cache
-#   * `describegpt`'s downloaded tag vocabularies and its LLM completion cache
+#   * `describegpt`'s downloaded tag vocabularies (its LLM completion cache is set
+#     separately by --disk-cache-dir, default ~/.qsv-cache/describegpt)
 #   * `viz`'s Census boundary and population caches
-# It takes precedence over the --cache-dir option of `geocode`, `luau`, `template`,
-# `validate` & `describegpt`, while `get`'s --cache-dir overrides it.
+# It takes precedence over the --cache-dir option of `describegpt`, `geocode`, `get`,
+# `luau`, `template` & `validate`.
 # QSV_CACHE_DIR = ~/.qsv-cache
 
 # The CKAN Action API endpoint to use with the `luau` qsv_register_lookup()
@@ -152,7 +153,8 @@ QSV_COMMENT_CHAR = '#'
 # `blake3`, `datefmt`, `dedup`, `diff`, `excel`, `extsort`, `frequency`, `geocode`,
 # `joinp`, `jsonl`, `moarstats`, `pragmastat`, `replace`, `schema`, `search`,
 # `searchset`, `snappy`, `sort`, `split`, `sqlp`, `stats`, `template`, `to`, `tojsonl`,
-# `validate` & `writestat`). If not set, max_jobs is set to the detected number of
+# `validate` & `writestat`; also `pivotp` and `sample` when they generate a missing
+# stats cache). If not set, max_jobs is set to the detected number of
 # logical processors.  See PERFORMANCE-Multithreading section for more info.
 # QSV_MAX_JOBS = 8
 
@@ -233,7 +235,8 @@ QSV_LOG_UNBUFFERED = False
 
 # if true, enable the --progressbar option on the `apply`, `datefmt`, `fetch`,
 # `fetchpost`, `foreach`, `geocode`, `luau`, `moarstats`, `py`, `replace`, `search`,
-# `searchset`, `sniff`, `sortcheck`, `template` & `validate` commands.
+# `searchset`, `snappy`, `sniff`, `sortcheck`, `template` & `validate` commands
+# (`sample`'s URL downloads also honor it).
 # `viz` is the exception: its spinner is ON by default, and setting this to a
 # falsy value (e.g. False, 0, no, off) disables it.
 QSV_PROGRESSBAR = False
@@ -269,8 +272,9 @@ QSV_REDIS_TTL_SECS = 2419200
 QSV_REDIS_TTL_REFRESH = False
 
 # for commands with a --timeout option (`describegpt`, `fetch`, `fetchpost`, `geocode`,
-# `luau`, `sample`, `snappy`, `sniff`, `template`, `validate` & `viz`), the number of
-# seconds before a web request times out (default: 30).
+# `luau`, `sample`, `snappy`, `sniff`, `template` & `validate`), the number of
+# seconds before a web request times out (default: 30). `viz` has no --timeout
+# option but honors this variable for its Census requests.
 QSV_TIMEOUT = 30
 
 # the user agent string to use for web requests.

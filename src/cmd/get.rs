@@ -145,8 +145,9 @@ get options:
 
 Common options:
     -h, --help             Display this message
-    --cache-dir <dir>      The qsv cache directory. Overrides the QSV_CACHE_DIR
-                           env var. [default: ~/.qsv-cache]
+    --cache-dir <dir>      The qsv cache directory.
+                           If the QSV_CACHE_DIR envvar is set, it will be used instead.
+                           [default: ~/.qsv-cache]
     -o, --output <file>    For a single <source> (or cache-fetch <name>), write the
                            (decompressed) data to <file> (use `-` for stdout).
     -q, --quiet            Do not print progress/summary messages to stderr.

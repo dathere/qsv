@@ -2827,6 +2827,7 @@ fn geocode_index_load_numeric_named_file_not_shortcut() {
 //   down  - always 503.
 //   redirect - 302 to the same endpoint under `ok` (must NOT be followed: the key would go along);
 //   huge  - a 5 MiB body (must be refused, not buffered).
+//   opencage - an OpenCage-shaped success (the OpenCage tests point QSV_OPENCAGE_API_URL here).
 //   truncate - the first response dies mid-body (must be retried), then normal.
 // A search `input` containing NOMATCH is a Geosupport reject (EE/EE), RC2ONLY succeeds only on
 // geosupportReturnCode2, and BADREQ gets an HTTP 400.
@@ -2912,6 +2913,16 @@ mod geoclient_mock {
                 return HttpResponse::Ok()
                     .content_type("application/json")
                     .streaming(body);
+            },
+            "opencage" => {
+                return HttpResponse::Ok().json(json!({
+                    "status": {"code": 200, "message": "OK"},
+                    "results": [{
+                        "formatted": "Mock Place, NY",
+                        "geometry": {"lat": 40.5, "lng": -73.9},
+                        "confidence": 9,
+                    }],
+                }));
             },
             "huge" => {
                 let padding = "x".repeat(5 * 1024 * 1024);
@@ -3617,4 +3628,69 @@ fn geocode_geoclient_retries_truncated_body() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, vec![svec!["Location"], svec!["40.798502, -73.972709"]]);
     assert_eq!(mock.requests(), 2);
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_caps_response_size() {
+    // OpenCage responses are a few KB; a 5 MiB body (or a compression bomb) must be refused
+    // rather than buffered in full. The `opencage` mode is the positive control: it proves
+    // QSV_OPENCAGE_API_URL really points the request at the mock.
+    let wrk = Workdir::new("geocode_opencage_caps_response_size");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Brooklyn, NY"]]);
+    for (mode, expected_stdout, failed) in [
+        ("opencage", "Location\n\"Mock Place, NY\"\n", false),
+        ("huge", "Location\n\"Brooklyn, NY\"\n", true),
+    ] {
+        let mock = GeoclientMock::start();
+        let mut cmd = wrk.command("geocode");
+        cmd.arg("opencage")
+            .arg("Location")
+            .arg("data.csv")
+            .args(["--api-key", "dummy-key"])
+            .arg("--no-cache")
+            .env("QSV_OPENCAGE_API_URL", format!("{}/search", mock.url(mode)))
+            .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string());
+        let output = wrk.output(&mut cmd);
+        assert!(output.status.success(), "{mode}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(stdout.replace("\r\n", "\n"), expected_stdout, "{mode}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(
+            stderr.contains("1 OpenCage lookup(s) failed"),
+            failed,
+            "{mode}: {stderr}"
+        );
+        assert_eq!(mock.requests(), 1, "{mode}");
+    }
+}
+
+#[test]
+#[serial]
+fn geocode_opencage_url_override_ignored_unless_loopback() {
+    // OpenCage sends its key in the URL, so a non-local QSV_OPENCAGE_API_URL (e.g. from a planted
+    // .env) must be ignored, not followed. The dead proxy keeps the fallback request offline.
+    let wrk = Workdir::new("geocode_opencage_url_override_ignored_unless_loopback");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Brooklyn, NY"]]);
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--api-key", "dummy-key"])
+        .arg("--no-cache")
+        .args(["--timeout", "5"])
+        .env("QSV_OPENCAGE_API_URL", "http://example.com/geocode/v1/json")
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("https_proxy", "http://127.0.0.1:9")
+        .env("HTTP_PROXY", "http://127.0.0.1:9")
+        .env("http_proxy", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Ignoring QSV_OPENCAGE_API_URL"),
+        "stderr: {stderr}"
+    );
 }

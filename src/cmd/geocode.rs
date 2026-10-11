@@ -3928,6 +3928,72 @@ fn decode_lookup_cache(encoded: &str) -> Option<String> {
     }
 }
 
+/// Cap on an online geocoder's response body. `OpenCage` and Geoclient responses are a few KB;
+/// anything bigger is a broken or hostile server (or a compression bomb - reqwest decompresses
+/// brotli/gzip/deflate/zstd transparently, so the cap applies to the decompressed size).
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+
+/// Why a response body could not be read.
+enum BodyError {
+    /// Over the cap: a broken or hostile server - retrying would not help.
+    TooLarge(usize),
+    /// The connection failed mid-body (reset, timeout) - worth a retry.
+    Transport(String),
+}
+
+/// Read a response body, refusing more than `cap` bytes (decompressed) instead of buffering it all.
+async fn read_capped(mut resp: reqwest::Response, cap: usize) -> Result<Vec<u8>, BodyError> {
+    if resp.content_length().is_some_and(|n| n > cap as u64) {
+        return Err(BodyError::TooLarge(cap));
+    }
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| BodyError::Transport(e.to_string()))?
+    {
+        if buf.len() + chunk.len() > cap {
+            return Err(BodyError::TooLarge(cap));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
+/// The `OpenCage` geocoding endpoint. `QSV_OPENCAGE_API_URL` overrides it - for testing only,
+/// so the response handling can run against a local mock. Resolved once per run.
+fn opencage_api_url() -> &'static str {
+    static URL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    URL.get_or_init(|| {
+        let value = std::env::var("QSV_OPENCAGE_API_URL").ok();
+        opencage_url_override(value.as_deref()).unwrap_or_else(|| {
+            if value.as_deref().is_some_and(|v| !v.trim().is_empty()) {
+                wwarn!(
+                    "Ignoring QSV_OPENCAGE_API_URL: it is for testing only and must point at a \
+                     loopback address (localhost, 127.0.0.1 or ::1)."
+                );
+            }
+            OPENCAGE_API_URL.to_string()
+        })
+    })
+}
+
+const OPENCAGE_API_URL: &str = "https://api.opencagedata.com/geocode/v1/json";
+
+/// Accept a `QSV_OPENCAGE_API_URL` override only for a loopback host. `OpenCage` sends its key
+/// in the URL, so a non-local override - e.g. from a `.env` file planted in a downloaded
+/// folder - would hand the key to that server, and a test-only knob buys nothing in return.
+fn opencage_url_override(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    let url = Url::parse(value).ok()?;
+    let loopback = match url.host()? {
+        url::Host::Domain(d) => d.eq_ignore_ascii_case("localhost"),
+        url::Host::Ipv4(ip) => ip.is_loopback(),
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+    };
+    loopback.then(|| value.to_string())
+}
+
 /// Call the `OpenCage` Geocoding API for a single (already normalized) query.
 /// The same `q` parameter does forward geocoding for an address and reverse
 /// geocoding for a "lat,long" coordinate.
@@ -3957,12 +4023,11 @@ async fn opencage_fetch(
         params.push(("countrycode", cc.as_str()));
     }
 
-    let url = Url::parse_with_params("https://api.opencagedata.com/geocode/v1/json", &params)
-        .map_err(|e| {
-            OcError::Transient(util::redact_api_key(&format!(
-                "OpenCage URL build error: {e}"
-            )))
-        })?;
+    let url = Url::parse_with_params(opencage_api_url(), &params).map_err(|e| {
+        OcError::Transient(util::redact_api_key(&format!(
+            "OpenCage URL build error: {e}"
+        )))
+    })?;
     let resp = client.get(url).send().await.map_err(|e| {
         OcError::Transient(util::redact_api_key(&format!(
             "OpenCage network error: {e}"
@@ -3996,11 +4061,20 @@ async fn opencage_fetch(
         },
     }
 
-    let parsed: OpencageResponse = resp.json().await.map_err(|e| {
-        OcError::Transient(util::redact_api_key(&format!(
-            "OpenCage response error: {e}"
-        )))
-    })?;
+    // read through the size cap: resp.json() would buffer whatever the server sends
+    let body = read_capped(resp, MAX_BODY_BYTES)
+        .await
+        .map_err(|e| match e {
+            BodyError::TooLarge(cap) => OcError::Transient(format!(
+                "OpenCage response body is larger than {cap} bytes."
+            )),
+            // reqwest errors quote the request URL, which carries the key
+            BodyError::Transport(e) => OcError::Transient(util::redact_api_key(&format!(
+                "OpenCage response error: {e}"
+            ))),
+        })?;
+    let parsed: OpencageResponse = serde_json::from_slice(&body)
+        .map_err(|e| OcError::Transient(format!("OpenCage response is not valid JSON: {e}")))?;
 
     // OpenCage also echoes the status code in the JSON body
     match parsed.status.code {
@@ -5069,6 +5143,37 @@ mod tests {
         let staged = staging_path_for(&dest).unwrap();
         let name = staged.file_name().unwrap().to_string_lossy().into_owned();
         assert!(!VERSIONED_INDEX_REGEX().is_match(&name), "{name}");
+    }
+
+    #[test]
+    fn opencage_url_override_is_loopback_only() {
+        // OpenCage sends its key in the URL: a test-only override must not be able to send it
+        // anywhere but this machine
+        for ok in [
+            "http://127.0.0.1:8080/x",
+            "http://localhost:1/geocode/v1/json",
+            "http://LOCALHOST/x",
+            "http://[::1]:9/x",
+            "http://127.1.2.3/x",
+        ] {
+            assert_eq!(
+                opencage_url_override(Some(ok)),
+                Some(ok.to_string()),
+                "{ok}"
+            );
+        }
+        for bad in [
+            "https://evil.example.com/geocode/v1/json",
+            "http://10.0.0.1/x",
+            "http://localhost.evil.com/x",
+            "http://127.0.0.1.evil.com/x",
+            "http://[::2]/x",
+            "not a url",
+            "",
+        ] {
+            assert_eq!(opencage_url_override(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(opencage_url_override(None), None);
     }
 
     fn metadata_with(cities: &str, languages: &[&str]) -> EngineMetadata {

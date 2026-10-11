@@ -278,14 +278,15 @@ memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false, features = [
     "extended",
 ], optional = true }
-minijinja = { version = "2.23", features = [
+minijinja = { version = "3.0", features = [
     "json",
     "loop_controls",
+    "serde",
     "speedups",
     "stacker",
     "urlencode",
 ] }
-minijinja-contrib = { version = "2.23", features = [
+minijinja-contrib = { version = "3.0", features = [
     "datetime",
     "pycompat",
     "rand",

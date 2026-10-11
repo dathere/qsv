@@ -509,7 +509,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     }
                 }
 
-                let rendered = match template.render(&context) {
+                let rendered = match template.render(minijinja::value::Serde(&context)) {
                     Ok(s) => s,
                     Err(e) => {
                         RENDER_ERROR_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -527,9 +527,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // can easily find the record which caused the rendering error
                         // e.g. FILENAME_RENDERING_ERROR-00035.txt is the 35th record in a CSV
                         // with at least 10000 rows (the three leading zeros)
-                        filename_template.render(&context).unwrap_or_else(|_| {
-                            format!("FILENAME_RENDERING_ERROR-{row_number:0width$}.txt")
-                        })
+                        filename_template
+                            .render(minijinja::value::Serde(&context))
+                            .unwrap_or_else(|_| {
+                                format!("FILENAME_RENDERING_ERROR-{row_number:0width$}.txt")
+                            })
                     };
                     (Some(outfilename), rendered)
                 } else {

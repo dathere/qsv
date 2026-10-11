@@ -650,7 +650,7 @@ use std::{
 use cached::{ConcurrentCached, RedbCache, RedisCache, Return, macros::concurrent_cached};
 use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::IndexSet;
-use minijinja::{Environment, context};
+use minijinja::{Environment, context, syntax::SyntaxConfig, value::Serde};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -1880,7 +1880,12 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
         crate::minijinja_filters::register(&mut env);
         // Preserve trailing newlines so default templates byte-match the legacy
         // `format!()` output.
-        env.set_keep_trailing_newline(true);
+        env.set_syntax(
+            SyntaxConfig::builder()
+                .keep_trailing_newline(true)
+                .build()
+                .expect("default delimiters are valid"),
+        );
 
         env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
         // Render a string as a YAML scalar safe for the semantic-md frontmatter
@@ -1952,8 +1957,8 @@ fn render_dictionary_md_body(
     let env = make_describegpt_md_env();
 
     let ctx = context! {
-        entries => entries,
-        addl_col_names => addl_col_names,
+        entries => Serde(entries),
+        addl_col_names => Serde(addl_col_names),
         infer_content_type => args.flag_infer_content_type,
         kind => PromptType::Dictionary.to_string(),
         generated_by_signature => &shared.attribution,
@@ -2042,12 +2047,12 @@ fn render_semanticmd_body(
         row_count => data.row_count,
         grain => data.grain,
         concepts => data.concepts,
-        temporal_coverage => data.temporal_coverage,
-        spatial => data.spatial,
+        temporal_coverage => Serde(data.temporal_coverage),
+        spatial => Serde(data.spatial),
         ds_source => args.flag_ds_source.as_deref().unwrap_or_default(),
         ds_updated => args.flag_ds_updated.as_deref().unwrap_or_default(),
         ds_license => args.flag_ds_license.as_deref().unwrap_or_default(),
-        entries => data.entries,
+        entries => Serde(data.entries),
         kind => PromptType::Dictionary.to_string(),
         generated_by_signature => &shared.attribution,
         model => model,
@@ -2096,12 +2101,12 @@ fn render_okf_body(
         row_count => data.row_count,
         grain => data.grain,
         concepts => data.concepts,
-        temporal_coverage => data.temporal_coverage,
-        spatial => data.spatial,
+        temporal_coverage => Serde(data.temporal_coverage),
+        spatial => Serde(data.spatial),
         ds_source => args.flag_ds_source.as_deref().unwrap_or_default(),
         ds_updated => args.flag_ds_updated.as_deref().unwrap_or_default(),
         ds_license => args.flag_ds_license.as_deref().unwrap_or_default(),
-        entries => data.entries,
+        entries => Serde(data.entries),
         kind => PromptType::Dictionary.to_string(),
         generated_by_signature => &shared.attribution,
         model => model,
@@ -2148,7 +2153,7 @@ fn render_markdown_template(
         kind => kind.to_string(),
         reasoning => reasoning,
         token_usage => token_usage_debug,
-        token_usage_struct => token_usage,
+        token_usage_struct => Serde(token_usage),
         generated_by_signature => &shared.attribution,
         model => model,
         base_url => base_url,

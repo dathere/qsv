@@ -24,7 +24,10 @@ use std::{
     sync::{OnceLock, RwLock},
 };
 
-use minijinja::{Environment, Error, ErrorKind, Value, value::Rest};
+use minijinja::{
+    Environment, Error, ErrorKind, Value,
+    value::{Rest, Serde},
+};
 use regex::Regex;
 
 /// Register every shared qsv filter/function on `env`.
@@ -231,7 +234,7 @@ fn fromjson(value: &Value) -> Result<Value, Error> {
     let s = value.to_string();
     let parsed: serde_json::Value = serde_json::from_str(&s)
         .map_err(|e| Error::new(ErrorKind::InvalidOperation, format!("fromjson: {e}")))?;
-    Ok(Value::from_serialize(&parsed))
+    Ok(Value::from(Serde(&parsed)))
 }
 
 // Return the first argument that is neither undefined, none, nor an empty

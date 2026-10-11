@@ -79,8 +79,7 @@
       {
         "flag": "--cities-url",
         "type": "string",
-        "description": "The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL.",
-        "default": "https://download.geonames.org/export/dump/cities15000.zip"
+        "description": "The URL to download the Geonames cities file from. There are several available at https://download.geonames.org/export/dump/. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. If not set, the cities file the current index was built from is used (cities15000.zip if there is no current index). Setting it to a different URL than the current index's forces a rebuild."
       },
       {
         "flag": "--country",
@@ -95,7 +94,7 @@
       {
         "flag": "--force",
         "type": "flag",
-        "description": "Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index."
+        "description": "Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. With --force, the index is built even if there is no current index."
       },
       {
         "flag": "--formatstr",
@@ -122,8 +121,7 @@
       {
         "flag": "--languages",
         "type": "string",
-        "description": "The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported.",
-        "default": "en"
+        "description": "The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as Geonames language codes - the ISO 639-1 2-letter code where one exists (e.g. en,fr,de,es), else the ISO 639-2/3 code. See https://download.geonames.org/export/dump/iso-languagecodes.txt to look up codes and https://download.geonames.org/export/dump/alternatenames/ for the supported language files. 253 languages are currently supported. If not set, the languages the current index was built with are used (en if there is no current index). Setting it to a different list than the current index's forces a rebuild."
       },
       {
         "flag": "--min-score",
@@ -175,7 +173,7 @@
       {
         "flag": "--timeout",
         "type": "number",
-        "description": "Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update - raise it on slow connections.",
+        "description": "Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections.",
         "default": 120
       }
     ]

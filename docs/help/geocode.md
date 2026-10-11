@@ -476,10 +476,10 @@ qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
 qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode opencagenow [options] <location>
-qsv geocode index-load <index-file>
+qsv geocode index-load [--timeout=<seconds>] <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
-qsv geocode index-reset
+qsv geocode index-reset [--timeout=<seconds>]
 qsv geocode cache-clear [options]
 qsv geocode cache-prune --older-than=<val> [options]
 qsv geocode cache-info [options]
@@ -547,7 +547,7 @@ qsv geocode --help
 | &nbsp;`‑‑invalid‑result`&nbsp; | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update - raise it on slow connections. | `120` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections. | `120` |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. The index file is named for the qsv release, so each upgrade downloads a new one. When it does, qsv deletes the index files of all but the 5 most recent releases found in this directory. | `~/.qsv-cache` |
 
 <a name="cache-prune-only-option"></a>
@@ -564,9 +564,9 @@ qsv geocode --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑languages`&nbsp; | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as a comma-separated list of ISO 639-2 codes. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. | `en` |
-| &nbsp;`‑‑cities‑url`&nbsp; | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. | `https://download.geonames.org/export/dump/cities15000.zip` |
-| &nbsp;`‑‑force`&nbsp; | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. |  |
+| &nbsp;`‑‑languages`&nbsp; | string | The comma-delimited, case-insensitive list of languages to use when building the Geonames cities index. The languages are specified as Geonames language codes - the ISO 639-1 2-letter code where one exists (e.g. en,fr,de,es), else the ISO 639-2/3 code. See <https://download.geonames.org/export/dump/iso-languagecodes.txt> to look up codes and <https://download.geonames.org/export/dump/alternatenames/> for the supported language files. 253 languages are currently supported. If not set, the languages the current index was built with are used (en if there is no current index). Setting it to a different list than the current index's forces a rebuild. |  |
+| &nbsp;`‑‑cities‑url`&nbsp; | string | The URL to download the Geonames cities file from. There are several available at <https://download.geonames.org/export/dump/>. cities500.zip   - cities with populations > 500; ~200k cities, 56mb cities1000.zip  - population > 1000; ~140k cities, 44mb cities5000.zip  - population > 5000; ~53k cities, 21mb cities15000.zip - population > 15000; ~26k cities, 13mb Note that the more cities are included, the larger the local index file will be, lookup times will be slower, and the search results will be different. For convenience, if this is set to 500, 1000, 5000 or 15000, it will be converted to a geonames cities URL. If not set, the cities file the current index was built from is used (cities15000.zip if there is no current index). Setting it to a different URL than the current index's forces a rebuild. |  |
+| &nbsp;`‑‑force`&nbsp; | flag | Force update the Geonames cities index. If not set, qsv will check if there are updates available at Geonames.org before updating the index. With --force, the index is built even if there is no current index. |  |
 
 <a name="common-options"></a>
 

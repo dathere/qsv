@@ -366,6 +366,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Set up minijinja environment with qsv's custom functions/filters
     // see https://docs.rs/minijinja-contrib/latest/minijinja_contrib/
     let mut env = Environment::new();
+    // name the expression that produced an undefined value in rendering errors
+    env.set_debug(true);
     register_qsv_extensions(&mut env);
     env.add_template("template", &template_content)?;
     let template = env.get_template("template")?;
@@ -438,6 +440,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let filename_template = if output_to_dir && !use_rowno_filename {
         // actually init the MiniJinja environment with default filters, tests and globals loaded
         filename_env = Environment::new();
+        filename_env.set_debug(true);
 
         minijinja_contrib::add_to_environment(&mut filename_env);
         filename_env.set_unknown_method_callback(unknown_method_callback);

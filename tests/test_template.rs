@@ -1613,3 +1613,19 @@ fn template_duplicate_sanitized_headers_last_wins() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "2-3-1");
 }
+
+#[test]
+fn template_render_error_names_undefined_expression() {
+    let wrk = Workdir::new("template_undefined_origin");
+    wrk.create_from_string("data.csv", "a\n1\n");
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ (a|int) + cfg.limit }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got,
+        "RENDERING ERROR (1): undefined value: `cfg` is undefined (in template:1)"
+    );
+}

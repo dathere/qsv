@@ -633,6 +633,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let payload_env = if let Some(template_file) = args.flag_payload_tpl {
         template_content = fs::read_to_string(template_file)?;
         let mut env = Environment::new();
+        env.set_debug(true);
         env.set_unknown_method_callback(unknown_method_callback);
         crate::minijinja_filters::register(&mut env);
         env.add_template("template", &template_content)?;

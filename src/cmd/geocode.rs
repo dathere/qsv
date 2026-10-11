@@ -18,7 +18,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities). 
 See https://download.geonames.org/export/dump/ for more information.
 
-It has twelve major subcommands:
+It has fourteen major subcommands:
  * suggest        - given a partial City name, return the closest City's location metadata
                     per the local Geonames cities index (Jaro-Winkler distance)
  * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -41,10 +41,15 @@ It has twelve major subcommands:
                     "lat, long" coordinate. Requires an OpenCage API key.
  * opencagenow    - same as opencage, but using an address/coordinate from the
                     command line, instead of CSV data.
+ * geoclient      - ONLINE geocoding of New York City locations (addresses, BBLs, BINs,
+                    intersections, places...) using NYC's Geoclient API, returning
+                    NYC-specific attributes (BBL, BIN, districts, census tracts...).
+ * geoclientnow   - same as geoclient, but using a location from the command line,
+                    instead of CSV data.
  * index-*        - operations to update the local Geonames cities index.
                     (index-check, index-update, index-load & index-reset)
- * cache-*        - operations to manage the persistent on-disk OpenCage result cache.
-                    (cache-clear, cache-prune & cache-info)
+ * cache-*        - operations to manage the persistent on-disk OpenCage and Geoclient
+                    result caches. (cache-clear, cache-prune & cache-info)
 
 SUGGEST
 Suggest a Geonames city based on a partial city name. It returns the closest Geonames
@@ -213,6 +218,81 @@ Accepts the same options as opencage, but does not require an input file.
   $ qsv geocode opencagenow "40.71427, -74.00597"
   $ qsv geocode opencagenow -f '%pretty-json' "Eiffel Tower, Paris"
 
+GEOCLIENT
+Online geocoding of New York City locations using NYC's Geoclient v2 API
+(https://api-portal.nyc.gov), a REST wrapper around the NYC Department of City
+Planning's Geosupport system. Besides coordinates, it returns NYC-specific attributes
+such as the BBL, BIN, community district, city council district, census tracts, NTA
+and ZIP code. It only geocodes locations in the five boroughs.
+
+The public API requires a free subscription key: sign up at https://api-portal.nyc.gov
+and subscribe to the "Geoclient V2 User" product. Set the key with --api-key or the
+QSV_GEOCLIENT_API_KEY environment variable (--api-key takes precedence).
+To use a self-hosted Geoclient (https://github.com/mlipper/geoclient), set
+QSV_GEOCLIENT_API_URL to its base URL (e.g. http://localhost:8080/geoclient/v2) -
+no key is needed then.
+
+The public API allows 100 requests/second per IP, 2,500 requests/minute and 500,000
+requests/day. Requests are sent concurrently (see --jobs) behind a rate limiter that
+defaults to 40 requests/second, to stay under the per-minute cap (see --rate-limit).
+Requests that are rate-limited or fail on the server are retried up to 3 times. If 10
+requests in a row still fail, the run is aborted, as the quota is likely exhausted.
+Results are cached in a persistent on-disk cache (see --cache-ttl & --no-cache), and
+duplicate locations are only looked up once.
+
+The --endpoint option selects the kind of lookup:
+  * search       - (default) a free-form NYC location in <column>, e.g.
+                   "314 W 100 St Manhattan", "Empire State Building" or a BBL/BIN.
+  * bin          - a Building Identification Number in <column>.
+  * bbl          - a Borough-Block-Lot in <column>, either as 10 digits (1000670001)
+                   or delimited (1-67-1, 1/00067/0001).
+  * address, addresspoint, intersection, place, blockface - structured lookups whose
+                   inputs come from several columns, mapped with --params.
+
+For the structured endpoints, --params maps Geoclient parameters to input columns
+("name={Column}") or to fixed values ("name=value"), comma-separated. Parameter names
+are case-sensitive:
+  * address, addresspoint - houseNumber, street, and borough or zip
+  * intersection - crossStreetOne, crossStreetTwo, borough
+                   (optional: boroughCrossStreetTwo, compassDirection)
+  * place        - name, and borough or zip
+  * blockface    - onStreet, crossStreetOne, crossStreetTwo, borough
+                   (optional: boroughCrossStreetOne, boroughCrossStreetTwo, compassDirection)
+The borough may be a name (Manhattan), an abbreviation (MN) or a number (1-5).
+With a structured endpoint, <column> is not sent to the API: it is only the column that
+is replaced with the result (or that --rename applies to). For search, --params may
+set fixed search options, e.g. "exactMatchMaxLevel=5".
+
+A location that Geoclient cannot geocode is left unchanged (or set to --invalid-result).
+
+The --formatstr option supports these Geoclient-specific formats:
+  * '%+' | '%lat-long'    - <latitude>, <longitude> (default)
+  * '%location'           - (<latitude>, <longitude>)
+  * '%bbl'                - the BBL
+  * '%bin'                - the BIN (buildingIdentificationNumber)
+  * '%json'               - the full Geoclient result as JSON
+  * '%pretty-json'        - the full Geoclient result as pretty JSON
+Dynamic formatting is also supported, using any Geoclient result field, e.g.
+  "{bbl} - council district {cityCouncilDistrict}". Commonly used fields include
+latitude, longitude, bbl, buildingIdentificationNumber, communityDistrict,
+cityCouncilDistrict, censusTract2020, nta2020, zipCode, xCoordinate, yCoordinate and
+uspsPreferredCityName. A field missing from a result renders empty.
+For bbl and bin lookups, latitude/longitude are the building's internal label point.
+
+The "%dyncols:" format is also supported, e.g.
+  "%dyncols: {bbl:bbl}, {council:cityCouncilDistrict}, {tract:censusTract2020}"
+
+  $ qsv geocode geoclient address --api-key YOURKEY nyc_311.csv
+  $ qsv geocode geoclient bbl --endpoint bbl -f '%dyncols: {lat:latitude}, {lng:longitude}' pluto.csv
+  $ qsv geocode geoclient Street --endpoint address -c latlong --params "houseNumber={HouseNo},street={Street},borough={Borough}" file.csv
+
+GEOCLIENTNOW
+Accepts the same options as geoclient (search, bin and bbl endpoints only), but does
+not require an input file.
+
+  $ qsv geocode geoclientnow "350 5th Ave Manhattan"
+  $ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
+
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
 
@@ -245,12 +325,13 @@ Load an alternative Geonames cities index from a file, making it the default ind
   $ qsv geocode index-load my_geonames_index.rkyv
 
 CACHE-<operation>
-Manage the persistent on-disk OpenCage result cache used by the opencage subcommands.
-This cache is separate from the Geonames cities index and is only populated by the
-opencage/opencagenow subcommands. It lives in {cache-dir}/geocode-opencage_v1.
+Manage the persistent on-disk result caches used by the opencage and geoclient
+subcommands. They are separate from the Geonames cities index, and live in
+{cache-dir}/geocode-opencage_v1 and {cache-dir}/geocode-geoclient_v1.
+Each operation applies to both caches; cache-info prints one JSON line per cache.
 
 It has three operations:
- * clear  - wipe the entire OpenCage disk cache, removing all cached results.
+ * clear  - wipe the entire disk caches, removing all cached results.
  * prune  - delete cache entries older than the --older-than value. The value is either
             an absolute date/datetime (e.g. 2025-01-31, "2025-01-31 12:00:00") or a
             relative age with a unit suffix - s(econds), m(inutes), h(ours), d(ays) or
@@ -258,7 +339,7 @@ It has three operations:
  * info   - report the cache directory, entry count, on-disk size and the oldest/newest
             cached entry timestamps. Emits a JSON summary to stdout.
 
-Wipe the entire OpenCage cache.
+Wipe the entire OpenCage and Geoclient caches.
 
   $ qsv geocode cache-clear
 
@@ -302,6 +383,8 @@ qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
 qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode opencagenow [options] <location>
+qsv geocode geoclient [--formatstr=<string>] [options] <column> [<input>]
+qsv geocode geoclientnow [options] <location>
 qsv geocode index-load [--timeout=<seconds>] <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
@@ -322,6 +405,7 @@ geocode arguments:
                                 For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code.
                                 For iplookup, it must be a column with an IP address or a URL.
                                 For opencage, it may be a free-form address OR a WGS 84 coordinate.
+                                For geoclient, it is the NYC location, BIN or BBL (see --endpoint).
                                 Note that you can use column selector syntax to select the column, but only
                                 the first column will be used. See `select --help` for more information.
 
@@ -332,6 +416,7 @@ geocode arguments:
                                   For countryinfonow, it must be a ISO 3166-1 alpha-2 code.
                                   For iplookupnow, it must be an IP address or a URL.
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
+                                  For geoclientnow, it is a NYC location, BIN or BBL.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
                                 For convenience, if this is set to a published population floor
@@ -396,25 +481,42 @@ geocode options:
                                 If not set (default), the population is not used and the
                                 nearest city is returned.
 
-                                OPENCAGE only options:
-    --api-key <key>             The OpenCage API key for the opencage/opencagenow subcommands.
+                                OPENCAGE & GEOCLIENT options:
+    --api-key <key>             The API key for the opencage and geoclient subcommands.
                                 If set, it takes precedence over the QSV_OPENCAGE_API_KEY
-                                environment variable. Get a free key at
-                                https://opencagedata.com/users/sign_up.
-    --rate-limit <qps>          Maximum number of OpenCage API requests per second.
-                                The free tier allows 1 request/second (2,500/day).
-                                [default: 1]
-    --reverse                   Force reverse geocoding for opencage/opencagenow (treat the
+                                (opencage) or QSV_GEOCLIENT_API_KEY (geoclient) environment
+                                variable. Get a free OpenCage key at
+                                https://opencagedata.com/users/sign_up, or a Geoclient
+                                subscription key at https://api-portal.nyc.gov.
+    --rate-limit <qps>          Maximum number of API requests per second.
+                                Defaults to 1 for opencage (its free tier allows 1
+                                request/second, 2,500/day) and 40 for geoclient (the
+                                public API allows 100/second per IP but only 2,500/minute,
+                                so 41.6/second sustained, and 500,000/day).
+    --cache-ttl <seconds>       Time-to-live for the persistent on-disk result cache.
+                                A value of 0 disables time-based expiration (entries are
+                                cached indefinitely). Use --no-cache to disable caching entirely.
+                                [default: 1209600]
+    --no-cache                  Disable the persistent on-disk result cache. Duplicate
+                                queries within a run are still de-duplicated
+                                (for geoclient, within each --batch).
+
+                                OPENCAGE only options:
+    --reverse                  Force reverse geocoding for opencage/opencagenow (treat the
                                 query as a "lat, long" WGS-84 coordinate). If not set, forward
                                 and reverse mode is auto-detected per row.
     --no-annotations            Omit OpenCage annotations (timezone, currency, etc.) from the
                                 result and from %json output.
-    --cache-ttl <seconds>       Time-to-live for the persistent on-disk OpenCage result cache.
-                                A value of 0 disables time-based expiration (entries are
-                                cached indefinitely). Use --no-cache to disable caching entirely.
-                                [default: 1209600]
-    --no-cache                  Disable the persistent on-disk OpenCage cache. Duplicate
-                                queries within a run are still de-duplicated.
+
+                                GEOCLIENT only options:
+    --endpoint <name>           The Geoclient lookup: search (default), bin, bbl, address,
+                                addresspoint, intersection, place or blockface.
+                                See GEOCLIENT above.
+    --params <list>             Comma-separated Geoclient parameters for the structured
+                                endpoints, each "name={Column}" or "name=value", e.g.
+                                "houseNumber={HouseNo},street={Street},borough={Boro}".
+                                For search, only fixed options are allowed, e.g.
+                                "exactMatchMaxLevel=5".
 
     -f, --formatstr=<string>    The place format to use. It has three options:
                                 1. Use one of the predefined formats.
@@ -508,6 +610,7 @@ geocode options:
                                 If not set, the original value is used.
     -j, --jobs <arg>            The number of jobs to run in parallel.
                                 When not set, the number of jobs is set to the number of CPUs detected.
+                                For geoclient, it is the number of requests in flight at once.
     -b, --batch <size>          The number of rows per batch to load into memory, before running in parallel.
                                 Set to 0 to load all rows in one batch.
                                 [default: 50000]
@@ -516,9 +619,10 @@ geocode options:
                                 when rebuilding the index with index-update, and to the
                                 prebuilt index downloaded by index-load and index-reset -
                                 raise it on slow connections.
+                                For opencage and geoclient, it is the timeout for each API request.
                                 [default: 120]
     --cache-dir <dir>           The directory to use for caching the Geonames cities index
-                                and the persistent on-disk OpenCage result cache.
+                                and the persistent on-disk OpenCage and Geoclient result caches.
                                 If the directory does not exist, qsv will attempt to create it.
                                 If the QSV_CACHE_DIR envvar is set, it will be used instead.
                                 The index file is named for the qsv release, so each upgrade
@@ -527,7 +631,7 @@ geocode options:
                                 [default: ~/.qsv-cache]
 
                                 CACHE-PRUNE only option:
-    --older-than <val>          Delete OpenCage cache entries older than this value.
+    --older-than <val>          Delete OpenCage and Geoclient cache entries older than this value.
                                 Accepts an absolute date/datetime (e.g. 2025-01-31) or a
                                 relative age with a unit suffix (s/m/h/d/w = seconds,
                                 minutes, hours, days or weeks; e.g. 30d, 2w, 48h).
@@ -603,6 +707,8 @@ use url::Url;
 use util::expand_tilde;
 use uuid::Uuid;
 
+mod geoclient;
+
 use crate::{
     CliResult,
     clitypes::CliError,
@@ -644,6 +750,8 @@ struct Args {
     cmd_iplookupnow:     bool,
     cmd_opencage:        bool,
     cmd_opencagenow:     bool,
+    cmd_geoclient:       bool,
+    cmd_geoclientnow:    bool,
     cmd_index_check:     bool,
     cmd_index_update:    bool,
     cmd_index_load:      bool,
@@ -677,7 +785,9 @@ struct Args {
     )]
     flag_progressbar:    bool,
     flag_api_key:        Option<String>,
-    flag_rate_limit:     u32,
+    flag_rate_limit:     Option<u32>,
+    flag_endpoint:       Option<String>,
+    flag_params:         Option<String>,
     flag_reverse:        bool,
     flag_no_annotations: bool,
     flag_cache_ttl:      u64,
@@ -984,6 +1094,8 @@ enum GeocodeSubCmd {
     IplookupNow,
     Opencage,
     OpencageNow,
+    Geoclient,
+    GeoclientNow,
     IndexCheck,
     IndexUpdate,
     IndexLoad,
@@ -1050,9 +1162,66 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "The --admin1 filter is not supported by the opencage subcommands."
             );
         }
-        if args.flag_rate_limit == 0 {
-            return fail_incorrectusage_clierror!("--rate-limit must be >= 1.");
+    }
+
+    if args.flag_rate_limit == Some(0) {
+        return fail_incorrectusage_clierror!("--rate-limit must be >= 1.");
+    }
+
+    let geoclient_cmd = args.cmd_geoclient || args.cmd_geoclientnow;
+    if !geoclient_cmd && (args.flag_endpoint.is_some() || args.flag_params.is_some()) {
+        return fail_incorrectusage_clierror!(
+            "--endpoint and --params are only valid with the geoclient subcommands."
+        );
+    }
+
+    // validate & resolve options for the geoclient/geoclientnow subcommands
+    if geoclient_cmd {
+        for (set, flag) in [
+            (args.flag_reverse, "--reverse"),
+            (args.flag_no_annotations, "--no-annotations"),
+            (args.flag_country.is_some(), "--country"),
+            (args.flag_admin1.is_some(), "--admin1"),
+        ] {
+            if set {
+                return fail_incorrectusage_clierror!(
+                    "{flag} is not supported by the geoclient subcommands."
+                );
+            }
         }
+        let endpoint =
+            geoclient::Endpoint::parse(args.flag_endpoint.as_deref().unwrap_or("search"))?;
+        if args.cmd_geoclientnow && endpoint.is_structured() {
+            return fail_incorrectusage_clierror!(
+                "geoclientnow supports the search, bin and bbl endpoints only."
+            );
+        }
+        // fail fast on a bad --params, before any input is read
+        geoclient::parse_params(endpoint, args.flag_params.as_deref())?;
+
+        // the --api-key flag takes precedence over QSV_GEOCLIENT_API_KEY. A key is only required
+        // for the public gateway: a self-hosted Geoclient (QSV_GEOCLIENT_API_URL) has no auth.
+        let api_key = args
+            .flag_api_key
+            .clone()
+            .filter(|k| !k.trim().is_empty())
+            .or_else(|| {
+                std::env::var("QSV_GEOCLIENT_API_KEY")
+                    .ok()
+                    .filter(|k| !k.trim().is_empty())
+            })
+            .map(|k| k.trim().to_string());
+        if api_key.is_none()
+            && geoclient::geoclient_base_url() == geoclient::DEFAULT_GEOCLIENT_API_URL
+        {
+            return fail_incorrectusage_clierror!(
+                "The public NYC Geoclient API requires a subscription key. Set it with --api-key \
+                 or the QSV_GEOCLIENT_API_KEY environment variable. Get one free at \
+                 https://api-portal.nyc.gov (subscribe to \"Geoclient V2 User\"), or point \
+                 QSV_GEOCLIENT_API_URL at a self-hosted Geoclient."
+            );
+        }
+        args.flag_api_key = api_key;
     }
 
     if let Some(cities_url) = args.flag_cities_url.as_deref() {
@@ -1119,6 +1288,11 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     } else if args.cmd_opencagenow {
         now_cmd = true;
         GeocodeSubCmd::OpencageNow
+    } else if args.cmd_geoclient {
+        GeocodeSubCmd::Geoclient
+    } else if args.cmd_geoclientnow {
+        now_cmd = true;
+        GeocodeSubCmd::GeoclientNow
     } else if args.cmd_index_check {
         index_cmd = true;
         GeocodeSubCmd::IndexCheck
@@ -1154,6 +1328,19 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         GeocodeSubCmd::Opencage | GeocodeSubCmd::OpencageNow
     ) {
         return run_opencage(args, geocode_cmd, &geocode_cache_dir).await;
+    }
+
+    // Geoclient (NYC) subcommands geocode online via the Geoclient v2 API.
+    if matches!(
+        geocode_cmd,
+        GeocodeSubCmd::Geoclient | GeocodeSubCmd::GeoclientNow
+    ) {
+        return geoclient::run_geoclient(
+            args,
+            geocode_cmd == GeocodeSubCmd::GeoclientNow,
+            &geocode_cache_dir,
+        )
+        .await;
     }
 
     // cache-* subcommands manage the persistent on-disk OpenCage result cache.
@@ -1530,7 +1717,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
-    let column_index = *sel.iter().next().unwrap();
+    let column_index = first_selected_column(&sel)?;
 
     let mut headers = rdr.headers()?.clone();
 
@@ -1851,6 +2038,50 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
+/// The column to geocode: the first selected one. An empty selection (e.g. `!Location` on a
+/// one-column file) is a usage error, not a panic.
+fn first_selected_column(sel: &crate::select::Selection) -> CliResult<usize> {
+    sel.iter().next().copied().ok_or_else(|| {
+        CliError::IncorrectUsage("The <column> selection does not match any column.".to_string())
+    })
+}
+
+/// Parse an online backend's `%dyncols: {col_name:key}, ...` --formatstr into (column names,
+/// keys). Key validity is backend-specific and checked by the caller.
+fn parse_dyncols_spec(formatstr: &str) -> CliResult<(Vec<String>, Vec<String>)> {
+    let mut column_names: Vec<String> = Vec::new();
+    let mut column_keys: Vec<String> = Vec::new();
+    for column in formatstr.trim_start_matches("%dyncols:").split(',') {
+        let column = column.trim();
+        if column.is_empty() {
+            // tolerate a trailing/empty comma-delimited entry
+            continue;
+        }
+        let column_key_value: Vec<&str> = column.split(':').collect();
+        if column_key_value.len() != 2 {
+            return fail_incorrectusage_clierror!(
+                "Invalid '%dyncols:' pair: {column:?}. Expected a single '{{col_name:key}}' pair."
+            );
+        }
+        let column_name = column_key_value[0].trim_matches('{').trim();
+        let column_key = column_key_value[1].trim_matches('}').trim();
+        if column_name.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "Invalid '%dyncols:' pair: {column:?}. The column name is empty."
+            );
+        }
+        column_names.push(column_name.to_string());
+        column_keys.push(column_key.to_string());
+    }
+    if column_keys.is_empty() {
+        return fail_incorrectusage_clierror!(
+            "Invalid '%dyncols:' format - expected one or more 'col_name:key' pairs enclosed in \
+             curly braces."
+        );
+    }
+    Ok((column_names, column_keys))
+}
+
 /// Run the `opencage` / `opencagenow` subcommands: online forward/reverse geocoding
 /// via the `OpenCage` API. Rows are processed sequentially behind a rate limiter, with
 /// a persistent on-disk result cache (`OpenCage`'s TOS explicitly permits caching).
@@ -1887,38 +2118,12 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     // annotations.*). Unlike the predefined & dynamic formats, dyncols mode does
     // not replace the input column.
     let dyncols_mode = args.flag_formatstr.starts_with("%dyncols:");
-    let mut column_names: Vec<String> = Vec::new();
-    let mut column_values: Vec<String> = Vec::new();
+    let (column_names, column_values) = if dyncols_mode {
+        parse_dyncols_spec(&args.flag_formatstr)?
+    } else {
+        (Vec::new(), Vec::new())
+    };
     if dyncols_mode {
-        for column in args.flag_formatstr[9..].split(',') {
-            let column = column.trim();
-            if column.is_empty() {
-                // tolerate a trailing/empty comma-delimited entry
-                continue;
-            }
-            let column_key_value: Vec<&str> = column.split(':').collect();
-            if column_key_value.len() != 2 {
-                return fail_incorrectusage_clierror!(
-                    "Invalid '%dyncols:' pair: {column:?}. Expected a single '{{col_name:key}}' \
-                     pair."
-                );
-            }
-            let column_name = column_key_value[0].trim_matches('{').trim();
-            let column_value = column_key_value[1].trim_matches('}').trim();
-            if column_name.is_empty() {
-                return fail_incorrectusage_clierror!(
-                    "Invalid '%dyncols:' pair: {column:?}. The column name is empty."
-                );
-            }
-            column_names.push(column_name.to_string());
-            column_values.push(column_value.to_string());
-        }
-        if column_values.is_empty() {
-            return fail_incorrectusage_clierror!(
-                "Invalid '%dyncols:' format - expected one or more 'col_name:key' pairs enclosed \
-                 in curly braces."
-            );
-        }
         for column_value in &column_values {
             if !is_valid_opencage_dyncol(column_value) {
                 return fail_incorrectusage_clierror!(
@@ -1965,7 +2170,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
 
     let header_record = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&header_record)?;
-    let column_index = *sel.iter().next().unwrap();
+    let column_index = first_selected_column(&sel)?;
 
     let mut headers = rdr.headers()?.clone();
     if let Some(new_name) = &args.flag_rename {
@@ -2003,8 +2208,8 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         .build()?;
 
     // rate limiter - allow_burst(1) avoids an initial burst (see governor#39)
-    // safety: flag_rate_limit is validated to be >= 1 in run()
-    let rate_limit = NonZeroU32::new(args.flag_rate_limit).unwrap();
+    // run() rejects --rate-limit 0; OpenCage defaults to its free tier (1 request/second)
+    let rate_limit = NonZeroU32::new(args.flag_rate_limit.unwrap_or(1)).unwrap_or(NonZeroU32::MIN);
     let limiter =
         RateLimiter::direct(Quota::per_second(rate_limit).allow_burst(NonZeroU32::new(1).unwrap()));
 
@@ -2012,7 +2217,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     let disk_cache = if args.flag_no_cache {
         None
     } else {
-        let mut cache_builder = RedbCache::builder("geocode-opencage")
+        let mut cache_builder = RedbCache::builder(OPENCAGE_CACHE_NAME)
             .disk_dir(cache_dir)
             .refresh_on_hit(false)
             // preserve v2/sled non-durable behavior: OpenCage responses are
@@ -2230,30 +2435,43 @@ fn resolve_older_than(value: &str) -> CliResult<Duration> {
         })
 }
 
-/// Run the `cache-clear` / `cache-prune` / `cache-info` subcommands, which manage
-/// the persistent on-disk `OpenCage` result cache. Synchronous - does not use the
-/// Geonames index nor make any network calls.
 fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
+    for (cache_name, provider) in [
+        (OPENCAGE_CACHE_NAME, "OpenCage"),
+        (geoclient::GEOCLIENT_CACHE_NAME, "Geoclient"),
+    ] {
+        manage_one_cache(args, mode, cache_dir, cache_name, provider)?;
+    }
+    Ok(())
+}
+
+/// One provider's share of `run_cache_mgmt`. `cache-info` prints one JSON line per provider.
+fn manage_one_cache(
+    args: &Args,
+    mode: GeocodeSubCmd,
+    cache_dir: &Path,
+    cache_name: &str,
+    provider: &str,
+) -> CliResult<()> {
     // graceful "no cache" path - detect an existing cache WITHOUT building one
     // (building a RedbCache would create an empty redb file as a side effect).
     // cached names the redb file after the cache name, so scan cache_dir for it.
     let cache_exists = std::fs::read_dir(cache_dir).is_ok_and(|entries| {
-        entries.flatten().any(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with(OPENCAGE_CACHE_NAME)
-        })
+        entries
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with(cache_name))
     });
 
     if !cache_exists {
         winfo!(
-            "No OpenCage cache found in {}. Nothing to do.",
+            "No {provider} cache found in {}. Nothing to do.",
             cache_dir.display()
         );
         if mode == GeocodeSubCmd::CacheInfo {
             println!(
                 "{}",
                 json!({
+                    "provider":    provider,
                     "cache_dir":   cache_dir.display().to_string(),
                     "exists":      false,
                     "entry_count": 0,
@@ -2266,7 +2484,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     // TTL is only meaningful for cache-prune (it is the age threshold used by
     // remove_expired_entries). v3's RedbCache builder rejects a zero TTL, and TTL
     // is optional, so only set it for prune; clear/info open the cache without one.
-    let mut builder = RedbCache::builder(OPENCAGE_CACHE_NAME)
+    let mut builder = RedbCache::builder(cache_name)
         .disk_dir(cache_dir)
         .refresh_on_hit(false);
     if mode == GeocodeSubCmd::CachePrune {
@@ -2287,7 +2505,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     }
     let cache: RedbCache<String, String> = builder
         .build()
-        .map_err(|e| CliError::Other(format!("Error opening OpenCage disk cache: {e}")))?;
+        .map_err(|e| CliError::Other(format!("Error opening {provider} disk cache: {e}")))?;
 
     match mode {
         GeocodeSubCmd::CacheClear => {
@@ -2295,22 +2513,22 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
             // Ok(None)), so we clear without claiming a (misleading) removed count.
             cache
                 .cache_clear()
-                .map_err(|e| CliError::Other(format!("Error clearing OpenCage cache: {e}")))?;
+                .map_err(|e| CliError::Other(format!("Error clearing {provider} cache: {e}")))?;
             cache
                 .flush()
-                .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
-            winfo!("Cleared the OpenCage cache.");
+                .map_err(|e| CliError::Other(format!("Error flushing {provider} cache: {e}")))?;
+            winfo!("Cleared the {provider} cache.");
         },
         GeocodeSubCmd::CachePrune => {
             // remove_expired_entries() returns a real swept count (it scans), unlike
             // cache_size() which RedbCache reports as Ok(None).
             let pruned = cache
                 .remove_expired_entries()
-                .map_err(|e| CliError::Other(format!("Error pruning OpenCage cache: {e}")))?;
+                .map_err(|e| CliError::Other(format!("Error pruning {provider} cache: {e}")))?;
             cache
                 .flush()
-                .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
-            winfo!("Pruned {pruned} expired entries from the OpenCage cache.");
+                .map_err(|e| CliError::Other(format!("Error flushing {provider} cache: {e}")))?;
+            winfo!("Pruned {pruned} expired entries from the {provider} cache.");
         },
         GeocodeSubCmd::CacheInfo => {
             // RedbCache::cache_size() is Ok(None) (an exact count is an O(n) scan it
@@ -2318,14 +2536,14 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
             // than a misleading 0.
             let entry_count = cache
                 .cache_size()
-                .map_err(|e| CliError::Other(format!("Error reading OpenCage cache: {e}")))?;
+                .map_err(|e| CliError::Other(format!("Error reading {provider} cache: {e}")))?;
             let disk_path = cache.disk_path();
             // metadata() can fail on I/O errors; degrade gracefully rather than
             // reporting a misleading 0 bytes (None -> "unknown" / JSON null)
             let size_on_disk: Option<u64> = std::fs::metadata(disk_path).ok().map(|m| m.len());
             let size_human = size_on_disk.map(|s| HumanBytes(s).to_string());
 
-            winfo!("OpenCage cache file: {}", disk_path.display());
+            winfo!("{provider} cache file: {}", disk_path.display());
             winfo!(
                 "Entries: {}",
                 entry_count.map_or_else(|| "unknown".to_string(), |n| n.to_string())
@@ -2338,6 +2556,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
             println!(
                 "{}",
                 json!({
+                    "provider":     provider,
                     "cache_dir":    cache_dir.display().to_string(),
                     "cache_file":   disk_path.display().to_string(),
                     "exists":       true,
@@ -3490,7 +3709,7 @@ fn opencage_value_to_string(value: &serde_json::Value) -> String {
 }
 
 /// Helper: walk a `serde_json::Value` by a dotted path (e.g. "timezone.name").
-fn opencage_json_dotpath(value: &serde_json::Value, path: &str) -> String {
+fn json_dotpath(value: &serde_json::Value, path: &str) -> String {
     let mut current = value;
     for part in path.split('.') {
         match current.get(part) {
@@ -3519,7 +3738,7 @@ fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
                 )
             } else {
                 key.strip_prefix("annotations.")
-                    .map(|path| opencage_json_dotpath(&r.annotations, path))
+                    .map(|path| json_dotpath(&r.annotations, path))
             }
         },
     }
@@ -3639,17 +3858,18 @@ fn normalize_opencage_query(cell: &str, reverse: bool) -> Option<String> {
     }
 }
 
-/// Encode an `OpenCage` lookup outcome for the string-valued cache.
+/// Encode an online lookup outcome (an `OpenCage` formatted string or result JSON, or a Geoclient
+/// result JSON) for the string-valued cache.
 /// `Some(s)` is stored as "F"+s; `None` (zero results) is stored as "N".
-fn encode_opencage_cache(outcome: Option<&str>) -> String {
+fn encode_lookup_cache(outcome: Option<&str>) -> String {
     match outcome {
         Some(s) => format!("F{s}"),
         None => "N".to_string(),
     }
 }
 
-/// Decode a cached `OpenCage` lookup outcome (see `encode_opencage_cache`).
-fn decode_opencage_cache(encoded: &str) -> Option<String> {
+/// Decode a cached online lookup outcome (see `encode_lookup_cache`).
+fn decode_lookup_cache(encoded: &str) -> Option<String> {
     if encoded == "N" {
         None
     } else {
@@ -3768,12 +3988,12 @@ async fn opencage_lookup(
     );
 
     if let Some(encoded) = mem_cache.get(&cache_key) {
-        return Ok(decode_opencage_cache(encoded));
+        return Ok(decode_lookup_cache(encoded));
     }
     if let Some(dc) = disk_cache
         && let Ok(Some(encoded)) = dc.cache_get(&cache_key)
     {
-        let decoded = decode_opencage_cache(&encoded);
+        let decoded = decode_lookup_cache(&encoded);
         mem_cache.insert(cache_key, encoded);
         return Ok(decoded);
     }
@@ -3794,7 +4014,7 @@ async fn opencage_lookup(
         .first()
         .map(|r| format_opencage_result(r, formatstr, no_annotations));
 
-    let encoded = encode_opencage_cache(outcome.as_deref());
+    let encoded = encode_lookup_cache(outcome.as_deref());
     if let Some(dc) = disk_cache {
         let _ = dc.cache_set(cache_key.clone(), encoded.clone());
     }
@@ -3830,7 +4050,7 @@ async fn opencage_lookup_dyncols(
 
     // extract the requested column values from a cached raw-result JSON string
     let extract = |encoded: &str| -> Option<Vec<String>> {
-        let result_json = decode_opencage_cache(encoded)?;
+        let result_json = decode_lookup_cache(encoded)?;
         let result: OpencageResult = serde_json::from_str(&result_json).ok()?;
         Some(
             column_values
@@ -3881,7 +4101,7 @@ async fn opencage_lookup_dyncols(
         },
         None => None,
     };
-    let encoded = encode_opencage_cache(result_json.as_deref());
+    let encoded = encode_lookup_cache(result_json.as_deref());
     if let Some(dc) = disk_cache {
         let _ = dc.cache_set(cache_key.clone(), encoded.clone());
     }

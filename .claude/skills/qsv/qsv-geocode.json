@@ -1,7 +1,7 @@
 {
   "name": "qsv-geocode",
   "version": "24.0.0",
-  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage geocoder.",
+  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage geocoder, and geocode New York City addresses, BBLs and BINs via NYC's Geoclient API, which also returns NYC attributes such as council districts and census tracts.",
   "category": "utility",
   "command": {
     "subcommand": "geocode",
@@ -10,13 +10,15 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: cache-clear, cache-info, cache-prune, countryinfo, countryinfonow, iplookup, iplookupnow, opencage, opencagenow, reverse, reversenow, suggest, suggestnow",
+        "description": "Subcommand to execute. Valid values: cache-clear, cache-info, cache-prune, countryinfo, countryinfonow, geoclient, geoclientnow, iplookup, iplookupnow, opencage, opencagenow, reverse, reversenow, suggest, suggestnow",
         "enum": [
           "cache-clear",
           "cache-info",
           "cache-prune",
           "countryinfo",
           "countryinfonow",
+          "geoclient",
+          "geoclientnow",
           "iplookup",
           "iplookupnow",
           "opencage",
@@ -31,7 +33,7 @@
         "name": "column",
         "type": "string",
         "required": false,
-        "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
+        "description": "The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in \"lat, long\" or \"(lat, long)\" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. For geoclient, it is the NYC location, BIN or BBL (see --endpoint). Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information."
       },
       {
         "name": "input",
@@ -43,7 +45,7 @@
         "name": "location",
         "type": "string",
         "required": false,
-        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate."
+        "description": "The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. For geoclientnow, it is a NYC location, BIN or BBL."
       },
       {
         "name": "index-file",
@@ -67,13 +69,13 @@
       {
         "flag": "--cache-dir",
         "type": "string",
-        "description": "The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. The index file is named for the qsv release, so each upgrade downloads a new one. When it does, qsv deletes the index files of all but the 5 most recent releases found in this directory.",
+        "description": "The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage and Geoclient result caches. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. The index file is named for the qsv release, so each upgrade downloads a new one. When it does, qsv deletes the index files of all but the 5 most recent releases found in this directory.",
         "default": "~/.qsv-cache"
       },
       {
         "flag": "--cache-ttl",
         "type": "number",
-        "description": "Time-to-live for the persistent on-disk OpenCage result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely.",
+        "description": "Time-to-live for the persistent on-disk result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely.",
         "default": 1209600
       },
       {
@@ -90,6 +92,11 @@
         "flag": "--delimiter",
         "type": "string",
         "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--endpoint",
+        "type": "string",
+        "description": "The Geoclient lookup: search (default), bin, bbl, address, addresspoint, intersection, place or blockface. See GEOCLIENT above."
       },
       {
         "flag": "--force",
@@ -142,12 +149,12 @@
       {
         "flag": "--no-cache",
         "type": "flag",
-        "description": "Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated."
+        "description": "Disable the persistent on-disk result cache. Duplicate queries within a run are still de-duplicated (for geoclient, within each --batch)."
       },
       {
         "flag": "--older-than",
         "type": "string",
-        "description": "Delete OpenCage cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand."
+        "description": "Delete OpenCage and Geoclient cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand."
       },
       {
         "flag": "--output",
@@ -155,10 +162,14 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
+        "flag": "--params",
+        "type": "string",
+        "description": "Comma-separated Geoclient parameters for the structured endpoints, each \"name={Column}\" or \"name=value\", e.g. \"houseNumber={HouseNo},street={Street},borough={Boro}\". For search, only fixed options are allowed, e.g. \"exactMatchMaxLevel=5\"."
+      },
+      {
         "flag": "--rate-limit",
         "type": "number",
-        "description": "Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day).",
-        "default": 1
+        "description": "Maximum number of API requests per second. Defaults to 1 for opencage (its free tier allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day)."
       },
       {
         "flag": "--rename",
@@ -173,7 +184,7 @@
       {
         "flag": "--timeout",
         "type": "number",
-        "description": "Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections.",
+        "description": "Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections. For opencage and geoclient, it is the timeout for each API request.",
         "default": 120
       }
     ]

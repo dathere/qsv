@@ -2814,3 +2814,807 @@ fn geocode_index_load_numeric_named_file_not_shortcut() {
         "index-load must not overwrite a real file whose name parses as a number"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `geoclient` tests use an in-process actix mock of the NYC Geoclient v2 API, selected with
+// QSV_GEOCLIENT_API_URL, so they run offline in CI. Response shapes follow the upstream samples
+// (mlipper/geoclient documentation/src/docs/asciidoc/samples): each endpoint wraps its object
+// under its own name, `/search` under `results[].response`, and `/bbl`/`/bin` return only the
+// `*InternalLabel` coordinates. The mock routes on `/{mode}/geoclient/v2/{endpoint}`:
+//   ok    - normal behavior;
+//   auth  - 401 unless the Ocp-Apim-Subscription-Key header is "SECRET";
+//   flaky - 429 (Retry-After: 0) for the first two requests, then normal;
+//   down  - always 503.
+//   redirect - 302 to the same endpoint under `ok` (must NOT be followed: the key would go along);
+//   huge  - a 5 MiB body (must be refused, not buffered).
+//   truncate - the first response dies mid-body (must be retried), then normal.
+// A search `input` containing NOMATCH is a Geosupport reject (EE/EE), RC2ONLY succeeds only on
+// geosupportReturnCode2, and BADREQ gets an HTTP 400.
+// ---------------------------------------------------------------------------
+mod geoclient_mock {
+    use std::{
+        collections::HashMap,
+        net::SocketAddr,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+        thread,
+    };
+
+    use actix_web::{App, HttpRequest, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
+    use serde_json::json;
+
+    // Local mock-server bind address (not production code).
+    const BIND_HOST: &str = "127.0.0.1"; // DevSkim: ignore DS162092
+
+    #[derive(Clone, Default)]
+    struct State {
+        requests: Arc<AtomicUsize>,
+        queries:  Arc<Mutex<Vec<String>>>,
+        keys:     Arc<Mutex<Vec<String>>>,
+    }
+
+    async fn serve(
+        req: HttpRequest,
+        path: web::Path<(String, String)>,
+        query: web::Query<HashMap<String, String>>,
+        state: web::Data<State>,
+    ) -> HttpResponse {
+        let (mode, endpoint) = path.into_inner();
+        let n = state.requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let key = req
+            .headers()
+            .get("Ocp-Apim-Subscription-Key")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        let mut pairs: Vec<String> = query.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        pairs.sort();
+        state
+            .queries
+            .lock()
+            .unwrap()
+            .push(format!("{endpoint}?{}", pairs.join("&")));
+        state.keys.lock().unwrap().push(key.clone());
+
+        match mode.as_str() {
+            "auth" if key != "SECRET" => {
+                return HttpResponse::Unauthorized()
+                    .json(json!({"statusCode": 401, "message": "Access denied"}));
+            },
+            "flaky" if n <= 2 => {
+                return HttpResponse::TooManyRequests()
+                    .insert_header(("Retry-After", "0"))
+                    .finish();
+            },
+            "down" => return HttpResponse::ServiceUnavailable().finish(),
+            "redirect" => {
+                return HttpResponse::Found()
+                    .insert_header(("Location", format!("/ok/geoclient/v2/{endpoint}")))
+                    .finish();
+            },
+            "truncate" if n == 1 => {
+                // send the headers and a first chunk, THEN fail: failing at once makes actix drop
+                // the connection before the headers, which the client sees as a
+                // send error, not a mid-body one
+                let body = futures::stream::unfold(0u8, |step| async move {
+                    match step {
+                        0 => Some((Ok(web::Bytes::from_static(b"{\"results\": [")), 1)),
+                        1 => {
+                            rt::time::sleep(std::time::Duration::from_millis(200)).await;
+                            Some((Err(std::io::Error::other("connection dropped mid-body")), 2))
+                        },
+                        _ => None,
+                    }
+                });
+                return HttpResponse::Ok()
+                    .content_type("application/json")
+                    .streaming(body);
+            },
+            "huge" => {
+                let padding = "x".repeat(5 * 1024 * 1024);
+                return HttpResponse::Ok().json(json!({ "search": { "padding": padding } }));
+            },
+            _ => {},
+        }
+
+        let q = |k: &str| query.get(k).cloned().unwrap_or_default();
+        let input = q("input");
+        if input.contains("BADREQ") {
+            return HttpResponse::BadRequest().json(json!({"title": "Bad Request"}));
+        }
+        let (rc, rc2) = if input.contains("NOMATCH") {
+            ("EE", "EE")
+        } else if input.contains("RC2ONLY") {
+            ("EE", "00")
+        } else {
+            ("00", "00")
+        };
+        let mut obj = json!({
+            "geosupportReturnCode": rc,
+            "geosupportReturnCode2": rc2,
+            "bbl": "1018890001",
+            "buildingIdentificationNumber": "1057127",
+            "cityCouncilDistrict": "07",
+            "censusTract2020": " 187  ",
+        });
+        let map = obj.as_object_mut().unwrap();
+        match endpoint.as_str() {
+            "bbl" | "bin" => {
+                map.insert("latitudeInternalLabel".into(), json!(40.708659));
+                map.insert("longitudeInternalLabel".into(), json!(-74.007118));
+                if endpoint == "bbl" {
+                    map.insert(
+                        "bbl".into(),
+                        json!(format!("{}{}{}", q("borough"), q("block"), q("lot"))),
+                    );
+                } else {
+                    map.insert("buildingIdentificationNumber".into(), json!(q("bin")));
+                }
+            },
+            _ => {
+                map.insert("latitude".into(), json!(40.798502));
+                map.insert("longitude".into(), json!(-73.972709));
+                let echo = if endpoint == "search" {
+                    input.clone()
+                } else {
+                    format!(
+                        "{} {}, {}{}",
+                        q("houseNumber"),
+                        q("street"),
+                        q("borough"),
+                        q("zip")
+                    )
+                };
+                map.insert("echo".into(), json!(echo));
+            },
+        }
+        if endpoint == "search" {
+            HttpResponse::Ok().json(json!({
+                "status": "OK",
+                "input": input,
+                "results": [{"level": "0", "status": "EXACT_MATCH", "response": obj}],
+            }))
+        } else {
+            HttpResponse::Ok().json(json!({ endpoint: obj }))
+        }
+    }
+
+    async fn run_webserver(
+        tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
+        state: State,
+    ) -> std::io::Result<()> {
+        let server_builder = HttpServer::new(move || {
+            App::new()
+                .app_data(web::Data::new(state.clone()))
+                .route("/{mode}/geoclient/v2/{endpoint}", web::get().to(serve))
+        })
+        .workers(2);
+        let bound = match server_builder.bind((BIND_HOST, 0)) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(format!("bind failed: {e}")));
+                return Err(e);
+            },
+        };
+        let addr = bound.addrs().into_iter().next().unwrap();
+        let server = bound.run();
+        let _ = tx.send(Ok((server.handle(), addr)));
+        server.await
+    }
+
+    pub struct GeoclientMock {
+        handle: Option<ServerHandle>,
+        addr:   SocketAddr,
+        state:  State,
+    }
+
+    impl GeoclientMock {
+        pub fn start() -> Self {
+            let state = State::default();
+            let server_state = state.clone();
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || rt::System::new().block_on(run_webserver(tx, server_state)));
+            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(Ok((handle, addr))) => Self {
+                    handle: Some(handle),
+                    addr,
+                    state,
+                },
+                Ok(Err(msg)) => panic!("geoclient mock failed to bind: {msg}"),
+                Err(e) => panic!("geoclient mock did not start within 10s ({e:?})"),
+            }
+        }
+
+        /// The base URL for `QSV_GEOCLIENT_API_URL` in the given mode.
+        pub fn url(&self, mode: &str) -> String {
+            format!("http://{}/{mode}/geoclient/v2", self.addr) // DevSkim: ignore DS137138
+        }
+
+        pub fn requests(&self) -> usize {
+            self.state.requests.load(Ordering::SeqCst)
+        }
+
+        pub fn queries(&self) -> Vec<String> {
+            self.state.queries.lock().unwrap().clone()
+        }
+
+        pub fn keys(&self) -> Vec<String> {
+            self.state.keys.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for GeoclientMock {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                rt::System::new().block_on(handle.stop(true));
+            }
+        }
+    }
+}
+
+use geoclient_mock::GeoclientMock;
+
+/// A `geocode geoclient` command pointed at `url`, with an isolated cache dir and fast retries.
+fn geoclient_cmd(wrk: &Workdir, url: &str) -> std::process::Command {
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_GEOCLIENT_API_URL", url)
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("QSV_GEOCLIENT_RETRY_BASE_MS", "1")
+        .env_remove("QSV_GEOCLIENT_API_KEY");
+    cmd
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_search() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_search");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Location"],
+            svec!["314 W 100 St Manhattan"],
+            svec![""],
+            svec!["NOMATCH somewhere"],
+            svec!["RC2ONLY 280 Riverside Dr"],
+            // same location, different case and spacing: one request, from the dedupe
+            svec!["314 w 100 st   manhattan"],
+        ],
+    );
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--api-key", "SECRET"])
+        .args(["--invalid-result", "<NONE>"])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["Location"],
+        svec!["40.798502, -73.972709"],
+        svec![""],
+        svec!["<NONE>"],
+        svec!["40.798502, -73.972709"],
+        svec!["40.798502, -73.972709"],
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(mock.requests(), 3, "queries: {:?}", mock.queries());
+    // the key travels in the header, never in the URL
+    assert!(
+        mock.keys().iter().all(|k| k == "SECRET"),
+        "{:?}",
+        mock.keys()
+    );
+    assert!(mock.queries().iter().all(|q| !q.contains("SECRET")));
+    assert!(
+        mock.queries()
+            .contains(&"search?input=314 W 100 St Manhattan".to_string()),
+        "{:?}",
+        mock.queries()
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_bbl_dyncols() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_bbl_dyncols");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "bbl"],
+            svec!["a", "1000670001"],
+            svec!["b", "1-67-1"],
+            svec!["c", "not a bbl"],
+            svec!["d", "6000670001"],
+            // 10 bytes, but not 10 digits: must not panic slicing through the multi-byte char
+            svec!["e", "é12345678"],
+        ],
+    );
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("bbl")
+        .arg("data.csv")
+        .args(["--endpoint", "bbl"])
+        .args([
+            "-f",
+            "%dyncols: {lat:latitude}, {lng:longitude}, {gbbl:bbl}, {tract:censusTract2020}",
+        ])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let hit = |id: &'static str, bbl: &'static str| {
+        svec![id, bbl, "40.708659", "-74.007118", "1000670001", "187"]
+    };
+    let expected = vec![
+        svec!["id", "bbl", "lat", "lng", "gbbl", "tract"],
+        hit("a", "1000670001"),
+        // the delimited form is normalized to the same request
+        hit("b", "1-67-1"),
+        svec!["c", "not a bbl", "", "", "", ""],
+        svec!["d", "6000670001", "", "", "", ""],
+        svec!["e", "é12345678", "", "", "", ""],
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(
+        mock.queries(),
+        vec!["bbl?block=00067&borough=1&lot=0001".to_string()]
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_address_params() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_address_params");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["HouseNo", "Street", "Boro"],
+            svec!["314", "West 100 Street", "Manhattan"],
+            // a missing required value: no request, --invalid-result
+            svec!["120", "", "Brooklyn"],
+        ],
+    );
+    // no key: a self-hosted Geoclient (any non-default URL) needs none
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["--endpoint", "address"])
+        .args([
+            "--params",
+            "houseNumber={HouseNo},street={Street},borough={Boro}",
+        ])
+        .args(["-c", "geo"])
+        .args(["-f", "{echo} -> {bbl}"])
+        .args(["--invalid-result", "<NONE>"])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["HouseNo", "Street", "Boro", "geo"],
+        svec![
+            "314",
+            "West 100 Street",
+            "Manhattan",
+            "314 West 100 Street, Manhattan -> 1018890001"
+        ],
+        svec!["120", "", "Brooklyn", "<NONE>"],
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(mock.requests(), 1);
+    assert_eq!(mock.keys(), vec![String::new()]);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_bad_key_is_fatal() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_bad_key_is_fatal");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Location"], svec!["a"], svec!["b"], svec!["c"]],
+    );
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("auth"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--api-key", "WRONG"])
+        .args(["--jobs", "1"])
+        .arg("--no-cache");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("HTTP 401"), "stderr: {stderr}");
+    // the gateway's own reason is passed through
+    assert!(stderr.contains("Access denied"), "stderr: {stderr}");
+    assert!(stderr.contains("api-portal.nyc.gov"), "stderr: {stderr}");
+    // aborted on the first response instead of failing every row
+    assert_eq!(mock.requests(), 1);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_retries_429() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_retries_429");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Location"], svec!["Empire State Building"]],
+    );
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("flaky"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["Location"], svec!["40.798502, -73.972709"]]);
+    // two 429s, then the success
+    assert_eq!(mock.requests(), 3);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_circuit_breaker() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_circuit_breaker");
+    let mut rows = vec![svec!["Location"]];
+    for i in 0..15 {
+        rows.push(vec![format!("{i} Broadway Manhattan")]);
+    }
+    wrk.create("data.csv", rows);
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("down"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--jobs", "1"])
+        .arg("--no-cache");
+
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("10 Geoclient requests in a row failed"),
+        "stderr: {stderr}"
+    );
+    // 10 locations x (1 try + 3 retries), and nothing after the breaker trips
+    assert_eq!(mock.requests(), 40);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_bad_request_reported() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_bad_request_reported");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Location"], svec!["BADREQ x"], svec!["Wall St"]],
+    );
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .arg("--no-cache");
+
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.replace("\r\n", "\n"),
+        "Location\nBADREQ x\n\"40.798502, -73.972709\"\n"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 Geoclient lookup(s) were rejected"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_disk_cache() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_disk_cache");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Location"], svec!["Wall St"], svec!["NOMATCH x"]],
+    );
+    let run = |format: &str| {
+        let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+        cmd.arg("geoclient")
+            .arg("Location")
+            .arg("data.csv")
+            .args(["-f", format]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        got
+    };
+    let first = run("%+");
+    assert_eq!(first[1], svec!["40.798502, -73.972709"]);
+    assert_eq!(mock.requests(), 2);
+    // a different --formatstr is served from the cache (it stores the raw result), and the
+    // cached non-match stays a non-match
+    let second = run("%bbl");
+    assert_eq!(
+        second,
+        vec![svec!["Location"], svec!["1018890001"], svec!["NOMATCH x"]]
+    );
+    assert_eq!(mock.requests(), 2);
+
+    let mut info = wrk.command("geocode");
+    info.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .arg("cache-info");
+    let output = wrk.output(&mut info);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(r#""provider":"Geoclient""#) && stdout.contains(r#""exists":true"#),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_order_preserved_concurrently() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_order_preserved_concurrently");
+    let mut rows = vec![svec!["Location"]];
+    for i in 0..40 {
+        rows.push(vec![format!("{i} Broadway Manhattan")]);
+    }
+    wrk.create("data.csv", rows.clone());
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["--jobs", "4"])
+        .args(["--batch", "7"])
+        .args(["-f", "%dyncols: {echo:echo}"])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected: Vec<Vec<String>> = std::iter::once(svec!["Location", "echo"])
+        .chain(
+            rows.iter()
+                .skip(1)
+                .map(|r| vec![r[0].clone(), r[0].clone()]),
+        )
+        .collect();
+    assert_eq!(got, expected);
+    assert_eq!(mock.requests(), 40);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_arg_validation() {
+    let wrk = Workdir::new("geocode_geoclient_arg_validation");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Wall St"]]);
+    // a dead URL: every case below must fail before any request is made
+    let dead = "http://127.0.0.1:9/geoclient/v2";
+    let fails_with = |args: &[&str], url: Option<&str>, needle: &str| {
+        let mut cmd = wrk.command("geocode");
+        cmd.args(args)
+            .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+            .env_remove("QSV_GEOCLIENT_API_KEY")
+            .env_remove("QSV_OPENCAGE_API_KEY");
+        match url {
+            Some(url) => cmd.env("QSV_GEOCLIENT_API_URL", url),
+            None => cmd.env_remove("QSV_GEOCLIENT_API_URL"),
+        };
+        let output = wrk.output(&mut cmd);
+        assert!(!output.status.success(), "{args:?} should fail");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(needle),
+            "{args:?}: expected {needle:?} in stderr: {stderr}"
+        );
+    };
+
+    // the public API needs a key
+    fails_with(
+        &["geoclient", "Location", "data.csv"],
+        None,
+        "requires a subscription key",
+    );
+    fails_with(
+        &["geoclient", "Location", "data.csv", "--endpoint", "zip"],
+        Some(dead),
+        "Invalid --endpoint",
+    );
+    fails_with(
+        &["geoclient", "Location", "data.csv", "--endpoint", "address"],
+        Some(dead),
+        "requires --params",
+    );
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--endpoint",
+            "place",
+            "--params",
+            "name={Location}",
+        ],
+        Some(dead),
+        "requires the borough or zip parameter",
+    );
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--endpoint",
+            "place",
+            "--params",
+            "Name={Location},zip=10005",
+        ],
+        Some(dead),
+        "Invalid --params name",
+    );
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--params",
+            "returnPolicy={Location}",
+        ],
+        Some(dead),
+        "literal options",
+    );
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--endpoint",
+            "place",
+            "--params",
+            "name={Nope},zip=10005",
+        ],
+        Some(dead),
+        "not in the input headers",
+    );
+    fails_with(
+        &["geoclient", "Location", "data.csv", "--reverse"],
+        Some(dead),
+        "--reverse is not supported by the geoclient",
+    );
+    fails_with(
+        &["geoclient", "Location", "data.csv", "--country", "US"],
+        Some(dead),
+        "--country is not supported by the geoclient",
+    );
+    fails_with(
+        &["geoclient", "Location", "data.csv", "--rate-limit", "0"],
+        Some(dead),
+        "--rate-limit must be >= 1",
+    );
+    fails_with(
+        &["geoclientnow", "--endpoint", "address", "Wall St"],
+        Some(dead),
+        "search, bin and bbl endpoints only",
+    );
+    fails_with(
+        &[
+            "opencage",
+            "Location",
+            "data.csv",
+            "--api-key",
+            "dummy",
+            "--endpoint",
+            "bbl",
+        ],
+        None,
+        "only valid with the geoclient subcommands",
+    );
+    // an empty column selection is a usage error, not a panic
+    fails_with(
+        &["geoclient", "!Location", "data.csv"],
+        Some(dead),
+        "does not match any column",
+    );
+    fails_with(
+        &["opencage", "!Location", "data.csv", "--api-key", "dummy"],
+        None,
+        "does not match any column",
+    );
+}
+
+#[test]
+#[serial]
+#[ignore = "requires a NYC Geoclient subscription key (set QSV_GEOCLIENT_API_KEY)"]
+fn geocode_geoclient_live() {
+    let wrk = Workdir::new("geocode_geoclient_live");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Location"], svec!["350 5th Ave Manhattan"]],
+    );
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .args(["-f", "%bbl"])
+        .arg("--no-cache")
+        .env_remove("QSV_GEOCLIENT_API_URL");
+    // on_success: a rejected key must fail with qsv's message, not an index panic
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // Shape-only assertions: the exact values come from live city data and were not pinned when
+    // this was written. A Manhattan BBL is 10 digits starting with 1.
+    let bbl = &got[1][0];
+    assert!(
+        bbl.len() == 10 && bbl.starts_with('1') && bbl.bytes().all(|b| b.is_ascii_digit()),
+        "{got:?}"
+    );
+
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("geoclientnow")
+        .args(["--endpoint", "bbl", "-f", "%bin"])
+        .arg(bbl)
+        .arg("--no-cache")
+        .env_remove("QSV_GEOCLIENT_API_URL");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // a Manhattan BIN is 7 digits starting with 1
+    let bin = &got[1][0];
+    assert!(
+        bin.len() == 7 && bin.starts_with('1') && bin.bytes().all(|b| b.is_ascii_digit()),
+        "{got:?}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_no_redirects_no_huge_bodies() {
+    // reqwest keeps custom headers on a cross-host redirect, so following one would hand the
+    // subscription key to another host: redirects must not be followed. And a response far beyond
+    // Geoclient's few KB must be refused rather than buffered.
+    let wrk = Workdir::new("geocode_geoclient_no_redirects_no_huge_bodies");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Wall St"]]);
+    for mode in ["redirect", "huge"] {
+        let mock = GeoclientMock::start();
+        let mut cmd = geoclient_cmd(&wrk, &mock.url(mode));
+        cmd.arg("geoclient")
+            .arg("Location")
+            .arg("data.csv")
+            .args(["--api-key", "SECRET"])
+            .arg("--no-cache");
+        let output = wrk.output(&mut cmd);
+        assert!(output.status.success(), "{mode}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.replace("\r\n", "\n"),
+            "Location\nWall St\n",
+            "{mode}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("1 Geoclient lookup(s) failed"),
+            "{mode}: {stderr}"
+        );
+        // the redirect target (the `ok` route) was never requested
+        assert_eq!(mock.requests(), 1, "{mode}: {:?}", mock.queries());
+    }
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_retries_truncated_body() {
+    // a connection that drops in the middle of a 200's body is retried, not given up on
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_retries_truncated_body");
+    wrk.create("data.csv", vec![svec!["Location"], svec!["Wall St"]]);
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("truncate"));
+    cmd.arg("geoclient")
+        .arg("Location")
+        .arg("data.csv")
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["Location"], svec!["40.798502, -73.972709"]]);
+    assert_eq!(mock.requests(), 2);
+}

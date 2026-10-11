@@ -527,6 +527,40 @@ pub fn timeout_secs(timeout: u16) -> Result<u64, String> {
     Ok(timeout as u64)
 }
 
+/// Strip an API key out of any text that may quote a request URL.
+///
+/// NOT optional hygiene: `reqwest`'s own error `Display` embeds the full URL, query string
+/// included, so interpolating an error into a message prints a `key=` credential to stderr or
+/// the log verbatim. A key is a credential — it must not reach a log, a terminal, or a bug
+/// report — so every error built from a key-bearing URL or an underlying error goes through here.
+#[cfg(any(feature = "geocode", all(feature = "viz", feature = "feature_capable")))]
+pub fn redact_api_key(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("key=") {
+        // Redact unless "key=" is the tail of a longer word ("monkey="). Deliberately NOT
+        // "preceded by ? or &": a wrapped or reformatted log line puts whitespace there, and a
+        // credential that survives because a line broke in the wrong place is not protected.
+        let is_param = at == 0
+            || !matches!(
+                rest.as_bytes()[at - 1],
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-'
+            );
+        out.push_str(&rest[..at + 4]);
+        rest = &rest[at + 4..];
+        if !is_param {
+            continue;
+        }
+        let end = rest
+            .find(|c: char| c == '&' || c == ')' || c == '\'' || c.is_whitespace())
+            .unwrap_or(rest.len());
+        out.push_str("REDACTED");
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// sets custom user agent
 /// if user agent is not set, then use the default user agent
 /// it supports four special LITERALs: $`QSV_BIN_NAME`, $`QSV_VERSION`, $`QSV_TARGET`, $`QSV_KIND`
@@ -6624,6 +6658,45 @@ mod tests {
     use std::io::Write;
 
     use super::{fmt_duration_compact, is_io_print_panic};
+
+    #[cfg(any(feature = "geocode", all(feature = "viz", feature = "feature_capable")))]
+    #[test]
+    fn api_key_is_redacted_from_anything_quoting_a_url() {
+        use super::redact_api_key;
+        // a credential must not survive into stderr, a log, or a pasted bug report. reqwest's own
+        // error Display embeds the whole query string, so this is the last line of defence.
+        //
+        // The fixture is SYNTHETIC on purpose: never paste a captured secret in here. The natural
+        // way to write this test is to copy the error you just reproduced, which is how a real key
+        // once ended up committed inside the very fix for credential leaking.
+        let leaked = concat!(
+            "error sending request for url (https://api.census.gov/data/2024/acs/acs5",
+            "?get=B01003_001E&for=state%3A01&key=EXAMPLE0000NOTAREALKEY0000EXAMPLE)"
+        );
+        let safe = redact_api_key(leaked);
+        assert!(!safe.contains("EXAMPLE0000"), "{safe}");
+        assert!(safe.contains("key=REDACTED"), "{safe}");
+        // the rest of the URL survives, because it is what makes the error diagnosable
+        assert!(safe.contains("for=state%3A01"), "{safe}");
+        // a trailing paren ends the value rather than being swallowed
+        assert!(safe.ends_with(')'), "{safe}");
+        // multiple occurrences, and a key= that is not a query parameter
+        assert_eq!(
+            redact_api_key("?key=aaa&x=1 and ?key=bbb"),
+            "?key=REDACTED&x=1 and ?key=REDACTED"
+        );
+        assert_eq!(redact_api_key("the monkey=banana"), "the monkey=banana");
+        // a URL that a log wrapped: the key is no less secret for having a space before it
+        assert_eq!(redact_api_key("...& key=abc123"), "...& key=REDACTED");
+        assert_eq!(redact_api_key("no key here"), "no key here");
+        // an OpenCage-shaped URL (key in the middle, more params after it)
+        let oc = redact_api_key(
+            "error sending request for url \
+             (https://api.opencagedata.com/geocode/v1/json?q=Berlin&key=EXAMPLEOCKEY&limit=1)",
+        );
+        assert!(!oc.contains("EXAMPLEOCKEY"), "{oc}");
+        assert!(oc.contains("key=REDACTED&limit=1"), "{oc}");
+    }
 
     // One unit, the largest that fits, so the unit boundaries are the whole contract. Shared by
     // the stale-refresh warning and the `qsv get cache-list` AGE column.

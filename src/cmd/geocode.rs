@@ -3687,12 +3687,16 @@ async fn opencage_fetch(
     }
 
     let url = Url::parse_with_params("https://api.opencagedata.com/geocode/v1/json", &params)
-        .map_err(|e| OcError::Transient(format!("OpenCage URL build error: {e}")))?;
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| OcError::Transient(format!("OpenCage network error: {e}")))?;
+        .map_err(|e| {
+            OcError::Transient(util::redact_api_key(&format!(
+                "OpenCage URL build error: {e}"
+            )))
+        })?;
+    let resp = client.get(url).send().await.map_err(|e| {
+        OcError::Transient(util::redact_api_key(&format!(
+            "OpenCage network error: {e}"
+        )))
+    })?;
 
     let status = resp.status().as_u16();
     match status {
@@ -3721,10 +3725,11 @@ async fn opencage_fetch(
         },
     }
 
-    let parsed: OpencageResponse = resp
-        .json()
-        .await
-        .map_err(|e| OcError::Transient(format!("OpenCage response error: {e}")))?;
+    let parsed: OpencageResponse = resp.json().await.map_err(|e| {
+        OcError::Transient(util::redact_api_key(&format!(
+            "OpenCage response error: {e}"
+        )))
+    })?;
 
     // OpenCage also echoes the status code in the JSON body
     match parsed.status.code {

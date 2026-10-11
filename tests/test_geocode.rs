@@ -2449,6 +2449,47 @@ fn geocode_opencage_transient_failure_reported() {
 
 #[test]
 #[serial]
+fn geocode_opencage_api_key_not_logged() {
+    // OpenCage takes its key as a `key=` query parameter, and reqwest's error Display embeds the
+    // full request URL — so a network error used to write the key verbatim into the qsv log.
+    // Synthetic key on purpose: never put a real one in a fixture.
+    const KEY: &str = "EXAMPLE0000NOTAREALKEY0000EXAMPLE";
+    let wrk = Workdir::new("geocode_opencage_api_key_not_logged");
+    wrk.create("data.csv", vec![svec!["address"], svec!["Brooklyn, NY"]]);
+    let log_dir = wrk.path("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    let mut cmd = wrk.command("geocode");
+    cmd.arg("opencage")
+        .arg("address")
+        .arg("data.csv")
+        .args(["--api-key", KEY])
+        .arg("--no-cache")
+        .args(["--timeout", "5"])
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("QSV_LOG_LEVEL", "warn")
+        .env("QSV_LOG_DIR", &log_dir)
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("https_proxy", "http://127.0.0.1:9")
+        .env_remove("NO_PROXY")
+        .env_remove("no_proxy");
+
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains(KEY), "stderr leaked the key: {stderr}");
+
+    let mut log = String::new();
+    for entry in std::fs::read_dir(&log_dir).unwrap() {
+        log.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap_or_default());
+    }
+    // the failure path was really exercised (otherwise "no key in the log" proves nothing)
+    assert!(log.contains("OpenCage network error"), "log: {log}");
+    assert!(!log.contains(KEY), "log leaked the key: {log}");
+    assert!(log.contains("key=REDACTED"), "log: {log}");
+}
+
+#[test]
+#[serial]
 #[ignore = "requires an OpenCage API key (set QSV_OPENCAGE_API_KEY)"]
 fn geocode_opencage_dyncols() {
     let wrk = Workdir::new("geocode_opencage_dyncols");

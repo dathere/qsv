@@ -386,7 +386,7 @@ The `env` block above isn't limited to `QSV_MCP_*` keys — **any `QSV_*` variab
 
 Common reasons to set additional vars here:
 
-- **Geocoding API key**: `QSV_OPENCAGE_API_KEY`
+- **Geocoding API keys**: `QSV_OPENCAGE_API_KEY`, `QSV_GEOCLIENT_API_KEY` (plus `QSV_GEOCLIENT_API_URL` for a self-hosted NYC Geoclient)
 - **Geocoding cache**: `QSV_GEOCODE_INDEX_FILENAME`, `QSV_CACHE_DIR`
 - **CKAN integration**: `QSV_CKAN_API`, `QSV_CKAN_TOKEN`
 - **Reader/writer buffers**: `QSV_RDR_BUFFER_CAPACITY`, `QSV_WTR_BUFFER_CAPACITY`

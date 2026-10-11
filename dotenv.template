@@ -283,6 +283,22 @@ QSV_TIMEOUT = 30
 # the filename of the GeoIP2 database to use for the `geocode` command.
 # QSV_GEOIP2_FILENAME = GeoLite2-City.mmdb
 
+# the OpenCage API key used by the `geocode opencage`/`opencagenow` subcommands.
+# The --api-key option takes precedence.
+# Get a free key at https://opencagedata.com/users/sign_up
+# QSV_OPENCAGE_API_KEY = YOUR_OPENCAGE_API_KEY
+
+# the NYC Geoclient subscription key used by the `geocode geoclient`/`geoclientnow`
+# subcommands to geocode New York City locations. The --api-key option takes precedence.
+# Get a free key at https://api-portal.nyc.gov (subscribe to "Geoclient V2 User").
+# Not needed for a self-hosted Geoclient (see QSV_GEOCLIENT_API_URL).
+# QSV_GEOCLIENT_API_KEY = YOUR_GEOCLIENT_SUBSCRIPTION_KEY
+
+# the base URL of a self-hosted Geoclient v2 API (https://github.com/mlipper/geoclient).
+# When set, no subscription key is required.
+# (default: https://api.nyc.gov/geoclient/v2)
+# QSV_GEOCLIENT_API_URL = http://localhost:8080/geoclient/v2
+
 # convenience shortcuts for commonly used GeoJSON files, resolved by the `--geojson` option of
 # the `viz choropleth` (including `--map`) and `viz smart` commands. Each entry maps a shortcut
 # name to a "path" (local file or http(s) URL) and an "id" (the --feature-id-key to use).

@@ -1,11 +1,11 @@
 # geocode
 
-> Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the [OpenCage](https://opencagedata.com) geocoder.
+> Geocodes a location against an updatable local copy of the [Geonames](https://www.geonames.org/) cities & the [Maxmind GeoLite2](https://www.maxmind.com/en/geolite-free-ip-geolocation-data) databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the [OpenCage](https://opencagedata.com) geocoder, and geocode New York City addresses, BBLs and BINs via NYC's [Geoclient](https://github.com/mlipper/geoclient) API, which also returns NYC attributes such as council districts and census tracts.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/geocode.rs](https://github.com/dathere/qsv/blob/master/src/cmd/geocode.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🌐](TableOfContents.md#legend "has web-aware options.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Opencage Only Options](#opencage-only-options) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Cache-Prune Only Option](#cache-prune-only-option) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Geocode Options](#geocode-options) | [Suggest Only Options](#suggest-only-options) | [Reverse Only Option](#reverse-only-option) | [Opencage & Geoclient Options](#opencage-&-geoclient-options) | [Opencage Only Options](#opencage-only-options) | [Geoclient Only Options](#geoclient-only-options) | [Dynamic Formatting Options](#dynamic-formatting-options) | [Cache-Prune Only Option](#cache-prune-only-option) | [Index-Update Only Options](#index-update-only-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -30,7 +30,7 @@ By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file u
 English names. It contains cities with populations > 15,000 (about ~26k cities).
 See <https://download.geonames.org/export/dump/> for more information.
 
-It has twelve major subcommands:  
+It has fourteen major subcommands:  
 * suggest        - given a partial City name, return the closest City's location metadata
 per the local Geonames cities index (Jaro-Winkler distance)
 * suggestnow     - same as suggest, but using a partial City name from the command line,
@@ -53,10 +53,15 @@ Forward-geocodes a free-form address, or reverse-geocodes a
 "lat, long" coordinate. Requires an OpenCage API key.
 * opencagenow    - same as opencage, but using an address/coordinate from the
 command line, instead of CSV data.
+* geoclient      - ONLINE geocoding of New York City locations (addresses, BBLs, BINs,
+intersections, places...) using NYC's Geoclient API, returning
+NYC-specific attributes (BBL, BIN, districts, census tracts...).
+* geoclientnow   - same as geoclient, but using a location from the command line,
+instead of CSV data.
 * index-*        - operations to update the local Geonames cities index.
 (index-check, index-update, index-load & index-reset)
-* cache-*        - operations to manage the persistent on-disk OpenCage result cache.
-(cache-clear, cache-prune & cache-info)
+* cache-*        - operations to manage the persistent on-disk OpenCage and Geoclient
+result caches. (cache-clear, cache-prune & cache-info)
 
 ### Suggest
 
@@ -352,6 +357,98 @@ $ qsv geocode opencagenow -f '%pretty-json' "Eiffel Tower, Paris"
 ```
 
 
+### Geoclient
+
+Online geocoding of New York City locations using NYC's Geoclient v2 API
+(<https://api-portal.nyc.gov>), a REST wrapper around the NYC Department of City
+Planning's Geosupport system. Besides coordinates, it returns NYC-specific attributes
+such as the BBL, BIN, community district, city council district, census tracts, NTA
+and ZIP code. It only geocodes locations in the five boroughs.
+
+The public API requires a free subscription key: sign up at <https://api-portal.nyc.gov>
+and subscribe to the "Geoclient V2 User" product. Set the key with --api-key or the
+QSV_GEOCLIENT_API_KEY environment variable (--api-key takes precedence).
+To use a self-hosted Geoclient (<https://github.com/mlipper/geoclient>), set
+QSV_GEOCLIENT_API_URL to its base URL (e.g. <http://localhost:8080/geoclient/v2>) -
+no key is needed then.
+
+The public API allows 100 requests/second per IP, 2,500 requests/minute and 500,000
+requests/day. Requests are sent concurrently (see --jobs) behind a rate limiter that
+defaults to 40 requests/second, to stay under the per-minute cap (see --rate-limit).
+Requests that are rate-limited or fail on the server are retried up to 3 times. If 10
+requests in a row still fail, the run is aborted, as the quota is likely exhausted.
+Results are cached in a persistent on-disk cache (see --cache-ttl & --no-cache), and
+duplicate locations are only looked up once.
+
+The --endpoint option selects the kind of lookup:  
+* search       - (default) a free-form NYC location in <column>, e.g.
+"314 W 100 St Manhattan", "Empire State Building" or a BBL/BIN.
+* bin          - a Building Identification Number in <column>.
+* bbl          - a Borough-Block-Lot in <column>, either as 10 digits (1000670001)
+or delimited (1-67-1, 1/00067/0001).
+* address, addresspoint, intersection, place, blockface - structured lookups whose
+inputs come from several columns, mapped with --params.
+
+For the structured endpoints, --params maps Geoclient parameters to input columns
+("name={Column}") or to fixed values ("name=value"), comma-separated. Parameter names
+are case-sensitive:  
+* address, addresspoint - houseNumber, street, and borough or zip
+* intersection - crossStreetOne, crossStreetTwo, borough
+(optional: boroughCrossStreetTwo, compassDirection)
+* place        - name, and borough or zip
+* blockface    - onStreet, crossStreetOne, crossStreetTwo, borough
+(optional: boroughCrossStreetOne, boroughCrossStreetTwo, compassDirection)
+The borough may be a name (Manhattan), an abbreviation (MN) or a number (1-5).
+With a structured endpoint, <column> is not sent to the API: it is only the column that
+is replaced with the result (or that --rename applies to). For search, --params may
+set fixed search options, e.g. "exactMatchMaxLevel=5".
+
+A location that Geoclient cannot geocode is left unchanged (or set to --invalid-result).
+
+The --formatstr option supports these Geoclient-specific formats:  
+* '%+' | '%lat-long'    - <latitude>, <longitude> (default)
+* '%location'           - (<latitude>, <longitude>)
+* '%bbl'                - the BBL
+* '%bin'                - the BIN (buildingIdentificationNumber)
+* '%json'               - the full Geoclient result as JSON
+* '%pretty-json'        - the full Geoclient result as pretty JSON
+Dynamic formatting is also supported, using any Geoclient result field, e.g.
+"{bbl} - council district {cityCouncilDistrict}". Commonly used fields include
+latitude, longitude, bbl, buildingIdentificationNumber, communityDistrict,
+cityCouncilDistrict, censusTract2020, nta2020, zipCode, xCoordinate, yCoordinate and
+uspsPreferredCityName. A field missing from a result renders empty.
+For bbl and bin lookups, latitude/longitude are the building's internal label point.
+
+The "%dyncols:" format is also supported, e.g.
+"%dyncols: {bbl:bbl}, {council:cityCouncilDistrict}, {tract:censusTract2020}"
+
+```console
+$ qsv geocode geoclient address --api-key YOURKEY nyc_311.csv
+```
+
+```console
+$ qsv geocode geoclient bbl --endpoint bbl -f '%dyncols: {lat:latitude}, {lng:longitude}' pluto.csv
+```
+
+```console
+$ qsv geocode geoclient Street --endpoint address -c latlong --params "houseNumber={HouseNo},street={Street},borough={Borough}" file.csv
+```
+
+
+### Geoclientnow
+
+Accepts the same options as geoclient (search, bin and bbl endpoints only), but does
+not require an input file.
+
+```console
+$ qsv geocode geoclientnow "350 5th Ave Manhattan"
+```
+
+```console
+$ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
+```
+
+
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
 
@@ -393,12 +490,13 @@ $ qsv geocode index-load my_geonames_index.rkyv
 
 
 CACHE-<operation>
-Manage the persistent on-disk OpenCage result cache used by the opencage subcommands.
-This cache is separate from the Geonames cities index and is only populated by the
-opencage/opencagenow subcommands. It lives in {cache-dir}/geocode-opencage_v1.
+Manage the persistent on-disk result caches used by the opencage and geoclient
+subcommands. They are separate from the Geonames cities index, and live in
+{cache-dir}/geocode-opencage_v1 and {cache-dir}/geocode-geoclient_v1.
+Each operation applies to both caches; cache-info prints one JSON line per cache.
 
 It has three operations:  
-* clear  - wipe the entire OpenCage disk cache, removing all cached results.
+* clear  - wipe the entire disk caches, removing all cached results.
 * prune  - delete cache entries older than the --older-than value. The value is either
 an absolute date/datetime (e.g. 2025-01-31, "2025-01-31 12:00:00") or a
 relative age with a unit suffix - s(econds), m(inutes), h(ours), d(ays) or
@@ -406,7 +504,7 @@ w(eeks). e.g. 30d, 2w, 48h, 90m, 3600s.
 * info   - report the cache directory, entry count, on-disk size and the oldest/newest
 cached entry timestamps. Emits a JSON summary to stdout.
 
-Wipe the entire OpenCage cache.
+Wipe the entire OpenCage and Geoclient caches.
 
 ```console
 $ qsv geocode cache-clear
@@ -476,6 +574,8 @@ qsv geocode iplookup [options] <column> [<input>]
 qsv geocode iplookupnow [options] <location>
 qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode opencagenow [options] <location>
+qsv geocode geoclient [--formatstr=<string>] [options] <column> [<input>]
+qsv geocode geoclientnow [options] <location>
 qsv geocode index-load [--timeout=<seconds>] <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
@@ -493,8 +593,8 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
-| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
-| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. |
+| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. For geoclient, it is the NYC location, BIN or BBL (see --endpoint). Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
+| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. For geoclientnow, it is a NYC location, BIN or BBL. |
 | &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to a published population floor (15000 or 1000), it will download that prebuilt English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
 <a name="geocode-options"></a>
@@ -524,18 +624,34 @@ qsv geocode --help
 |--------|------|-------------|--------|
 | &nbsp;`‑k,`<br>`‑‑k_weight`&nbsp; | string | Use population-weighted distance for reverse subcommand. (i.e. nearest.distance - k * city.population) Larger values will favor more populated cities. If not set (default), the population is not used and the nearest city is returned. |  |
 
+<a name="opencage-&-geoclient-options"></a>
+
+## Opencage & Geoclient Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑api‑key`&nbsp; | string | The API key for the opencage and geoclient subcommands. If set, it takes precedence over the QSV_OPENCAGE_API_KEY (opencage) or QSV_GEOCLIENT_API_KEY (geoclient) environment variable. Get a free OpenCage key at <https://opencagedata.com/users/sign_up>, or a Geoclient subscription key at <https://api-portal.nyc.gov>. |  |
+| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of API requests per second. Defaults to 1 for opencage (its free tier allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day). |  |
+| &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely. | `1209600` |
+| &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the persistent on-disk result cache. Duplicate queries within a run are still de-duplicated (for geoclient, within each --batch). |  |
+
 <a name="opencage-only-options"></a>
 
 ## Opencage Only Options [↩](#nav)
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑api‑key`&nbsp; | string | The OpenCage API key for the opencage/opencagenow subcommands. If set, it takes precedence over the QSV_OPENCAGE_API_KEY environment variable. Get a free key at <https://opencagedata.com/users/sign_up>. |  |
-| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day). | `1` |
 | &nbsp;`‑‑reverse`&nbsp; | flag | Force reverse geocoding for opencage/opencagenow (treat the query as a "lat, long" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row. |  |
 | &nbsp;`‑‑no‑annotations`&nbsp; | flag | Omit OpenCage annotations (timezone, currency, etc.) from the result and from %json output. |  |
-| &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk OpenCage result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely. | `1209600` |
-| &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated. |  |
+
+<a name="geoclient-only-options"></a>
+
+## Geoclient Only Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑endpoint`&nbsp; | string | The Geoclient lookup: search (default), bin, bbl, address, addresspoint, intersection, place or blockface. See GEOCLIENT above. |  |
+| &nbsp;`‑‑params`&nbsp; | string | Comma-separated Geoclient parameters for the structured endpoints, each "name={Column}" or "name=value", e.g. "houseNumber={HouseNo},street={Street},borough={Boro}". For search, only fixed options are allowed, e.g. "exactMatchMaxLevel=5". |  |
 
 <a name="dynamic-formatting-options"></a>
 
@@ -545,10 +661,10 @@ qsv geocode --help
 |--------|------|-------------|--------|
 | &nbsp;`‑l,`<br>`‑‑language`&nbsp; | string | The language to use when geocoding. The language is specified as a ISO 639-1 code. Note that the Geonames index must have been built with the specified language using the `index-update` subcommand with the --languages option. If the language is not available, the first language in the index is used. | `en` |
 | &nbsp;`‑‑invalid‑result`&nbsp; | string | The string to return when the geocode result is empty/invalid. If not set, the original value is used. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. For geoclient, it is the number of requests in flight at once. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
-| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections. | `120` |
-| &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage result cache. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. The index file is named for the qsv release, so each upgrade downloads a new one. When it does, qsv deletes the index files of all but the 5 most recent releases found in this directory. | `~/.qsv-cache` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading Geonames cities index. Also applies to each Geonames source file downloaded when rebuilding the index with index-update, and to the prebuilt index downloaded by index-load and index-reset - raise it on slow connections. For opencage and geoclient, it is the timeout for each API request. | `120` |
+| &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching the Geonames cities index and the persistent on-disk OpenCage and Geoclient result caches. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. The index file is named for the qsv release, so each upgrade downloads a new one. When it does, qsv deletes the index files of all but the 5 most recent releases found in this directory. | `~/.qsv-cache` |
 
 <a name="cache-prune-only-option"></a>
 
@@ -556,7 +672,7 @@ qsv geocode --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑older‑than`&nbsp; | string | Delete OpenCage cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand. |  |
+| &nbsp;`‑‑older‑than`&nbsp; | string | Delete OpenCage and Geoclient cache entries older than this value. Accepts an absolute date/datetime (e.g. 2025-01-31) or a relative age with a unit suffix (s/m/h/d/w = seconds, minutes, hours, days or weeks; e.g. 30d, 2w, 48h). Required by the cache-prune subcommand. |  |
 
 <a name="index-update-only-options"></a>
 

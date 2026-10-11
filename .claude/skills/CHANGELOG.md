@@ -5,6 +5,11 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`qsv-geocode` skill regenerated for the new `geoclient`/`geoclientnow` subcommands**, which geocode New York City locations through NYC's Geoclient API. It now documents the `--endpoint` and `--params` options. Using them against the public API requires a NYC API subscription key in `QSV_GEOCLIENT_API_KEY` in the MCP server's environment.
+
 ## [24.0.0] - 2026-10-15
 
 Companion release to qsv 24.0.0, "The Evidence Act Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 24.0.0 because the regenerated skill JSONs advertise a command and options that only exist in the new binary (`writestat`, and eleven new `readstat` options). The headline for MCP/Cowork users is the **`readstat` ↔ `writestat` round trip** for SAS, Stata and SPSS files, which takes the skill count to **57**. Update your qsv binary first.

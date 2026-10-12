@@ -2487,11 +2487,11 @@ fn sqlp_stddev_variance() {
         r#"
         SELECT
             STDEV(v1) AS "v1_std",
-            STDDEV(v2) AS "v2_std",
-            STDEV_SAMP(v3) AS "v3_std",
+            ROUND(STDDEV(v2), 10) AS "v2_std",
+            ROUND(STDEV_SAMP(v3), 10) AS "v3_std",
             STDDEV_SAMP(v4) AS "v4_std",
             VAR(v1) AS "v1_var",
-            VARIANCE(v2) AS "v2_var",
+            ROUND(VARIANCE(v2), 10) AS "v2_var",
             VARIANCE(v3) AS "v3_var",
             VAR_SAMP(v4) AS "v4_var"
         FROM test
@@ -2505,11 +2505,11 @@ fn sqlp_stddev_variance() {
         ],
         svec![
             "1.0",
-            "2.753785273643051",
-            "14.142135623730951",
+            "2.7537852736",
+            "14.1421356237",
             "50.0",
             "1.0",
-            "7.583333333333334",
+            "7.5833333333",
             "200.0",
             "2500.0"
         ],
@@ -3801,19 +3801,17 @@ fn sqlp_unnest_issue_3108_first() {
 
     wrk.create("data.csv", vec![svec!["id", "data"], svec!["1", "a,b,c"]]);
 
-    // Test: UNNEST should unnest the array column
+    // Since pola-rs/polars#29833, mixing an aggregate with a non-aggregated UNNEST
+    // without a GROUP BY is rejected, as standard SQL requires.
     let mut cmd = wrk.command("sqlp");
     cmd.arg("data.csv")
         .arg("select first(id) as idf, unnest(string_to_array(data, ',')) as value from data");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-    let expected = vec![
-        svec!["idf", "value"],
-        svec!["1", "a"],
-        svec!["1", "b"],
-        svec!["1", "c"],
-    ];
-    assert_eq!(got, expected);
+    let got = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        got.contains("should participate in the GROUP BY clause or an aggregate function"),
+        "unexpected stderr: {got}"
+    );
 }
 
 #[test]

@@ -2939,6 +2939,26 @@ mod geoclient_mock {
         if input.contains("BADREQ") {
             return HttpResponse::BadRequest().json(json!({"title": "Bad Request"}));
         }
+        // street-name lookups (shapes from live probes, 2026-10-12): normalize only reformats
+        // (any non-empty name succeeds); an unknown street code is RC 64
+        if endpoint == "normalize" {
+            let name = q("name");
+            let obj = if name.trim().is_empty() {
+                json!({"geosupportReturnCode": "98", "message": "NO INPUT DATA RECEIVED"})
+            } else {
+                json!({"geosupportReturnCode": "00", "firstStreetNameNormalized": name.to_uppercase()})
+            };
+            return HttpResponse::Ok().json(json!({ "normalize": obj }));
+        }
+        if endpoint == "streetcode" {
+            let obj = if q("streetCode") == "19999999" {
+                json!({"geosupportReturnCode": "64", "message": "STREET CODE NOT FOUND",
+                    "firstStreetNameNormalized": "????????"})
+            } else {
+                json!({"geosupportReturnCode": "00", "firstStreetNameNormalized": "BROADWAY"})
+            };
+            return HttpResponse::Ok().json(json!({ "streetcode": obj }));
+        }
         let nomatch = input.contains("NOMATCH") || q("street").contains("NOMATCH");
         let (rc, rc2) = if nomatch {
             ("EE", "EE")
@@ -3471,6 +3491,89 @@ fn geocode_geoclient_reject_without_reason_columns() {
 
 #[test]
 #[serial]
+fn geocode_geoclient_normalize_and_streetcode() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_normalize_and_streetcode");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Street", "Code"],
+            svec!["w 100 st", "11361001"],
+            svec!["", "11361001.0"],
+            svec!["W 100  St", "abc"],
+            svec!["broadway", "19999999"],
+        ],
+    );
+
+    // normalize: the default output is the name (there are no coordinates), --params options
+    // are sent, and case/spacing variants are one request
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["--endpoint", "normalize"])
+        .args(["--params", "format=C,length=10"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["Street", "Code"],
+            svec!["W 100 ST", "11361001"],
+            svec!["", "11361001.0"],
+            svec!["W 100 ST", "abc"],
+            svec!["BROADWAY", "19999999"],
+        ]
+    );
+    let queries = mock.queries();
+    assert_eq!(queries.len(), 2, "{queries:?}");
+    assert!(
+        queries.contains(&"normalize?format=C&length=10&name=w 100 st".to_string()),
+        "{queries:?}"
+    );
+
+    // streetcode: a float tail is dropped (one request for two rows), a malformed code is not
+    // sent, and an unknown code is a reject whose reason is available
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Code")
+        .arg("data.csv")
+        .args(["--endpoint", "streetcode"])
+        .args([
+            "-f",
+            "%dyncols: {name:firstStreetNameNormalized}, {why:_reject.message}",
+        ])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["Street", "Code", "name", "why"],
+            svec!["w 100 st", "11361001", "BROADWAY", ""],
+            svec!["", "11361001.0", "BROADWAY", ""],
+            svec!["W 100  St", "abc", "", ""],
+            svec!["broadway", "19999999", "", "STREET CODE NOT FOUND"],
+        ]
+    );
+    let queries = mock.queries();
+    assert_eq!(queries.len(), 4, "{queries:?}");
+    assert!(
+        queries.iter().all(|q| !q.contains("abc")),
+        "a malformed street code must not be sent: {queries:?}"
+    );
+
+    // geoclientnow accepts the street-name endpoints
+    let mut now = geoclient_cmd(&wrk, &mock.url("ok"));
+    now.arg("geoclientnow")
+        .arg("w 100 st")
+        .args(["--endpoint", "normalize"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut now);
+    assert_eq!(got, vec![svec!["Location"], svec!["W 100 ST"]]);
+}
+
+#[test]
+#[serial]
 fn geocode_geoclient_disk_cache() {
     let mock = GeoclientMock::start();
     let wrk = Workdir::new("geocode_geoclient_disk_cache");
@@ -3583,6 +3686,33 @@ fn geocode_geoclient_arg_validation() {
         Some(dead),
         "requires --params",
     );
+    // normalize/streetcode take the name/code from <column>; --params only sets options
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--endpoint",
+            "normalize",
+            "--params",
+            "name=broadway",
+        ],
+        Some(dead),
+        "Invalid --params name \"name\"",
+    );
+    fails_with(
+        &[
+            "geoclient",
+            "Location",
+            "data.csv",
+            "--endpoint",
+            "streetcode",
+            "--params",
+            "length={Location}",
+        ],
+        Some(dead),
+        "may only set literal options",
+    );
     fails_with(
         &[
             "geoclient",
@@ -3651,7 +3781,7 @@ fn geocode_geoclient_arg_validation() {
     fails_with(
         &["geoclientnow", "--endpoint", "address", "Wall St"],
         Some(dead),
-        "search, bin and bbl endpoints only",
+        "search, bin, bbl, normalize and streetcode endpoints only",
     );
     fails_with(
         &[

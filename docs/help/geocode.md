@@ -386,6 +386,15 @@ The --endpoint option selects the kind of lookup:
 * bin          - a Building Identification Number in <column>.
 * bbl          - a Borough-Block-Lot in <column>, either as 10 digits (1000670001)
 or delimited (1-67-1, 1/00067/0001).
+* normalize    - a street name in <column>, returned in Geosupport's normalized
+form ("w 100 st" -> "WEST  100 STREET"). It only standardizes the
+name: it does not check that the street exists. By default, numbers
+are padded for sorting ("WEST    1 STREET"), the same spacing as the
+street names in other Geoclient results; to compare with
+single-spaced data, add --params format=C ("WEST 1 STREET").
+* streetcode   - a Geosupport street code in <column> (the borough digit plus a 5-,
+7- or 10-digit code: 6, 8 or 11 digits, e.g. 11361001), returned as
+the street's name. Other values are left unchanged, not sent.
 * address, addresspoint, intersection, place, blockface - structured lookups whose
 inputs come from several columns, mapped with --params.
 
@@ -401,7 +410,10 @@ are case-sensitive:
 The borough may be a name (Manhattan), an abbreviation (MN) or a number (1-5).
 With a structured endpoint, <column> is not sent to the API: it is only the column that
 is replaced with the result (or that --rename applies to). For search, --params may
-set fixed search options, e.g. "exactMatchMaxLevel=5".
+set fixed search options, e.g. "exactMatchMaxLevel=5". For normalize and streetcode,
+it may set format - S (sort, the default) pads numbers so names sort numerically
+("WEST    1 STREET"), C (compact) does not ("WEST 1 STREET") - and length (4-32,
+default 32), which abbreviates names to fit (length=10: "W 100 ST").
 
 A location that Geoclient cannot geocode is left unchanged (or set to --invalid-result).
 So is a search that matches in MORE than one borough - typically a street address
@@ -420,7 +432,9 @@ the JSON formats print the reject under "_reject". So that rejected searches car
 their reason, search sends returnRejections=true unless it is set in --params.
 
 The --formatstr option supports these Geoclient-specific formats:  
-* '%+' | '%lat-long'    - <latitude>, <longitude> (default)
+* '%+' | '%lat-long'    - <latitude>, <longitude> (default). For normalize and
+streetcode, which return no coordinates: the street name
+(firstStreetNameNormalized).
 * '%location'           - (<latitude>, <longitude>)
 * '%bbl'                - the BBL
 * '%bin'                - the BIN (buildingIdentificationNumber)
@@ -454,8 +468,8 @@ $ qsv geocode geoclient Street --endpoint address -c latlong --params "houseNumb
 
 ### Geoclientnow
 
-Accepts the same options as geoclient (search, bin and bbl endpoints only), but does
-not require an input file.
+Accepts the same options as geoclient (search, bin, bbl, normalize and streetcode
+endpoints only), but does not require an input file.
 
 ```console
 $ qsv geocode geoclientnow "350 5th Ave Manhattan"
@@ -463,6 +477,10 @@ $ qsv geocode geoclientnow "350 5th Ave Manhattan"
 
 ```console
 $ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
+```
+
+```console
+$ qsv geocode geoclientnow --endpoint normalize "w 100 st"
 ```
 
 
@@ -610,8 +628,8 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
-| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. For geoclient, it is the NYC location, BIN or BBL (see --endpoint). Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
-| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. For geoclientnow, it is a NYC location, BIN or BBL. |
+| &nbsp;`<column>`&nbsp; | The column to geocode. Used by suggest, reverse & countryinfo subcommands. For suggest, it must be a column with a City string pattern. For reverse, it must be a column using WGS 84 coordinates in "lat, long" or "(lat, long)" format. For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code. For iplookup, it must be a column with an IP address or a URL. For opencage, it may be a free-form address OR a WGS 84 coordinate. For geoclient, it is the NYC location, BIN, BBL, street name or street code (see --endpoint). Note that you can use column selector syntax to select the column, but only the first column will be used. See `select --help` for more information. |
+| &nbsp;`<location>`&nbsp; | The location to geocode for suggestnow, reversenow, countryinfonow and iplookupnow subcommands. For suggestnow, its a City string pattern. For reversenow, it must be a WGS 84 coordinate. For countryinfonow, it must be a ISO 3166-1 alpha-2 code. For iplookupnow, it must be an IP address or a URL. For opencagenow, it must be an address OR a WGS 84 coordinate. For geoclientnow, it is a NYC location, BIN, BBL, street name or street code. |
 | &nbsp;`<index-file>`&nbsp; | The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to a published population floor (15000 or 1000), it will download that prebuilt English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand. |
 
 <a name="geocode-options"></a>
@@ -667,7 +685,7 @@ qsv geocode --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑endpoint`&nbsp; | string | The Geoclient lookup: search (default), bin, bbl, address, addresspoint, intersection, place or blockface. See GEOCLIENT above. |  |
+| &nbsp;`‑‑endpoint`&nbsp; | string | The Geoclient lookup: search (default), bin, bbl, normalize, streetcode, address, addresspoint, intersection, place or blockface. See GEOCLIENT above. |  |
 | &nbsp;`‑‑params`&nbsp; | string | Comma-separated Geoclient parameters for the structured endpoints, each "name={Column}" or "name=value", e.g. "houseNumber={HouseNo},street={Street},borough={Boro}". For search, only fixed options are allowed, e.g. "exactMatchMaxLevel=5". |  |
 
 <a name="dynamic-formatting-options"></a>

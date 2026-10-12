@@ -169,7 +169,7 @@
       {
         "flag": "--rate-limit",
         "type": "number",
-        "description": "Maximum number of API requests per second. Defaults to 1 for opencage (its free tier allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day)."
+        "description": "Maximum number of API requests per second. Defaults to 1 for opencage (its free trial allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day)."
       },
       {
         "flag": "--rename",

@@ -388,7 +388,10 @@ The --endpoint option selects the kind of lookup:
 or delimited (1-67-1, 1/00067/0001).
 * normalize    - a street name in <column>, returned in Geosupport's normalized
 form ("w 100 st" -> "WEST  100 STREET"). It only standardizes the
-name: it does not check that the street exists.
+name: it does not check that the street exists. By default, numbers
+are padded for sorting ("WEST    1 STREET"), the same spacing as the
+street names in other Geoclient results; to compare with
+single-spaced data, add --params format=C ("WEST 1 STREET").
 * streetcode   - a Geosupport street code in <column> (the borough digit plus a 5-,
 7- or 10-digit code: 6, 8 or 11 digits, e.g. 11361001), returned as
 the street's name. Other values are left unchanged, not sent.

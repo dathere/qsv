@@ -2829,8 +2829,11 @@ fn geocode_index_load_numeric_named_file_not_shortcut() {
 //   huge  - a 5 MiB body (must be refused, not buffered).
 //   opencage - an OpenCage-shaped success (the OpenCage tests point QSV_OPENCAGE_API_URL here).
 //   truncate - the first response dies mid-body (must be retried), then normal.
-// A search `input` containing NOMATCH is a Geosupport reject (EE/EE), RC2ONLY succeeds only on
-// geosupportReturnCode2, and BADREQ gets an HTTP 400.
+// A search `input` (or an address `street`) containing NOMATCH is a Geosupport reject (EE/EE,
+// with a reason message) - which `/search` only returns with `returnRejections=true`, as the live
+// API does. RC2ONLY succeeds only on geosupportReturnCode2, BADREQ gets an HTTP 400, and a search
+// for AMBIG succeeds in two boroughs, like a borough-less "100 Broadway" (level 1,
+// POSSIBLE_MATCH each, as probed live 2026-10-12).
 // ---------------------------------------------------------------------------
 mod geoclient_mock {
     use std::{
@@ -2936,7 +2939,8 @@ mod geoclient_mock {
         if input.contains("BADREQ") {
             return HttpResponse::BadRequest().json(json!({"title": "Bad Request"}));
         }
-        let (rc, rc2) = if input.contains("NOMATCH") {
+        let nomatch = input.contains("NOMATCH") || q("street").contains("NOMATCH");
+        let (rc, rc2) = if nomatch {
             ("EE", "EE")
         } else if input.contains("RC2ONLY") {
             ("EE", "00")
@@ -2952,6 +2956,13 @@ mod geoclient_mock {
             "censusTract2020": " 187  ",
         });
         let map = obj.as_object_mut().unwrap();
+        if nomatch {
+            map.insert("reasonCode".into(), json!("1"));
+            map.insert(
+                "message".into(),
+                json!("'NOMATCH ST' NOT RECOGNIZED. IS IT 'NONAME'?"),
+            );
+        }
         match endpoint.as_str() {
             "bbl" | "bin" => {
                 map.insert("latitudeInternalLabel".into(), json!(40.708659));
@@ -2982,7 +2993,26 @@ mod geoclient_mock {
                 map.insert("echo".into(), json!(echo));
             },
         }
-        if endpoint == "search" {
+        if endpoint == "search" && nomatch {
+            let results = if q("returnRejections") == "true" {
+                json!([{"level": "0", "status": "REJECTED", "response": obj}])
+            } else {
+                json!([])
+            };
+            HttpResponse::Ok()
+                .json(json!({"status": "REJECTED", "input": input, "results": results}))
+        } else if endpoint == "search" && input.contains("AMBIG") {
+            let in_borough = |boro: &str| {
+                let mut o = obj.clone();
+                o["firstBoroughName"] = json!(boro);
+                json!({"level": "1", "status": "POSSIBLE_MATCH", "response": o})
+            };
+            HttpResponse::Ok().json(json!({
+                "status": "OK",
+                "input": input,
+                "results": [in_borough("MANHATTAN"), in_borough("BROOKLYN")],
+            }))
+        } else if endpoint == "search" {
             HttpResponse::Ok().json(json!({
                 "status": "OK",
                 "input": input,
@@ -3123,7 +3153,7 @@ fn geocode_geoclient_search() {
     assert!(mock.queries().iter().all(|q| !q.contains("SECRET")));
     assert!(
         mock.queries()
-            .contains(&"search?input=314 W 100 St Manhattan".to_string()),
+            .contains(&"search?input=314 W 100 St Manhattan&returnRejections=true".to_string()),
         "{:?}",
         mock.queries()
     );
@@ -3326,6 +3356,117 @@ fn geocode_geoclient_bad_request_reported() {
         stderr.contains("1 Geoclient lookup(s) were rejected"),
         "stderr: {stderr}"
     );
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_reject_reasons_and_ambiguity() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_reject_reasons_and_ambiguity");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Location"],
+            svec!["314 W 100 St Manhattan"],
+            svec!["AMBIG 100 Broadway"],
+            svec!["NOMATCH St"],
+        ],
+    );
+    let run = || {
+        let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+        cmd.arg("geoclient")
+            .arg("Location")
+            .arg("data.csv")
+            .args([
+                "-f",
+                "%dyncols: {lat:latitude}, {n:_resultCount}, {why:_reject.message}, \
+                 {rejn:_reject._resultCount}",
+            ])
+            .args(["--invalid-result", "<NONE>"]);
+        wrk.output(&mut cmd)
+    };
+    let expected = "Location,lat,n,why,rejn\n314 W 100 St Manhattan,40.798502,1,,\nAMBIG 100 \
+                    Broadway,<NONE>,<NONE>,\"AMBIGUOUS: 2 MATCHES (MANHATTAN, \
+                    BROOKLYN)\",2\nNOMATCH St,<NONE>,<NONE>,'NOMATCH ST' NOT RECOGNIZED. IS IT \
+                    'NONAME'?,0\n";
+    let output = run();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+        expected
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 row(s) matched the Geoclient search in more than one borough"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(mock.requests(), 3);
+    assert!(
+        mock.queries()
+            .iter()
+            .all(|q| q.ends_with("&returnRejections=true")),
+        "{:?}",
+        mock.queries()
+    );
+
+    // the reject reasons and the ambiguity are cached, not just the matches
+    let output = run();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
+        expected
+    );
+    assert_eq!(mock.requests(), 3);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_reject_without_reason_columns() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_reject_without_reason_columns");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["House", "Street", "Boro"],
+            svec!["314", "W 100 St", "MN"],
+            svec!["99999", "NOMATCH St", "MN"],
+        ],
+    );
+    // a structured reject with a plain format falls back to --invalid-result, as before
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["--endpoint", "address"])
+        .args([
+            "--params",
+            "houseNumber={House},street={Street},borough={Boro}",
+        ])
+        .args(["--invalid-result", "<NONE>"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["House", "Street", "Boro"],
+            svec!["314", "40.798502, -73.972709", "MN"],
+            svec!["99999", "<NONE>", "MN"],
+        ]
+    );
+
+    // geoclientnow's JSON output shows the reject under _reject
+    let mut now = geoclient_cmd(&wrk, &mock.url("ok"));
+    now.arg("geoclientnow")
+        .arg("NOMATCH St")
+        .args(["-f", "%json"])
+        .arg("--no-cache");
+    let output = wrk.output(&mut now);
+    assert!(output.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        v["_reject"]["message"],
+        "'NOMATCH ST' NOT RECOGNIZED. IS IT 'NONAME'?"
+    );
+    assert_eq!(v["_reject"]["reasonCode"], "1");
 }
 
 #[test]

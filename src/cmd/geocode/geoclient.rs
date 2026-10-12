@@ -8,8 +8,13 @@
 //! - HTTP 200 does not mean "matched": success is `geosupportReturnCode` (or, for the two-function
 //!   1B calls behind `/address` and `/search`, `geosupportReturnCode2`) being `00` or `01`;
 //! - `/bbl` and `/bin` return no `latitude`/`longitude`, only the `*InternalLabel` pair;
-//! - `/search` result `status` values beyond `EXACT_MATCH` are undocumented, so matching keys on
-//!   the return codes, never on that status.
+//! - a reject carries Geosupport's `reasonCode`/`message` (and `reasonCode2`/`message2` for 1B),
+//!   but `/search` only returns rejected results when `returnRejections=true` is sent;
+//! - a `/search` without a borough runs once per borough (all at level 1), so one input can succeed
+//!   in several boroughs ("100 Broadway" -> MN, BK, QN, SI). Each such result is a
+//!   `POSSIBLE_MATCH`, as is a borough-less input that exists in ONE borough, so `status` cannot
+//!   tell clean from ambiguous: the number of successful results does. The one status rule used is
+//!   that a single `EXACT_MATCH` (documented) wins over possibles.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -22,12 +27,12 @@ use cached::{ConcurrentCached, RedbCache};
 use futures::StreamExt;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use indicatif::{ProgressBar, ProgressDrawTarget};
-use serde_json::Value;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{
-    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, add_fields, decode_lookup_cache,
-    encode_lookup_cache, first_selected_column, json_dotpath, parse_dyncols_spec, read_capped,
+    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, add_fields, first_selected_column,
+    json_dotpath, parse_dyncols_spec, read_capped,
 };
 use crate::{
     CliError, CliResult,
@@ -41,6 +46,11 @@ pub(super) const DEFAULT_GEOCLIENT_API_URL: &str = "https://api.nyc.gov/geoclien
 
 /// The `cached` crate names the redb file after this, under the cache dir.
 pub(super) const GEOCLIENT_CACHE_NAME: &str = "geocode-geoclient";
+
+/// Prefix of every cache key. Bump it when the cached value format or the meaning of a cached
+/// outcome changes: older entries then never match and age out (TTL, `cache-prune`).
+/// v2: rejects are cached with their reason, and ambiguous searches are no longer matches.
+const CACHE_KEY_VERSION: &str = "v2";
 
 /// Default requests/second: under the public gateway's 2,500/minute cap (41.6/s).
 pub(super) const DEFAULT_GEOCLIENT_RATE_LIMIT: u32 = 40;
@@ -369,6 +379,11 @@ fn prepare_request(
                 return None;
             }
             params.push(("input".to_string(), input));
+            // without it a rejected search returns no results, so no reason - unless the user
+            // set it explicitly (a duplicate query parameter would be ambiguous)
+            if !sources.iter().any(|(n, _)| n == "returnRejections") {
+                params.push(("returnRejections".to_string(), "true".to_string()));
+            }
         },
         Endpoint::Bin => {
             let bin = strip_float_zeros(cell.trim());
@@ -409,7 +424,11 @@ fn prepare_request(
         .map(|(n, v)| format!("{n}={}", v.to_uppercase()))
         .collect();
     key_parts.sort_unstable();
-    let key = format!("{base_url}|{}|{}", endpoint.path(), key_parts.join("&"));
+    let key = format!(
+        "{CACHE_KEY_VERSION}|{base_url}|{}|{}",
+        endpoint.path(),
+        key_parts.join("&")
+    );
     Some(Request { key, params })
 }
 
@@ -431,31 +450,117 @@ fn rc_ok(obj: &Value, key: &str) -> bool {
     )
 }
 
-/// Pull the geocoded object out of a response body, or `None` for a non-match.
+/// What a Geoclient response resolved to.
+#[derive(Debug, PartialEq)]
+enum Extracted {
+    /// The geocoded object, with the synthetic `_resultCount` (and, for `/search`, `_level`).
+    Match(Value),
+    /// A Geosupport reject (its response object), or an ambiguous `/search` (a synthetic object
+    /// with `_ambiguous: true`), with `_resultCount`. Rendered through `_reject.*` dyncols keys.
+    Reject(Value),
+    /// No result and no reject data.
+    NoResult,
+}
+
+/// Pull the outcome out of a response body.
 ///
 /// Every endpoint wraps its object under its own name (`{"bbl": {...}}`) except `/search`
-/// (`{"results": [{"response": {...}}, ...]}`), where the first result whose return codes
-/// succeed is taken. `latitude`/`longitude` are filled from the `*InternalLabel` pair when absent
-/// (always, for `/bbl` and `/bin`), so `{latitude}` and `%lat-long` work for every endpoint.
-fn extract_result(endpoint: Endpoint, body: &Value) -> Option<Value> {
-    let is_success = |obj: &Value| {
-        obj.is_object()
-            && (rc_ok(obj, "geosupportReturnCode") || rc_ok(obj, "geosupportReturnCode2"))
+/// (`{"results": [{"level": .., "status": .., "response": {...}}, ...]}`, see `extract_search`).
+/// A match gets the synthetic `_resultCount` (and, for `/search`, `_level`), and
+/// `latitude`/`longitude` filled from the `*InternalLabel` pair when absent (always, for `/bbl`
+/// and `/bin`), so `{latitude}` and `%lat-long` work for every endpoint.
+fn extract_result(endpoint: Endpoint, body: &Value) -> Extracted {
+    if endpoint == Endpoint::Search {
+        return extract_search(body);
+    }
+    let Some(obj) = body.get(endpoint.path()).filter(|o| o.is_object()) else {
+        return Extracted::NoResult;
     };
-    let mut obj = if endpoint == Endpoint::Search {
-        body.get("results")?
-            .as_array()?
-            .iter()
-            .filter_map(|r| r.get("response"))
-            .find(|r| is_success(r))?
-            .clone()
+    if is_success(obj) {
+        Extracted::Match(fill_coords(annotate(obj.clone(), 1, None)))
     } else {
-        let obj = body.get(endpoint.path())?;
-        if !is_success(obj) {
-            return None;
-        }
-        obj.clone()
+        Extracted::Reject(annotate(obj.clone(), 0, None))
+    }
+}
+
+/// A `/search` body: one success is a match; none is a reject (the first rejected response,
+/// present only with `returnRejections=true`); several are ambiguous - a reject listing the
+/// boroughs - unless exactly one of them is an `EXACT_MATCH`.
+fn extract_search(body: &Value) -> Extracted {
+    let Some(results) = body.get("results").and_then(Value::as_array) else {
+        return Extracted::NoResult;
     };
+    let responses: Vec<(&Value, &Value)> = results
+        .iter()
+        .filter_map(|r| Some((r, r.get("response").filter(|o| o.is_object())?)))
+        .collect();
+    let level = |r: &Value| r.get("level").cloned();
+    let successes: Vec<(&Value, &Value)> = responses
+        .iter()
+        .copied()
+        .filter(|(_, resp)| is_success(resp))
+        .collect();
+    let chosen = match successes.as_slice() {
+        [] => {
+            return responses.first().map_or(Extracted::NoResult, |(r, resp)| {
+                Extracted::Reject(annotate((*resp).clone(), 0, level(r)))
+            });
+        },
+        [only] => *only,
+        many => {
+            let exact: Vec<&(&Value, &Value)> = many
+                .iter()
+                .filter(|(r, _)| r.get("status").and_then(Value::as_str) == Some("EXACT_MATCH"))
+                .collect();
+            if let [only] = exact.as_slice() {
+                **only
+            } else {
+                let places: Vec<&str> = many
+                    .iter()
+                    .map(|(_, resp)| {
+                        resp.get("firstBoroughName")
+                            .and_then(Value::as_str)
+                            .map_or("?", str::trim)
+                    })
+                    .collect();
+                return Extracted::Reject(json!({
+                    "message": format!(
+                        "AMBIGUOUS: {} MATCHES ({})",
+                        many.len(),
+                        places.join(", ")
+                    ),
+                    "_ambiguous": true,
+                    "_resultCount": many.len(),
+                }));
+            }
+        },
+    };
+    let (r, resp) = chosen;
+    Extracted::Match(fill_coords(annotate(
+        resp.clone(),
+        successes.len(),
+        level(r),
+    )))
+}
+
+/// Is a response object a Geosupport success (either return code `00`/`01`)?
+fn is_success(obj: &Value) -> bool {
+    obj.is_object() && (rc_ok(obj, "geosupportReturnCode") || rc_ok(obj, "geosupportReturnCode2"))
+}
+
+/// Add the synthetic `_resultCount` (successful results) and, for `/search`, `_level`.
+fn annotate(mut obj: Value, result_count: usize, level: Option<Value>) -> Value {
+    if let Some(map) = obj.as_object_mut() {
+        map.insert("_resultCount".to_string(), json!(result_count));
+        if let Some(level) = level {
+            map.insert("_level".to_string(), level);
+        }
+    }
+    obj
+}
+
+/// Fill a missing `latitude`/`longitude` from the `*InternalLabel` pair.
+fn fill_coords(mut obj: Value) -> Value {
     if let Some(map) = obj.as_object_mut() {
         for (coord, label) in [
             ("latitude", "latitudeInternalLabel"),
@@ -468,7 +573,26 @@ fn extract_result(endpoint: Endpoint, body: &Value) -> Option<Value> {
             }
         }
     }
-    Some(obj)
+    obj
+}
+
+/// Cache encoding of an outcome: "F<json>" match, "R<json>" reject, "N" no result.
+fn encode_outcome(outcome: &Extracted) -> Option<String> {
+    match outcome {
+        Extracted::Match(v) => serde_json::to_string(v).ok().map(|s| format!("F{s}")),
+        Extracted::Reject(v) => serde_json::to_string(v).ok().map(|s| format!("R{s}")),
+        Extracted::NoResult => Some("N".to_string()),
+    }
+}
+
+/// Decode `encode_outcome`'s format; `None` (undecodable) is treated as a cache miss.
+fn decode_outcome(encoded: &str) -> Option<Extracted> {
+    match encoded.split_at_checked(1)? {
+        ("N", "") => Some(Extracted::NoResult),
+        ("F", json) => serde_json::from_str(json).ok().map(Extracted::Match),
+        ("R", json) => serde_json::from_str(json).ok().map(Extracted::Reject),
+        _ => None,
+    }
 }
 
 fn retry_base() -> Duration {
@@ -480,7 +604,7 @@ fn retry_base() -> Duration {
 }
 
 /// GET one location, retrying 408/429/5xx/network errors with exponential backoff (honoring a
-/// `Retry-After` in seconds, capped at 60s). Returns the extracted result, `None` for a non-match.
+/// `Retry-After` in seconds, capped at 60s). Returns the extracted outcome.
 async fn geoclient_fetch(
     client: &reqwest::Client,
     limiter: &DefaultDirectRateLimiter,
@@ -489,7 +613,7 @@ async fn geoclient_fetch(
     endpoint: Endpoint,
     params: &[(String, String)],
     retry_base: Duration,
-) -> Result<Option<Value>, GcError> {
+) -> Result<Extracted, GcError> {
     let url = format!("{base_url}/{}", endpoint.path());
     let mut last_error = String::new();
     for attempt in 0..=MAX_RETRIES {
@@ -628,15 +752,23 @@ fn format_geoclient_result(obj: &Value, formatstr: &str) -> String {
 }
 
 /// What a row resolved to.
+#[derive(Clone)]
 enum RowOutcome {
     /// Nothing to look up (empty input, malformed BBL, missing required params).
     NoQuery,
-    /// The lookup failed (rejected or transient error) - not cached.
+    /// The lookup failed (HTTP 400 or a transient error) - not cached.
     Failed,
-    /// No match.
+    /// No match and no reject data.
     NoMatch,
     /// Matched: the rendered output value(s) - one, or one per `%dyncols:` column.
     Hit(Vec<String>),
+    /// A Geosupport reject or an ambiguous search. `values` is the rendered output when the
+    /// format can show the reject (`%dyncols` with `_reject.*` keys, `geoclientnow` JSON);
+    /// `None` falls back to the input / `--invalid-result`.
+    Reject {
+        values:    Option<Vec<String>>,
+        ambiguous: bool,
+    },
 }
 
 /// Geocode NYC locations via the Geoclient v2 API.
@@ -786,14 +918,44 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
             vec![format_geoclient_result(obj, &args.flag_formatstr)]
         }
     };
-    // decode a cached "F<json>"/"N" entry into rendered values (None = no match)
-    let render_encoded = |encoded: &str| -> Option<Vec<String>> {
-        let json = decode_lookup_cache(encoded)?;
-        let obj: Value = serde_json::from_str(&json).ok()?;
-        Some(render(&obj))
+    let invalid_result = args.flag_invalid_result.clone().unwrap_or_default();
+    // a reject renders only where the format can show it: `_reject.*` dyncols keys (the other
+    // columns get --invalid-result, as for any non-match), or geoclientnow's JSON output
+    let render_reject = |obj: &Value| -> Option<Vec<String>> {
+        let wrapped = json!({ "_reject": obj });
+        if dyncols_mode {
+            Some(
+                column_keys
+                    .iter()
+                    .map(|key| {
+                        if key.starts_with("_reject.") {
+                            json_dotpath(&wrapped, key).trim().to_string()
+                        } else {
+                            invalid_result.clone()
+                        }
+                    })
+                    .collect(),
+            )
+        } else if json_output {
+            Some(vec![format_geoclient_result(
+                &wrapped,
+                &args.flag_formatstr,
+            )])
+        } else {
+            None
+        }
+    };
+    let to_outcome = |extracted: &Extracted| -> RowOutcome {
+        match extracted {
+            Extracted::Match(obj) => RowOutcome::Hit(render(obj)),
+            Extracted::Reject(obj) => RowOutcome::Reject {
+                values:    render_reject(obj),
+                ambiguous: obj.get("_ambiguous") == Some(&Value::Bool(true)),
+            },
+            Extracted::NoResult => RowOutcome::NoMatch,
+        }
     };
 
-    let invalid_result = args.flag_invalid_result.clone().unwrap_or_default();
     let concurrency = util::njobs(args.flag_jobs).max(1);
     let batch_size = if args.flag_batch == 0 {
         usize::MAX
@@ -804,6 +966,7 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
 
     let mut transient_failures: u64 = 0;
     let mut rejected: u64 = 0;
+    let mut ambiguous_rows: u64 = 0;
     let mut consecutive_transient: u32 = 0;
     let mut rows_written: u64 = 0;
 
@@ -828,7 +991,7 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
 
         // per-batch: key -> rendered outcome. Keeping it per batch bounds memory; the disk cache
         // de-duplicates across batches.
-        let mut resolved: HashMap<&str, Option<Vec<String>>> = HashMap::new();
+        let mut resolved: HashMap<&str, RowOutcome> = HashMap::new();
         let mut failed: HashSet<&str> = HashSet::new();
         let mut to_fetch: Vec<&Request> = Vec::new();
         let mut queued: HashSet<&str> = HashSet::new();
@@ -837,10 +1000,12 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
             if resolved.contains_key(key) || queued.contains(key) {
                 continue;
             }
+            // an undecodable entry is a miss: it is fetched (and overwritten) again
             if let Some(dc) = &disk_cache
                 && let Ok(Some(encoded)) = dc.cache_get(&req.key)
+                && let Some(extracted) = decode_outcome(&encoded)
             {
-                resolved.insert(key, render_encoded(&encoded));
+                resolved.insert(key, to_outcome(&extracted));
                 continue;
             }
             queued.insert(key);
@@ -867,13 +1032,14 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
 
         while let Some((key, result)) = responses.next().await {
             match result {
-                Ok(obj) => {
+                Ok(extracted) => {
                     consecutive_transient = 0;
-                    let json = obj.as_ref().and_then(|o| serde_json::to_string(o).ok());
-                    if let Some(dc) = &disk_cache {
-                        let _ = dc.cache_set(key.to_string(), encode_lookup_cache(json.as_deref()));
+                    if let Some(dc) = &disk_cache
+                        && let Some(encoded) = encode_outcome(&extracted)
+                    {
+                        let _ = dc.cache_set(key.to_string(), encoded);
                     }
-                    resolved.insert(key, obj.as_ref().map(render));
+                    resolved.insert(key, to_outcome(&extracted));
                 },
                 Err(GcError::Fatal(msg)) => return fail_clierror!("{msg}"),
                 Err(GcError::Rejected(msg)) => {
@@ -906,16 +1072,27 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
             let outcome = match req {
                 None => RowOutcome::NoQuery,
                 Some(req) if failed.contains(req.key.as_str()) => RowOutcome::Failed,
-                Some(req) => match resolved.get(req.key.as_str()) {
-                    Some(Some(values)) => RowOutcome::Hit(values.clone()),
-                    Some(None) | None => RowOutcome::NoMatch,
-                },
+                Some(req) => resolved
+                    .get(req.key.as_str())
+                    .cloned()
+                    .unwrap_or(RowOutcome::NoMatch),
             };
+            if let RowOutcome::Reject {
+                ambiguous: true, ..
+            } = outcome
+            {
+                ambiguous_rows += 1;
+            }
             let cell = rec.get(column_index).unwrap_or_default();
 
             if dyncols_mode {
                 let mut out_record = rec.clone();
-                if let RowOutcome::Hit(values) = outcome {
+                if let RowOutcome::Hit(values)
+                | RowOutcome::Reject {
+                    values: Some(values),
+                    ..
+                } = outcome
+                {
                     for value in &values {
                         out_record.push_field(value);
                     }
@@ -936,8 +1113,15 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
                     RowOutcome::NoQuery if !endpoint.is_structured() && cell.trim().is_empty() => {
                         cell.to_string()
                     },
-                    RowOutcome::Hit(mut values) => values.pop().unwrap_or_default(),
-                    RowOutcome::NoQuery | RowOutcome::Failed | RowOutcome::NoMatch => fallback(),
+                    RowOutcome::Hit(mut values)
+                    | RowOutcome::Reject {
+                        values: Some(mut values),
+                        ..
+                    } => values.pop().unwrap_or_default(),
+                    RowOutcome::NoQuery
+                    | RowOutcome::Failed
+                    | RowOutcome::NoMatch
+                    | RowOutcome::Reject { values: None, .. } => fallback(),
                 };
                 let out_record = if args.flag_new_column.is_some() {
                     let mut new_record = rec.clone();
@@ -963,6 +1147,13 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
     } else {
         "set to --invalid-result"
     };
+    if ambiguous_rows > 0 {
+        wwarn!(
+            "{ambiguous_rows} row(s) matched the Geoclient search in more than one borough (e.g. \
+             a street address without its borough), so they were {fate}. Add the borough or ZIP \
+             code to the input; a %dyncols column with the key _reject.message lists the matches."
+        );
+    }
     if rejected > 0 {
         wwarn!(
             "{rejected} Geoclient lookup(s) were rejected as invalid requests (HTTP 400), so \
@@ -1069,30 +1260,149 @@ mod tests {
 
     #[test]
     fn extract_result_return_codes_and_coords() {
+        let matched = |e: Extracted| match e {
+            Extracted::Match(v) => v,
+            other => panic!("expected a match, got {other:?}"),
+        };
         // /bbl: no latitude/longitude, only the internal-label pair
         let body = json!({"bbl": {"geosupportReturnCode": "00", "bbl": "1000670001",
             "latitudeInternalLabel": 40.708659, "longitudeInternalLabel": -74.007118}});
-        let obj = extract_result(Endpoint::Bbl, &body).unwrap();
+        let obj = matched(extract_result(Endpoint::Bbl, &body));
         assert_eq!(format_geoclient_result(&obj, "%+"), "40.708659, -74.007118");
+        assert_eq!(obj["_resultCount"], json!(1));
         // /search: RC 01 + RC2 00 is a success (upstream sample search-900)
-        let body = json!({"status": "OK", "results": [{"status": "EXACT_MATCH", "response": {
-            "geosupportReturnCode": "01", "geosupportReturnCode2": "00",
+        let body = json!({"status": "OK", "results": [{"level": "0", "status": "EXACT_MATCH",
+            "response": {"geosupportReturnCode": "01", "geosupportReturnCode2": "00",
             "latitude": 40.798502, "longitude": -73.972709, "latitudeInternalLabel": 1.0}}]});
-        let obj = extract_result(Endpoint::Search, &body).unwrap();
+        let obj = matched(extract_result(Endpoint::Search, &body));
         assert_eq!(
             format_geoclient_result(&obj, "%location"),
             "(40.798502, -73.972709)"
         );
+        assert_eq!(
+            format_geoclient_result(&obj, "{_level}/{_resultCount}"),
+            "0/1"
+        );
         // /address: only RC2 succeeds -> still a success
         let body = json!({"address": {"geosupportReturnCode": "EE",
             "geosupportReturnCode2": "00", "latitude": 1.5, "longitude": 2.5}});
-        assert!(extract_result(Endpoint::Address, &body).is_some());
-        // a reject on both codes, and a wrong wrapper key, are non-matches
-        let body =
-            json!({"address": {"geosupportReturnCode": "EE", "geosupportReturnCode2": "42"}});
-        assert!(extract_result(Endpoint::Address, &body).is_none());
+        matched(extract_result(Endpoint::Address, &body));
+        // a reject on both codes keeps the reject object, reason and all
+        let body = json!({"address": {"geosupportReturnCode": "EE", "geosupportReturnCode2": "EE",
+            "reasonCode": "1", "message": "'NONEXISTENT ZZZ ST' NOT RECOGNIZED. IS IT 'NONAME'?"}});
+        let Extracted::Reject(rej) = extract_result(Endpoint::Address, &body) else {
+            panic!("expected a reject");
+        };
+        assert_eq!(rej["reasonCode"], json!("1"));
+        assert_eq!(rej["_resultCount"], json!(0));
+        // a wrong wrapper key is no result at all
         let body = json!({"bin": {"geosupportReturnCode": "00"}});
-        assert!(extract_result(Endpoint::Bbl, &body).is_none());
+        assert_eq!(extract_result(Endpoint::Bbl, &body), Extracted::NoResult);
+    }
+
+    /// Shapes from live probes (2026-10-12) of a borough-less `/search`, trimmed to the fields
+    /// that matter: every result is level 1 / `POSSIBLE_MATCH`, whether or not it is ambiguous.
+    fn search_result(boro: &str, rc: &str, rc2: &str, status: &str) -> Value {
+        json!({"level": "1", "status": status, "response": {"geosupportReturnCode": rc,
+            "geosupportReturnCode2": rc2, "firstBoroughName": boro,
+            "message": if rc == "00" { Value::Null } else { json!("ADDRESS NUMBER OUT OF RANGE") },
+            "latitude": 40.7, "longitude": -74.0}})
+    }
+
+    #[test]
+    fn search_ambiguity() {
+        // "100 Broadway": 4 boroughs succeed (QN/SI on 1E only), BX is rejected
+        let body = json!({"status": "OK", "results": [
+            search_result("MANHATTAN", "00", "00", "POSSIBLE_MATCH"),
+            search_result("BROOKLYN", "00", "00", "POSSIBLE_MATCH"),
+            search_result("QUEENS", "00", "42", "POSSIBLE_MATCH"),
+            search_result("STATEN IS", "00", "42", "POSSIBLE_MATCH"),
+            search_result("BRONX", "42", "42", "REJECTED"),
+        ]});
+        let Extracted::Reject(rej) = extract_result(Endpoint::Search, &body) else {
+            panic!("an input matching 4 boroughs must not be a match");
+        };
+        assert_eq!(
+            rej["message"],
+            json!("AMBIGUOUS: 4 MATCHES (MANHATTAN, BROOKLYN, QUEENS, STATEN IS)")
+        );
+        assert_eq!(rej["_ambiguous"], json!(true));
+        assert_eq!(rej["_resultCount"], json!(4));
+
+        // a borough-less input found in ONE borough is a clean match, POSSIBLE_MATCH or not
+        let body = json!({"status": "OK", "results": [
+            search_result("MANHATTAN", "00", "00", "POSSIBLE_MATCH"),
+        ]});
+        let Extracted::Match(obj) = extract_result(Endpoint::Search, &body) else {
+            panic!("a single success is a match");
+        };
+        assert_eq!(obj["_level"], json!("1"));
+        assert_eq!(obj["_resultCount"], json!(1));
+
+        // returnPossiblesWithExact: one EXACT_MATCH among several successes wins
+        let body = json!({"status": "OK", "results": [
+            search_result("BROOKLYN", "00", "00", "POSSIBLE_MATCH"),
+            search_result("MANHATTAN", "00", "00", "EXACT_MATCH"),
+        ]});
+        let Extracted::Match(obj) = extract_result(Endpoint::Search, &body) else {
+            panic!("a lone EXACT_MATCH is a match");
+        };
+        assert_eq!(obj["firstBoroughName"], json!("MANHATTAN"));
+        assert_eq!(obj["_resultCount"], json!(2));
+
+        // all rejected (returnRejections=true): the first reject, with its reason
+        let body = json!({"status": "REJECTED", "results": [
+            search_result("MANHATTAN", "EE", "EE", "REJECTED"),
+            search_result("BRONX", "EE", "EE", "REJECTED"),
+        ]});
+        let Extracted::Reject(rej) = extract_result(Endpoint::Search, &body) else {
+            panic!("expected a reject");
+        };
+        assert_eq!(rej["firstBoroughName"], json!("MANHATTAN"));
+        assert_eq!(rej["_resultCount"], json!(0));
+        // rejected without returnRejections: no results, no reason
+        let body = json!({"status": "REJECTED", "results": []});
+        assert_eq!(extract_result(Endpoint::Search, &body), Extracted::NoResult);
+    }
+
+    #[test]
+    fn outcome_cache_round_trip() {
+        for outcome in [
+            Extracted::Match(json!({"bbl": "1"})),
+            Extracted::Reject(json!({"message": "NOPE"})),
+            Extracted::NoResult,
+        ] {
+            let encoded = encode_outcome(&outcome).unwrap();
+            assert_eq!(decode_outcome(&encoded), Some(outcome));
+        }
+        // anything else is a miss, not a non-match
+        assert_eq!(decode_outcome(""), None);
+        assert_eq!(decode_outcome("Nx"), None);
+        assert_eq!(decode_outcome("F{not json"), None);
+        assert_eq!(decode_outcome("X{}"), None);
+    }
+
+    #[test]
+    fn search_requests_ask_for_rejections() {
+        let headers = csv::StringRecord::from(vec!["Location"]);
+        let rec = csv::StringRecord::from(vec!["100 Broadway"]);
+        let req = prepare_request(Endpoint::Search, "http://x", "100 Broadway", &rec, &[]).unwrap();
+        assert!(
+            req.params
+                .contains(&("returnRejections".to_string(), "true".to_string()))
+        );
+        assert!(req.key.starts_with("v2|"));
+        // an explicit setting is respected, and never duplicated
+        let params = parse_params(Endpoint::Search, Some("returnRejections=false")).unwrap();
+        let sources = resolve_param_sources(&params, &headers).unwrap();
+        let req =
+            prepare_request(Endpoint::Search, "http://x", "100 Broadway", &rec, &sources).unwrap();
+        let rr: Vec<_> = req
+            .params
+            .iter()
+            .filter(|(n, _)| n == "returnRejections")
+            .collect();
+        assert_eq!(rr, [&("returnRejections".to_string(), "false".to_string())]);
     }
 
     #[test]

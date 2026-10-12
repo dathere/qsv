@@ -264,6 +264,19 @@ is replaced with the result (or that --rename applies to). For search, --params 
 set fixed search options, e.g. "exactMatchMaxLevel=5".
 
 A location that Geoclient cannot geocode is left unchanged (or set to --invalid-result).
+So is a search that matches in MORE than one borough - typically a street address
+without its borough, e.g. "100 Broadway" exists in Manhattan, Brooklyn, Queens and
+Staten Island - rather than silently picking one; add the borough or ZIP code to the
+input. (If one of the matches is an exact match, it is used.) A warning reports how
+many rows were ambiguous.
+
+Why a location did not geocode is available through %dyncols keys starting with
+"_reject." - filled only on those rows, e.g. {why:_reject.message} gives Geosupport's
+reason (e.g. "ADDRESS NUMBER OUT OF RANGE") or, for an ambiguous search, the boroughs
+matched. Other useful keys are _reject.reasonCode, _reject.message2 (the second
+message of address and place lookups) and _reject._resultCount. With geoclientnow,
+the JSON formats print the reject under "_reject". So that rejected searches carry
+their reason, search sends returnRejections=true unless it is set in --params.
 
 The --formatstr option supports these Geoclient-specific formats:
   * '%+' | '%lat-long'    - <latitude>, <longitude> (default)
@@ -277,10 +290,13 @@ Dynamic formatting is also supported, using any Geoclient result field, e.g.
 latitude, longitude, bbl, buildingIdentificationNumber, communityDistrict,
 cityCouncilDistrict, censusTract2020, nta2020, zipCode, xCoordinate, yCoordinate and
 uspsPreferredCityName. A field missing from a result renders empty.
+Two fields are added by qsv: _resultCount (how many results geocoded successfully)
+and, for search, _level (the Geosupport search level of the result used).
 For bbl and bin lookups, latitude/longitude are the building's internal label point.
 
 The "%dyncols:" format is also supported, e.g.
   "%dyncols: {bbl:bbl}, {council:cityCouncilDistrict}, {tract:censusTract2020}"
+  "%dyncols: {lat:latitude}, {lng:longitude}, {why:_reject.message}"
 
   $ qsv geocode geoclient address --api-key YOURKEY nyc_311.csv
   $ qsv geocode geoclient bbl --endpoint bbl -f '%dyncols: {lat:latitude}, {lng:longitude}' pluto.csv
@@ -3909,8 +3925,8 @@ fn normalize_opencage_query(cell: &str, reverse: bool) -> Option<String> {
     }
 }
 
-/// Encode an online lookup outcome (an `OpenCage` formatted string or result JSON, or a Geoclient
-/// result JSON) for the string-valued cache.
+/// Encode an `OpenCage` lookup outcome (a formatted string or result JSON) for the string-valued
+/// cache. (Geoclient has its own encoding, with a reject state: `geoclient::encode_outcome`.)
 /// `Some(s)` is stored as "F"+s; `None` (zero results) is stored as "N".
 fn encode_lookup_cache(outcome: Option<&str>) -> String {
     match outcome {

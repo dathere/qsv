@@ -45,7 +45,7 @@ jobs:
             addl-qsvdp-features:
             # PGO on/off switch. `false` skips build-pgo.sh and uses the plain "Build qsv (normal)"
             # step instead - a one-line fallback if a toolchain update breaks the PGO build again
-            # (e.g. #4740: Rust 1.99 vs Apple clang profile-format mismatch, handled in build-pgo.sh).
+            # (e.g. #4740: Rust 1.99 vs Apple clang profile-format mismatch, fixed upstream in cc 1.8.0).
             pgo: true
 
     steps:

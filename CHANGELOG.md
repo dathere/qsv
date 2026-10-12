@@ -61,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`geoconvert` CSV input skips rows it can't place, instead of failing or writing bad output** ([#4800](https://github.com/dathere/qsv/pull/4800)). **Behavior change:**
   - A row with an empty, unparseable or out-of-range latitude/longitude (beyond ±90/±180), or with empty or invalid WKT, is now left out. One warning on stderr gives the counts and the line of the first one. Before, the first such row stopped the whole conversion, with no line number.
   - `NaN`/`inf` coordinates used to produce invalid GeoJSON (`[null,null]`) with a success exit. They are now skipped too.
-  - If every row is skipped, `geoconvert` fails with a hint that the columns may be swapped or hold projected coordinates.
+  - If every row is skipped, `geoconvert` fails with a hint that the columns may be swapped or hold projected coordinates. This only catches swaps whose values fall out of range (e.g. longitudes near −122); where both values are within ±90, as in New York (40.7, −74), swapped columns are not detected.
   - Latitude/longitude values padded with spaces are accepted.
   - A misnamed `--geometry`, `--latitude` or `--longitude` column is now reported before anything is written, so `-o` no longer leaves a partial file.
   - CSV input now honors `.tsv`/`.tab`, `QSV_DEFAULT_DELIMITER` and a new `-d, --delimiter`; TSV input used to fail.

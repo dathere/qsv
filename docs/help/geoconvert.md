@@ -56,6 +56,10 @@ geoconvert fails instead, as the columns are then most likely wrong - swapped, o
 projected coordinates such as State Plane feet. Latitude and longitude values may be
 padded with spaces.
 
+Swapped latitude/longitude columns are only caught when the swapped values fall out of
+range (e.g. US West Coast longitudes near -122). Where both values are within +/-90
+(e.g. New York: 40.7, -74), swapped columns are NOT detected - check a few rows on a map.
+
 A shapefile needs its .shp, .shx and .dbf files side by side. If its .prj file describes a
 projected coordinate system (e.g. NY State Plane), geoconvert warns: the coordinates are
 output unchanged, so they are not the WGS-84 longitude/latitude that GeoJSON requires.

@@ -83,6 +83,8 @@ pub(super) enum Endpoint {
     Intersection,
     Place,
     Blockface,
+    Normalize,
+    StreetCode,
 }
 
 impl Endpoint {
@@ -96,10 +98,13 @@ impl Endpoint {
             "intersection" => Self::Intersection,
             "place" => Self::Place,
             "blockface" => Self::Blockface,
+            "normalize" => Self::Normalize,
+            "streetcode" => Self::StreetCode,
             other => {
                 return fail_incorrectusage_clierror!(
                     "Invalid --endpoint {other:?}. Valid endpoints are: search, bin, bbl, \
-                     address, addresspoint, intersection, place and blockface."
+                     normalize, streetcode, address, addresspoint, intersection, place and \
+                     blockface."
                 );
             },
         })
@@ -116,12 +121,22 @@ impl Endpoint {
             Self::Intersection => "intersection",
             Self::Place => "place",
             Self::Blockface => "blockface",
+            Self::Normalize => "normalize",
+            Self::StreetCode => "streetcode",
         }
     }
 
     /// Structured endpoints take their inputs from `--params`; the others from `<column>`.
     pub(super) const fn is_structured(self) -> bool {
-        !matches!(self, Self::Search | Self::Bin | Self::Bbl)
+        !matches!(
+            self,
+            Self::Search | Self::Bin | Self::Bbl | Self::Normalize | Self::StreetCode
+        )
+    }
+
+    /// Street-name lookups return a name, not a location.
+    pub(super) const fn is_name_lookup(self) -> bool {
+        matches!(self, Self::Normalize | Self::StreetCode)
     }
 
     /// (required, optional) query parameters. A required entry with `|` means "one of these".
@@ -141,6 +156,7 @@ impl Endpoint {
                 ],
             ),
             Self::Bin | Self::Bbl => (&[], &[]),
+            Self::Normalize | Self::StreetCode => (&[], &["length", "format"]),
             Self::Address | Self::AddressPoint => (&["houseNumber", "street", "borough|zip"], &[]),
             Self::Intersection => (
                 &["crossStreetOne", "crossStreetTwo", "borough"],
@@ -270,6 +286,7 @@ const fn params_example(endpoint: Endpoint) -> &'static str {
             "\"onStreet={On},crossStreetOne={From},crossStreetTwo={To},borough={Borough}\""
         },
         Endpoint::Search | Endpoint::Bin | Endpoint::Bbl => "\"exactMatchMaxLevel=5\"",
+        Endpoint::Normalize | Endpoint::StreetCode => "\"length=10,format=C\"",
     }
 }
 
@@ -310,6 +327,14 @@ fn strip_float_zeros(value: &str) -> &str {
         Some((int, frac)) if !frac.is_empty() && frac.bytes().all(|b| b == b'0') => int,
         _ => value,
     }
+}
+
+/// A street code as Geoclient accepts it: the borough digit plus a 5-, 7- or 10-digit code
+/// (B5SC, B7SC, B10SC), i.e. 6, 8 or 11 digits; a spreadsheet float tail is dropped. Anything
+/// else gets an HTTP 400, so it is not sent.
+fn street_code(cell: &str) -> Option<&str> {
+    let code = strip_float_zeros(cell.trim());
+    (matches!(code.len(), 6 | 8 | 11) && code.bytes().all(|b| b.is_ascii_digit())).then_some(code)
 }
 
 /// Split a BBL into (borough, block, lot). Accepts the 10-digit form ("1000670001", also with a
@@ -391,6 +416,16 @@ fn prepare_request(
                 return None;
             }
             params.push(("bin".to_string(), bin.to_string()));
+        },
+        Endpoint::Normalize => {
+            let name = squish(cell);
+            if name.is_empty() {
+                return None;
+            }
+            params.push(("name".to_string(), name));
+        },
+        Endpoint::StreetCode => {
+            params.push(("streetCode".to_string(), street_code(cell)?.to_string()));
         },
         Endpoint::Bbl => {
             let (borough, block, lot) = split_bbl(cell)?;
@@ -820,6 +855,14 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
         .select(SelectColumns::parse(&args.arg_column)?);
 
     let dyncols_mode = args.flag_formatstr.starts_with("%dyncols:");
+    // a street-name lookup has no coordinates: its default output is the name
+    let formatstr = if endpoint.is_name_lookup()
+        && matches!(args.flag_formatstr.as_str(), "%+" | "%lat-long")
+    {
+        "{firstStreetNameNormalized}"
+    } else {
+        args.flag_formatstr.as_str()
+    };
     let (column_names, column_keys) = if dyncols_mode {
         parse_dyncols_spec(&args.flag_formatstr)?
     } else {
@@ -930,7 +973,7 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
                 .map(|key| json_dotpath(obj, key).trim().to_string())
                 .collect()
         } else {
-            vec![format_geoclient_result(obj, &args.flag_formatstr)]
+            vec![format_geoclient_result(obj, formatstr)]
         }
     };
     let invalid_result = args.flag_invalid_result.clone().unwrap_or_default();
@@ -952,10 +995,7 @@ pub(super) async fn run_geoclient(args: Args, now_cmd: bool, cache_dir: &Path) -
                     .collect(),
             )
         } else if json_output {
-            Some(vec![format_geoclient_result(
-                &wrapped,
-                &args.flag_formatstr,
-            )])
+            Some(vec![format_geoclient_result(&wrapped, formatstr)])
         } else {
             None
         }
@@ -1211,6 +1251,18 @@ mod tests {
     }
 
     #[test]
+    fn street_codes() {
+        assert_eq!(street_code("113610"), Some("113610")); // B5SC
+        assert_eq!(street_code(" 11361001 "), Some("11361001")); // B7SC
+        assert_eq!(street_code("11361001010"), Some("11361001010")); // B10SC
+        assert_eq!(street_code("11361001.0"), Some("11361001"));
+        assert_eq!(street_code("1136100"), None); // 7 digits
+        assert_eq!(street_code("abc"), None);
+        assert_eq!(street_code("1136100a"), None);
+        assert_eq!(street_code(""), None);
+    }
+
+    #[test]
     fn params_validation() {
         let p = parse_params(
             Endpoint::Address,
@@ -1239,6 +1291,12 @@ mod tests {
         assert!(parse_params(Endpoint::Search, Some("exactMatchMaxLevel=5")).is_ok());
         assert!(parse_params(Endpoint::Search, Some("returnPolicy={Col}")).is_err());
         assert!(parse_params(Endpoint::Search, None).unwrap().is_empty());
+        // normalize/streetcode: literal length/format only
+        assert!(parse_params(Endpoint::Normalize, Some("length=10,format=C")).is_ok());
+        assert!(parse_params(Endpoint::StreetCode, Some("format=C")).is_ok());
+        assert!(parse_params(Endpoint::Normalize, Some("name=broadway")).is_err());
+        assert!(parse_params(Endpoint::StreetCode, Some("length={Col}")).is_err());
+        assert!(parse_params(Endpoint::Normalize, None).unwrap().is_empty());
         // duplicates, empties and malformed entries
         assert!(parse_params(Endpoint::Place, Some("name={A},name={B},zip=1")).is_err());
         assert!(parse_params(Endpoint::Place, Some("name={},zip=1")).is_err());

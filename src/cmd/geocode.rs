@@ -246,6 +246,12 @@ The --endpoint option selects the kind of lookup:
   * bin          - a Building Identification Number in <column>.
   * bbl          - a Borough-Block-Lot in <column>, either as 10 digits (1000670001)
                    or delimited (1-67-1, 1/00067/0001).
+  * normalize    - a street name in <column>, returned in Geosupport's normalized
+                   form ("w 100 st" -> "WEST  100 STREET"). It only standardizes the
+                   name: it does not check that the street exists.
+  * streetcode   - a Geosupport street code in <column> (the borough digit plus a 5-,
+                   7- or 10-digit code: 6, 8 or 11 digits, e.g. 11361001), returned as
+                   the street's name. Other values are left unchanged, not sent.
   * address, addresspoint, intersection, place, blockface - structured lookups whose
                    inputs come from several columns, mapped with --params.
 
@@ -261,7 +267,10 @@ are case-sensitive:
 The borough may be a name (Manhattan), an abbreviation (MN) or a number (1-5).
 With a structured endpoint, <column> is not sent to the API: it is only the column that
 is replaced with the result (or that --rename applies to). For search, --params may
-set fixed search options, e.g. "exactMatchMaxLevel=5".
+set fixed search options, e.g. "exactMatchMaxLevel=5". For normalize and streetcode,
+it may set format - S (sort, the default) pads numbers so names sort numerically
+("WEST    1 STREET"), C (compact) does not ("WEST 1 STREET") - and length (4-32,
+default 32), which abbreviates names to fit (length=10: "W 100 ST").
 
 A location that Geoclient cannot geocode is left unchanged (or set to --invalid-result).
 So is a search that matches in MORE than one borough - typically a street address
@@ -280,7 +289,9 @@ the JSON formats print the reject under "_reject". So that rejected searches car
 their reason, search sends returnRejections=true unless it is set in --params.
 
 The --formatstr option supports these Geoclient-specific formats:
-  * '%+' | '%lat-long'    - <latitude>, <longitude> (default)
+  * '%+' | '%lat-long'    - <latitude>, <longitude> (default). For normalize and
+                            streetcode, which return no coordinates: the street name
+                            (firstStreetNameNormalized).
   * '%location'           - (<latitude>, <longitude>)
   * '%bbl'                - the BBL
   * '%bin'                - the BIN (buildingIdentificationNumber)
@@ -304,11 +315,12 @@ The "%dyncols:" format is also supported, e.g.
   $ qsv geocode geoclient Street --endpoint address -c latlong --params "houseNumber={HouseNo},street={Street},borough={Borough}" file.csv
 
 GEOCLIENTNOW
-Accepts the same options as geoclient (search, bin and bbl endpoints only), but does
-not require an input file.
+Accepts the same options as geoclient (search, bin, bbl, normalize and streetcode
+endpoints only), but does not require an input file.
 
   $ qsv geocode geoclientnow "350 5th Ave Manhattan"
   $ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
+  $ qsv geocode geoclientnow --endpoint normalize "w 100 st"
 
 INDEX-<operation>
 Manage the local Geonames cities index used by the geocode command.
@@ -422,7 +434,8 @@ geocode arguments:
                                 For countryinfo, it must be a column with a ISO 3166-1 alpha-2 country code.
                                 For iplookup, it must be a column with an IP address or a URL.
                                 For opencage, it may be a free-form address OR a WGS 84 coordinate.
-                                For geoclient, it is the NYC location, BIN or BBL (see --endpoint).
+                                For geoclient, it is the NYC location, BIN, BBL, street name or
+                                street code (see --endpoint).
                                 Note that you can use column selector syntax to select the column, but only
                                 the first column will be used. See `select --help` for more information.
 
@@ -433,7 +446,7 @@ geocode arguments:
                                   For countryinfonow, it must be a ISO 3166-1 alpha-2 code.
                                   For iplookupnow, it must be an IP address or a URL.
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
-                                  For geoclientnow, it is a NYC location, BIN or BBL.
+                                  For geoclientnow, it is a NYC location, BIN, BBL, street name or street code.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
                                 For convenience, if this is set to a published population floor
@@ -526,8 +539,9 @@ geocode options:
                                 result and from %json output.
 
                                 GEOCLIENT only options:
-    --endpoint <name>           The Geoclient lookup: search (default), bin, bbl, address,
-                                addresspoint, intersection, place or blockface.
+    --endpoint <name>           The Geoclient lookup: search (default), bin, bbl, normalize,
+                                streetcode, address, addresspoint, intersection, place
+                                or blockface.
                                 See GEOCLIENT above.
     --params <list>             Comma-separated Geoclient parameters for the structured
                                 endpoints, each "name={Column}" or "name=value", e.g.
@@ -1210,7 +1224,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             geoclient::Endpoint::parse(args.flag_endpoint.as_deref().unwrap_or("search"))?;
         if args.cmd_geoclientnow && endpoint.is_structured() {
             return fail_incorrectusage_clierror!(
-                "geoclientnow supports the search, bin and bbl endpoints only."
+                "geoclientnow supports the search, bin, bbl, normalize and streetcode endpoints \
+                 only."
             );
         }
         // fail fast on a bad --params, before any input is read

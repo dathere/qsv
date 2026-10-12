@@ -1,62 +1,55 @@
 pub(crate) static USAGE: &str = r#"
-Geocodes a location in CSV data against an updatable local copy of the Geonames cities index
-and a local copy of the MaxMind GeoLite2 City database.
+Geocodes a location in CSV data using one of four geocoders:
+ * Geonames  - OFFLINE. Matches partial city names, WGS-84 coordinates and country codes
+               against a local, updatable index of Geonames cities, downloaded
+               automatically on first use. Multithreaded and cached.
+ * GeoIP2    - OFFLINE. Locates IP addresses and URLs using a local copy of the MaxMind
+               GeoLite2 City database, which you download manually.
+ * OpenCage  - ONLINE. Worldwide forward geocoding of free-form street addresses and
+               reverse geocoding of coordinates, using the OpenCage API. Requires an
+               OpenCage API key.
+ * Geoclient - ONLINE. Geocodes New York City addresses, BBLs, BINs, intersections and
+               places using NYC's Geoclient API, returning NYC-specific attributes such
+               as council districts and census tracts. Requires a free NYC API key.
 
-The Geonames cities index can be retrieved and updated using the `geocode index-*` subcommands.
+The major subcommands are:
+ * suggest      - (Geonames) given a partial city name, return the closest city.
+ * reverse      - (Geonames) given a WGS-84 coordinate, return the nearest city.
+ * countryinfo  - (Geonames) given an ISO 3166-1 alpha-2 country code, return the
+                  country's information.
+ * iplookup     - (GeoIP2) given an IP address or URL, return its city.
+ * opencage     - (OpenCage) forward or reverse geocode an address or coordinate.
+ * geoclient    - (Geoclient) geocode a New York City location.
+ * index-*      - manage the local Geonames cities index.
+                  (index-check, index-update, index-load & index-reset)
+ * cache-*      - manage the persistent on-disk OpenCage and Geoclient result caches.
+                  (cache-clear, cache-prune & cache-info)
 
-The GeoLite2 City database will need to be MANUALLY downloaded from MaxMind. Though it is
-free, you will need to create a MaxMind account to download the GeoIP2 Binary database (mmdb)
-from https://www.maxmind.com/en/accounts/current/geoip/downloads.
-Copy the GeoLite2-City.mmdb file to the ~/.qsv-cache/ directory or point to it using the
-QSV_GEOIP2_FILENAME environment variable.
+Each geocoding subcommand has a "now" variant - suggestnow, reversenow, countryinfonow,
+iplookupnow, opencagenow and geoclientnow - that geocodes a single location given on the
+command line instead of a CSV column.
 
-When you run the command for the first time, it will download a prebuilt Geonames cities
-index from the qsv GitHub repo and use it going forward. You can operate on the local
-index using the `geocode index-*` subcommands.
+### Geonames
+The suggest, reverse and countryinfo subcommands use a local Geonames cities index. Two
+prebuilt, English-only indexes, built from the Geonames Gazetteer cities files, are
+distributed on the qsv GitHub repo:
 
-By default, the prebuilt index uses the Geonames Gazeteer cities15000.zip file using
-English names. It contains cities with populations > 15,000 (about ~26k cities). 
+ * cities15000 - cities with populations > 15,000 (about ~26k cities). The default.
+ * cities1000  - cities with populations > 1,000 (about ~140k cities). Resolves small
+                 towns the default omits, at ~4x the index size.
+
+The first time you run one of these subcommands, qsv downloads the default cities15000
+index and uses it going forward. To switch to cities1000, run `qsv geocode index-load 1000`.
 See https://download.geonames.org/export/dump/ for more information.
+Use the index-* operations (see "index-* operations" below) to update the index, rebuild it
+with other languages or more cities, or load another one.
 
-It has fourteen major subcommands:
- * suggest        - given a partial City name, return the closest City's location metadata
-                    per the local Geonames cities index (Jaro-Winkler distance)
- * suggestnow     - same as suggest, but using a partial City name from the command line,
-                    instead of CSV data.
- * reverse        - given a WGS-84 location coordinate, return the closest City's location
-                    metadata per the local Geonames cities index.
-                    (Euclidean distance - shortest distance "as the crow flies")
- * reversenow     - sames as reverse, but using a coordinate from the command line,
-                    instead of CSV data.
- * countryinfo    - returns the country information for the ISO-3166 2-letter country code
-                    (e.g. US, CA, MX, etc.)
- * countryinfonow - same as countryinfo, but using a country code from the command line,
-                    instead of CSV data.
- * iplookup       - given an IP address or URL, return the closest City's location metadata
-                    per the local Maxmind GeoLite2 City database.
- * iplookupnow    - same as iplookup, but using an IP address or URL from the command line,
-                    instead of CSV data.
- * opencage       - ONLINE forward/reverse geocoding using the OpenCage API.
-                    Forward-geocodes a free-form address, or reverse-geocodes a
-                    "lat, long" coordinate. Requires an OpenCage API key.
- * opencagenow    - same as opencage, but using an address/coordinate from the
-                    command line, instead of CSV data.
- * geoclient      - ONLINE geocoding of New York City locations (addresses, BBLs, BINs,
-                    intersections, places...) using NYC's Geoclient API, returning
-                    NYC-specific attributes (BBL, BIN, districts, census tracts...).
- * geoclientnow   - same as geoclient, but using a location from the command line,
-                    instead of CSV data.
- * index-*        - operations to update the local Geonames cities index.
-                    (index-check, index-update, index-load & index-reset)
- * cache-*        - operations to manage the persistent on-disk OpenCage and Geoclient
-                    result caches. (cache-clear, cache-prune & cache-info)
-
-SUGGEST
+#### suggest
 Suggest a Geonames city based on a partial city name. It returns the closest Geonames
 city record based on the Jaro-Winkler distance between the partial city name and the
 Geonames city name.
 
-The geocoded information is formatted based on --formatstr, returning it in 
+The geocoded information is formatted based on --formatstr, returning it in
 '%location' format (i.e. "(lat, long)") if not specified.
 
 Use the --new-column option if you want to keep the location column, e.g.
@@ -78,7 +71,7 @@ If we use admin1 codes, we can omit --country as it will be inferred from the ad
 
   $ qsv geocode suggest city --admin1 "US.NY,US.CA" file.csv
 
-Geocode file.csv city column with --formatstr=%state and set the 
+Geocode file.csv city column with --formatstr=%state and set the
 geocoded value a new column named state.
 
   $ qsv geocode suggest city --formatstr %state --new-column state file.csv
@@ -91,15 +84,15 @@ Using French place names. You'll need to rebuild the index with the --languages 
 
   $ qsv geocode suggest city -f "{name}, {admin1}, {country} in {timezone}" -l fr file.csv
 
-SUGGESTNOW
+#### suggestnow
 Accepts the same options as suggest, but does not require an input file.
 Its default format is more verbose - "{name}, {admin1} {country}: {latitude}, {longitude}"
 
   $ qsv geocode suggestnow "New York"
   $ qsv geocode suggestnow --country US -f %cityrecord "Paris"
-  $ qsv geocode suggestnow --admin1 "US:OH" "Athens"
+  $ qsv geocode suggestnow --admin1 "US.OH" "Athens"
 
-REVERSE
+#### reverse
 Reverse geocode a WGS 84 coordinate to the nearest City. It returns the closest Geonames
 city record based on the Euclidean distance between the coordinate and the nearest city.
 It accepts "lat, long" or "(lat, long)" format.
@@ -120,14 +113,14 @@ The same as above, but get the timezone instead of the city and state.
 
   $ qsv geocode reverse LatLong -f %timezone -c tz file.csv -o file_with_tz.csv
 
-REVERSENOW
+#### reversenow
 Accepts the same options as reverse, but does not require an input file.
 
   $ qsv geocode reversenow "40.71427, -74.00597"
   $ qsv geocode reversenow --country US -f %cityrecord "40.71427, -74.00597"
   $ qsv geocode reversenow "(39.32924, -82.10126)"
 
-COUNTRYINFO
+#### countryinfo
 Returns the country information for the specified ISO-3166 2-letter country code.
 
   $ qsv geocode countryinfo country_col data.csv
@@ -135,7 +128,7 @@ Returns the country information for the specified ISO-3166 2-letter country code
   $ qsv geocode countryinfo -f "%continent" country_col data.csv
   $ qsv geocode countryinfo -f "{country_name} ({fips}) in {continent}" country_col data.csv
 
-COUNTRYINFONOW
+#### countryinfonow
 Accepts the same options as countryinfo, but does not require an input file.
 
   $ qsv geocode countryinfonow US
@@ -143,15 +136,60 @@ Accepts the same options as countryinfo, but does not require an input file.
   $ qsv geocode countryinfonow -f "%continent" US
   $ qsv geocode countryinfonow -f "{country_name} ({fips}) in {continent}" US
 
-IPLOOKUP
-Given an IP address or URL, return the closest City's location metadata per the
-local Geonames cities index.
+#### index-* operations
+Manage the local Geonames cities index used by the Geonames and GeoIP2 subcommands.
+
+It has four operations:
+ * check  - checks if the local Geonames index is up-to-date compared to the Geonames website.
+            returns the index file's metadata JSON to stdout.
+ * update - updates the local Geonames index with the latest changes from the Geonames website.
+            use this command judiciously as it downloads about ~200mb of data from Geonames
+            and rebuilds the index from scratch using the --languages option.
+            If you don't need a language other than English, use the index-load subcommand instead
+            as it's faster and will not download any data from Geonames.
+ * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
+            index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
+ * load   - load a Geonames cities index from a file, making it the default index going forward.
+            If set to a published population floor (15000 or 1000), it will download that
+            prebuilt English-only Geonames index rkyv file from the qsv GitHub repo for the
+            current qsv version. cities1000 (~140k cities) resolves small towns the default
+            cities15000 (~26k) omits, at ~4x the index size.
+
+Update the Geonames cities index with the latest changes.
+
+  $ qsv geocode index-update
+
+Rebuild the index using the latest Geonames data w/ English, French, German & Spanish place names
+
+  $ qsv geocode index-update --languages en,fr,de,es
+
+Load an alternative Geonames cities index from a file, making it the default index going forward.
+
+  $ qsv geocode index-load my_geonames_index.rkyv
+
+### GeoIP2
+The iplookup subcommand locates an IP address - or the IP address a URL's host resolves
+to - using a local copy of the MaxMind GeoLite2 City database, then returns that city's
+record from the local Geonames cities index. It therefore supports the same --formatstr
+formats as the Geonames subcommands. If the IP address cannot be located, or its city is
+not in the Geonames index (e.g. a small town not in the default cities15000 index), the
+IP address itself is returned.
+
+The GeoLite2 City database will need to be MANUALLY downloaded from MaxMind. Though it is
+free, you will need to create a MaxMind account to download the GeoIP2 Binary database (mmdb)
+from https://www.maxmind.com/en/accounts/current/geoip/downloads.
+Copy the GeoLite2-City.mmdb file to the ~/.qsv-cache/ directory or point to it using the
+QSV_GEOIP2_FILENAME environment variable.
+
+#### iplookup
+Given an IP address or URL, return its city's location metadata. The default format is
+'%cityrecord'.
 
   $ qsv geocode iplookup IP_col data.csv
   $ qsv geocode iplookup --formatstr "%json" IP_col data.csv
   $ qsv geocode iplookup -f "%cityrecord" IP_col data.csv
 
-IPLOOKUPNOW
+#### iplookupnow
 Accepts the same options as iplookup, but does not require an input file.
 
   $ qsv geocode iplookupnow 140.174.222.253
@@ -159,7 +197,7 @@ Accepts the same options as iplookup, but does not require an input file.
   $ qsv geocode iplookupnow --formatstr "%json" 140.174.222.253
   $ qsv geocode iplookupnow -f "%cityrecord" 140.174.222.253
 
-OPENCAGE
+### OpenCage
 Online forward or reverse geocoding using the OpenCage Geocoding API
 (https://opencagedata.com). Unlike the suggest/reverse subcommands which use the
 local Geonames index, opencage geocodes real street addresses online.
@@ -168,14 +206,15 @@ Requires an OpenCage API key. Set it with --api-key or the QSV_OPENCAGE_API_KEY
 environment variable (the --api-key flag takes precedence). Get a free key at
 https://opencagedata.com/users/sign_up.
 
-The <column> may contain either a free-form address (forward geocoding) or a
-"lat, long" / "(lat, long)" WGS-84 coordinate (reverse geocoding). The mode is
-auto-detected per row; pass --reverse to force reverse geocoding.
-
 OpenCage's Terms of Service explicitly allow caching, so results are cached in a
 persistent on-disk cache (see --cache-ttl & --no-cache). Re-runs and duplicate
 queries do NOT re-hit the API. The free tier allows 2,500 requests/day at 1
 request/second; rows are processed sequentially and rate-limited (see --rate-limit).
+
+#### opencage
+The <column> may contain either a free-form address (forward geocoding) or a
+"lat, long" / "(lat, long)" WGS-84 coordinate (reverse geocoding). The mode is
+auto-detected per row; pass --reverse to force reverse geocoding.
 
 The --country option, if set, restricts results to the given ISO 3166-1 alpha-2
 country code(s). The --timeout, --language, --invalid-result, --new-column, --rename
@@ -211,14 +250,14 @@ Like the other subcommands, "%dyncols:" cannot be combined with --new-column.
   $ qsv geocode opencage address -f '{components.city}, {components.country}' file.csv
   $ qsv geocode opencage address -f '%dyncols: {city:components.city}, {pc:components.postcode}' file.csv
 
-OPENCAGENOW
+#### opencagenow
 Accepts the same options as opencage, but does not require an input file.
 
   $ qsv geocode opencagenow --api-key YOURKEY "Brooklyn, NY"
   $ qsv geocode opencagenow "40.71427, -74.00597"
   $ qsv geocode opencagenow -f '%pretty-json' "Eiffel Tower, Paris"
 
-GEOCLIENT
+### Geoclient
 Online geocoding of New York City locations using NYC's Geoclient v2 API
 (https://api-portal.nyc.gov), a REST wrapper around the NYC Department of City
 Planning's Geosupport system. Besides coordinates, it returns NYC-specific attributes
@@ -240,6 +279,7 @@ requests in a row still fail, the run is aborted, as the quota is likely exhaust
 Results are cached in a persistent on-disk cache (see --cache-ttl & --no-cache), and
 duplicate locations are only looked up once.
 
+#### geoclient
 The --endpoint option selects the kind of lookup:
   * search       - (default) a free-form NYC location in <column>, e.g.
                    "314 W 100 St Manhattan", "Empire State Building" or a BBL/BIN.
@@ -327,7 +367,7 @@ The "%dyncols:" format is also supported, e.g.
   $ qsv geocode geoclient bbl --endpoint bbl -f '%dyncols: {lat:latitude}, {lng:longitude}' pluto.csv
   $ qsv geocode geoclient Street --endpoint address -c latlong --params "houseNumber={HouseNo},street={Street},borough={Borough}" file.csv
 
-GEOCLIENTNOW
+#### geoclientnow
 Accepts the same options as geoclient (search, bin, bbl, normalize and streetcode
 endpoints only), but does not require an input file.
 
@@ -335,38 +375,9 @@ endpoints only), but does not require an input file.
   $ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
   $ qsv geocode geoclientnow --endpoint normalize "w 100 st"
 
-INDEX-<operation>
-Manage the local Geonames cities index used by the geocode command.
+### OpenCage & Geoclient result caches
 
-It has four operations:
- * check  - checks if the local Geonames index is up-to-date compared to the Geonames website.
-            returns the index file's metadata JSON to stdout.
- * update - updates the local Geonames index with the latest changes from the Geonames website.
-            use this command judiciously as it downloads about ~200mb of data from Geonames
-            and rebuilds the index from scratch using the --languages option.
-            If you don't need a language other than English, use the index-load subcommand instead
-            as it's faster and will not download any data from Geonames.
- * reset  - resets the local Geonames index to the default prebuilt, English-only Geonames cities
-            index (cities15000) - downloading it from the qsv GitHub repo for the current qsv version.
- * load   - load a Geonames cities index from a file, making it the default index going forward.
-            If set to a published population floor (15000 or 1000), it will download that
-            prebuilt English-only Geonames index rkyv file from the qsv GitHub repo for the
-            current qsv version. cities1000 (~140k cities) resolves small towns the default
-            cities15000 (~26k) omits, at ~4x the index size.
-
-Update the Geonames cities index with the latest changes.
-
-  $ qsv geocode index-update
-
-Rebuild the index using the latest Geonames data w/ English, French, German & Spanish place names
-
-  $ qsv geocode index-update --languages en,fr,de,es
-
-Load an alternative Geonames cities index from a file, making it the default index going forward.
-
-  $ qsv geocode index-load my_geonames_index.rkyv
-
-CACHE-<operation>
+#### cache-* operations
 Manage the persistent on-disk result caches used by the opencage and geoclient
 subcommands. They are separate from the Geonames cities index, and live in
 {cache-dir}/geocode-opencage_v1 and {cache-dir}/geocode-geoclient_v1.

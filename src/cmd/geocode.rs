@@ -298,6 +298,16 @@ The --formatstr option supports these Geoclient-specific formats:
   * '%location'           - (<latitude>, <longitude>)
   * '%bbl'                - the BBL
   * '%bin'                - the BIN (buildingIdentificationNumber)
+  * '%normalized-address' - the address on one line, single-spaced, e.g.
+                            "314 WEST 100 STREET, NEW YORK, NY 10025". Empty unless
+                            the result has a house number (address and search results).
+  * '%nyc-districts'      - 11 columns, as with "%dyncols:": borough,
+                            community_district, council_district, assembly_district,
+                            state_senate_district, congressional_district,
+                            police_precinct, school_district, nta2020,
+                            census_tract2020 and zip_code. Filled for address,
+                            intersection, place and search results; bbl, bin and
+                            addresspoint results only have the borough.
   * '%json'               - the full Geoclient result as JSON
   * '%pretty-json'        - the full Geoclient result as pretty JSON
 Dynamic formatting is also supported, using any Geoclient result field, e.g.
@@ -1141,6 +1151,14 @@ enum GeocodeSubCmd {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // Geoclient's named column bundles expand to '%dyncols:' first, so every '%dyncols:' check
+    // below (e.g. no --new-column) applies to them too
+    if (args.cmd_geoclient || args.cmd_geoclientnow)
+        && let Some(spec) = geoclient::preset_dyncols(&args.flag_formatstr)
+    {
+        args.flag_formatstr = spec.to_string();
+    }
 
     if args.flag_new_column.is_some() && args.flag_rename.is_some() {
         return fail_incorrectusage_clierror!(

@@ -52,6 +52,22 @@ pub(super) const GEOCLIENT_CACHE_NAME: &str = "geocode-geoclient";
 /// v2: rejects are cached with their reason, and ambiguous searches are no longer matches.
 const CACHE_KEY_VERSION: &str = "v2";
 
+/// `%nyc-districts`: the districts a location falls in, as `%dyncols:` columns. Field names
+/// verified against live `/address`, `/intersection`, `/place` and `/search` results (2026-10-12);
+/// `/bbl`, `/bin` and `/addresspoint` return none of them except the borough.
+const NYC_DISTRICTS_DYNCOLS: &str =
+    "%dyncols: {borough:firstBoroughName}, {community_district:communityDistrict}, \
+     {council_district:cityCouncilDistrict}, {assembly_district:assemblyDistrict}, \
+     {state_senate_district:stateSenatorialDistrict}, \
+     {congressional_district:congressionalDistrict}, {police_precinct:policePrecinct}, \
+     {school_district:communitySchoolDistrict}, {nta2020:nta2020}, \
+     {census_tract2020:censusTract2020}, {zip_code:zipCode}";
+
+/// The `%dyncols:` spec a named Geoclient column bundle stands for, if `formatstr` is one.
+pub(super) fn preset_dyncols(formatstr: &str) -> Option<&'static str> {
+    (formatstr == "%nyc-districts").then_some(NYC_DISTRICTS_DYNCOLS)
+}
+
 /// Default requests/second: under the public gateway's 2,500/minute cap (41.6/s).
 pub(super) const DEFAULT_GEOCLIENT_RATE_LIMIT: u32 = 40;
 
@@ -785,6 +801,7 @@ fn format_geoclient_result(obj: &Value, formatstr: &str) -> String {
                 .unwrap_or_default(),
             "%bbl" => field("bbl"),
             "%bin" => field("buildingIdentificationNumber"),
+            "%normalized-address" => normalized_address(&field),
             "%json" => serde_json::to_string(obj).unwrap_or_else(|_| "null".to_string()),
             "%pretty-json" => {
                 serde_json::to_string_pretty(obj).unwrap_or_else(|_| "null".to_string())
@@ -799,6 +816,31 @@ fn format_geoclient_result(obj: &Value, formatstr: &str) -> String {
             .replace_all(formatstr, |caps: &regex::Captures| field(&caps[1]))
             .into_owned()
     }
+}
+
+/// A single-line mailing-style address ("314 WEST 100 STREET, NEW YORK, NY 10025") from
+/// Geosupport's normalized fields, single-spaced. Empty unless the result has both a house number
+/// and a street: a `/place` result's `boePreferredStreetName` is the place's name, and `/bbl`,
+/// `/bin` and intersections have no house number.
+fn normalized_address(field: &dyn Fn(&str) -> String) -> String {
+    let house = field("houseNumber");
+    let street = squish(&field("boePreferredStreetName"));
+    if house.is_empty() || street.is_empty() {
+        return String::new();
+    }
+    let mut address = format!("{house} {street}");
+    let city = field("uspsPreferredCityName");
+    if !city.is_empty() {
+        address.push_str(", ");
+        address.push_str(&city);
+    }
+    address.push_str(", NY");
+    let zip = field("zipCode");
+    if !zip.is_empty() {
+        address.push(' ');
+        address.push_str(&zip);
+    }
+    address
 }
 
 /// What a row resolved to.
@@ -1491,6 +1533,31 @@ mod tests {
             .filter(|(n, _)| n == "returnRejections")
             .collect();
         assert_eq!(rr, [&("returnRejections".to_string(), "false".to_string())]);
+    }
+
+    #[test]
+    fn normalized_address_format() {
+        let full = json!({"houseNumber": "314", "boePreferredStreetName": "WEST  100 STREET",
+            "uspsPreferredCityName": "NEW YORK", "zipCode": "10025"});
+        assert_eq!(
+            format_geoclient_result(&full, "%normalized-address"),
+            "314 WEST 100 STREET, NEW YORK, NY 10025"
+        );
+        // no city/zip: still a usable line
+        let bare = json!({"houseNumber": "41-20", "boePreferredStreetName": "MAIN STREET"});
+        assert_eq!(
+            format_geoclient_result(&bare, "%normalized-address"),
+            "41-20 MAIN STREET, NY"
+        );
+        // a /place result: the "street" is the place's name, and there is no house number
+        let place = json!({"boePreferredStreetName": "EMPIRE STATE BUILDING",
+            "uspsPreferredCityName": "NEW YORK", "zipCode": "10118"});
+        assert_eq!(format_geoclient_result(&place, "%normalized-address"), "");
+        assert_eq!(
+            preset_dyncols("%nyc-districts"),
+            Some(NYC_DISTRICTS_DYNCOLS)
+        );
+        assert_eq!(preset_dyncols("%dyncols: {a:b}"), None);
     }
 
     #[test]

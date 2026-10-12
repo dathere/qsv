@@ -3011,6 +3011,16 @@ mod geoclient_mock {
                     )
                 };
                 map.insert("echo".into(), json!(echo));
+                if endpoint == "address" {
+                    // Geosupport pads numbers in street names (sort format)
+                    map.insert("houseNumber".into(), json!(q("houseNumber")));
+                    map.insert(
+                        "boePreferredStreetName".into(),
+                        json!(q("street").to_uppercase().replace(' ', "  ")),
+                    );
+                    map.insert("uspsPreferredCityName".into(), json!("NEW YORK"));
+                    map.insert("zipCode".into(), json!("10025"));
+                }
             },
         }
         if endpoint == "search" && nomatch {
@@ -3570,6 +3580,93 @@ fn geocode_geoclient_normalize_and_streetcode() {
         .arg("--no-cache");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut now);
     assert_eq!(got, vec![svec!["Location"], svec!["W 100 ST"]]);
+}
+
+#[test]
+#[serial]
+fn geocode_geoclient_presets() {
+    let mock = GeoclientMock::start();
+    let wrk = Workdir::new("geocode_geoclient_presets");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["HouseNo", "Street", "Boro"],
+            svec!["314", "West 100 Street", "Manhattan"],
+        ],
+    );
+
+    // %normalized-address: one single-spaced line from the normalized fields
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["--endpoint", "address"])
+        .args([
+            "--params",
+            "houseNumber={HouseNo},street={Street},borough={Boro}",
+        ])
+        .args(["-c", "address"])
+        .args(["-f", "%normalized-address"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["HouseNo", "Street", "Boro", "address"],
+            svec![
+                "314",
+                "West 100 Street",
+                "Manhattan",
+                "314 WEST 100 STREET, NEW YORK, NY 10025"
+            ],
+        ]
+    );
+
+    // %nyc-districts: a fixed set of %dyncols columns (fields a result lacks render empty)
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["-f", "%nyc-districts"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got[0],
+        svec![
+            "HouseNo",
+            "Street",
+            "Boro",
+            "borough",
+            "community_district",
+            "council_district",
+            "assembly_district",
+            "state_senate_district",
+            "congressional_district",
+            "police_precinct",
+            "school_district",
+            "nta2020",
+            "census_tract2020",
+            "zip_code"
+        ]
+    );
+    assert_eq!(got[1][5], "07"); // council_district
+    assert_eq!(got[1][12], "187"); // census_tract2020, trimmed
+    assert_eq!(got[1].len(), got[0].len());
+
+    // it IS a %dyncols format, so the %dyncols restrictions apply
+    let mut cmd = geoclient_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("geoclient")
+        .arg("Street")
+        .arg("data.csv")
+        .args(["-f", "%nyc-districts"])
+        .args(["--new-column", "x"]);
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Cannot use --new-column"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

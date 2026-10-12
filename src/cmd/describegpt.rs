@@ -569,7 +569,8 @@ Common options:
     -h, --help             Display this message
     --format <format>      Output format: Markdown, TSV, JSON, TOON, JSONSchema, SemanticMd, or OKF.
                            TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
-                           See https://toonformat.dev/ for more info.
+                           Output conforms to the latest TOON v4 spec.
+                           See https://toonformat.dev/ & https://toonformat.dev/guide/whats-new-in-v4.html
                            JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12)
                            document, enriched with LLM-inferred Label, Description and Content Type
                            (the latter only when the infer-content-type flag is set). qsv- and LLM-

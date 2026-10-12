@@ -484,7 +484,7 @@ url = "2.5"
 webdriver-downloader = { version = "0.17", optional = true }
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = "8"
+zip = "9"
 zmij = "1.0"
 zstd = { version = "0.14", optional = true }
 

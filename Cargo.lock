@@ -1322,7 +1322,7 @@ dependencies = [
  "log",
  "quick-xml",
  "serde",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -2043,7 +2043,7 @@ dependencies = [
  "threadpool",
  "typed-builder",
  "walkdir",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -3250,7 +3250,7 @@ dependencies = [
  "rkyv",
  "serde",
  "tokio",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -4779,6 +4779,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lzma-rust2"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fde178a3caf126c440fa15628147772d8ee590a39477d711353fbe2e58a73a5b"
+dependencies = [
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "mac_address"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6057,7 +6066,7 @@ dependencies = [
  "tokio",
  "urlencoding",
  "webdriver-downloader",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -7175,7 +7184,7 @@ dependencies = [
  "whatlang",
  "xxhash-rust",
  "yaml_serde",
- "zip",
+ "zip 9.0.0",
  "zmij",
  "zstd 0.14.2",
 ]
@@ -8092,7 +8101,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34f2d2cda7223168a14fb86bc7411dbc3379bd7d49749ecc53b91ed98585b6b0"
 dependencies = [
  "tempfile",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -8369,7 +8378,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "urlencoding",
- "zip",
+ "zip 8.6.0",
  "zipsign-api",
 ]
 
@@ -8855,7 +8864,7 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "string_cache",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -10346,7 +10355,7 @@ dependencies = [
  "tokio",
  "tracing",
  "which",
- "zip",
+ "zip 8.6.0",
 ]
 
 [[package]]
@@ -11082,6 +11091,33 @@ dependencies = [
  "hmac",
  "indexmap 2.14.2",
  "lzma-rust2 0.16.5",
+ "memchr",
+ "pbkdf2",
+ "ppmd-rust",
+ "sha1",
+ "time",
+ "typed-path",
+ "zeroize",
+ "zopfli",
+ "zstd 0.13.3",
+]
+
+[[package]]
+name = "zip"
+version = "9.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "711e8c9646791c49b7eb799a19c4ae70a9b8372ddc6a1fa4778defd1e2aa5d5e"
+dependencies = [
+ "aes",
+ "bzip2",
+ "constant_time_eq",
+ "crc32fast",
+ "deflate64",
+ "flate2",
+ "getrandom 0.4.3",
+ "hmac",
+ "indexmap 2.14.2",
+ "lzma-rust2 0.21.0",
  "memchr",
  "pbkdf2",
  "ppmd-rust",

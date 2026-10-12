@@ -322,7 +322,8 @@ built on open data, chiefly OpenStreetMap, so its results come with far fewer st
 which is what makes qsv's persistent result cache permissible.
 * results can be displayed on any map.
 * results may be used commercially, behind a firewall or publicly.
-* pricing is a flat monthly or annual fee, with a free tier of 2,500 requests/day.
+* pricing is a flat monthly or annual fee. A free trial (2,500 requests/day) lets you
+test it, but is not for production use, which needs a paid plan.
 * bad results can be fixed at the source by correcting OpenStreetMap.
 
 See <https://opencagedata.com/why-use-open-data>.
@@ -333,7 +334,7 @@ environment variable (the --api-key flag takes precedence). Get a free key at
 
 OpenCage's Terms of Service explicitly allow caching, so results are cached in a
 persistent on-disk cache (see --cache-ttl & --no-cache). Re-runs and duplicate
-queries do NOT re-hit the API. The free tier allows 2,500 requests/day at 1
+queries do NOT re-hit the API. The free trial allows 2,500 requests/day at 1
 request/second; rows are processed sequentially and rate-limited (see --rate-limit).
 
 #### opencage
@@ -686,7 +687,7 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑api‑key`&nbsp; | string | The API key for the opencage and geoclient subcommands. If set, it takes precedence over the QSV_OPENCAGE_API_KEY (opencage) or QSV_GEOCLIENT_API_KEY (geoclient) environment variable. Get a free OpenCage key at <https://opencagedata.com/users/sign_up>, or a Geoclient subscription key at <https://api-portal.nyc.gov>. |  |
-| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of API requests per second. Defaults to 1 for opencage (its free tier allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day). |  |
+| &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of API requests per second. Defaults to 1 for opencage (its free trial allows 1 request/second, 2,500/day) and 40 for geoclient (the public API allows 100/second per IP but only 2,500/minute, so 41.6/second sustained, and 500,000/day). |  |
 | &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely. | `1209600` |
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the persistent on-disk result cache. Duplicate queries within a run are still de-duplicated (for geoclient, within each --batch). |  |
 

@@ -208,7 +208,8 @@ built on open data, chiefly OpenStreetMap, so its results come with far fewer st
    which is what makes qsv's persistent result cache permissible.
  * results can be displayed on any map.
  * results may be used commercially, behind a firewall or publicly.
- * pricing is a flat monthly or annual fee, with a free tier of 2,500 requests/day.
+ * pricing is a flat monthly or annual fee. A free trial (2,500 requests/day) lets you
+   test it, but is not for production use, which needs a paid plan.
  * bad results can be fixed at the source by correcting OpenStreetMap.
 
 See https://opencagedata.com/why-use-open-data.
@@ -219,7 +220,7 @@ https://opencagedata.com/users/sign_up.
 
 OpenCage's Terms of Service explicitly allow caching, so results are cached in a
 persistent on-disk cache (see --cache-ttl & --no-cache). Re-runs and duplicate
-queries do NOT re-hit the API. The free tier allows 2,500 requests/day at 1
+queries do NOT re-hit the API. The free trial allows 2,500 requests/day at 1
 request/second; rows are processed sequentially and rate-limited (see --rate-limit).
 
 #### opencage
@@ -554,7 +555,7 @@ geocode options:
                                 https://opencagedata.com/users/sign_up, or a Geoclient
                                 subscription key at https://api-portal.nyc.gov.
     --rate-limit <qps>          Maximum number of API requests per second.
-                                Defaults to 1 for opencage (its free tier allows 1
+                                Defaults to 1 for opencage (its free trial allows 1
                                 request/second, 2,500/day) and 40 for geoclient (the
                                 public API allows 100/second per IP but only 2,500/minute,
                                 so 41.6/second sustained, and 500,000/day).

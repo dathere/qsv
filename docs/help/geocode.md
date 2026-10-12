@@ -316,6 +316,17 @@ Online forward or reverse geocoding using the OpenCage Geocoding API
 (<https://opencagedata.com>). Unlike the suggest/reverse subcommands which use the
 local Geonames index, opencage geocodes real street addresses online.
 
+Compared with more popular commercial geocoders such as Google Maps, OpenCage is
+built on open data, chiefly OpenStreetMap, so its results come with far fewer strings:  
+* you may store results as long as you like - even after you stop being a customer -
+which is what makes qsv's persistent result cache permissible.
+* results can be displayed on any map.
+* results may be used commercially, behind a firewall or publicly.
+* pricing is a flat monthly or annual fee, with a free tier of 2,500 requests/day.
+* bad results can be fixed at the source by correcting OpenStreetMap.
+
+See <https://opencagedata.com/why-use-open-data>.
+
 Requires an OpenCage API key. Set it with --api-key or the QSV_OPENCAGE_API_KEY
 environment variable (the --api-key flag takes precedence). Get a free key at
 <https://opencagedata.com/users/sign_up>.

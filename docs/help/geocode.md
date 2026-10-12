@@ -276,7 +276,7 @@ QSV_GEOIP2_FILENAME environment variable.
 
 #### iplookup
 Given an IP address or URL, return its city's location metadata. The default format is
-'%cityrecord'.
+'%city-admin1-country' (e.g. "San Francisco, California US").
 
 ```console
 $ qsv geocode iplookup IP_col data.csv

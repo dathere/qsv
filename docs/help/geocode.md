@@ -438,6 +438,16 @@ streetcode, which return no coordinates: the street name
 * '%location'           - (<latitude>, <longitude>)
 * '%bbl'                - the BBL
 * '%bin'                - the BIN (buildingIdentificationNumber)
+* '%normalized-address' - the address on one line, single-spaced, e.g.
+"314 WEST 100 STREET, NEW YORK, NY 10025". Empty unless
+the result has a house number (address and search results).
+* '%nyc-districts'      - 11 columns, as with "%dyncols:": borough,
+community_district, council_district, assembly_district,
+state_senate_district, congressional_district,
+police_precinct, school_district, nta2020,
+census_tract2020 and zip_code. Filled for address,
+intersection, place and search results; bbl, bin and
+addresspoint results only have the borough.
 * '%json'               - the full Geoclient result as JSON
 * '%pretty-json'        - the full Geoclient result as pretty JSON
 Dynamic formatting is also supported, using any Geoclient result field, e.g.

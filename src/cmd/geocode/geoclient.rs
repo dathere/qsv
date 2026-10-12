@@ -515,12 +515,27 @@ fn extract_search(body: &Value) -> Extracted {
             if let [only] = exact.as_slice() {
                 **only
             } else {
-                let places: Vec<&str> = many
+                // a 1B result can succeed on one sub-function only: 1E (the street segment's
+                // address range) or 1A (the property). Flag those, so a reader can tell a
+                // borough where only the street matched from one where the building did.
+                let places: Vec<String> = many
                     .iter()
                     .map(|(_, resp)| {
-                        resp.get("firstBoroughName")
+                        let boro = resp
+                            .get("firstBoroughName")
                             .and_then(Value::as_str)
-                            .map_or("?", str::trim)
+                            .map_or("?", str::trim);
+                        let (rc1, rc2) = (
+                            rc_ok(resp, "geosupportReturnCode"),
+                            rc_ok(resp, "geosupportReturnCode2"),
+                        );
+                        if resp.get("geosupportReturnCode2").is_none() || rc1 == rc2 {
+                            boro.to_string()
+                        } else if rc1 {
+                            format!("{boro} [street only]")
+                        } else {
+                            format!("{boro} [property only]")
+                        }
                     })
                     .collect();
                 return Extracted::Reject(json!({
@@ -1324,10 +1339,25 @@ mod tests {
         };
         assert_eq!(
             rej["message"],
-            json!("AMBIGUOUS: 4 MATCHES (MANHATTAN, BROOKLYN, QUEENS, STATEN IS)")
+            json!(
+                "AMBIGUOUS: 4 MATCHES (MANHATTAN, BROOKLYN, QUEENS [street only], STATEN IS \
+                 [street only])"
+            )
         );
         assert_eq!(rej["_ambiguous"], json!(true));
         assert_eq!(rej["_resultCount"], json!(4));
+        // ...and the reverse, a property-only (1A) success
+        let body = json!({"status": "OK", "results": [
+            search_result("MANHATTAN", "00", "00", "POSSIBLE_MATCH"),
+            search_result("BROOKLYN", "EE", "00", "POSSIBLE_MATCH"),
+        ]});
+        let Extracted::Reject(rej) = extract_result(Endpoint::Search, &body) else {
+            panic!("two successes are ambiguous");
+        };
+        assert_eq!(
+            rej["message"],
+            json!("AMBIGUOUS: 2 MATCHES (MANHATTAN, BROOKLYN [property only])")
+        );
 
         // a borough-less input found in ONE borough is a clean match, POSSIBLE_MATCH or not
         let body = json!({"status": "OK", "results": [

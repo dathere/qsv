@@ -413,7 +413,8 @@ many rows were ambiguous.
 Why a location did not geocode is available through %dyncols keys starting with
 "_reject." - filled only on those rows, e.g. {why:_reject.message} gives Geosupport's
 reason (e.g. "ADDRESS NUMBER OUT OF RANGE") or, for an ambiguous search, the boroughs
-matched. Other useful keys are _reject.reasonCode, _reject.message2 (the second
+matched - marked "[street only]" where only the street's address range matched, not a
+property. Other useful keys are _reject.reasonCode, _reject.message2 (the second
 message of address and place lookups) and _reject._resultCount. With geoclientnow,
 the JSON formats print the reject under "_reject". So that rejected searches carry
 their reason, search sends returnRejections=true unless it is set in --params.

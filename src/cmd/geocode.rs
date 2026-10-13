@@ -1,5 +1,5 @@
 pub(crate) static USAGE: &str = r#"
-Geocodes a location in CSV data using one of four geocoders:
+Geocodes a location in CSV data using one of five geocoders:
  * Geonames  - OFFLINE. Matches partial city names, WGS-84 coordinates and country codes
                against a local, updatable index of Geonames cities, downloaded
                automatically on first use. Multithreaded and cached.
@@ -11,6 +11,9 @@ Geocodes a location in CSV data using one of four geocoders:
  * Geoclient - ONLINE. Geocodes New York City addresses, BBLs, BINs, intersections and
                places using NYC's Geoclient API, returning NYC-specific attributes such
                as council districts and census tracts. Requires a free NYC API key.
+ * Census    - ONLINE. Geocodes US addresses and coordinates using the free, keyless US
+               Census Geocoder, returning Census geographies (state, county, tract,
+               block group and block GEOIDs, and more) for Census data enrichment.
 
 The major subcommands are:
  * suggest      - (Geonames) given a partial city name, return the closest city.
@@ -20,14 +23,15 @@ The major subcommands are:
  * iplookup     - (GeoIP2) given an IP address or URL, return its city.
  * opencage     - (OpenCage) forward or reverse geocode an address or coordinate.
  * geoclient    - (Geoclient) geocode a New York City location.
+ * census       - (Census) geocode a US address or coordinate.
  * index-*      - manage the local Geonames cities index.
                   (index-check, index-update, index-load & index-reset)
  * cache-*      - manage the persistent on-disk OpenCage and Geoclient result caches.
                   (cache-clear, cache-prune & cache-info)
 
 Each geocoding subcommand has a "now" variant - suggestnow, reversenow, countryinfonow,
-iplookupnow, opencagenow and geoclientnow - that geocodes a single location given on the
-command line instead of a CSV column.
+iplookupnow, opencagenow, geoclientnow and censusnow - that geocodes a single location
+given on the command line instead of a CSV column.
 
 ### Geonames
 The suggest, reverse and countryinfo subcommands use a local Geonames cities index. Two
@@ -450,6 +454,8 @@ qsv geocode opencage [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode opencagenow [options] <location>
 qsv geocode geoclient [--formatstr=<string>] [options] <column> [<input>]
 qsv geocode geoclientnow [options] <location>
+qsv geocode census [--formatstr=<string>] [options] <column> [<input>]
+qsv geocode censusnow [options] <location>
 qsv geocode index-load [--timeout=<seconds>] <index-file>
 qsv geocode index-check
 qsv geocode index-update [--languages=<lang>] [--cities-url=<url>] [--force] [--timeout=<seconds>]
@@ -472,6 +478,8 @@ geocode arguments:
                                 For opencage, it may be a free-form address OR a WGS 84 coordinate.
                                 For geoclient, it is the NYC location, BIN, BBL, street name or
                                 street code (see --endpoint).
+                                For census, it is a one-line US address or, with --reverse, a
+                                WGS 84 coordinate (with --params, the column the result goes in).
                                 Note that you can use column selector syntax to select the column, but only
                                 the first column will be used. See `select --help` for more information.
 
@@ -483,6 +491,8 @@ geocode arguments:
                                   For iplookupnow, it must be an IP address or a URL.
                                   For opencagenow, it must be an address OR a WGS 84 coordinate.
                                   For geoclientnow, it is a NYC location, BIN, BBL, street name or street code.
+                                  For censusnow, it is a one-line US address or, with --reverse,
+                                  a WGS 84 coordinate.
 
     <index-file>                The alternate geonames index file to use. It must be a .rkyv file.
                                 For convenience, if this is set to a published population floor
@@ -556,9 +566,10 @@ geocode options:
                                 subscription key at https://api-portal.nyc.gov.
     --rate-limit <qps>          Maximum number of API requests per second.
                                 Defaults to 1 for opencage (its free trial allows 1
-                                request/second, 2,500/day) and 40 for geoclient (the
+                                request/second, 2,500/day), 40 for geoclient (the
                                 public API allows 100/second per IP but only 2,500/minute,
-                                so 41.6/second sustained, and 500,000/day).
+                                so 41.6/second sustained, and 500,000/day) and 5 for census
+                                (single-record lookups; batch uploads are paced separately).
     --cache-ttl <seconds>       Time-to-live for the persistent on-disk result cache.
                                 A value of 0 disables time-based expiration (entries are
                                 cached indefinitely). Use --no-cache to disable caching entirely.
@@ -571,6 +582,8 @@ geocode options:
     --reverse                  Force reverse geocoding for opencage/opencagenow (treat the
                                 query as a "lat, long" WGS-84 coordinate). If not set, forward
                                 and reverse mode is auto-detected per row.
+                                For census/censusnow, <column> holds "lat, long" coordinates
+                                and the Census geographies at that point are returned.
     --no-annotations            Omit OpenCage annotations (timezone, currency, etc.) from the
                                 result and from %json output.
 
@@ -584,6 +597,25 @@ geocode options:
                                 "houseNumber={HouseNo},street={Street},borough={Boro}".
                                 For search, only fixed options are allowed, e.g.
                                 "exactMatchMaxLevel=5".
+                                Also used by census to read an address from several
+                                columns: see CENSUS only options.
+
+                                CENSUS only options:
+    --benchmark <name>          The Census Geocoder benchmark (address ranges release).
+                                Default: Public_AR_Current.
+    --vintage <name>            The Census Geocoder vintage (geography release), e.g.
+                                Current_Current, Census2020_Current or ACS2026_Current.
+                                Default: Current_Current.
+    --census-mode <mode>        Whether to use the Census batch endpoints:
+                                  auto   - (default) batch when the output only needs batch
+                                           fields and at least 50 rows of a --batch still
+                                           need a lookup.
+                                  batch  - always batch. An output that needs more than
+                                           the batch fields (e.g. %json) is an error.
+                                  single - one request per location.
+                                The address parts for census --params are street, city,
+                                state and zip, e.g. "street={Street},city={City},state=NY".
+                                A street needs a zip, or a city and state.
 
     -f, --formatstr=<string>    The place format to use. It has three options:
                                 1. Use one of the predefined formats.
@@ -677,7 +709,8 @@ geocode options:
                                 If not set, the original value is used.
     -j, --jobs <arg>            The number of jobs to run in parallel.
                                 When not set, the number of jobs is set to the number of CPUs detected.
-                                For geoclient, it is the number of requests in flight at once.
+                                For geoclient and census, it is the number of requests in
+                                flight at once.
     -b, --batch <size>          The number of rows per batch to load into memory, before running in parallel.
                                 Set to 0 to load all rows in one batch.
                                 [default: 50000]
@@ -686,7 +719,8 @@ geocode options:
                                 when rebuilding the index with index-update, and to the
                                 prebuilt index downloaded by index-load and index-reset -
                                 raise it on slow connections.
-                                For opencage and geoclient, it is the timeout for each API request.
+                                For opencage, geoclient and census, it is the timeout for each
+                                API request.
                                 [default: 120]
     --cache-dir <dir>           The directory to use for caching the Geonames cities index
                                 and the persistent on-disk OpenCage and Geoclient result caches.
@@ -774,6 +808,7 @@ use url::Url;
 use util::expand_tilde;
 use uuid::Uuid;
 
+mod census;
 mod geoclient;
 
 use crate::{
@@ -819,6 +854,8 @@ struct Args {
     cmd_opencagenow:     bool,
     cmd_geoclient:       bool,
     cmd_geoclientnow:    bool,
+    cmd_census:          bool,
+    cmd_censusnow:       bool,
     cmd_index_check:     bool,
     cmd_index_update:    bool,
     cmd_index_load:      bool,
@@ -855,6 +892,9 @@ struct Args {
     flag_rate_limit:     Option<u32>,
     flag_endpoint:       Option<String>,
     flag_params:         Option<String>,
+    flag_benchmark:      Option<String>,
+    flag_vintage:        Option<String>,
+    flag_census_mode:    Option<String>,
     flag_reverse:        bool,
     flag_no_annotations: bool,
     flag_cache_ttl:      u64,
@@ -1163,6 +1203,8 @@ enum GeocodeSubCmd {
     OpencageNow,
     Geoclient,
     GeoclientNow,
+    Census,
+    CensusNow,
     IndexCheck,
     IndexUpdate,
     IndexLoad,
@@ -1181,6 +1223,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && let Some(spec) = geoclient::preset_dyncols(&args.flag_formatstr)
     {
         args.flag_formatstr = spec.to_string();
+    }
+    let census_cmd = args.cmd_census || args.cmd_censusnow;
+    if census_cmd
+        && let Some(spec) = census::preset_dyncols(
+            &args.flag_formatstr,
+            args.flag_vintage
+                .as_deref()
+                .unwrap_or(census::DEFAULT_VINTAGE)
+                .trim(),
+        )
+    {
+        args.flag_formatstr = spec;
     }
 
     if args.flag_new_column.is_some() && args.flag_rename.is_some() {
@@ -1244,10 +1298,84 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let geoclient_cmd = args.cmd_geoclient || args.cmd_geoclientnow;
-    if !geoclient_cmd && (args.flag_endpoint.is_some() || args.flag_params.is_some()) {
+    if !(geoclient_cmd || census_cmd) && args.flag_endpoint.is_some() {
         return fail_incorrectusage_clierror!(
-            "--endpoint and --params are only valid with the geoclient subcommands."
+            "--endpoint is only valid with the geoclient subcommands."
         );
+    }
+    if !(geoclient_cmd || census_cmd) && args.flag_params.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--params is only valid with the geoclient and census subcommands."
+        );
+    }
+    if !census_cmd
+        && (args.flag_benchmark.is_some()
+            || args.flag_vintage.is_some()
+            || args.flag_census_mode.is_some())
+    {
+        return fail_incorrectusage_clierror!(
+            "--benchmark, --vintage and --census-mode are only valid with the census subcommands."
+        );
+    }
+
+    // validate & resolve options for the census/censusnow subcommands
+    if census_cmd {
+        for (set, flag) in [
+            (args.flag_api_key.is_some(), "--api-key"),
+            (args.flag_endpoint.is_some(), "--endpoint"),
+            (args.flag_no_annotations, "--no-annotations"),
+            (args.flag_country.is_some(), "--country"),
+            (args.flag_admin1.is_some(), "--admin1"),
+        ] {
+            if set {
+                return fail_incorrectusage_clierror!(
+                    "{flag} is not supported by the census subcommands."
+                );
+            }
+        }
+        if args.flag_params.is_some() {
+            if args.cmd_censusnow {
+                return fail_incorrectusage_clierror!(
+                    "censusnow geocodes a one-line address (or, with --reverse, a coordinate); \
+                     --params is only valid with census."
+                );
+            }
+            if args.flag_reverse {
+                return fail_incorrectusage_clierror!(
+                    "--reverse reads coordinates from <column>; it cannot be combined with \
+                     --params."
+                );
+            }
+        }
+        // fail fast on a bad --params, before any input is read
+        census::parse_params(args.flag_params.as_deref())?;
+        let mode = census::CensusMode::parse(args.flag_census_mode.as_deref())?;
+        for (value, flag, default) in [
+            (
+                &mut args.flag_benchmark,
+                "--benchmark",
+                census::DEFAULT_BENCHMARK,
+            ),
+            (&mut args.flag_vintage, "--vintage", census::DEFAULT_VINTAGE),
+        ] {
+            let resolved = value.as_deref().unwrap_or(default).trim().to_string();
+            if resolved.is_empty() {
+                return fail_incorrectusage_clierror!("{flag} must not be empty.");
+            }
+            *value = Some(resolved);
+        }
+        let vintage = args.flag_vintage.as_deref().unwrap_or_default();
+        if mode == census::CensusMode::Batch
+            && !census::batch_eligible(&args.flag_formatstr, vintage)
+        {
+            return fail_incorrectusage_clierror!(
+                "--census-mode batch cannot produce this output: the Census batch endpoints \
+                 return only the matched address, coordinates, TIGER line and the state, county, \
+                 tract, block group and block of a location, and only for Current_* vintages \
+                 (--vintage is {vintage:?}). %json, %pretty-json and other fields need \
+                 --census-mode single (or auto)."
+            );
+        }
     }
 
     // validate & resolve options for the geoclient/geoclientnow subcommands
@@ -1369,6 +1497,11 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     } else if args.cmd_geoclientnow {
         now_cmd = true;
         GeocodeSubCmd::GeoclientNow
+    } else if args.cmd_census {
+        GeocodeSubCmd::Census
+    } else if args.cmd_censusnow {
+        now_cmd = true;
+        GeocodeSubCmd::CensusNow
     } else if args.cmd_index_check {
         index_cmd = true;
         GeocodeSubCmd::IndexCheck
@@ -1414,6 +1547,19 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         return geoclient::run_geoclient(
             args,
             geocode_cmd == GeocodeSubCmd::GeoclientNow,
+            &geocode_cache_dir,
+        )
+        .await;
+    }
+
+    // Census subcommands geocode online via the US Census Geocoder.
+    if matches!(
+        geocode_cmd,
+        GeocodeSubCmd::Census | GeocodeSubCmd::CensusNow
+    ) {
+        return census::run_census(
+            args,
+            geocode_cmd == GeocodeSubCmd::CensusNow,
             &geocode_cache_dir,
         )
         .await;
@@ -2156,6 +2302,114 @@ fn parse_dyncols_spec(formatstr: &str) -> CliResult<(Vec<String>, Vec<String>)> 
         );
     }
     Ok((column_names, column_keys))
+}
+
+/// A `--params` value: an input column reference (`{Column}`) or a literal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ParamValue {
+    Column(String),
+    Literal(String),
+}
+
+/// Parse a `--params` list ("name={Column},name=literal,...") of the online backends that take
+/// one (geoclient, census): names must be in `allowed` (case-sensitive) and may appear once;
+/// `{Column}` references are only allowed when `columns_ok`. `context` names the lookup in error
+/// messages (e.g. "--endpoint address"). Header-dependent checks (does `{Column}` exist?) happen
+/// later in [`resolve_param_sources`]; backend-specific required names are the caller's job.
+fn parse_param_list(
+    template: Option<&str>,
+    allowed: &[&str],
+    context: &str,
+    columns_ok: bool,
+) -> CliResult<Vec<(String, ParamValue)>> {
+    let mut params: Vec<(String, ParamValue)> = Vec::new();
+    for entry in template.unwrap_or_default().split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = entry.split_once('=') else {
+            return fail_incorrectusage_clierror!(
+                "Invalid --params entry {entry:?}: expected name={{Column}} or name=value."
+            );
+        };
+        let (name, value) = (name.trim(), value.trim());
+        if !allowed.contains(&name) {
+            return fail_incorrectusage_clierror!(
+                "Invalid --params name {name:?} for {context}. Valid names (case-sensitive) are: \
+                 {}.",
+                if allowed.is_empty() {
+                    "none".to_string()
+                } else {
+                    allowed.join(", ")
+                }
+            );
+        }
+        if params.iter().any(|(n, _)| n == name) {
+            return fail_incorrectusage_clierror!("--params names {name:?} more than once.");
+        }
+        let value = if let Some(column) = value.strip_prefix('{').and_then(|v| v.strip_suffix('}'))
+        {
+            let column = column.trim();
+            if column.is_empty() {
+                return fail_incorrectusage_clierror!(
+                    "Invalid --params entry {entry:?}: the column name is empty."
+                );
+            }
+            if !columns_ok {
+                return fail_incorrectusage_clierror!(
+                    "{context} takes its input from <column>; its --params may only set literal \
+                     options, not {{Column}} references ({entry:?})."
+                );
+            }
+            ParamValue::Column(column.to_string())
+        } else if value.is_empty() {
+            return fail_incorrectusage_clierror!(
+                "Invalid --params entry {entry:?}: the value is empty."
+            );
+        } else {
+            ParamValue::Literal(value.to_string())
+        };
+        params.push((name.to_string(), value));
+    }
+    Ok(params)
+}
+
+/// A resolved `--params` value: an input column index or a literal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ParamSource {
+    Column(usize),
+    Literal(String),
+}
+
+/// Map each `{Column}` reference to its index in `headers` (exact, case-sensitive match).
+fn resolve_param_sources(
+    params: &[(String, ParamValue)],
+    headers: &csv::StringRecord,
+) -> CliResult<Vec<(String, ParamSource)>> {
+    params
+        .iter()
+        .map(|(name, value)| {
+            let source = match value {
+                ParamValue::Literal(lit) => ParamSource::Literal(lit.clone()),
+                ParamValue::Column(column) => match headers.iter().position(|h| h == column) {
+                    Some(idx) => ParamSource::Column(idx),
+                    None => {
+                        return fail_incorrectusage_clierror!(
+                            "--params references column {column:?}, which is not in the input \
+                             headers."
+                        );
+                    },
+                },
+            };
+            Ok((name.clone(), source))
+        })
+        .collect()
+}
+
+/// Collapse internal whitespace runs and trim.
+fn squish(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Run the `opencage` / `opencagenow` subcommands: online forward/reverse geocoding

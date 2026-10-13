@@ -31,8 +31,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::{
-    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, add_fields, first_selected_column,
-    json_dotpath, parse_dyncols_spec, read_capped,
+    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, ParamSource, ParamValue, add_fields,
+    first_selected_column, json_dotpath, parse_dyncols_spec, parse_param_list, read_capped,
+    resolve_param_sources, squish,
 };
 use crate::{
     CliError, CliResult,
@@ -200,71 +201,16 @@ impl Endpoint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum ParamValue {
-    Column(String),
-    Literal(String),
-}
-
-/// Parse and validate `--params` ("name={Column},name=literal,...") for `endpoint`.
-/// Header-dependent checks (does `{Column}` exist?) happen later in [`resolve_param_sources`].
 pub(super) fn parse_params(
     endpoint: Endpoint,
     template: Option<&str>,
 ) -> CliResult<Vec<(String, ParamValue)>> {
-    let allowed = endpoint.allowed_params();
-    let mut params: Vec<(String, ParamValue)> = Vec::new();
-    for entry in template.unwrap_or_default().split(',') {
-        let entry = entry.trim();
-        if entry.is_empty() {
-            continue;
-        }
-        let Some((name, value)) = entry.split_once('=') else {
-            return fail_incorrectusage_clierror!(
-                "Invalid --params entry {entry:?}: expected name={{Column}} or name=value."
-            );
-        };
-        let (name, value) = (name.trim(), value.trim());
-        if !allowed.contains(&name) {
-            return fail_incorrectusage_clierror!(
-                "Invalid --params name {name:?} for --endpoint {}. Valid names (case-sensitive) \
-                 are: {}.",
-                endpoint.path(),
-                if allowed.is_empty() {
-                    "none".to_string()
-                } else {
-                    allowed.join(", ")
-                }
-            );
-        }
-        if params.iter().any(|(n, _)| n == name) {
-            return fail_incorrectusage_clierror!("--params names {name:?} more than once.");
-        }
-        let value = if let Some(column) = value.strip_prefix('{').and_then(|v| v.strip_suffix('}'))
-        {
-            let column = column.trim();
-            if column.is_empty() {
-                return fail_incorrectusage_clierror!(
-                    "Invalid --params entry {entry:?}: the column name is empty."
-                );
-            }
-            if !endpoint.is_structured() {
-                return fail_incorrectusage_clierror!(
-                    "--endpoint {} takes its input from <column>; its --params may only set \
-                     literal options, not {{Column}} references ({entry:?}).",
-                    endpoint.path()
-                );
-            }
-            ParamValue::Column(column.to_string())
-        } else if value.is_empty() {
-            return fail_incorrectusage_clierror!(
-                "Invalid --params entry {entry:?}: the value is empty."
-            );
-        } else {
-            ParamValue::Literal(value.to_string())
-        };
-        params.push((name.to_string(), value));
-    }
+    let params = parse_param_list(
+        template,
+        &endpoint.allowed_params(),
+        &format!("--endpoint {}", endpoint.path()),
+        endpoint.is_structured(),
+    )?;
 
     if endpoint.is_structured() {
         if params.is_empty() {
@@ -304,37 +250,6 @@ const fn params_example(endpoint: Endpoint) -> &'static str {
         Endpoint::Search | Endpoint::Bin | Endpoint::Bbl => "\"exactMatchMaxLevel=5\"",
         Endpoint::Normalize | Endpoint::StreetCode => "\"length=10,format=C\"",
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum ParamSource {
-    Column(usize),
-    Literal(String),
-}
-
-/// Map each `{Column}` reference to its index in `headers` (exact, case-sensitive match).
-fn resolve_param_sources(
-    params: &[(String, ParamValue)],
-    headers: &csv::StringRecord,
-) -> CliResult<Vec<(String, ParamSource)>> {
-    params
-        .iter()
-        .map(|(name, value)| {
-            let source = match value {
-                ParamValue::Literal(lit) => ParamSource::Literal(lit.clone()),
-                ParamValue::Column(column) => match headers.iter().position(|h| h == column) {
-                    Some(idx) => ParamSource::Column(idx),
-                    None => {
-                        return fail_incorrectusage_clierror!(
-                            "--params references column {column:?}, which is not in the input \
-                             headers."
-                        );
-                    },
-                },
-            };
-            Ok((name.clone(), source))
-        })
-        .collect()
 }
 
 /// Drop a spreadsheet/pandas float tail ("1000670001.0") from an identifier.
@@ -391,11 +306,6 @@ fn split_bbl(cell: &str) -> Option<(String, String, String)> {
         return None;
     }
     Some((boro, block, lot))
-}
-
-/// Collapse internal whitespace runs and trim.
-fn squish(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// One row's request: its cache key and query parameters, or `None` when the row cannot be

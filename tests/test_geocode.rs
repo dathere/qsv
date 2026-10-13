@@ -4062,3 +4062,116 @@ fn geocode_opencage_url_override_ignored_unless_loopback() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+#[serial]
+fn geocode_census_arg_validation() {
+    let wrk = Workdir::new("geocode_census_arg_validation");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Address", "Street", "Zip"],
+            svec!["x", "1 Main St", "20233"],
+        ],
+    );
+    // a dead URL: every case below must fail before any request is made
+    let fails_with = |args: &[&str], needle: &str| {
+        let mut cmd = wrk.command("geocode");
+        cmd.args(args)
+            .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+            .env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder");
+        let output = wrk.output(&mut cmd);
+        assert!(!output.status.success(), "{args:?} should fail");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(needle),
+            "{args:?}: expected {needle:?} in stderr: {stderr}"
+        );
+    };
+    fn census<'a>(extra: &[&'a str]) -> Vec<&'a str> {
+        let mut args = vec!["census", "Address", "data.csv"];
+        args.extend_from_slice(extra);
+        args
+    }
+
+    // flags of the other online backends
+    for (flag, value) in [
+        ("--api-key", Some("dummy")),
+        ("--endpoint", Some("search")),
+        ("--country", Some("US")),
+        ("--admin1", Some("US.NY")),
+        ("--no-annotations", None),
+    ] {
+        let mut args = census(&[flag]);
+        args.extend(value);
+        fails_with(
+            &args,
+            &format!("{flag} is not supported by the census subcommands"),
+        );
+    }
+    // census-only flags elsewhere
+    for flag in ["--benchmark", "--vintage", "--census-mode"] {
+        fails_with(
+            &["suggestnow", flag, "x", "London"],
+            "only valid with the census subcommands",
+        );
+    }
+    fails_with(
+        &[
+            "suggest",
+            "Address",
+            "data.csv",
+            "--params",
+            "street={Street},zip=1",
+        ],
+        "--params is only valid with the geoclient and census subcommands",
+    );
+    // --params: known, case-sensitive names; street plus zip, or plus city and state (Q4)
+    fails_with(
+        &census(&["--params", "Street={Street},zip={Zip}"]),
+        "Invalid --params name \"Street\"",
+    );
+    fails_with(
+        &census(&["--params", "street={Street},state=DC"]),
+        "needs street plus zip, or street plus city and state",
+    );
+    fails_with(
+        &census(&["--params", "street={Street},zip={Zip}", "--reverse"]),
+        "cannot be combined with --params",
+    );
+    fails_with(
+        &["censusnow", "--params", "street=1 Main St,zip=20233", "x"],
+        "--params is only valid with census",
+    );
+    // --census-mode
+    fails_with(&census(&["--census-mode", "bulk"]), "Invalid --census-mode");
+    for format in [
+        "%json",
+        "%pretty-json",
+        "%dyncols: {name:flat.States.NAME}",
+        "{addressComponents.zip}",
+    ] {
+        fails_with(
+            &census(&["--census-mode", "batch", "-f", format]),
+            "--census-mode batch cannot produce this output",
+        );
+    }
+    // batch-eligible formats, but not a Current_* vintage
+    fails_with(
+        &census(&[
+            "--census-mode",
+            "batch",
+            "-f",
+            "%census-geoids",
+            "--vintage",
+            "Census2020_Current",
+        ]),
+        "--census-mode batch cannot produce this output",
+    );
+    fails_with(&census(&["--vintage", " "]), "--vintage must not be empty");
+    // %census-geoids expands to %dyncols:, so it cannot be used with --new-column
+    fails_with(
+        &census(&["-f", "%census-geoids", "-c", "geoids"]),
+        "Cannot use --new-column with the '%dyncols:'",
+    );
+}

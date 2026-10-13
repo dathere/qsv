@@ -1017,6 +1017,51 @@ fn to_parquet_basic() {
     );
 }
 
+// --all-strings used to cast every column to String only AFTER Polars had parsed the CSV
+// with types inferred from its first 1000 rows, so a value past that window that didn't
+// fit the inferred type (a ZIP+4 in an integer-looking column) failed the read before the
+// cast ever ran. It must now read every column as String from the start.
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_all_strings_reads_as_strings() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("to_parquet_all_strings_reads_as_strings");
+    let mut rows = vec![svec!["zip", "n"], svec!["00501", "1"]];
+    for i in 0..1_500 {
+        rows.push(vec![format!("1{:04}", i % 10_000), i.to_string()]);
+    }
+    rows.push(svec!["48090-2123", "1500"]);
+    wrk.create("data.csv", rows);
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg("--all-strings")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(output_dir.join("data.parquet").to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 1_502);
+    for name in ["zip", "n"] {
+        assert_eq!(
+            df.column(name).unwrap().dtype(),
+            &DataType::String,
+            "{name} should be String under --all-strings"
+        );
+    }
+    let zip = df.column("zip").unwrap().str().unwrap();
+    assert_eq!(zip.get(0), Some("00501"), "leading zeros must survive");
+    assert_eq!(zip.get(1_501), Some("48090-2123"));
+}
+
 #[test]
 #[cfg(feature = "polars")]
 fn to_parquet_multiple() {

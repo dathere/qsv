@@ -37,7 +37,7 @@
       {
         "flag": "--all-strings",
         "type": "flag",
-        "description": "Convert all fields to strings."
+        "description": "Convert all fields to strings. For parquet, columns are read as strings without type inference, so the inference length and any pschema.json are not used."
       },
       {
         "flag": "--compress-level",

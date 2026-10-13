@@ -267,7 +267,9 @@ To options:
       --compress-level <arg>  Compression level (parquet only).
                               For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3).
                               Ignored for other codecs.
-  -A, --all-strings       Convert all fields to strings.
+  -A, --all-strings       Convert all fields to strings. For parquet, columns are read
+                          as strings without type inference, so the inference length
+                          and any pschema.json are not used.
   -j, --jobs <arg>        The number of jobs to run in parallel.
                           When not set, the number of jobs is set to the number of CPUs detected.
 
@@ -714,7 +716,14 @@ fn to_parquet(
             .with_has_header(true)
             .with_separator(delimiter);
 
-        if let Some(infer_len) = flag_infer_len {
+        if flag_all_strings {
+            // Polars reads every column as String when the inference length is Some(0).
+            // Casting after the fact is too late: the inferred types are applied while
+            // parsing, so a value that doesn't fit them (a ZIP+4 "48090-2123" in a column
+            // inferred as integer) failed the read before any cast could run. This also
+            // bypasses --infer-len (whose 0 means "scan all rows") and any pschema.json.
+            lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(Some(0));
+        } else if let Some(infer_len) = flag_infer_len {
             // if --infer-len is explicitly set (even to 0), ignore existing schema file
             let infer_len = match infer_len {
                 0 => None, // 0 means scan all rows
@@ -743,15 +752,10 @@ fn to_parquet(
             }
         }
 
-        let mut lf = lazy_csv_reader
-            .with_try_parse_dates(flag_try_parse_dates)
-            .finish()?;
-
-        if flag_all_strings {
-            lf = lf.with_columns([col("*").cast(DataType::String)]);
-        }
-
-        let mut df = lf.collect()?;
+        let mut df = lazy_csv_reader
+            .with_try_parse_dates(flag_try_parse_dates && !flag_all_strings)
+            .finish()?
+            .collect()?;
         let row_count = df.height();
 
         let file = std::fs::File::create(&output_path)?;

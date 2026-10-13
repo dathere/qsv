@@ -253,7 +253,6 @@ impl InputMode {
 struct Request {
     key:   String,
     query: Vec<(&'static str, String)>,
-    #[allow(dead_code)]
     batch: Vec<String>,
 }
 
@@ -270,9 +269,10 @@ fn parse_coordinate(cell: &str) -> Option<(f64, f64)> {
 /// would reject with an HTTP 400, which is fatal for the run).
 ///
 /// The cache key holds the canonical input: whitespace-collapsed, ASCII-uppercased address parts
-/// (Census matching ignores case), or the coordinate at 6 decimals (~0.1 m), which is also what
-/// is sent, so the key describes the query exactly. The search type comes from the input mode,
-/// never from whether the row is later batched, so batch and single lookups share entries.
+/// (Census matching ignores case; parsed parts as a JSON array), or the coordinate at 6 decimals
+/// (~0.1 m), which is also what is sent, so the key describes the query exactly. The search type
+/// comes from the input mode, never from whether the row is later batched, so batch and single
+/// lookups share entries.
 fn prepare_request(
     mode: InputMode,
     base_url: &str,
@@ -322,11 +322,14 @@ fn prepare_request(
                 .filter(|(_, v)| !v.is_empty())
                 .map(|(n, v)| (*n, v.clone()))
                 .collect();
-            let canonical = parts
-                .iter()
-                .map(|p| p.to_ascii_uppercase())
-                .collect::<Vec<_>>()
-                .join(";");
+            // a JSON array, so no character in a part can make two addresses' keys collide
+            let canonical = json!(
+                parts
+                    .iter()
+                    .map(|p| p.to_ascii_uppercase())
+                    .collect::<Vec<_>>()
+            )
+            .to_string();
             (query, parts, canonical)
         },
         InputMode::Coordinates => {
@@ -666,6 +669,240 @@ fn format_census_result(obj: &Value, formatstr: &str) -> String {
     }
 }
 
+/// `--census-mode auto` batches a read chunk when at least this many of its lookups are left
+/// after the cache: below it, the per-request pace beats an upload's fixed cost.
+const BATCH_THRESHOLD: usize = 50;
+
+/// Rows per batch upload. Census accepts up to 10,000, but a large upload can take minutes to
+/// answer; `QSV_CENSUS_GEOCODER_BATCH_CHUNK` overrides it (tests).
+const DEFAULT_BATCH_CHUNK: usize = 2000;
+const MAX_BATCH_ROWS: usize = 10_000;
+
+/// A batch upload's timeout is at least this long, whatever --timeout says: Census geocodes the
+/// whole file before it answers.
+const MIN_BATCH_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Cap on a batch response: a few hundred bytes per row, for up to 10,000 rows.
+const MAX_BATCH_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+fn batch_chunk_size() -> usize {
+    std::env::var("QSV_CENSUS_GEOCODER_BATCH_CHUNK")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(DEFAULT_BATCH_CHUNK)
+        .clamp(1, MAX_BATCH_ROWS)
+}
+
+impl InputMode {
+    /// The batch endpoint and the name of its file field.
+    const fn batch_endpoint(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Coordinates => ("coordinatesbatch", "coordinatesFile"),
+            Self::OneLine | Self::Parsed => ("addressbatch", "addressFile"),
+        }
+    }
+}
+
+/// One row of a batch response.
+#[derive(Debug, PartialEq)]
+enum BatchRow {
+    /// The batch-normalized result.
+    Match(Value),
+    NoMatch,
+    /// Several addresses matched; Census does not say which.
+    Tie,
+}
+
+/// `flat` for a batch result: the five Census layers of a `Current_*` vintage, synthesized from
+/// STATE, COUNTY, TRACT and BLOCK the way Census composes GEOIDs (county = STATE+COUNTY, tract =
+/// county+TRACT, block group = tract+BLKGRP, the first digit of BLOCK, block = tract+BLOCK). A
+/// layer whose parts are missing is left out, as a single lookup would have no feature for it.
+fn synthesize_flat(state: &str, county: &str, tract: &str, block: &str) -> Value {
+    let mut flat = serde_json::Map::new();
+    let [states, counties, tracts, block_groups, blocks] = BATCH_LAYERS.map(|(name, _)| name);
+    if state.is_empty() {
+        return Value::Object(flat);
+    }
+    flat.insert(states.into(), json!({"STATE": state, "GEOID": state}));
+    if county.is_empty() {
+        return Value::Object(flat);
+    }
+    let county_geoid = format!("{state}{county}");
+    flat.insert(
+        counties.into(),
+        json!({"STATE": state, "COUNTY": county, "GEOID": county_geoid}),
+    );
+    if tract.is_empty() {
+        return Value::Object(flat);
+    }
+    let tract_geoid = format!("{county_geoid}{tract}");
+    flat.insert(
+        tracts.into(),
+        json!({"STATE": state, "COUNTY": county, "TRACT": tract, "GEOID": tract_geoid}),
+    );
+    let Some(blkgrp) = block.get(..1) else {
+        return Value::Object(flat);
+    };
+    flat.insert(
+        block_groups.into(),
+        json!({"STATE": state, "COUNTY": county, "TRACT": tract, "BLKGRP": blkgrp,
+            "GEOID": format!("{tract_geoid}{blkgrp}")}),
+    );
+    flat.insert(
+        blocks.into(),
+        json!({"STATE": state, "COUNTY": county, "TRACT": tract, "BLKGRP": blkgrp,
+            "BLOCK": block, "GEOID": format!("{tract_geoid}{block}")}),
+    );
+    Value::Object(flat)
+}
+
+/// Parse a batch response: a headerless, fully-quoted CSV in no particular order, keyed by the
+/// row id qsv sent. Address rows are `id, input, Match|No_Match|Tie, Exact|Non_Exact, matched
+/// address, "lon,lat", tigerLineId, side, STATE, COUNTY, TRACT, BLOCK`; coordinate rows are
+/// `id, x, y, Match|No_Match, STATE, COUNTY, TRACT, BLOCK`. Missing geography columns are
+/// tolerated (absent `flat` layers), as is any other unexpected status (no match).
+fn parse_batch_response(mode: InputMode, body: &[u8]) -> Result<HashMap<usize, BatchRow>, String> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(body);
+    let mut rows = HashMap::new();
+    for record in rdr.records() {
+        let record = record.map_err(|e| format!("Census batch response is not CSV: {e}"))?;
+        let field = |i: usize| record.get(i).unwrap_or_default().trim();
+        let Ok(id) = field(0).parse::<usize>() else {
+            continue;
+        };
+        let coords = mode == InputMode::Coordinates;
+        let status = field(if coords { 3 } else { 2 });
+        let row = match status {
+            "Match" => {
+                let mut obj = serde_json::Map::new();
+                let (x, y, geo) = if coords {
+                    (field(1), field(2), 4)
+                } else {
+                    let (x, y) = field(5).split_once(',').unwrap_or_default();
+                    obj.insert("matchedAddress".into(), json!(field(4)));
+                    (x, y, 8)
+                };
+                if let Some(coordinates) = coordinates_object(&json!({"x": x, "y": y})) {
+                    obj.insert("coordinates".into(), coordinates);
+                }
+                if !coords {
+                    obj.insert(
+                        "tigerLine".into(),
+                        json!({"tigerLineId": field(6), "side": field(7)}),
+                    );
+                }
+                obj.insert(
+                    "flat".into(),
+                    synthesize_flat(field(geo), field(geo + 1), field(geo + 2), field(geo + 3)),
+                );
+                obj.insert("_resultCount".into(), json!(1));
+                if !coords {
+                    obj.insert("_matchType".into(), json!(field(3)));
+                }
+                obj.insert("_source".into(), json!("batch"));
+                BatchRow::Match(Value::Object(obj))
+            },
+            "Tie" => BatchRow::Tie,
+            _ => BatchRow::NoMatch,
+        };
+        rows.insert(id, row);
+    }
+    Ok(rows)
+}
+
+/// The headerless CSV file a batch upload sends: one `id,<request's batch fields>` row each, the
+/// id being the request's index in `requests`. The csv crate quotes fields that need it (a
+/// one-line address is full of commas).
+fn batch_file(requests: &[&Request]) -> Result<Vec<u8>, String> {
+    let mut wtr = csv::WriterBuilder::new()
+        .has_headers(false)
+        .from_writer(Vec::new());
+    for (id, req) in requests.iter().enumerate() {
+        wtr.write_record(std::iter::once(id.to_string()).chain(req.batch.iter().cloned()))
+            .map_err(|e| e.to_string())?;
+    }
+    wtr.into_inner().map_err(|e| e.to_string())
+}
+
+/// Upload one batch, with the single-record retry policy. Returns the rows by id.
+#[allow(clippy::too_many_arguments)]
+async fn census_batch_fetch(
+    client: &reqwest::Client,
+    base_url: &str,
+    benchmark: &str,
+    vintage: &str,
+    mode: InputMode,
+    requests: &[&Request],
+    timeout: Duration,
+    retry_base: Duration,
+) -> Result<HashMap<usize, BatchRow>, CensusError> {
+    let (endpoint, file_field) = mode.batch_endpoint();
+    let url = format!("{base_url}/geographies/{endpoint}");
+    let file = batch_file(requests).map_err(CensusError::Transient)?;
+    let mut last_error = String::new();
+    for attempt in 0..=MAX_RETRIES {
+        let part = reqwest::multipart::Part::bytes(file.clone())
+            .file_name(format!("{endpoint}.csv"))
+            .mime_str("text/csv")
+            .map_err(|e| CensusError::Transient(e.to_string()))?;
+        let form = reqwest::multipart::Form::new()
+            .text("benchmark", benchmark.to_string())
+            .text("vintage", vintage.to_string())
+            .part(file_field, part);
+        let mut delay: Option<Duration> = None;
+        match client
+            .post(&url)
+            .multipart(form)
+            .timeout(timeout)
+            .send()
+            .await
+        {
+            Err(e) => last_error = format!("Census Geocoder batch upload error: {e}"),
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                match status {
+                    200 => match read_capped(resp, MAX_BATCH_BODY_BYTES).await {
+                        Ok(bytes) => {
+                            return parse_batch_response(mode, &bytes)
+                                .map_err(CensusError::Transient);
+                        },
+                        Err(BodyError::TooLarge(cap)) => {
+                            return Err(CensusError::Transient(format!(
+                                "Census Geocoder batch response is larger than {cap} bytes."
+                            )));
+                        },
+                        Err(BodyError::Transport(e)) => {
+                            last_error = format!("Census Geocoder batch response error: {e}");
+                        },
+                    },
+                    400 | 404 => {
+                        let body = read_capped(resp, 4096).await.unwrap_or_default();
+                        return Err(fatal_status(status, &url, &body));
+                    },
+                    408 | 429 | 500..=599 => {
+                        delay = retry_after(&resp);
+                        last_error =
+                            format!("Census Geocoder batch upload returned HTTP {status}.");
+                    },
+                    _ => {
+                        return Err(CensusError::Transient(format!(
+                            "Census Geocoder batch upload returned HTTP {status}."
+                        )));
+                    },
+                }
+            },
+        }
+        if attempt < MAX_RETRIES {
+            let backoff = delay.unwrap_or_else(|| retry_base * 2u32.pow(attempt));
+            tokio::time::sleep(backoff.min(Duration::from_secs(60))).await;
+        }
+    }
+    Err(CensusError::Transient(last_error))
+}
+
 /// What a row resolved to.
 #[derive(Clone)]
 enum RowOutcome {
@@ -838,6 +1075,13 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
         args.flag_batch
     };
     let retry_base = retry_base();
+    let census_mode = CensusMode::parse(args.flag_census_mode.as_deref())?;
+    let batch_chunk = batch_chunk_size();
+    let batch_timeout = timeout.max(MIN_BATCH_TIMEOUT);
+    // one upload in flight, and a pause between uploads: twice the retry base, so 2s by default
+    let batch_gap = retry_base * 2;
+    let mut last_upload: Option<tokio::time::Instant> = None;
+    let mut tie_rows: u64 = 0;
 
     let mut transient_failures: u64 = 0;
     let mut consecutive_transient: u32 = 0;
@@ -898,57 +1142,140 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
             to_fetch.push(req);
         }
 
-        let client = &client;
-        let limiter = &limiter;
-        let (base_url, benchmark, vintage) =
-            (base_url.as_str(), benchmark.as_str(), vintage.as_str());
-        let mut responses = futures::stream::iter(to_fetch.into_iter().map(|req| async move {
-            let result = census_fetch(
-                client, limiter, base_url, benchmark, vintage, mode, &req.query, retry_base,
-            )
-            .await;
-            (req.key.as_str(), result)
-        }))
-        .buffered(concurrency);
-
-        while let Some((key, result)) = responses.next().await {
-            match result {
-                Ok(found) => {
-                    consecutive_transient = 0;
-                    let cached = found.map_or(Cached::NoMatch, Cached::Full);
-                    if let Some(dc) = &disk_cache
-                        && let Some(encoded) = encode_cached(&cached)
-                    {
-                        let _ = dc.cache_set(key.to_string(), encoded);
-                    }
-                    let outcome = match &cached {
-                        Cached::Full(obj) | Cached::Batch(obj) => RowOutcome::Hit(render(obj)),
-                        Cached::NoMatch => RowOutcome::NoMatch,
-                    };
-                    resolved.insert(key, outcome);
-                },
-                Err(CensusError::Fatal(msg)) => {
-                    wtr.flush()?;
-                    return fail_clierror!("{msg}");
-                },
-                Err(CensusError::Transient(msg)) => {
-                    log::warn!("Census Geocoder lookup failed for {key:?}: {msg}");
-                    transient_failures += 1;
-                    consecutive_transient += 1;
-                    failed.insert(key);
-                    if consecutive_transient >= CIRCUIT_BREAKER_THRESHOLD {
+        let use_batch = match census_mode {
+            CensusMode::Single => false,
+            // run() made sure the output is batch-eligible
+            CensusMode::Batch => true,
+            CensusMode::Auto => batch_ok && to_fetch.len() >= BATCH_THRESHOLD,
+        };
+        let mut ties: HashSet<&str> = HashSet::new();
+        if use_batch {
+            for group in to_fetch.chunks(batch_chunk) {
+                if let Some(last) = last_upload {
+                    tokio::time::sleep_until(last + batch_gap).await;
+                }
+                let result = census_batch_fetch(
+                    &client,
+                    &base_url,
+                    &benchmark,
+                    &vintage,
+                    mode,
+                    group,
+                    batch_timeout,
+                    retry_base,
+                )
+                .await;
+                last_upload = Some(tokio::time::Instant::now());
+                match result {
+                    Ok(mut rows) => {
+                        consecutive_transient = 0;
+                        for (id, req) in group.iter().enumerate() {
+                            let key = req.key.as_str();
+                            match rows.remove(&id) {
+                                Some(BatchRow::Match(obj)) => {
+                                    if let Some(dc) = &disk_cache
+                                        && let Some(encoded) =
+                                            encode_cached(&Cached::Batch(obj.clone()))
+                                    {
+                                        let _ = dc.cache_set(key.to_string(), encoded);
+                                    }
+                                    resolved.insert(key, RowOutcome::Hit(render(&obj)));
+                                },
+                                // batch matching varies with the load upstream: not cached
+                                Some(BatchRow::NoMatch) => {
+                                    resolved.insert(key, RowOutcome::NoMatch);
+                                },
+                                Some(BatchRow::Tie) => {
+                                    ties.insert(key);
+                                    resolved.insert(key, RowOutcome::NoMatch);
+                                },
+                                None => {
+                                    log::warn!(
+                                        "Census Geocoder batch response has no row for {key:?}"
+                                    );
+                                    transient_failures += 1;
+                                    failed.insert(key);
+                                },
+                            }
+                        }
+                    },
+                    Err(CensusError::Fatal(msg)) => {
                         wtr.flush()?;
-                        return fail_clierror!(
-                            "Aborting: {consecutive_transient} Census Geocoder requests in a row \
-                             failed (last error: {msg}). The service may be down or limiting \
-                             requests - lower --rate-limit or try again later. {rows_written} \
-                             rows were written before the abort."
+                        return fail_clierror!("{msg}");
+                    },
+                    Err(CensusError::Transient(msg)) => {
+                        log::warn!(
+                            "Census Geocoder batch upload of {} rows failed: {msg}",
+                            group.len()
                         );
-                    }
-                },
+                        transient_failures += group.len() as u64;
+                        consecutive_transient += 1;
+                        failed.extend(group.iter().map(|req| req.key.as_str()));
+                        if consecutive_transient >= CIRCUIT_BREAKER_THRESHOLD {
+                            wtr.flush()?;
+                            return fail_clierror!(
+                                "Aborting: {consecutive_transient} Census Geocoder batch uploads \
+                                 in a row failed (last error: {msg}). The service may be down - \
+                                 try again later. {rows_written} rows were written before the \
+                                 abort."
+                            );
+                        }
+                    },
+                }
             }
+        } else {
+            let client = &client;
+            let limiter = &limiter;
+            let (base_url, benchmark, vintage) =
+                (base_url.as_str(), benchmark.as_str(), vintage.as_str());
+            let mut responses = futures::stream::iter(to_fetch.into_iter().map(|req| async move {
+                let result = census_fetch(
+                    client, limiter, base_url, benchmark, vintage, mode, &req.query, retry_base,
+                )
+                .await;
+                (req.key.as_str(), result)
+            }))
+            .buffered(concurrency);
+
+            while let Some((key, result)) = responses.next().await {
+                match result {
+                    Ok(found) => {
+                        consecutive_transient = 0;
+                        let cached = found.map_or(Cached::NoMatch, Cached::Full);
+                        if let Some(dc) = &disk_cache
+                            && let Some(encoded) = encode_cached(&cached)
+                        {
+                            let _ = dc.cache_set(key.to_string(), encoded);
+                        }
+                        let outcome = match &cached {
+                            Cached::Full(obj) | Cached::Batch(obj) => RowOutcome::Hit(render(obj)),
+                            Cached::NoMatch => RowOutcome::NoMatch,
+                        };
+                        resolved.insert(key, outcome);
+                    },
+                    Err(CensusError::Fatal(msg)) => {
+                        wtr.flush()?;
+                        return fail_clierror!("{msg}");
+                    },
+                    Err(CensusError::Transient(msg)) => {
+                        log::warn!("Census Geocoder lookup failed for {key:?}: {msg}");
+                        transient_failures += 1;
+                        consecutive_transient += 1;
+                        failed.insert(key);
+                        if consecutive_transient >= CIRCUIT_BREAKER_THRESHOLD {
+                            wtr.flush()?;
+                            return fail_clierror!(
+                                "Aborting: {consecutive_transient} Census Geocoder requests in a \
+                                 row failed (last error: {msg}). The service may be down or \
+                                 limiting requests - lower --rate-limit or try again later. \
+                                 {rows_written} rows were written before the abort."
+                            );
+                        }
+                    },
+                }
+            }
+            drop(responses);
         }
-        drop(responses);
 
         for (rec, req) in chunk.iter().zip(&requests) {
             let outcome = match req {
@@ -959,6 +1286,11 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
                     .cloned()
                     .unwrap_or(RowOutcome::NoMatch),
             };
+            if let Some(req) = req
+                && ties.contains(req.key.as_str())
+            {
+                tie_rows += 1;
+            }
             let cell = rec.get(column_index).unwrap_or_default();
 
             if dyncols_mode {
@@ -1005,16 +1337,24 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
     if show_progress {
         util::finish_progress(&progress);
     }
+    let fate = if invalid_result.is_empty() {
+        "left unchanged"
+    } else {
+        "set to --invalid-result"
+    };
+    if tie_rows > 0 {
+        wwarn!(
+            "{tie_rows} row(s) matched more than one address in a Census batch lookup (a \
+             \"Tie\"), so they were {fate}. The batch endpoints do not say which address is \
+             right; --census-mode single uses the first match (_resultCount tells how many there \
+             were)."
+        );
+    }
     if transient_failures > 0 {
         wwarn!(
             "{transient_failures} Census Geocoder lookup(s) failed after retries (network error, \
-             rate limit or server error), so those rows were {}. Set QSV_LOG_LEVEL=warn to log \
-             each failure to the qsv log file.",
-            if invalid_result.is_empty() {
-                "left unchanged"
-            } else {
-                "set to --invalid-result"
-            }
+             rate limit or server error), so those rows were {fate}. Set QSV_LOG_LEVEL=warn to \
+             log each failure to the qsv log file."
         );
     }
     Ok(wtr.flush()?)
@@ -1254,7 +1594,22 @@ mod tests {
         let sources = resolve_param_sources(&params, &headers).unwrap();
         assert_eq!(
             key(InputMode::Parsed, "", &["1 main st", "Town", ""], &sources).unwrap(),
-            "v1|http://x|address|B|V|1 MAIN ST;TOWN;DC;"
+            r#"v1|http://x|address|B|V|["1 MAIN ST","TOWN","DC",""]"#
+        );
+        // a separator inside a part cannot make two addresses share a key
+        assert_ne!(
+            key(
+                InputMode::Parsed,
+                "",
+                &["1 Main St;Town", "New", "1"],
+                &sources
+            ),
+            key(
+                InputMode::Parsed,
+                "",
+                &["1 Main St", "Town;New", "1"],
+                &sources
+            )
         );
         assert_eq!(
             key(InputMode::Parsed, "", &["1 main st", "", ""], &sources),
@@ -1308,6 +1663,112 @@ mod tests {
                 b"<p>An error occurred because the file exceeded the batch limit.<br> More</p>"
             )
             .starts_with("An error occurred because the file exceeded the batch limit. More")
+        );
+    }
+
+    /// Live captures (2026-10-12): `batch_geo.csv`, `batch_tie.csv`, `batch_coords*.csv`, and a
+    /// Match row without geography columns (`batch_widerow.csv`, a locations batch).
+    #[test]
+    fn batch_rows() {
+        let geo = br#""1","4600 Silver Hill Rd, Washington, DC, 20233","Match","Exact","4600 SILVER HILL RD, WASHINGTON, DC, 20233","-76.92836638093,38.84505589808","657091557","L","24","033","802405","2004"
+"2","zzzz nowhere, , , ","No_Match"
+"3","100 Main St, , MA, ","Tie"
+"4","4600 Silver Hill Rd, Washington, DC, 20233","Match","Non_Exact","4600 SILVER HILL RD, WASHINGTON, DC, 20233","-76.92836638093,38.84505589808","657091557","L"
+"#;
+        let rows = parse_batch_response(InputMode::OneLine, geo).unwrap();
+        let Some(BatchRow::Match(obj)) = rows.get(&1) else {
+            panic!("{rows:?}");
+        };
+        assert_eq!(
+            format_census_result(obj, "%lat-long"),
+            "38.84505589808, -76.92836638093"
+        );
+        assert_eq!(obj["coordinates"]["x"], json!(-76.92836638093));
+        assert_eq!(obj["_matchType"], json!("Exact"));
+        assert_eq!(
+            obj["tigerLine"],
+            json!({"tigerLineId": "657091557", "side": "L"})
+        );
+        let (_, keys) = parse_dyncols_spec(&census_geoids_dyncols(DEFAULT_VINTAGE)).unwrap();
+        let geoids: Vec<String> = keys.iter().map(|k| json_dotpath(obj, k)).collect();
+        assert_eq!(
+            geoids,
+            [
+                "24",
+                "24033",
+                "24033802405",
+                "240338024052",
+                "240338024052004"
+            ]
+        );
+        // the batch subset agrees with the captured single-record result, attribute for attribute
+        let single: Value = serde_json::from_str(ADDRESS_FIXTURE).unwrap();
+        let single = normalize_single(InputMode::OneLine, &single).unwrap();
+        for (layer, attrs) in BATCH_LAYERS {
+            for attr in attrs {
+                let key = format!("flat.{layer}.{attr}");
+                assert!(is_batch_key(&key));
+                assert_eq!(
+                    json_dotpath(obj, &key),
+                    json_dotpath(&single, &key),
+                    "{key}"
+                );
+            }
+        }
+        assert_eq!(rows.get(&2), Some(&BatchRow::NoMatch));
+        assert_eq!(rows.get(&3), Some(&BatchRow::Tie));
+        // no geography columns: a match without flat layers
+        let Some(BatchRow::Match(obj)) = rows.get(&4) else {
+            panic!("{rows:?}");
+        };
+        assert_eq!(obj["flat"], json!({}));
+        assert_eq!(obj["_matchType"], json!("Non_Exact"));
+
+        let coords = br#""1","-40","30","No_Match"
+"2","-76.92744","38.84601","Match","24","033","802405","2004"
+"#;
+        let rows = parse_batch_response(InputMode::Coordinates, coords).unwrap();
+        assert_eq!(rows.get(&1), Some(&BatchRow::NoMatch));
+        let Some(BatchRow::Match(obj)) = rows.get(&2) else {
+            panic!("{rows:?}");
+        };
+        assert_eq!(
+            format_census_result(obj, "%location"),
+            "(38.84601, -76.92744)"
+        );
+        assert_eq!(obj["flat"]["Census Tracts"]["GEOID"], json!("24033802405"));
+        assert!(obj.get("matchedAddress").is_none());
+        // an empty answer (an empty upload) is no rows, not an error
+        assert!(
+            parse_batch_response(InputMode::OneLine, b"")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn partial_geographies() {
+        assert_eq!(synthesize_flat("", "033", "802405", "2004"), json!({}));
+        let flat = synthesize_flat("24", "033", "", "");
+        assert_eq!(flat["Counties"]["GEOID"], json!("24033"));
+        assert!(flat.get("Census Tracts").is_none());
+        let flat = synthesize_flat("24", "033", "802405", "");
+        assert_eq!(flat["Census Tracts"]["GEOID"], json!("24033802405"));
+        assert!(flat.get("Census Block Groups").is_none());
+    }
+
+    #[test]
+    fn batch_upload_file() {
+        let req = |batch: &[&str]| Request {
+            key:   String::new(),
+            query: Vec::new(),
+            batch: batch.iter().map(ToString::to_string).collect(),
+        };
+        let a = req(&["4600 Silver Hill Rd, Washington, DC 20233", "", "", ""]);
+        let b = req(&["1 Main St", "Town", "NY", "10001"]);
+        assert_eq!(
+            String::from_utf8(batch_file(&[&a, &b]).unwrap()).unwrap(),
+            "0,\"4600 Silver Hill Rd, Washington, DC 20233\",,,\n1,1 Main St,Town,NY,10001\n"
         );
     }
 }

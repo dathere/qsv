@@ -4511,15 +4511,173 @@ mod census_mock {
         }
     }
 
+    /// The parts of a `multipart/form-data` body, as (name, content). qsv builds the body, so the
+    /// layout is known: `--boundary`, headers with a `name="..."`, a blank line, the content.
+    fn multipart_parts(content_type: &str, body: &[u8]) -> Vec<(String, Vec<u8>)> {
+        let boundary = content_type
+            .split("boundary=")
+            .nth(1)
+            .unwrap()
+            .trim_matches('"');
+        let delimiter = format!("--{boundary}");
+        let body = String::from_utf8_lossy(body);
+        body.split(delimiter.as_str())
+            .filter_map(|part| {
+                let (head, content) = part.split_once("\r\n\r\n")?;
+                let name = head.split("name=\"").nth(1)?.split('"').next()?.to_string();
+                let content = content.strip_suffix("\r\n").unwrap_or(content);
+                Some((name, content.as_bytes().to_vec()))
+            })
+            .collect()
+    }
+
+    fn quoted(fields: &[String]) -> String {
+        fields
+            .iter()
+            .map(|f| format!("\"{f}\""))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    /// A batch upload: answers every row from the same records the single handler serves, as
+    /// the Census batch endpoints do (headerless, every field quoted, lon/lat in one field) - and
+    /// in a shuffled order, which qsv must map back by id.
+    async fn serve_batch(
+        req: actix_web::HttpRequest,
+        path: web::Path<(String, String)>,
+        body: web::Bytes,
+        state: web::Data<State>,
+    ) -> HttpResponse {
+        let (mode, endpoint) = path.into_inner();
+        let n = state.requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let content_type = req
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        let parts = multipart_parts(&content_type, &body);
+        let part = |name: &str| {
+            parts
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, c)| c.clone())
+        };
+        let file_field = if endpoint == "coordinatesbatch" {
+            "coordinatesFile"
+        } else {
+            "addressFile"
+        };
+        let file = part(file_field).unwrap_or_default();
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .flexible(true)
+            .from_reader(file.as_slice());
+        let rows: Vec<csv::StringRecord> = rdr.records().map(Result::unwrap).collect();
+        let text = |name: &str| String::from_utf8(part(name).unwrap_or_default()).unwrap();
+        state.log.lock().unwrap().push(format!(
+            "{endpoint}[{}]?benchmark={}&vintage={}",
+            rows.len(),
+            text("benchmark"),
+            text("vintage")
+        ));
+
+        match mode.as_str() {
+            "flaky" if n <= 2 => {
+                return HttpResponse::TooManyRequests()
+                    .insert_header(("Retry-After", "0"))
+                    .finish();
+            },
+            "down" => return HttpResponse::ServiceUnavailable().finish(),
+            _ => {},
+        }
+        if text("benchmark").is_empty() || text("vintage").is_empty() || file.is_empty() {
+            return HttpResponse::BadRequest().body("<p>Please validate the benchmark.</p>");
+        }
+        let mut lines: Vec<String> = Vec::new();
+        for row in &rows {
+            let f = |i: usize| row.get(i).unwrap_or_default().to_string();
+            let id = f(0);
+            if endpoint == "coordinatesbatch" {
+                let (x, y) = (f(1), f(2));
+                let rec = point_record(x.parse().unwrap(), y.parse().unwrap());
+                lines.push(match rec {
+                    None => quoted(&[id, x, y, "No_Match".into()]),
+                    Some(r) => quoted(&[
+                        id,
+                        x,
+                        y,
+                        "Match".into(),
+                        r.state,
+                        r.county,
+                        r.tract,
+                        r.block,
+                    ]),
+                });
+            } else {
+                let input = format!("{}, {}, {}, {}", f(1), f(2), f(3), f(4));
+                let address = canonical_address(&[&f(1), &f(2), &f(3), &f(4)]);
+                if address.contains("BADREQ") {
+                    return HttpResponse::BadRequest()
+                        .body("<p>An error occurred validating the parameters.</p>");
+                }
+                let recs = address_records(&address);
+                lines.push(if recs.is_empty() {
+                    quoted(&[id, input, "No_Match".into()])
+                } else if address.contains("TIE") {
+                    quoted(&[id, input, "Tie".into()])
+                } else {
+                    let r = &recs[0];
+                    let exact = if address.contains("NONEXACT") {
+                        "Non_Exact"
+                    } else {
+                        "Exact"
+                    };
+                    quoted(&[
+                        id,
+                        input,
+                        "Match".into(),
+                        exact.into(),
+                        r.matched.clone(),
+                        format!("{},{}", r.lon, r.lat),
+                        r.tiger.clone(),
+                        r.side.into(),
+                        r.state.clone(),
+                        r.county.clone(),
+                        r.tract.clone(),
+                        r.block.clone(),
+                    ])
+                });
+            }
+        }
+        // any order but the input's
+        lines.reverse();
+        if lines.len() > 2 {
+            lines.rotate_left(1);
+        }
+        let mut out = lines.join("\n");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        HttpResponse::Ok().content_type("text/plain").body(out)
+    }
+
     async fn run_webserver(
         tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
         state: State,
     ) -> std::io::Result<()> {
         let server_builder = HttpServer::new(move || {
-            App::new().app_data(web::Data::new(state.clone())).route(
-                "/{mode}/geocoder/geographies/{searchtype}",
-                web::get().to(serve_single),
-            )
+            App::new()
+                .app_data(web::Data::new(state.clone()))
+                .app_data(web::PayloadConfig::new(64 * 1024 * 1024))
+                .route(
+                    "/{mode}/geocoder/geographies/{searchtype}",
+                    web::get().to(serve_single),
+                )
+                .route(
+                    "/{mode}/geocoder/geographies/{endpoint}",
+                    web::post().to(serve_batch),
+                )
         })
         .workers(2);
         let bound = match server_builder.bind((BIND_HOST, 0)) {
@@ -5063,4 +5221,366 @@ fn geocode_census_live() {
     let mut row = svec!["4600 Silver Hill Rd, Washington, DC 20233"];
     row.extend(silver_hill_geoids());
     assert_eq!(got[1], row);
+}
+
+/// `n` distinct parsed addresses (Street, City, State, Zip) mixing complete rows, a ZIP-only row,
+/// the captured Silver Hill address and no-matches.
+fn census_parsed_rows(n: usize) -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["Street", "City", "State", "Zip"]];
+    for i in 0..n {
+        rows.push(match i % 10 {
+            0 => svec!["4600 Silver Hill Rd", "Washington", "DC", "20233"],
+            3 => vec![
+                format!("{i} NOMATCH Rd"),
+                "Nowhere".into(),
+                "NY".into(),
+                String::new(),
+            ],
+            5 => vec![
+                format!("{i} Elm St"),
+                String::new(),
+                String::new(),
+                "10001".into(),
+            ],
+            _ => vec![
+                format!("{i} Main St"),
+                "Anytown".into(),
+                "NY".into(),
+                format!("{:05}", 10000 + i),
+            ],
+        });
+    }
+    rows
+}
+
+/// Run `census` on `file` and return (stdout, the mock's request log).
+fn census_run(
+    wrk: &Workdir,
+    mock: &CensusMock,
+    file: &str,
+    column: &str,
+    extra: &[&str],
+) -> (String, Vec<String>) {
+    let before = mock.log().len();
+    let mut cmd = census_cmd(wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg(column)
+        .arg(file)
+        .args(["--rate-limit", "1000"])
+        .args(extra);
+    let output = wrk.output(&mut cmd);
+    assert!(
+        output.status.success(),
+        "{extra:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        mock.log()[before..].to_vec(),
+    )
+}
+
+#[test]
+#[serial]
+fn geocode_census_single_and_batch_are_identical() {
+    // the same input through the single-record and the batch endpoints must give byte-identical
+    // output for every batch-eligible format: qsv flattens and formats both into one shape
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_single_and_batch_are_identical");
+    let parsed = census_parsed_rows(60);
+    wrk.create("parsed.csv", parsed.clone());
+    let mut oneline = vec![svec!["Address"]];
+    for row in parsed.iter().skip(1) {
+        let parts: Vec<&String> = row.iter().filter(|p| !p.is_empty()).collect();
+        oneline.push(vec![
+            parts
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ]);
+    }
+    wrk.create("oneline.csv", oneline);
+    let mut points = vec![svec!["Point"]];
+    points.push(svec!["38.84601, -76.92744"]);
+    points.push(svec!["30, -175"]);
+    for i in 0..58 {
+        points.push(vec![format!(
+            "{}, {}",
+            40.0 + f64::from(i) / 97.0,
+            -74.5 + f64::from(i) / 89.0
+        )]);
+    }
+    wrk.create("points.csv", points);
+
+    let params = "street={Street},city={City},state={State},zip={Zip}";
+    let cases: Vec<(&str, &str, Vec<&str>, &str)> = vec![
+        (
+            "parsed.csv",
+            "Street",
+            vec!["--params", params, "-f", "%census-geoids"],
+            "addressbatch",
+        ),
+        (
+            "parsed.csv",
+            "Street",
+            vec![
+                "--params",
+                params,
+                "-f",
+                "%lat-long",
+                "--invalid-result",
+                "-",
+            ],
+            "addressbatch",
+        ),
+        (
+            "parsed.csv",
+            "Street",
+            vec![
+                "--params",
+                params,
+                "-f",
+                "%dyncols: {m:matchedAddress}, {t:tigerLine.tigerLineId}, {s:tigerLine.side}, \
+                 {bg:flat.Census Block Groups.BLKGRP}",
+            ],
+            "addressbatch",
+        ),
+        (
+            "oneline.csv",
+            "Address",
+            vec!["-f", "%census-geoids"],
+            "addressbatch",
+        ),
+        (
+            "oneline.csv",
+            "Address",
+            vec!["-f", "%location", "-c", "loc"],
+            "addressbatch",
+        ),
+        (
+            "points.csv",
+            "Point",
+            vec!["--reverse", "-f", "%census-geoids"],
+            "coordinatesbatch",
+        ),
+        (
+            "points.csv",
+            "Point",
+            vec![
+                "--reverse",
+                "-f",
+                "{coordinates.y} {coordinates.x}",
+                "-c",
+                "yx",
+            ],
+            "coordinatesbatch",
+        ),
+    ];
+    for (file, column, args, batch_endpoint) in cases {
+        let mut single_args = args.clone();
+        single_args.extend(["--census-mode", "single", "--no-cache"]);
+        let (single, single_log) = census_run(&wrk, &mock, file, column, &single_args);
+        let mut batch_args = args.clone();
+        batch_args.extend(["--census-mode", "batch", "--no-cache"]);
+        let (batch, batch_log) = census_run(&wrk, &mock, file, column, &batch_args);
+        assert_eq!(single, batch, "{file} {args:?}");
+        assert!(
+            single_log.len() > 40 && single_log.iter().all(|l| !l.contains("batch[")),
+            "{single_log:?}"
+        );
+        assert_eq!(batch_log.len(), 1, "{batch_log:?}");
+        assert!(
+            batch_log[0].starts_with(&format!("{batch_endpoint}[")),
+            "{batch_log:?}"
+        );
+        assert!(
+            batch_log[0].ends_with("?benchmark=Public_AR_Current&vintage=Current_Current"),
+            "{batch_log:?}"
+        );
+        // and the result is real: the captured GEOIDs on the Silver Hill row
+        if args.contains(&"%census-geoids") {
+            assert!(single.contains("24,24033,24033802405,240338024052,240338024052004"));
+        }
+    }
+}
+
+#[test]
+#[serial]
+fn geocode_census_auto_batches_at_threshold() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_auto_batches_at_threshold");
+    let params = "street={Street},city={City},state={State},zip={Zip}";
+    // a no-match row is not sent when the parsed address is incomplete: count only sent rows
+    for (n, batched) in [(49, false), (50, true)] {
+        let mut rows = vec![svec!["Street", "City", "State", "Zip"]];
+        for i in 0..n {
+            rows.push(vec![
+                format!("{i} Main St"),
+                "Anytown".into(),
+                "NY".into(),
+                String::new(),
+            ]);
+        }
+        // plus duplicates and an incomplete row: neither counts toward the threshold
+        rows.push(rows[1].clone());
+        rows.push(svec!["1 Lone St", "", "NY", ""]);
+        wrk.create("data.csv", rows);
+        let (_, log) = census_run(
+            &wrk,
+            &mock,
+            "data.csv",
+            "Street",
+            &["--params", params, "-f", "%census-geoids", "--no-cache"],
+        );
+        if batched {
+            assert_eq!(log.len(), 1, "{log:?}");
+            assert!(log[0].starts_with(&format!("addressbatch[{n}]")), "{log:?}");
+        } else {
+            assert_eq!(log.len(), n, "{log:?}");
+            assert!(log.iter().all(|l| l.starts_with("address?")), "{log:?}");
+        }
+    }
+    // an output that needs a single lookup never batches in auto mode
+    let (_, log) = census_run(
+        &wrk,
+        &mock,
+        "data.csv",
+        "Street",
+        &["--params", params, "-f", "%json", "--no-cache"],
+    );
+    assert_eq!(log.len(), 50, "{log:?}");
+    assert!(log.iter().all(|l| l.starts_with("address?")));
+}
+
+#[test]
+#[serial]
+fn geocode_census_batch_chunks_ties_and_cache() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_batch_chunks_ties_and_cache");
+    let mut rows = vec![svec!["Address"]];
+    for i in 0..18 {
+        rows.push(vec![format!("{i} Main St, Anytown, NY")]);
+    }
+    rows.push(svec!["1 TIE St, Anytown, NY"]);
+    rows.push(svec!["NOMATCH Rd, Nowhere, NY"]);
+    wrk.create("data.csv", rows.clone());
+    let batch = |format: &str, mode: &str| {
+        let before = mock.log().len();
+        let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+        cmd.env("QSV_CENSUS_GEOCODER_BATCH_CHUNK", "7")
+            .arg("census")
+            .arg("Address")
+            .arg("data.csv")
+            .args(["--census-mode", mode])
+            .args(["--rate-limit", "1000"])
+            .args(["-f", format])
+            .args(["--invalid-result", "-"]);
+        let output = wrk.output(&mut cmd);
+        assert!(output.status.success());
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            mock.log()[before..].to_vec(),
+        )
+    };
+
+    // 20 rows in uploads of 7, answered out of order, written back in order
+    let (stdout, stderr, log) = batch("%matched-address", "batch");
+    let expected: Vec<String> = std::iter::once("Address".to_string())
+        .chain(rows.iter().skip(1).map(|r| {
+            if r[0].contains("TIE") || r[0].contains("NOMATCH") {
+                "-".to_string()
+            } else {
+                format!("\"{}\"", r[0].to_uppercase())
+            }
+        }))
+        .collect();
+    assert_eq!(stdout.lines().collect::<Vec<_>>(), expected);
+    assert_eq!(
+        log.iter()
+            .map(|l| l.split('?').next().unwrap())
+            .collect::<Vec<_>>(),
+        ["addressbatch[7]", "addressbatch[7]", "addressbatch[6]"]
+    );
+    assert!(
+        stderr.contains("1 row(s) matched more than one address in a Census batch lookup"),
+        "{stderr}"
+    );
+
+    // matches were cached as batch results; the tie and the no-match were not (batch matching
+    // varies with the load upstream), so only they are uploaded again
+    let (again, _, log) = batch("%matched-address", "batch");
+    assert_eq!(again, stdout);
+    assert_eq!(log.len(), 1);
+    assert!(log[0].starts_with("addressbatch[2]"), "{log:?}");
+    // a batch entry serves any batch-eligible output, even in single mode: only the tie and the
+    // no-match are sent - one by one, and their single results ARE cached ("F" and "N")
+    let (_, _, log) = batch("%lat-long", "single");
+    assert_eq!(log.len(), 2, "{log:?}");
+    assert!(log.iter().all(|l| l.starts_with("onelineaddress?")));
+
+    // ...but a batch entry does not serve an output that needs the full result: the 18 batch
+    // matches are looked up one by one, and the full result replaces each batch entry
+    let (json, _, log) = batch("%json", "auto");
+    assert_eq!(log.len(), 18, "{log:?}");
+    assert!(json.contains("\"\"_source\"\":\"\"single\"\""), "{json}");
+    // full entries serve every output: nothing is sent at all
+    let (_, _, log) = batch("%census-geoids", "batch");
+    assert!(log.is_empty(), "{log:?}");
+}
+
+#[test]
+#[serial]
+fn geocode_census_batch_retries_and_fatal_errors() {
+    let wrk = Workdir::new("geocode_census_batch_retries_and_fatal_errors");
+    let mut rows = vec![svec!["Address"]];
+    for i in 0..5 {
+        rows.push(vec![format!("{i} Main St, Anytown, NY")]);
+    }
+    wrk.create("data.csv", rows);
+    // two 429s, then the upload goes through
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("flaky"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--census-mode", "batch", "--no-cache"])
+        .args(["-f", "%matched-address"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[5], svec!["4 MAIN ST, ANYTOWN, NY"]);
+    assert_eq!(mock.requests(), 3);
+
+    // HTTP 400: fatal, with Census's message (HTML stripped)
+    wrk.create("bad.csv", vec![svec!["Address"], svec!["BADREQ"]]);
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("bad.csv")
+        .args(["--census-mode", "batch", "--no-cache"]);
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(
+            "rejected the request (HTTP 400): An error occurred validating the parameters."
+        ),
+        "stderr: {stderr}"
+    );
+
+    // a failed upload fails its rows (left as is) and is reported
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("down"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--census-mode", "batch", "--no-cache"]);
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("5 Census Geocoder lookup(s) failed"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(mock.requests(), 4);
 }

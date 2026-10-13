@@ -696,6 +696,10 @@ geocode = [
     "geosuggest-utils",
     "geozero",
     "governor",
+    # multipart: used by `geocode census` batch uploads (the Census batch endpoints take a
+    # multipart file). Listed explicitly, like reqwest's `query`: never rely on another
+    # dependent of reqwest to enable it.
+    "reqwest/multipart",
     "rmp-serde",
 ]
 # luau lookup tables auto-decompress remote .gz/.zlib/.zst/.zip/.sz sources, so

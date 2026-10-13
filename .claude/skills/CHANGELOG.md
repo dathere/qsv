@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`qsv-geocode` skill regenerated for the new `census`/`censusnow` subcommands** ([#4804](https://github.com/dathere/qsv/pull/4804)), which geocode US addresses and coordinates with the free, keyless US Census Geocoder and return Census GEOIDs. It now documents the `--benchmark`, `--vintage` and `--census-mode` options, and `--params` for census address columns. No key is needed; `QSV_CENSUS_GEOCODER_URL` in the MCP server's environment points it at a caching proxy.
 - **`qsv-geocode` skill regenerated for the new `geoclient`/`geoclientnow` subcommands** ([#4789](https://github.com/dathere/qsv/pull/4789)), which geocode New York City locations through NYC's Geoclient API. It now documents the `--endpoint` and `--params` options. Using them against the public API requires a NYC API subscription key in `QSV_GEOCLIENT_API_KEY` in the MCP server's environment. Regenerated again for the `normalize` and `streetcode` endpoints ([#4797](https://github.com/dathere/qsv/pull/4797)).
 
 ## [24.0.0] - 2026-10-15

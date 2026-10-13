@@ -23,9 +23,9 @@
 #
 # Make sure you're using a release-optimized `qsv`.
 # If you can't use the prebuilt binaries at https://github.com/dathere/qsv/releases/latest,
-# build it to have at least the apply, geocode, luau, readstat, synthesize, to and polars features enabled:
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,readstat,synthesize,to,polars` or
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,readstat,synthesize,to,polars`
+# build it to have at least the apply, geocode, luau, profile, readstat, synthesize, to, viz and polars features enabled:
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,profile,readstat,synthesize,to,viz,polars` or
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,profile,readstat,synthesize,to,viz,polars`
 #
 # This shell script has been tested on Linux and macOS. It should work on other Unix-like systems,
 # but will NOT run on native Windows. If you're on Windows, you can run it using Cygwin or WSL
@@ -37,12 +37,12 @@
 # And of course, it dogfoods `qsv` as well to prepare the benchmark data, fetch the rowcount,
 # and to parse and format the benchmark results. :)
 # It uses the following commands: apply, cat, count, luau, safenames, sample, schema, search, select, slice,
-# snappy, sort, tojsonl, to xlsx and writestat. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
+# fixedwidth, snappy, sort, sqlp, table, tojsonl, to xlsx and writestat. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
 
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.8.0
+bm_version=9.9.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -209,6 +209,22 @@ if "$qsv_bin" readstat --help &>/dev/null && "$qsv_benchmarker_bin" writestat --
 else
   echo "NOTE: $qsv_bin or $qsv_benchmarker_bin does not have the readstat feature - skipping the"
   echo "      readstat & writestat benchmarks. Build both with the readstat feature enabled to run them."
+fi
+
+# check if $qsv_bin has the profile & viz commands. Also SOFT checks - both are feature-gated
+# and profile in particular is NOT compiled into every prebuilt binary. An unknown command
+# exits non-zero, so a missing one is detected here rather than published as an instant failure.
+has_profile=0
+if "$qsv_bin" profile --help &>/dev/null; then
+  has_profile=1
+else
+  echo "NOTE: $qsv_bin does not have the profile feature - skipping the profile benchmark."
+fi
+has_viz=0
+if "$qsv_bin" viz --help &>/dev/null; then
+  has_viz=1
+else
+  echo "NOTE: $qsv_bin does not have the viz feature - skipping the viz benchmark."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -465,6 +481,7 @@ function cleanup_files {
   rm -f template_temp.txt
   rm -f benchmark_work.*
   rm -r -f benchmark_work
+  rm -r -f benchmark_work_parquet
   rm -f extsort_sorted.csv
   rm -r -f partitioned
 }
@@ -478,6 +495,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f geo_data.csv
   rm -f ods_data.csv
   rm -f pragmastats_50kdata.csv*
+  rm -f fwf_100kdata.txt
   rm -f stat_100kdata*
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
@@ -486,6 +504,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f benchmark_data.jsonl
   rm -f benchmark_data.json
   rm -f benchmark_data.snappy
+  rm -f benchmark_data.parquet
   rm -f benchmark_data.csv.schema.json
   rm -f searchset_patterns.txt
   rm -f searchset_patterns_unicode.txt
@@ -614,6 +633,22 @@ if [ ! -r pragmastats_50kdata.csv ]; then
   "$qsv_benchmarker_bin" slice -l 50000 "$data" -o pragmastats_50kdata.csv
 fi
 
+# `table --align leftfwf` pads every row to each column's widest value, so the full 1M-row
+# dataset would balloon to ~2.2 GB of mostly spaces. Like to_ods, the fixedwidth benchmark reads
+# a subset instead - 100k rows, ~220 MB - and divides by its own rowcount.
+if [ ! -r fwf_100kdata.txt ]; then
+  echo "   fwf_100kdata.txt..."
+  "$qsv_benchmarker_bin" slice -l 100000 "$data" |
+    "$qsv_benchmarker_bin" table --align leftfwf -o fwf_100kdata.txt
+fi
+
+# the parquet input for sqlp_parquet_input, so it can be compared with the CSV-reading
+# sqlp_aggregations benchmark running the same query
+if [ ! -r benchmark_data.parquet ]; then
+  echo "   benchmark_data.parquet..."
+  "$qsv_benchmarker_bin" sqlp "$data" -q --format parquet --infer-len 100000 'select * from _t_1' --output benchmark_data.parquet
+fi
+
 # Measure the subset inputs' rowcounts, so recs_per_sec divides by the rows a benchmark
 # ACTUALLY read instead of the full dataset's $rowcount (qsv issue #4598).
 # These MUST be measured unconditionally, OUTSIDE the `if [ ! -r ... ]` prep guards above:
@@ -624,6 +659,8 @@ fi
 geo_rowcount=$("$qsv_benchmarker_bin" count --no-polars geo_data.csv)
 ods_rowcount=$("$qsv_benchmarker_bin" count --no-polars ods_data.csv)
 pragma_rowcount=$("$qsv_benchmarker_bin" count --no-polars pragmastats_50kdata.csv)
+# the fixedwidth input is not CSV, so count the records it converts to
+fwf_rowcount=$("$qsv_benchmarker_bin" fixedwidth fwf_100kdata.txt | "$qsv_benchmarker_bin" count --no-polars)
 
 # readstat & writestat inputs. writestat refuses the NYC 311 column names for SPSS & Stata
 # (they hold spaces), so the CSV is run through safenames first. A refusal exits instantly, and
@@ -677,6 +714,7 @@ function rowcount_for_benchmark {
     ;;
   geoconvert_csv2geojsonl) subset_rowcount="$geo_rowcount" ;;
   to_ods) subset_rowcount="$ods_rowcount" ;;
+  fixedwidth_100k) subset_rowcount="$fwf_rowcount" ;;
   readstat_sav | readstat_sav_compressed | readstat_dta | readstat_dta_select | readstat_xpt | \
     writestat_sav | writestat_sav_compress | writestat_dta | writestat_xpt)
     subset_rowcount="$stat_rowcount"
@@ -825,6 +863,9 @@ run datefmt_multi_select "$qsv_bin datefmt '/(?i) date$/' $data"
 run datefmt_formatstr_newcol "$qsv_bin datefmt --formatstr '%V' \"Created Date\" --new-column week_number $data"
 run dedup "$qsv_bin" dedup "$data"
 run dedup_sorted "$qsv_bin" dedup data_sorted.csv
+run dedup_sorted_streaming "$qsv_bin" dedup --sorted data_sorted.csv
+run denull "$qsv_bin" denull "$data"
+run denull_apply "$qsv_bin" denull --apply "$data"
 run diff "$qsv_bin" diff "$data" data_unsorted.csv
 run enum "$qsv_bin" enum "$data"
 run enum_hash "$qsv_bin" enum --hash 1- "$data"
@@ -851,7 +892,9 @@ run explode "$qsv_bin" explode City "-" "$data"
 run extdedup "$qsv_bin" extdedup "$data"
 run extdedup_csv "$qsv_bin" extdedup "$data" --select 1-5
 run extsort "$qsv_bin" extsort data_unsorted.csv extsort_sorted.csv
+run extsort_spill "$qsv_bin" extsort --memory-limit 100 data_unsorted.csv extsort_sorted.csv
 run extsort_csv env QSV_AUTOINDEX_SIZE=1 bash -c \'"$qsv_bin" extsort data_unsorted.csv --select 1-5 extsort_sorted.csv\'
+run fixedwidth_100k "$qsv_bin" fixedwidth fwf_100kdata.txt
 run fill "$qsv_bin" fill -v Unspecified \'Address Type\' "$data"
 run fixlengths "$qsv_bin" fixlengths "$data"
 run flatten "$qsv_bin" flatten "$data"
@@ -882,6 +925,9 @@ run frequency_limit20 "$qsv_bin" frequency --limit 20 "$data"
 run --index frequency_limit20_index "$qsv_bin" frequency --limit 20 "$data"
 run frequency_sorted "$qsv_bin" frequency data_sorted.csv
 run --index frequency_sorted_index "$qsv_bin" frequency data_sorted.csv
+run frequency_sketch "$qsv_bin" frequency --sketch-method frequent_items "$data"
+run --index frequency_sketch_index "$qsv_bin" frequency --sketch-method frequent_items "$data"
+run frequency_weighted "$qsv_bin" frequency --weight "'X Coordinate (State Plane)'" "$data"
 run geocode_suggest "$qsv_bin" geocode suggest City --new-column geocoded_city "$data"
 run geocode_suggest_batchall "$qsv_bin" geocode suggest City --new-column geocoded_city --batch 0 "$data"
 run geocode_reverse "$qsv_bin" geocode reverse Location --new-column geocoded_location "$data"
@@ -899,6 +945,8 @@ run join "$qsv_bin" join \'Community Board\' "$data" community_board communitybo
 run join_casei "$qsv_bin" join \'Community Board\' "$data" community_board --ignore-case communityboards.csv
 run joinp "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv
 run joinp_streaming "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --streaming
+run joinp_left "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left
+run joinp_left_anti "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left-anti
 run jsonl "$qsv_bin" jsonl benchmark_data.jsonl
 run jsonl_batchall "$qsv_bin" jsonl benchmark_data.jsonl --batch 0
 run jsonl_j1 "$qsv_bin" jsonl -j 1 benchmark_data.jsonl
@@ -945,6 +993,9 @@ run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \
 # same name, so the subset runs are never compared against the old full-dataset rows.
 # recs_per_sec for these divides by pragmastats_50kdata.csv's own rowcount, not the full
 # dataset's - see rowcount_for_benchmark() above and benchmark_aggregations.luau.
+if [[ "$has_profile" -eq 1 ]]; then
+  run profile "$qsv_bin" profile --no-dcat-discovery "$data" -o benchmark_work.metadata.json
+fi
 run pragmastat_50k "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
 run pragmastat_50k_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' pragmastats_50kdata.csv
 run --index pragmastat_50k_index "$qsv_bin" pragmastat --force pragmastats_50kdata.csv
@@ -1030,6 +1081,7 @@ run sqlp "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select * from _t_1 wher
 run sqlp_aggregations "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_vs_duckdb duckdb :memory: '"select Borough, count(*) from read_csv_auto('\'''$data''\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
+run sqlp_parquet_input "$qsv_bin" sqlp SKIP_INPUT -q '"select Borough, count(*) from read_parquet('\''benchmark_data.parquet'\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_expensive "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 expensive.sql
 run sqlp_aggregations_expensive_streaming "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 --streaming expensive.sql
 run sqlp_aggregations_expensive_vs_duckdb duckdb :memory: -c \".read expensiveduckdb.sql\"
@@ -1044,6 +1096,10 @@ run sqlp_nooptimizations "$qsv_bin" sqlp "$data" -q --no-optimizations --infer-l
 run sqlp_tryparsedates "$qsv_bin" sqlp "$data" -q --try-parsedates --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run sqlp_tryparsedates_inferlen "$qsv_bin" sqlp "$data" -q --infer-len 10000 --try-parsedates '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run stats "$qsv_bin" stats --force "$data"
+# exact vs HyperLogLog cardinality on their own: under --everything the exact mode tracker
+# runs anyway, so the stats_everything_approx pair cannot show what HLL alone costs
+run stats_cardinality "$qsv_bin" stats "$data" --force --cardinality --cache-threshold 0
+run stats_cardinality_approx "$qsv_bin" stats "$data" --force --cardinality --cardinality-method approx --cache-threshold 0
 run stats_create_cache "$qsv_bin" stats --force "$data" --cache-threshold 1
 run --index stats_index "$qsv_bin" stats --force "$data"
 run --index stats_index_with_cache "$qsv_bin" stats "$data" --cache-threshold 1
@@ -1052,12 +1108,15 @@ run --index stats_index_j1_with_cache "$qsv_bin" stats -j 1 "$data" --cache-thre
 run stats_everything "$qsv_bin" stats "$data" --force --everything
 run stats_everything_create_cache "$qsv_bin" stats "$data" --force --everything --cache-threshold 1
 run stats_everything_infer_dates "$qsv_bin" stats "$data" --force --everything --infer-dates
+run stats_everything_approx "$qsv_bin" stats "$data" --force --everything --quantile-method approx --cardinality-method approx --cache-threshold 0
+run stats_everything_mode_cap "$qsv_bin" stats "$data" --force --everything --mode-cardinality-cap 100000 --cache-threshold 0
 run stats_everything_j1 "$qsv_bin" stats "$data" --force --everything -j 1
 run stats_everything_sorted "$qsv_bin" stats data_sorted.csv --force --everything
 run --index stats_everything_index "$qsv_bin" stats "$data" --force --everything
 run --index stats_everything_index_with_cache "$qsv_bin" stats "$data" --everything --cache-threshold 1
 run --index stats_everything_infer_dates_index "$qsv_bin" stats "$data" --force --everything --infer-dates
 run --index stats_everything_infer_dates_index_with_cache "$qsv_bin" stats "$data" --everything --infer-dates --cache-threshold 1
+run --index stats_everything_approx_index "$qsv_bin" stats "$data" --force --everything --quantile-method approx --cardinality-method approx --cache-threshold 0
 run --index stats_everything_index_j1 "$qsv_bin" stats "$data" --force --everything -j 1
 run --index stats_everything_index_j1_with_cache "$qsv_bin" stats "$data" --everything -j 1 --cache-threshold 1
 run --index stats_everything_sorted_index "$qsv_bin" stats data_sorted.csv --force --everything
@@ -1083,6 +1142,11 @@ run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
 # overwrites an existing output file cleanly, so no per-run cleanup is needed
 # (cleanup_files removes benchmark_work.* at the end).
 run to_ods "$qsv_bin" to ods benchmark_work.ods ods_data.csv
+# --infer-len 127000 like the benchmark_data.json prep: polars' default inference window
+# guesses Incident Zip as numeric and the conversion fails on "48090-2123".
+# `to parquet` refuses to overwrite an existing output file, so - like to_sqlite - every run
+# needs per-run cleanup; it creates the missing output directory itself.
+run --conclude 'rm -r -f benchmark_work_parquet' to_parquet "$qsv_bin" to parquet --infer-len 127000 benchmark_work_parquet "$data"
 run tojsonl "$qsv_bin" tojsonl "$data"
 run tojsonl_batchall "$qsv_bin" tojsonl --batch 0 "$data"
 run tojsonl_j1 "$qsv_bin" tojsonl -j 1 "$data"
@@ -1105,6 +1169,9 @@ if [[ "$has_readstat" -eq 1 ]]; then
   run writestat_sav_compress "$qsv_bin" writestat --compress stat_100kdata.csv -o benchmark_work.sav
   run writestat_dta "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.dta
   run writestat_xpt "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.xpt
+fi
+if [[ "$has_viz" -eq 1 ]]; then
+  run viz_smart "$qsv_bin" viz smart "$data" -o benchmark_work.html
 fi
 run --index validate_index "$qsv_bin" validate "$data" "$schema"
 run --index validate_batchall_index "$qsv_bin" validate --batch 0 "$data" "$schema"

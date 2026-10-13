@@ -254,6 +254,14 @@ stats options:
                                            * --infer-boolean forces exact (boolean
                                              inference needs cardinality == 2 exactness);
                                              a one-time warning is emitted.
+                                           * When modes are computed (with --mode or
+                                             with --everything) and no mode cardinality
+                                             cap is set, the exact mode tracker counts every
+                                             unique value, so that exact count is reported
+                                             and no sketch is built. With a cap, the
+                                             estimate is used only for columns whose
+                                             tracker was dropped.
+                                           * The estimate never exceeds the row count.
                                            * Reproducible across PARALLEL --jobs values:
                                              the HLL union used at merge time is
                                              associative and order-invariant, so chunk
@@ -5182,11 +5190,20 @@ impl Stats {
         // RSE with ~5KB per column. Hll8 stores 8 bits per register (no decode work
         // on update); memory is the same order whether sparse or dense.
         //
+        // NOT allocated when mode tracking is on with no --mode-cardinality-cap: the
+        // exact tracker is then kept for the whole run (see need_exact_modes_tracker
+        // above), so its exact cardinality is free, and a sketch would only add
+        // per-sample hashing to report a worse number. With a cap the tracker may be
+        // dropped, and the sketch is what reports cardinality for those columns.
+        //
         // Compiled out entirely on big-endian — Apache DataSketches is unavailable,
         // so `hll` is always the zero-sized default there (`HllSlot` is a
         // unit-like ZST on big-endian).
         #[cfg(not(target_endian = "big"))]
-        let hll = if which.cardinality && which.approx_cardinality {
+        let hll = if which.cardinality
+            && which.approx_cardinality
+            && !(which.mode && which.mode_cardinality_cap == 0)
+        {
             HllSlot(Some(
                 datasketches::hll::HllSketch::new(HLL_LG_K, datasketches::hll::HllType::Hll8)
                     .expect("HLL_LG_K is within the supported lg_config_k range of [4, 21]"),
@@ -5903,18 +5920,25 @@ impl Stats {
         }
 
         // --cardinality-method approx: override the cardinality and uniqueness_ratio
-        // slots with the HyperLogLog estimate. The mode/antimode slots (positions 2-7
-        // when present) are untouched — modes still come from the exact tracker,
-        // gated by --mode-cardinality-cap. Stats::new guarantees mc_pieces has
-        // positions 0 and 1 reserved when which.cardinality is true (every reachable
-        // branch above either pushes 2 cardinality fields or starts with EMPTY_STRING
-        // placeholders).
+        // slots with the HyperLogLog estimate - but only when no exact count exists,
+        // i.e. no tracker was kept or --mode-cardinality-cap dropped it. A surviving
+        // tracker's count is exact and already in slot 0. The mode/antimode slots
+        // (positions 2-7 when present) are untouched. Stats::new guarantees mc_pieces
+        // has positions 0 and 1 reserved when which.cardinality is true (every
+        // reachable branch above either pushes 2 cardinality fields or starts with
+        // EMPTY_STRING placeholders).
+        let exact_cardinality_available =
+            !self.modes_dropped && (self.modes.is_some() || self.weighted_modes.is_some());
         if self.which.cardinality
+            && !exact_cardinality_available
             && let Some(hll_sketch) = self.hll.0.as_ref()
             && mc_pieces.len() >= 2
         {
+            // A column cannot hold more distinct values than rows, but the estimate
+            // has ~1.5% error either way: unclamped, an all-unique column reported a
+            // cardinality above its row count and a uniqueness_ratio above 1.
             #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
-            let est = hll_sketch.estimate().round() as u64;
+            let est = (hll_sketch.estimate().round() as u64).min(record_count);
             cardinality = est;
             itoa_buf.format(est).clone_into(&mut mc_pieces[0]);
             #[allow(clippy::cast_precision_loss)]

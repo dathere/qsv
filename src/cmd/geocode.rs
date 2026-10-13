@@ -26,7 +26,8 @@ The major subcommands are:
  * census       - (Census) geocode a US address or coordinate.
  * index-*      - manage the local Geonames cities index.
                   (index-check, index-update, index-load & index-reset)
- * cache-*      - manage the persistent on-disk OpenCage and Geoclient result caches.
+ * cache-*      - manage the persistent on-disk OpenCage, Geoclient and Census result
+                  caches.
                   (cache-clear, cache-prune & cache-info)
 
 Each geocoding subcommand has a "now" variant - suggestnow, reversenow, countryinfonow,
@@ -391,13 +392,104 @@ endpoints only), but does not require an input file.
   $ qsv geocode geoclientnow --endpoint bbl -f '%pretty-json' 1008350041
   $ qsv geocode geoclientnow --endpoint normalize "w 100 st"
 
-### OpenCage & Geoclient result caches
+### Census
+Online geocoding of US addresses and coordinates using the US Census Geocoder
+(https://geocoding.geo.census.gov/geocoder). It is free and needs no API key. Besides
+coordinates and the matched address, it returns the Census geographies a location falls
+in - state, county, tract, block group and block, and more (places, county subdivisions,
+congressional and state legislative districts, urban areas, ZCTAs, etc.) - with their
+GEOIDs, which is what joining Census statistics to your data needs.
+
+To use a caching proxy that speaks the same API (e.g.
+https://github.com/dathere/uscensus-caching-geocoder), set QSV_CENSUS_GEOCODER_URL to its
+base URL (e.g. http://localhost:8080/geocoder). As the proxy caches results itself, using
+the --no-cache option is then suggested.
+
+#### census
+There are three kinds of input:
+  * a one-line address in <column> (the default), e.g.
+    "4600 Silver Hill Rd, Washington, DC 20233".
+  * an address in several columns, mapped with --params to the parts street, city,
+    state and zip ("name={Column}" or a fixed "name=value"), e.g.
+    "street={Street},city={City},state=MD,zip={Zip}". The Census Geocoder
+    needs a street plus a ZIP code, or a street plus city and state: a row without
+    them is not sent, and is left unchanged (or set to --invalid-result). <column> is
+    then only the column the result goes in.
+  * a "lat, long" WGS 84 coordinate in <column>, with --reverse. It returns the Census
+    geographies at that point (there is no matched address).
+
+The --benchmark (address ranges release) and --vintage (geography release) options
+select what Census matches against. The defaults, Public_AR_Current and
+Current_Current, are the latest. Use e.g. --vintage Census2020_Current for 2020 Census
+geographies or ACS2026_Current for the ones the ACS uses. See
+https://geocoding.geo.census.gov/geocoder/vintages?benchmark=Public_AR_Current.
+
+Census has single-record and batch endpoints. A single lookup returns everything; a batch
+lookup (up to 2,000 addresses per upload, one upload at a time) is much faster for large
+files, but only returns the matched address, coordinates, TIGER line and match type, and
+the state, county, tract, block group and block. By default (--census-mode auto), each
+read chunk of rows (see --batch) is geocoded in batch when the --formatstr only needs
+those fields and at least 50 of its locations are not cached yet; otherwise one request
+per location is sent, 5 per second (see --rate-limit). Batch lookups are only used with
+Current_* vintages.
+An address the batch endpoint matches to more than one address (a "Tie") is not
+geocoded; a warning counts them. --census-mode single geocodes them with the first match.
+
+A location that Census cannot geocode is left unchanged (or set to --invalid-result).
+Requests that are rate-limited or fail on the server are retried up to 3 times. If 10
+requests (or batch uploads) in a row still fail, the run is aborted. An HTTP 400 answer
+(e.g. an invalid --benchmark or --vintage) stops the run. Results are cached in a
+persistent on-disk cache (see --cache-ttl & --no-cache), and duplicate locations are only
+looked up once. Batch no-matches and ties are not cached, as batch matching varies with
+the load on the Census servers.
+
+The --formatstr option supports these Census-specific formats:
+  * '%+' | '%lat-long'    - <latitude>, <longitude> (default)
+  * '%location'           - (<latitude>, <longitude>)
+  * '%matched-address'    - the matched address, e.g.
+                            "4600 SILVER HILL RD, WASHINGTON, DC, 20233"
+  * '%census-geoids'      - 5 columns, as with "%dyncols:": census_state,
+                            census_county, census_tract, census_blockgroup and
+                            census_block - the GEOIDs of the location's state (24),
+                            county (24033), tract (24033802405), block group
+                            (240338024052) and block (240338024052004). ACS vintages
+                            have no blocks, so census_block is empty for them.
+  * '%json'               - the full result as JSON
+  * '%pretty-json'        - the full result as pretty JSON
+The result qsv returns (and prints for %json) has these fields: matchedAddress,
+coordinates.x (longitude), coordinates.y (latitude), tigerLine.tigerLineId,
+tigerLine.side, addressComponents (address searches), geographies (Census's own,
+verbatim: one array of features per layer) and flat - the first feature of each layer,
+e.g. flat.Counties.GEOID, flat.Census Tracts.TRACT or
+flat.120th Congressional Districts.BASENAME. qsv adds _resultCount (how many addresses
+matched; the first is used), _matchType (Exact or Non_Exact, batch lookups only) and
+_source (single or batch). A field missing from a result renders empty.
+Dynamic formatting is also supported, e.g. "{matchedAddress} ({tigerLine.side})".
+As layer names contain spaces, the flat fields can only be used with "%dyncols:", e.g.
+  "%dyncols: {tract:flat.Census Tracts.GEOID}, {cd:flat.120th Congressional Districts.GEOID}"
+Layer names vary by vintage (e.g. "2020 Census Blocks" in Current vintages, "Census
+Blocks" in Census2020 ones); run censusnow with -f %pretty-json to see them.
+
+  $ qsv geocode census Address -f %census-geoids addresses.csv
+  $ qsv geocode census Address --params "street={Street},city={City},state={State},zip={Zip}" -c latlong file.csv
+  $ qsv geocode census LatLong --reverse -f '%dyncols: {tract:flat.Census Tracts.GEOID}' points.csv
+
+#### censusnow
+Accepts the same options as census (except --params), but does not require an
+input file.
+
+  $ qsv geocode censusnow "4600 Silver Hill Rd, Washington, DC 20233"
+  $ qsv geocode censusnow -f %pretty-json "1600 Pennsylvania Ave NW, Washington, DC 20500"
+  $ qsv geocode censusnow --reverse -f %census-geoids "38.84601, -76.92744"
+
+### OpenCage, Geoclient & Census result caches
 
 #### cache-* operations
-Manage the persistent on-disk result caches used by the opencage and geoclient
+Manage the persistent on-disk result caches used by the opencage, geoclient and census
 subcommands. They are separate from the Geonames cities index, and live in
-{cache-dir}/geocode-opencage_v1 and {cache-dir}/geocode-geoclient_v1.
-Each operation applies to both caches; cache-info prints one JSON line per cache.
+{cache-dir}/geocode-opencage_v3.redb, {cache-dir}/geocode-geoclient_v3.redb and
+{cache-dir}/geocode-censusgeocoder_v3.redb.
+Each operation applies to all three caches; cache-info prints one JSON line per cache.
 
 It has three operations:
  * clear  - wipe the entire disk caches, removing all cached results.
@@ -408,7 +500,7 @@ It has three operations:
  * info   - report the cache directory, entry count, on-disk size and the oldest/newest
             cached entry timestamps. Emits a JSON summary to stdout.
 
-Wipe the entire OpenCage and Geoclient caches.
+Wipe the entire OpenCage, Geoclient and Census caches.
 
   $ qsv geocode cache-clear
 
@@ -557,7 +649,7 @@ geocode options:
                                 If not set (default), the population is not used and the
                                 nearest city is returned.
 
-                                OPENCAGE & GEOCLIENT options:
+                                OPENCAGE, GEOCLIENT & CENSUS options:
     --api-key <key>             The API key for the opencage and geoclient subcommands.
                                 If set, it takes precedence over the QSV_OPENCAGE_API_KEY
                                 (opencage) or QSV_GEOCLIENT_API_KEY (geoclient) environment
@@ -576,7 +668,7 @@ geocode options:
                                 [default: 1209600]
     --no-cache                  Disable the persistent on-disk result cache. Duplicate
                                 queries within a run are still de-duplicated
-                                (for geoclient, within each --batch).
+                                (for geoclient and census, within each --batch).
 
                                 OPENCAGE only options:
     --reverse                  Force reverse geocoding for opencage/opencagenow (treat the
@@ -723,7 +815,8 @@ geocode options:
                                 API request.
                                 [default: 120]
     --cache-dir <dir>           The directory to use for caching the Geonames cities index
-                                and the persistent on-disk OpenCage and Geoclient result caches.
+                                and the persistent on-disk OpenCage, Geoclient and Census result
+                                caches.
                                 If the directory does not exist, qsv will attempt to create it.
                                 If the QSV_CACHE_DIR envvar is set, it will be used instead.
                                 The index file is named for the qsv release, so each upgrade
@@ -732,7 +825,8 @@ geocode options:
                                 [default: ~/.qsv-cache]
 
                                 CACHE-PRUNE only option:
-    --older-than <val>          Delete OpenCage and Geoclient cache entries older than this value.
+    --older-than <val>          Delete OpenCage, Geoclient and Census cache entries older than
+                                this value.
                                 Accepts an absolute date/datetime (e.g. 2025-01-31) or a
                                 relative age with a unit suffix (s/m/h/d/w = seconds,
                                 minutes, hours, days or weeks; e.g. 30d, 2w, 48h).

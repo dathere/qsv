@@ -1447,6 +1447,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         // fail fast on a bad --params, before any input is read
         census::parse_params(args.flag_params.as_deref())?;
+        // QSV_CENSUS_GEOCODER_URL may come from a .env file qsv loads: say where addresses go
+        let base_url = census::census_base_url();
+        let shown_url = census::check_base_url(&base_url)?;
+        if base_url != census::DEFAULT_CENSUS_GEOCODER_URL {
+            wwarn!(
+                "Using the Census Geocoder at {shown_url} (set by QSV_CENSUS_GEOCODER_URL): the \
+                 locations to geocode are sent there."
+            );
+        }
         let mode = census::CensusMode::parse(args.flag_census_mode.as_deref())?;
         for (value, flag, default) in [
             (

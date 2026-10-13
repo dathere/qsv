@@ -28,6 +28,7 @@ use futures::StreamExt;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use serde_json::{Value, json};
+use url::Url;
 use uuid::Uuid;
 
 use super::{
@@ -66,6 +67,41 @@ pub(super) fn census_base_url() -> String {
         .map(|u| u.trim().trim_end_matches('/').to_string())
         .filter(|u| !u.is_empty())
         .unwrap_or_else(|| DEFAULT_CENSUS_GEOCODER_URL.to_string())
+}
+
+/// Check a Census Geocoder base URL: an http(s) URL. Returns it with any `user:password@`
+/// removed, for messages and cache keys (the full URL is still what requests go to).
+pub(super) fn check_base_url(base_url: &str) -> CliResult<String> {
+    let Ok(mut url) = Url::parse(base_url) else {
+        return fail_incorrectusage_clierror!(
+            "QSV_CENSUS_GEOCODER_URL is not a valid URL: {:?}.",
+            redact_userinfo(base_url)
+        );
+    };
+    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+        return fail_incorrectusage_clierror!(
+            "QSV_CENSUS_GEOCODER_URL must be an http(s) URL, e.g. http://localhost:8080/geocoder \
+             (got {:?}).",
+            redact_userinfo(base_url)
+        );
+    }
+    let _ = url.set_username("");
+    let _ = url.set_password(None);
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+/// `url` without a `user:password@` part, best effort (for an unparseable URL too).
+fn redact_userinfo(url: &str) -> String {
+    match url.split_once("://") {
+        Some((scheme, rest)) => {
+            let authority_end = rest.find('/').unwrap_or(rest.len());
+            match rest[..authority_end].rfind('@') {
+                Some(at) => format!("{scheme}://{}", &rest[at + 1..]),
+                None => url.to_string(),
+            }
+        },
+        None => url.to_string(),
+    }
 }
 
 /// What a row's input is.
@@ -487,7 +523,9 @@ fn retry_base() -> Duration {
     let ms = std::env::var("QSV_CENSUS_GEOCODER_RETRY_BASE_MS")
         .ok()
         .and_then(|v| v.trim().parse::<u64>().ok())
-        .unwrap_or(1000);
+        .unwrap_or(1000)
+        // a test knob: an absurd value must not overflow the upload-gap arithmetic
+        .min(60_000);
     Duration::from_millis(ms)
 }
 
@@ -523,15 +561,21 @@ fn error_reason(body: &[u8]) -> String {
             }
             squish(&plain)
         });
-    reason.chars().take(300).collect()
+    // the body comes from whatever host QSV_CENSUS_GEOCODER_URL names: no terminal escapes
+    reason
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(300)
+        .collect()
 }
 
 /// The fatal error for a 400/404 answer.
 fn fatal_status(status: u16, url: &str, body: &[u8]) -> CensusError {
     if status == 404 {
         CensusError::Fatal(format!(
-            "Census Geocoder endpoint not found (HTTP 404) at {url}. Check \
-             QSV_CENSUS_GEOCODER_URL - it should end in /geocoder."
+            "Census Geocoder endpoint not found (HTTP 404) at {}. Check QSV_CENSUS_GEOCODER_URL - \
+             it should end in /geocoder.",
+            redact_userinfo(url)
         ))
     } else {
         let reason = error_reason(body);
@@ -951,6 +995,8 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
     let mode = InputMode::from_args(&args);
     let params = parse_params(args.flag_params.as_deref())?;
     let base_url = census_base_url();
+    // what messages and cache keys show: no credentials
+    let key_url = check_base_url(&base_url)?;
     // run() resolved both to their defaults
     let benchmark = args.flag_benchmark.clone().unwrap_or_default();
     let vintage = args.flag_vintage.clone().unwrap_or_default();
@@ -1126,7 +1172,7 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
             .iter()
             .map(|rec| {
                 let cell = rec.get(column_index).unwrap_or_default();
-                prepare_request(mode, &base_url, &benchmark, &vintage, cell, rec, &sources)
+                prepare_request(mode, &key_url, &benchmark, &vintage, cell, rec, &sources)
             })
             .collect();
 
@@ -1818,5 +1864,36 @@ mod tests {
             String::from_utf8(batch_file(&[&a, &b]).unwrap()).unwrap(),
             "0,\"4600 Silver Hill Rd, Washington, DC 20233\",,,\n1,1 Main St,Town,NY,10001\n"
         );
+    }
+
+    #[test]
+    fn base_urls() {
+        assert_eq!(
+            check_base_url("http://user:secret@proxy:8080/geocoder/").unwrap(),
+            "http://proxy:8080/geocoder"
+        );
+        assert_eq!(
+            check_base_url(DEFAULT_CENSUS_GEOCODER_URL).unwrap(),
+            DEFAULT_CENSUS_GEOCODER_URL
+        );
+        for bad in [
+            "localhost:8080/geocoder",
+            "ftp://x/geocoder",
+            "not a url",
+            "file:///tmp",
+        ] {
+            assert!(check_base_url(bad).is_err(), "{bad}");
+        }
+        assert_eq!(redact_userinfo("https://u:p@h/a@b"), "https://h/a@b");
+        assert_eq!(redact_userinfo("nonsense"), "nonsense");
+    }
+
+    #[test]
+    fn error_reasons_drop_control_characters() {
+        assert_eq!(
+            error_reason(b"{\"errors\":[\"bad \\u001b]0;pwned\\u0007 vintage\"]}"),
+            "bad ]0;pwned vintage"
+        );
+        assert_eq!(error_reason(b"<p>a\x1b[31m b</p>"), "a[31m b");
     }
 }

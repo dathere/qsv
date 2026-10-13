@@ -5717,3 +5717,46 @@ fn geocode_census_batch_requeries_connecticut() {
     assert_eq!(again, single);
     assert!(log.iter().all(|l| !l.contains("Hartford")), "{log:?}");
 }
+
+#[test]
+#[serial]
+fn geocode_census_base_url_checks() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_base_url_checks");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Address"], svec!["1 Main St, Anytown, NY"]],
+    );
+    let run = |url: &str| {
+        let mut cmd = census_cmd(&wrk, url);
+        cmd.arg("census")
+            .arg("Address")
+            .arg("data.csv")
+            .arg("--no-cache");
+        let output = wrk.output(&mut cmd);
+        (
+            output.status.success(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    // a non-default URL (e.g. from a planted .env) is named on stderr
+    let (ok, stderr) = run(&mock.url("ok"));
+    assert!(ok, "{stderr}");
+    assert!(
+        stderr.contains(&format!("Using the Census Geocoder at {}", mock.url("ok"))),
+        "{stderr}"
+    );
+    // not an http(s) URL: refused before anything is read or sent
+    for bad in ["ftp://127.0.0.1/geocoder", "localhost:8080/geocoder"] {
+        let (ok, stderr) = run(bad);
+        assert!(!ok);
+        assert!(stderr.contains("must be an http(s) URL"), "{bad}: {stderr}");
+    }
+    assert_eq!(mock.requests(), 1);
+    // credentials in the URL are never echoed
+    let with_creds = mock.url("ok").replace("http://", "http://user:secret@") + "/nope";
+    let (ok, stderr) = run(&with_creds);
+    assert!(!ok);
+    assert!(stderr.contains("HTTP 404"), "{stderr}");
+    assert!(!stderr.contains("secret"), "{stderr}");
+}

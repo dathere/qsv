@@ -4239,6 +4239,9 @@ mod census_mock {
         pub county:  String,
         pub tract:   String,
         pub block:   String,
+        /// Connecticut: the planning region the Current vintage's county, tract and block group
+        /// layers use instead of `county` (which the 2020 block - and a batch row - keep).
+        pub region:  Option<String>,
     }
 
     fn hash(s: &str) -> u64 {
@@ -4249,6 +4252,20 @@ mod census_mock {
 
     fn synthetic(seed: &str, matched: String) -> Rec {
         let h = hash(seed);
+        if seed.contains("HARTFORD") {
+            return Rec {
+                matched,
+                lon: -72.682254053971,
+                lat: 41.762863585706,
+                tiger: "3541159".to_string(),
+                side: "R",
+                state: "09".to_string(),
+                county: "003".to_string(),
+                tract: "502100".to_string(),
+                block: "2016".to_string(),
+                region: Some("110".to_string()),
+            };
+        }
         Rec {
             matched,
             lon: -74.0 + (h % 999_983) as f64 / 1_000_003.0,
@@ -4259,6 +4276,7 @@ mod census_mock {
             county: format!("{:03}", 1 + (h >> 8) % 120),
             tract: format!("{:06}", (h >> 16) % 1_000_000),
             block: format!("{:04}", 1000 + (h >> 24) % 9000),
+            region: None,
         }
     }
 
@@ -4273,6 +4291,7 @@ mod census_mock {
             county:  "033".to_string(),
             tract:   "802405".to_string(),
             block:   "2004".to_string(),
+            region:  None,
         }
     }
 
@@ -4333,47 +4352,67 @@ mod census_mock {
     /// The template's geographies, with the five Census layers rewritten for `rec`.
     fn geographies(template: &Value, rec: &Rec) -> Value {
         let mut geos = template.clone();
-        let blkgrp = &rec.block[..1];
-        let county = format!("{}{}", rec.state, rec.county);
+        let blkgrp = rec.block[..1].to_string();
+        // the county, tract and block group layers use a Connecticut planning region; the block
+        // keeps the 2020 county
+        let layer_county = rec.region.clone().unwrap_or_else(|| rec.county.clone());
+        let county = format!("{}{layer_county}", rec.state);
         let tract = format!("{county}{}", rec.tract);
-        for (layer, attrs) in [
-            ("States", vec![("STATE", &rec.state), ("GEOID", &rec.state)]),
-            (
-                "Counties",
-                vec![("COUNTY", &rec.county), ("GEOID", &county)],
-            ),
-            (
-                "Census Tracts",
-                vec![("TRACT", &rec.tract), ("GEOID", &tract)],
-            ),
-        ] {
-            let f = &mut geos[layer][0];
-            f["STATE"] = json!(rec.state);
+        let set = |geos: &mut Value, layer: &str, attrs: Vec<(&str, String)>| {
             for (k, v) in attrs {
-                f[k] = json!(v);
+                geos[layer][0][k] = json!(v);
             }
-        }
-        let bg = &mut geos["Census Block Groups"][0];
-        for (k, v) in [
-            ("STATE", rec.state.clone()),
-            ("COUNTY", rec.county.clone()),
-            ("TRACT", rec.tract.clone()),
-            ("BLKGRP", blkgrp.to_string()),
-            ("GEOID", format!("{tract}{blkgrp}")),
-        ] {
-            bg[k] = json!(v);
-        }
-        let b = &mut geos["2020 Census Blocks"][0];
-        for (k, v) in [
-            ("STATE", rec.state.clone()),
-            ("COUNTY", rec.county.clone()),
-            ("TRACT", rec.tract.clone()),
-            ("BLKGRP", blkgrp.to_string()),
-            ("BLOCK", rec.block.clone()),
-            ("GEOID", format!("{tract}{}", rec.block)),
-        ] {
-            b[k] = json!(v);
-        }
+        };
+        set(
+            &mut geos,
+            "States",
+            vec![("STATE", rec.state.clone()), ("GEOID", rec.state.clone())],
+        );
+        set(
+            &mut geos,
+            "Counties",
+            vec![
+                ("STATE", rec.state.clone()),
+                ("COUNTY", layer_county.clone()),
+                ("GEOID", county.clone()),
+            ],
+        );
+        set(
+            &mut geos,
+            "Census Tracts",
+            vec![
+                ("STATE", rec.state.clone()),
+                ("COUNTY", layer_county.clone()),
+                ("TRACT", rec.tract.clone()),
+                ("GEOID", tract.clone()),
+            ],
+        );
+        set(
+            &mut geos,
+            "Census Block Groups",
+            vec![
+                ("STATE", rec.state.clone()),
+                ("COUNTY", layer_county.clone()),
+                ("TRACT", rec.tract.clone()),
+                ("BLKGRP", blkgrp.clone()),
+                ("GEOID", format!("{tract}{blkgrp}")),
+            ],
+        );
+        set(
+            &mut geos,
+            "2020 Census Blocks",
+            vec![
+                ("STATE", rec.state.clone()),
+                ("COUNTY", rec.county.clone()),
+                ("TRACT", rec.tract.clone()),
+                ("BLKGRP", blkgrp.clone()),
+                (
+                    "GEOID",
+                    format!("{}{}{}{}", rec.state, rec.county, rec.tract, rec.block),
+                ),
+                ("BLOCK", rec.block.clone()),
+            ],
+        );
         geos
     }
 
@@ -5605,4 +5644,76 @@ fn geocode_census_batch_retries_and_fatal_errors() {
         "stderr: {stderr}"
     );
     assert_eq!(mock.requests(), 4);
+}
+
+#[test]
+#[serial]
+fn geocode_census_batch_requeries_connecticut() {
+    // Connecticut's Current-vintage county, tract and block group layers use its planning
+    // regions (09110), but a batch row only has the 2020 block's legacy county (09003): a batch
+    // match in CT is looked up again with the single-record endpoint, so the output stays
+    // identical to --census-mode single (live finding, 2026-10-13)
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_batch_requeries_connecticut");
+    let mut rows = census_parsed_rows(10);
+    rows.push(svec!["210 Capitol Ave", "Hartford", "CT", "06106"]);
+    wrk.create("data.csv", rows);
+    let params = "street={Street},city={City},state={State},zip={Zip}";
+    let (single, _) = census_run(
+        &wrk,
+        &mock,
+        "data.csv",
+        "Street",
+        &[
+            "--params",
+            params,
+            "-f",
+            "%census-geoids",
+            "--census-mode",
+            "single",
+            "--no-cache",
+        ],
+    );
+    assert!(
+        single.contains("09,09110,09110502100,091105021002,090035021002016"),
+        "{single}"
+    );
+    let (batch, log) = census_run(
+        &wrk,
+        &mock,
+        "data.csv",
+        "Street",
+        &[
+            "--params",
+            params,
+            "-f",
+            "%census-geoids",
+            "--census-mode",
+            "batch",
+        ],
+    );
+    assert_eq!(single, batch);
+    assert_eq!(log.len(), 2, "{log:?}");
+    assert!(log[0].starts_with("addressbatch[11]"), "{log:?}");
+    assert!(
+        log[1].starts_with("address?") && log[1].contains("Hartford"),
+        "{log:?}"
+    );
+    // the CT row was cached from its single lookup: a full entry, so it is not sent again
+    let (again, log) = census_run(
+        &wrk,
+        &mock,
+        "data.csv",
+        "Street",
+        &[
+            "--params",
+            params,
+            "-f",
+            "%census-geoids",
+            "--census-mode",
+            "batch",
+        ],
+    );
+    assert_eq!(again, single);
+    assert!(log.iter().all(|l| !l.contains("Hartford")), "{log:?}");
 }

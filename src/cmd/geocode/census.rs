@@ -813,6 +813,19 @@ fn parse_batch_response(mode: InputMode, body: &[u8]) -> Result<HashMap<usize, B
     Ok(rows)
 }
 
+/// Must a batch match be looked up again with the single-record endpoint? Connecticut's: since
+/// 2022 its county equivalents are planning regions, and the Current vintage's Counties, Census
+/// Tracts and Census Block Groups layers use them (county 110, "Capitol Planning Region"), but a
+/// batch row only has the 2020 block's legacy county (003, Hartford County) - so the GEOIDs
+/// synthesized from it would not be the Current vintage's (live probe, 2026-10-13).
+fn needs_single_lookup(obj: &Value) -> bool {
+    obj.get("flat")
+        .and_then(|f| f.get("States"))
+        .and_then(|s| s.get("STATE"))
+        .and_then(Value::as_str)
+        == Some("09")
+}
+
 /// The headerless CSV file a batch upload sends: one `id,<request's batch fields>` row each, the
 /// id being the request's index in `requests`. The csv crate quotes fields that need it (a
 /// one-line address is full of commas).
@@ -1160,6 +1173,9 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
             CensusMode::Auto => batch_ok && to_fetch.len() >= BATCH_THRESHOLD,
         };
         let mut ties: HashSet<&str> = HashSet::new();
+        // the lookups for the single-record endpoint: all of them, or (after batch uploads) the
+        // batch matches a batch result cannot describe correctly
+        let mut single_fetch: Vec<&Request> = Vec::new();
         if use_batch {
             for group in to_fetch.chunks(batch_chunk) {
                 if let Some(last) = last_upload {
@@ -1183,6 +1199,9 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
                         for (id, req) in group.iter().enumerate() {
                             let key = req.key.as_str();
                             match rows.remove(&id) {
+                                Some(BatchRow::Match(obj)) if needs_single_lookup(&obj) => {
+                                    single_fetch.push(req);
+                                },
                                 Some(BatchRow::Match(obj)) => {
                                     if let Some(dc) = &disk_cache
                                         && let Some(encoded) =
@@ -1235,18 +1254,22 @@ pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> C
                 }
             }
         } else {
+            single_fetch = to_fetch;
+        }
+        if !single_fetch.is_empty() {
             let client = &client;
             let limiter = &limiter;
             let (base_url, benchmark, vintage) =
                 (base_url.as_str(), benchmark.as_str(), vintage.as_str());
-            let mut responses = futures::stream::iter(to_fetch.into_iter().map(|req| async move {
-                let result = census_fetch(
-                    client, limiter, base_url, benchmark, vintage, mode, &req.query, retry_base,
-                )
-                .await;
-                (req.key.as_str(), result)
-            }))
-            .buffered(concurrency);
+            let mut responses =
+                futures::stream::iter(single_fetch.into_iter().map(|req| async move {
+                    let result = census_fetch(
+                        client, limiter, base_url, benchmark, vintage, mode, &req.query, retry_base,
+                    )
+                    .await;
+                    (req.key.as_str(), result)
+                }))
+                .buffered(concurrency);
 
             while let Some((key, result)) = responses.next().await {
                 match result {
@@ -1755,6 +1778,20 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn connecticut_batch_matches_need_a_single_lookup() {
+        let ct = br#""1","210 Capitol Ave, Hartford, CT, 06106","Match","Exact","210 CAPITOL AVE, HARTFORD, CT, 06106","-72.682254053971,41.762863585706","3541159","R","09","003","502100","2016"
+"2","4600 Silver Hill Rd, Washington, DC, 20233","Match","Exact","4600 SILVER HILL RD, WASHINGTON, DC, 20233","-76.92836638093,38.84505589808","657091557","L","24","033","802405","2004"
+"#;
+        let rows = parse_batch_response(InputMode::Parsed, ct).unwrap();
+        let needs = |id| match rows.get(&id) {
+            Some(BatchRow::Match(obj)) => needs_single_lookup(obj),
+            other => panic!("{other:?}"),
+        };
+        assert!(needs(1));
+        assert!(!needs(2));
     }
 
     #[test]

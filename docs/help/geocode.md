@@ -590,6 +590,10 @@ per location is sent, 5 per second (see --rate-limit). Batch lookups are only us
 Current_* vintages.
 An address the batch endpoint matches to more than one address (a "Tie") is not
 geocoded; a warning counts them. --census-mode single geocodes them with the first match.
+Connecticut batch matches are looked up again one by one: in Current vintages, its
+counties are its planning regions, which batch results do not carry. Otherwise, batch
+and single results are the same, except that coordinates can differ in their last
+digit (~1e-12 degrees), as Census rounds them differently in the two.
 
 A location that Census cannot geocode is left unchanged (or set to --invalid-result).
 Requests that are rate-limited or fail on the server are retried up to 3 times. If 10

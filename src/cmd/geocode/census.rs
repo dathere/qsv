@@ -866,8 +866,19 @@ async fn census_batch_fetch(
                 match status {
                     200 => match read_capped(resp, MAX_BATCH_BODY_BYTES).await {
                         Ok(bytes) => {
-                            return parse_batch_response(mode, &bytes)
-                                .map_err(CensusError::Transient);
+                            let rows = parse_batch_response(mode, &bytes)
+                                .map_err(CensusError::Transient)?;
+                            // an answer to none of the rows (an empty body, a WAF or proxy page
+                            // served with HTTP 200) is a failed upload, retried like one
+                            if (0..requests.len()).any(|id| rows.contains_key(&id)) {
+                                return Ok(rows);
+                            }
+                            last_error = format!(
+                                "Census Geocoder batch response has none of the {} uploaded rows: \
+                                 {}",
+                                requests.len(),
+                                error_reason(&bytes)
+                            );
                         },
                         Err(BodyError::TooLarge(cap)) => {
                             return Err(CensusError::Transient(format!(

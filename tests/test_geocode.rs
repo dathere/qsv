@@ -4589,6 +4589,12 @@ mod census_mock {
                     .finish();
             },
             "down" => return HttpResponse::ServiceUnavailable().finish(),
+            // a WAF/proxy page served with HTTP 200
+            "waf" => {
+                return HttpResponse::Ok()
+                    .content_type("text/html")
+                    .body("<html><body>Request Rejected. Support ID: 123</body></html>");
+            },
             _ => {},
         }
         if text("benchmark").is_empty() || text("vintage").is_empty() || file.is_empty() {
@@ -5571,6 +5577,22 @@ fn geocode_census_batch_retries_and_fatal_errors() {
     // a failed upload fails its rows (left as is) and is reported
     let mock = CensusMock::start();
     let mut cmd = census_cmd(&wrk, &mock.url("down"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--census-mode", "batch", "--no-cache"]);
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("5 Census Geocoder lookup(s) failed"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(mock.requests(), 4);
+
+    // an HTTP 200 that answers none of the rows is a failed upload too: retried, then failed
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("waf"));
     cmd.arg("census")
         .arg("Address")
         .arg("data.csv")

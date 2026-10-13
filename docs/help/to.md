@@ -289,7 +289,7 @@ qsv to --help
 | &nbsp;`‑p,`<br>`‑‑separator`&nbsp; | string | For xlsx, use this character to help truncate xlsx sheet names. Defaults to space. |  |
 | &nbsp;`‑‑compression`&nbsp; | string | Parquet compression codec (parquet only). Valid values: zstd (default), gzip, snappy, lz4raw, uncompressed. |  |
 | &nbsp;`‑‑compress‑level`&nbsp; | integer | Compression level (parquet only). For gzip: 1-9 (default: 6). For zstd: -7 to 22 (default: 3). Ignored for other codecs. |  |
-| &nbsp;`‑A,`<br>`‑‑all‑strings`&nbsp; | flag | Convert all fields to strings. |  |
+| &nbsp;`‑A,`<br>`‑‑all‑strings`&nbsp; | flag | Convert all fields to strings. For parquet, columns are read as strings without type inference, so the inference length and any pschema.json are not used. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>

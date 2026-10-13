@@ -7454,6 +7454,101 @@ fn stats_cardinality_method_approx_with_infer_boolean_falls_back_to_exact() {
     assert_eq!(typ, "Boolean", "type should infer as Boolean, got: {typ}");
 }
 
+/// `field -> cardinality` from a `qsv stats` CSV whose field names hold no commas.
+fn cardinality_by_field(stdout: &str) -> std::collections::HashMap<String, String> {
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let field_idx = headers.iter().position(|h| *h == "field").unwrap();
+    let card_idx = headers.iter().position(|h| *h == "cardinality").unwrap();
+    lines
+        .map(|l| {
+            let row: Vec<&str> = l.split(',').collect();
+            (row[field_idx].to_string(), row[card_idx].to_string())
+        })
+        .collect()
+}
+
+// With modes computed and no --mode-cardinality-cap, the exact mode tracker sees every
+// value, so its count is free. Approx used to build an HLL sketch on top of it and then
+// OVERWRITE the exact count with the estimate - slower, and wrong: 5012 for 5000 here.
+#[test]
+fn stats_cardinality_method_approx_with_modes_reports_exact_count() {
+    let wrk = Workdir::new("stats_cardinality_method_approx_with_modes_reports_exact_count");
+    wrk.create("data.csv", approx_cardinality_fixture(5_000, 2));
+
+    for mode_flag in ["--mode", "--everything"] {
+        let mut cmd = wrk.command("stats");
+        cmd.arg(mode_flag)
+            .arg("--cardinality")
+            .args(["--cardinality-method", "approx"])
+            .args(["--jobs", "1"])
+            .args(["--cache-threshold", "0"])
+            .arg("data.csv");
+        let got: String = wrk.stdout(&mut cmd);
+        assert_eq!(
+            cardinality_by_field(&got)["value"],
+            "5000",
+            "{mode_flag} + approx should report the exact tracker's count"
+        );
+    }
+}
+
+// HLL overestimates by ~1.5%: without a clamp, an all-unique 5000-row column reported a
+// cardinality of 5012 and a uniqueness_ratio above 1. `cardinality == rowcount` is how
+// downstream consumers recognise an all-unique column.
+#[test]
+fn stats_cardinality_method_approx_clamped_to_rowcount() {
+    let wrk = Workdir::new("stats_cardinality_method_approx_clamped_to_rowcount");
+    wrk.create("data.csv", approx_cardinality_fixture(5_000, 1));
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cardinality")
+        .args(["--cardinality-method", "approx"])
+        .args(["--jobs", "1"])
+        .args(["--cache-threshold", "0"])
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    let card: u64 = cardinality_by_field(&got)["value"].parse().unwrap();
+    assert!(
+        card <= 5_000,
+        "approx cardinality {card} exceeds the 5000-row count"
+    );
+}
+
+// With a cap, the sketch is the fallback for columns whose tracker was dropped; a column
+// that stayed under the cap still has its exact count and must report it.
+#[test]
+fn stats_cardinality_method_approx_with_cap_keeps_exact_for_surviving_trackers() {
+    let wrk =
+        Workdir::new("stats_cardinality_method_approx_with_cap_keeps_exact_for_surviving_trackers");
+    let mut rows: Vec<Vec<String>> = vec![svec!["unique", "repeated"]];
+    for i in 0..10_000 {
+        rows.push(vec![format!("u{i}"), format!("r{}", i % 5_000)]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .args(["--cardinality-method", "approx"])
+        .args(["--mode-cardinality-cap", "6000"])
+        .args(["--jobs", "1"])
+        .args(["--cache-threshold", "0"])
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    let cards = cardinality_by_field(&got);
+    assert_eq!(
+        cards["repeated"], "5000",
+        "a tracker under the cap must report its exact count"
+    );
+    let unique: u64 = cards["unique"]
+        .parse()
+        .expect("a dropped tracker's column gets the HLL estimate, not a '>=' sentinel");
+    assert!(
+        (9_700..=10_000).contains(&unique),
+        "dropped-tracker estimate {unique} should be near (and at most) 10000"
+    );
+}
+
 #[test]
 fn stats_cardinality_method_invalid_value_is_rejected() {
     let wrk = Workdir::new("stats_cardinality_method_invalid_value_is_rejected");

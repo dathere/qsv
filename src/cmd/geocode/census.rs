@@ -90,17 +90,17 @@ pub(super) fn check_base_url(base_url: &str) -> CliResult<String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
-/// `url` without a `user:password@` part, best effort (for an unparseable URL too).
+/// `url` for an error message: without its `user:password@` part, or - when it cannot be
+/// parsed and holds an `@` anywhere - not shown at all, as the credentials cannot be located.
 fn redact_userinfo(url: &str) -> String {
-    match url.split_once("://") {
-        Some((scheme, rest)) => {
-            let authority_end = rest.find('/').unwrap_or(rest.len());
-            match rest[..authority_end].rfind('@') {
-                Some(at) => format!("{scheme}://{}", &rest[at + 1..]),
-                None => url.to_string(),
-            }
+    match Url::parse(url) {
+        Ok(mut parsed) if parsed.has_host() => {
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
         },
-        None => url.to_string(),
+        _ if url.contains('@') => "(not shown: it contains '@')".to_string(),
+        _ => url.to_string(),
     }
 }
 
@@ -1886,6 +1886,12 @@ mod tests {
         }
         assert_eq!(redact_userinfo("https://u:p@h/a@b"), "https://h/a@b");
         assert_eq!(redact_userinfo("nonsense"), "nonsense");
+        // no scheme: the credentials cannot be located, so nothing is shown
+        for bad in ["//user:secret@proxy/geocoder", "user:secret@proxy/geocoder"] {
+            assert!(!redact_userinfo(bad).contains("secret"), "{bad}");
+            let err = check_base_url(bad).unwrap_err().to_string();
+            assert!(!err.contains("secret"), "{err}");
+        }
     }
 
     #[test]

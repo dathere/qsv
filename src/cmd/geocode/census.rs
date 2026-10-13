@@ -16,12 +16,31 @@
 //! The result is normalized client-side to one JSON shape (see `normalize_*`), so the output is
 //! identical against census.gov and a wire-compatible caching proxy (`ucgeocoder`).
 
-#![allow(dead_code)]
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroU32,
+    path::Path,
+    time::Duration,
+};
 
-use std::path::Path;
+use cached::{ConcurrentCached, RedbCache};
+use futures::StreamExt;
+use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
+use indicatif::{ProgressBar, ProgressDrawTarget};
+use serde_json::{Value, json};
+use uuid::Uuid;
 
-use super::{Args, OPENCAGE_FORMATSTR_REGEX, ParamValue, parse_dyncols_spec, parse_param_list};
-use crate::CliResult;
+use super::{
+    Args, BodyError, MAX_BODY_BYTES, OPENCAGE_FORMATSTR_REGEX, ParamSource, ParamValue, add_fields,
+    first_selected_column, json_dotpath, normalize_opencage_query, parse_dyncols_spec,
+    parse_param_list, read_capped, resolve_param_sources, squish,
+};
+use crate::{
+    CliError, CliResult,
+    config::Config,
+    select::SelectColumns,
+    util::{self, replace_column_value},
+};
 
 /// The public Census Geocoder. `QSV_CENSUS_GEOCODER_URL` overrides it (a caching proxy, tests).
 pub(super) const DEFAULT_CENSUS_GEOCODER_URL: &str = "https://geocoding.geo.census.gov/geocoder";
@@ -207,10 +226,798 @@ pub(super) fn batch_eligible(formatstr: &str, vintage: &str) -> bool {
     }
 }
 
+/// Prefix of every cache key. Bump it when the cached value format or the meaning of a cached
+/// outcome changes: older entries then never match and age out (TTL, `cache-prune`).
+const CACHE_KEY_VERSION: &str = "v1";
+
+/// Retries after the first attempt, for 408/429/5xx/network errors.
+const MAX_RETRIES: u32 = 3;
+
+/// Consecutive transient failures that abort the run: the service is down or refusing us, and
+/// grinding retries through the rest of a large file helps nobody.
+const CIRCUIT_BREAKER_THRESHOLD: u32 = 10;
+
+impl InputMode {
+    /// The single-record endpoint (`geographies/<searchtype>`), also the cache key's search type.
+    const fn searchtype(self) -> &'static str {
+        match self {
+            Self::OneLine => "onelineaddress",
+            Self::Parsed => "address",
+            Self::Coordinates => "coordinates",
+        }
+    }
+}
+
+/// One row's lookup: its cache key, the single-record query parameters, and the fields of its
+/// batch-file row (after the id): street, city, state, zip - or x, y for coordinates.
+struct Request {
+    key:   String,
+    query: Vec<(&'static str, String)>,
+    #[allow(dead_code)]
+    batch: Vec<String>,
+}
+
+/// A `--reverse` cell as (lat, lng), when it is a WGS-84 coordinate in range.
+fn parse_coordinate(cell: &str) -> Option<(f64, f64)> {
+    let normalized = normalize_opencage_query(cell, true)?;
+    let (lat, lng) = normalized.split_once(',')?;
+    let (lat, lng) = (lat.parse::<f64>().ok()?, lng.parse::<f64>().ok()?);
+    ((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lng)).then_some((lat, lng))
+}
+
+/// Build a row's request, or `None` when it cannot be looked up (an empty address, an
+/// unparseable coordinate, a parsed address missing the parts Census requires - a request the API
+/// would reject with an HTTP 400, which is fatal for the run).
+///
+/// The cache key holds the canonical input: whitespace-collapsed, ASCII-uppercased address parts
+/// (Census matching ignores case), or the coordinate at 6 decimals (~0.1 m), which is also what
+/// is sent, so the key describes the query exactly. The search type comes from the input mode,
+/// never from whether the row is later batched, so batch and single lookups share entries.
+fn prepare_request(
+    mode: InputMode,
+    base_url: &str,
+    benchmark: &str,
+    vintage: &str,
+    cell: &str,
+    record: &csv::StringRecord,
+    sources: &[(String, ParamSource)],
+) -> Option<Request> {
+    let (query, batch, canonical): (Vec<(&'static str, String)>, Vec<String>, String) = match mode {
+        InputMode::OneLine => {
+            let address = squish(cell);
+            if address.is_empty() {
+                return None;
+            }
+            let canonical = address.to_ascii_uppercase();
+            (
+                vec![("address", address.clone())],
+                vec![address, String::new(), String::new(), String::new()],
+                canonical,
+            )
+        },
+        InputMode::Parsed => {
+            let value = |name: &str| {
+                sources
+                    .iter()
+                    .find(|(n, _)| n == name)
+                    .map(|(_, source)| match source {
+                        ParamSource::Literal(lit) => squish(lit),
+                        ParamSource::Column(idx) => squish(record.get(*idx).unwrap_or_default()),
+                    })
+                    .unwrap_or_default()
+            };
+            let parts: Vec<String> = PARAM_NAMES.iter().map(|n| value(n)).collect();
+            let has = |name: &str| {
+                PARAM_NAMES
+                    .iter()
+                    .position(|n| *n == name)
+                    .is_some_and(|i| !parts[i].is_empty())
+            };
+            if !parsed_address_complete(has) {
+                return None;
+            }
+            let query = PARAM_NAMES
+                .iter()
+                .zip(&parts)
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(n, v)| (*n, v.clone()))
+                .collect();
+            let canonical = parts
+                .iter()
+                .map(|p| p.to_ascii_uppercase())
+                .collect::<Vec<_>>()
+                .join(";");
+            (query, parts, canonical)
+        },
+        InputMode::Coordinates => {
+            let (lat, lng) = parse_coordinate(cell)?;
+            let (x, y) = (format!("{lng:.6}"), format!("{lat:.6}"));
+            let canonical = format!("{x},{y}");
+            (
+                vec![("x", x.clone()), ("y", y.clone())],
+                vec![x, y],
+                canonical,
+            )
+        },
+    };
+    let key = format!(
+        "{CACHE_KEY_VERSION}|{base_url}|{}|{benchmark}|{vintage}|{canonical}",
+        mode.searchtype()
+    );
+    Some(Request { key, query, batch })
+}
+
+/// A coordinate as a JSON number, from a JSON number or numeric text. Both the single-record
+/// (JSON numbers) and the batch (text) paths go through it, so `json_dotpath` renders them the
+/// same way.
+fn coordinate_number(value: &Value) -> Option<Value> {
+    let f = match value {
+        Value::Number(n) => n.as_f64()?,
+        Value::String(s) => s.trim().parse::<f64>().ok()?,
+        _ => return None,
+    };
+    serde_json::Number::from_f64(f).map(Value::Number)
+}
+
+/// `{"x": lon, "y": lat}` from an object with `x`/`y`, if both are numeric.
+fn coordinates_object(obj: &Value) -> Option<Value> {
+    Some(json!({
+        "x": coordinate_number(obj.get("x")?)?,
+        "y": coordinate_number(obj.get("y")?)?,
+    }))
+}
+
+/// `flat.<Layer>`: the scalar attributes (strings, numbers, booleans) of each layer's first
+/// feature, so a dotted `%dyncols:` key like `flat.Census Tracts.GEOID` reaches them.
+fn flatten_geographies(geographies: &Value) -> Value {
+    let mut flat = serde_json::Map::new();
+    if let Some(layers) = geographies.as_object() {
+        for (layer, features) in layers {
+            let Some(feature) = features
+                .as_array()
+                .and_then(|f| f.first())
+                .and_then(Value::as_object)
+            else {
+                continue;
+            };
+            let attrs: serde_json::Map<String, Value> = feature
+                .iter()
+                .filter(|(_, v)| matches!(v, Value::String(_) | Value::Number(_) | Value::Bool(_)))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            flat.insert(layer.clone(), Value::Object(attrs));
+        }
+    }
+    Value::Object(flat)
+}
+
+/// Normalize a single-record `geographies/*` response; `None` is a no-match.
+///
+/// Address searches use the first of `addressMatches` (`_resultCount` says how many there were);
+/// a coordinate search has no `addressMatches`, its point is the echoed `input.location`, and it
+/// is a no-match when no layer has a feature (e.g. a point at sea).
+fn normalize_single(mode: InputMode, body: &Value) -> Option<Value> {
+    let result = body.get("result")?;
+    let mut obj = serde_json::Map::new();
+    let geographies = if mode == InputMode::Coordinates {
+        let geographies = result.get("geographies").cloned().unwrap_or(Value::Null);
+        let any_feature = geographies.as_object().is_some_and(|layers| {
+            layers
+                .values()
+                .any(|f| f.as_array().is_some_and(|a| !a.is_empty()))
+        });
+        if !any_feature {
+            return None;
+        }
+        if let Some(coords) = result
+            .get("input")
+            .and_then(|i| i.get("location"))
+            .and_then(coordinates_object)
+        {
+            obj.insert("coordinates".into(), coords);
+        }
+        obj.insert("_resultCount".into(), json!(1));
+        geographies
+    } else {
+        let matches = result.get("addressMatches")?.as_array()?;
+        let first = matches.first()?;
+        if let Some(v) = first.get("matchedAddress") {
+            obj.insert("matchedAddress".into(), v.clone());
+        }
+        if let Some(coords) = first.get("coordinates").and_then(coordinates_object) {
+            obj.insert("coordinates".into(), coords);
+        }
+        for key in ["tigerLine", "addressComponents"] {
+            if let Some(v) = first.get(key) {
+                obj.insert(key.into(), v.clone());
+            }
+        }
+        obj.insert("_resultCount".into(), json!(matches.len()));
+        first.get("geographies").cloned().unwrap_or(Value::Null)
+    };
+    obj.insert("flat".into(), flatten_geographies(&geographies));
+    obj.insert("geographies".into(), geographies);
+    obj.insert("_source".into(), json!("single"));
+    Some(Value::Object(obj))
+}
+
+/// A cached outcome.
+#[derive(Debug, PartialEq)]
+enum Cached {
+    /// A single-record result: satisfies every output.
+    Full(Value),
+    /// A batch result: satisfies only batch-eligible outputs.
+    Batch(Value),
+    /// A single-record no-match.
+    NoMatch,
+}
+
+/// Cache encoding: "F<json>" single-record result, "B<json>" batch result, "N" no match.
+fn encode_cached(cached: &Cached) -> Option<String> {
+    match cached {
+        Cached::Full(v) => serde_json::to_string(v).ok().map(|s| format!("F{s}")),
+        Cached::Batch(v) => serde_json::to_string(v).ok().map(|s| format!("B{s}")),
+        Cached::NoMatch => Some("N".to_string()),
+    }
+}
+
+/// Decode `encode_cached`'s format; `None` (undecodable) is treated as a cache miss.
+fn decode_cached(encoded: &str) -> Option<Cached> {
+    match encoded.split_at_checked(1)? {
+        ("N", "") => Some(Cached::NoMatch),
+        ("F", json) => serde_json::from_str(json).ok().map(Cached::Full),
+        ("B", json) => serde_json::from_str(json).ok().map(Cached::Batch),
+        _ => None,
+    }
+}
+
+/// Error from a Census request. `Fatal` aborts the run (HTTP 400/404: the request or the base
+/// URL is wrong, so every other row would fail the same way); `Transient` is a per-row failure
+/// (network error, 408/429/5xx, an oversized or unreadable body) left after retries.
+#[derive(Debug)]
+enum CensusError {
+    Fatal(String),
+    Transient(String),
+}
+
+fn retry_base() -> Duration {
+    let ms = std::env::var("QSV_CENSUS_GEOCODER_RETRY_BASE_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(1000);
+    Duration::from_millis(ms)
+}
+
+/// The reason in a Census error body: `{"errors": ["..."], "status": "400"}` (JSON endpoints) or
+/// an HTML/text message (batch endpoints), trimmed to 300 chars.
+fn error_reason(body: &[u8]) -> String {
+    let reason = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("errors").and_then(Value::as_array).map(|errors| {
+                errors
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
+        })
+        .unwrap_or_else(|| {
+            // the batch endpoints answer HTML paragraphs: keep the text
+            let text = String::from_utf8_lossy(body);
+            let mut plain = String::with_capacity(text.len());
+            let mut in_tag = false;
+            for c in text.chars() {
+                match c {
+                    '<' => in_tag = true,
+                    '>' => {
+                        in_tag = false;
+                        plain.push(' ');
+                    },
+                    _ if !in_tag => plain.push(c),
+                    _ => {},
+                }
+            }
+            squish(&plain)
+        });
+    reason.chars().take(300).collect()
+}
+
+/// The fatal error for a 400/404 answer.
+fn fatal_status(status: u16, url: &str, body: &[u8]) -> CensusError {
+    if status == 404 {
+        CensusError::Fatal(format!(
+            "Census Geocoder endpoint not found (HTTP 404) at {url}. Check \
+             QSV_CENSUS_GEOCODER_URL - it should end in /geocoder."
+        ))
+    } else {
+        let reason = error_reason(body);
+        CensusError::Fatal(format!(
+            "The Census Geocoder rejected the request (HTTP {status}){}. Check --benchmark and \
+             --vintage.",
+            if reason.is_empty() {
+                String::new()
+            } else {
+                format!(": {reason}")
+            }
+        ))
+    }
+}
+
+/// The `Retry-After` delay of a response, in seconds, capped at 60s.
+fn retry_after(resp: &reqwest::Response) -> Option<Duration> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|secs| Duration::from_secs(secs.min(60)))
+}
+
+/// GET one location, retrying 408/429/5xx/network errors and truncated bodies with exponential
+/// backoff (honoring a `Retry-After` in seconds, capped at 60s). `Ok(None)` is a no-match.
+#[allow(clippy::too_many_arguments)]
+async fn census_fetch(
+    client: &reqwest::Client,
+    limiter: &DefaultDirectRateLimiter,
+    base_url: &str,
+    benchmark: &str,
+    vintage: &str,
+    mode: InputMode,
+    query: &[(&'static str, String)],
+    retry_base: Duration,
+) -> Result<Option<Value>, CensusError> {
+    let url = format!("{base_url}/geographies/{}", mode.searchtype());
+    let mut params: Vec<(&str, &str)> = query.iter().map(|(n, v)| (*n, v.as_str())).collect();
+    params.extend([
+        ("benchmark", benchmark),
+        ("vintage", vintage),
+        ("layers", "all"),
+        ("format", "json"),
+    ]);
+    let mut last_error = String::new();
+    for attempt in 0..=MAX_RETRIES {
+        limiter.until_ready().await;
+        let mut delay: Option<Duration> = None;
+        match client.get(&url).query(&params).send().await {
+            Err(e) => last_error = format!("Census Geocoder network error: {e}"),
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                match status {
+                    200 => match read_capped(resp, MAX_BODY_BYTES).await {
+                        Ok(bytes) => {
+                            let body: Value = serde_json::from_slice(&bytes).map_err(|e| {
+                                CensusError::Transient(format!(
+                                    "Census Geocoder response is not JSON: {e}"
+                                ))
+                            })?;
+                            if body.get("result").is_none() {
+                                return Err(CensusError::Transient(format!(
+                                    "Census Geocoder response has no result: {}",
+                                    error_reason(&bytes)
+                                )));
+                            }
+                            return Ok(normalize_single(mode, &body));
+                        },
+                        Err(BodyError::TooLarge(cap)) => {
+                            return Err(CensusError::Transient(format!(
+                                "Census Geocoder response body is larger than {cap} bytes."
+                            )));
+                        },
+                        // a connection that dies mid-body is retried like one that never connected
+                        Err(BodyError::Transport(e)) => {
+                            last_error = format!("Census Geocoder response error: {e}");
+                        },
+                    },
+                    400 | 404 => {
+                        let body = read_capped(resp, 4096).await.unwrap_or_default();
+                        return Err(fatal_status(status, &url, &body));
+                    },
+                    408 | 429 | 500..=599 => {
+                        delay = retry_after(&resp);
+                        last_error = format!("Census Geocoder returned HTTP {status}.");
+                    },
+                    _ => {
+                        return Err(CensusError::Transient(format!(
+                            "Census Geocoder returned HTTP {status}."
+                        )));
+                    },
+                }
+            },
+        }
+        if attempt < MAX_RETRIES {
+            let backoff = delay.unwrap_or_else(|| retry_base * 2u32.pow(attempt));
+            tokio::time::sleep(backoff.min(Duration::from_secs(60))).await;
+        }
+    }
+    Err(CensusError::Transient(last_error))
+}
+
+/// Format a normalized result per `formatstr`: a predefined %-format or a `{field}` template.
+/// A field the result lacks renders empty.
+fn format_census_result(obj: &Value, formatstr: &str) -> String {
+    let field = |key: &str| json_dotpath(obj, key).trim().to_string();
+    let lat_long = || {
+        let (lat, lng) = (field("coordinates.y"), field("coordinates.x"));
+        if lat.is_empty() || lng.is_empty() {
+            None
+        } else {
+            Some((lat, lng))
+        }
+    };
+    if formatstr.starts_with('%') {
+        match formatstr {
+            "%location" => lat_long()
+                .map(|(lat, lng)| format!("({lat}, {lng})"))
+                .unwrap_or_default(),
+            "%matched-address" => field("matchedAddress"),
+            "%json" => serde_json::to_string(obj).unwrap_or_else(|_| "null".to_string()),
+            "%pretty-json" => {
+                serde_json::to_string_pretty(obj).unwrap_or_else(|_| "null".to_string())
+            },
+            // "%+", "%lat-long" and any unknown %-format
+            _ => lat_long()
+                .map(|(lat, lng)| format!("{lat}, {lng}"))
+                .unwrap_or_default(),
+        }
+    } else {
+        OPENCAGE_FORMATSTR_REGEX()
+            .replace_all(formatstr, |caps: &regex::Captures| field(&caps[1]))
+            .into_owned()
+    }
+}
+
+/// What a row resolved to.
+#[derive(Clone)]
+enum RowOutcome {
+    /// Nothing to look up (empty or unparseable input, an incomplete parsed address).
+    NoQuery,
+    /// The lookup failed (a transient error after retries) - not cached.
+    Failed,
+    /// No match.
+    NoMatch,
+    /// Matched: the rendered output value(s) - one, or one per `%dyncols:` column.
+    Hit(Vec<String>),
+}
+
 /// Geocode US addresses or coordinates via the US Census Geocoder.
-#[allow(clippy::future_not_send, clippy::unused_async)]
-pub(super) async fn run_census(_args: Args, _now_cmd: bool, _cache_dir: &Path) -> CliResult<()> {
-    fail_clierror!("The census subcommands are not implemented yet.")
+///
+/// Rows are read in `--batch`-sized chunks. Within a chunk, rows are turned into requests, the
+/// requests are de-duplicated and checked against the on-disk cache, and the remainder are sent
+/// concurrently (`--jobs` in flight, all behind one rate limiter) with order-preserving
+/// `buffered`, so output order matches input order.
+#[allow(clippy::future_not_send)]
+pub(super) async fn run_census(args: Args, now_cmd: bool, cache_dir: &Path) -> CliResult<()> {
+    let mode = InputMode::from_args(&args);
+    let params = parse_params(args.flag_params.as_deref())?;
+    let base_url = census_base_url();
+    // run() resolved both to their defaults
+    let benchmark = args.flag_benchmark.clone().unwrap_or_default();
+    let vintage = args.flag_vintage.clone().unwrap_or_default();
+
+    let tempdir = tempfile::Builder::new().prefix("qsv-geocode").tempdir()?;
+    let input = if now_cmd {
+        let temp_csv_path = format!(
+            "{}/{}.csv",
+            tempdir.path().to_string_lossy(),
+            Uuid::new_v4()
+        );
+        let mut temp_csv_wtr = csv::WriterBuilder::new().from_path(&temp_csv_path)?;
+        temp_csv_wtr.write_record(["Location"])?;
+        temp_csv_wtr.write_record([&args.arg_location])?;
+        temp_csv_wtr.flush()?;
+        Some(temp_csv_path)
+    } else {
+        args.arg_input.clone()
+    };
+
+    let rconfig = Config::new(input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .select(SelectColumns::parse(&args.arg_column)?);
+
+    let formatstr = args.flag_formatstr.as_str();
+    let dyncols_mode = formatstr.starts_with("%dyncols:");
+    let (column_names, column_keys) = if dyncols_mode {
+        parse_dyncols_spec(formatstr)?
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let Ok(dyncols_len) = u8::try_from(column_keys.len()) else {
+        return fail_incorrectusage_clierror!(
+            "Too many %dyncols columns: {} (max 255).",
+            column_keys.len()
+        );
+    };
+
+    #[cfg(feature = "datapusher_plus")]
+    let show_progress = false;
+    #[cfg(not(feature = "datapusher_plus"))]
+    let show_progress =
+        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+    if show_progress {
+        util::prep_progress(&progress, util::count_rows(&rconfig)?);
+    } else {
+        progress.set_draw_target(ProgressDrawTarget::hidden());
+    }
+
+    let json_output = now_cmd && matches!(formatstr, "%json" | "%pretty-json");
+
+    let mut rdr = rconfig.reader()?;
+    let mut wtr = Config::new(args.flag_output.as_ref())
+        .quote_style(if json_output {
+            csv::QuoteStyle::Never
+        } else {
+            csv::QuoteStyle::Necessary
+        })
+        .writer()?;
+
+    let header_record = rdr.byte_headers()?.clone();
+    let sel = rconfig.selection(&header_record)?;
+    let column_index = first_selected_column(&sel)?;
+
+    let input_headers = rdr.headers()?.clone();
+    let sources = resolve_param_sources(&params, &input_headers)?;
+
+    let mut headers = input_headers;
+    if let Some(new_name) = &args.flag_rename {
+        let new_col_names = util::ColumnNameParser::new(new_name).parse()?;
+        if new_col_names.len() != sel.len() {
+            return fail_incorrectusage_clierror!(
+                "Number of new columns does not match input column selection."
+            );
+        }
+        for (i, col_index) in sel.iter().enumerate() {
+            headers = replace_column_value(&headers, *col_index, &new_col_names[i]);
+        }
+    }
+    if let Some(new_column) = &args.flag_new_column {
+        headers.push_field(new_column);
+    }
+    for column_name in &column_names {
+        headers.push_field(column_name);
+    }
+    if !json_output {
+        wtr.write_record(&headers)?;
+    }
+
+    let timeout = Duration::from_secs(util::timeout_secs(args.flag_timeout)?);
+    let client = reqwest::Client::builder()
+        .user_agent(util::set_user_agent(None)?)
+        .timeout(timeout)
+        .use_rustls_tls()
+        .brotli(true)
+        .gzip(true)
+        .deflate(true)
+        .zstd(true)
+        // a redirect means a misconfigured QSV_CENSUS_GEOCODER_URL: report it, don't follow it
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+
+    // allow_burst(1) avoids an initial burst (see governor#39); run() rejects --rate-limit 0
+    let rate_limit = NonZeroU32::new(args.flag_rate_limit.unwrap_or(DEFAULT_CENSUS_RATE_LIMIT))
+        .unwrap_or(NonZeroU32::MIN);
+    let limiter = RateLimiter::direct(Quota::per_second(rate_limit).allow_burst(NonZeroU32::MIN));
+
+    let disk_cache = if args.flag_no_cache {
+        None
+    } else {
+        let mut cache_builder = RedbCache::builder(CENSUS_CACHE_NAME)
+            .disk_dir(cache_dir)
+            .refresh_on_hit(false)
+            .durable(false);
+        if args.flag_cache_ttl != 0 {
+            cache_builder = cache_builder.ttl(Duration::from_secs(args.flag_cache_ttl));
+        }
+        let cache: RedbCache<String, String> = cache_builder.build().map_err(|e| {
+            CliError::Other(format!("Error building Census Geocoder disk cache: {e}"))
+        })?;
+        if let Err(e) = cache.remove_expired_entries() {
+            log::warn!("Could not remove expired Census Geocoder cache entries: {e}");
+        }
+        Some(cache)
+    };
+
+    // a cached batch result only serves an output the batch endpoints could have produced
+    let batch_ok = batch_eligible(formatstr, &vintage);
+    let render = |obj: &Value| -> Vec<String> {
+        if dyncols_mode {
+            column_keys
+                .iter()
+                .map(|key| json_dotpath(obj, key).trim().to_string())
+                .collect()
+        } else {
+            vec![format_census_result(obj, formatstr)]
+        }
+    };
+    let invalid_result = args.flag_invalid_result.clone().unwrap_or_default();
+
+    let concurrency = util::njobs(args.flag_jobs).max(1);
+    let batch_size = if args.flag_batch == 0 {
+        usize::MAX
+    } else {
+        args.flag_batch
+    };
+    let retry_base = retry_base();
+
+    let mut transient_failures: u64 = 0;
+    let mut consecutive_transient: u32 = 0;
+    let mut rows_written: u64 = 0;
+
+    let mut record = csv::StringRecord::new();
+    let mut chunk: Vec<csv::StringRecord> = Vec::new();
+    loop {
+        chunk.clear();
+        while chunk.len() < batch_size && rdr.read_record(&mut record)? {
+            chunk.push(record.clone());
+        }
+        if chunk.is_empty() {
+            break;
+        }
+
+        let requests: Vec<Option<Request>> = chunk
+            .iter()
+            .map(|rec| {
+                let cell = rec.get(column_index).unwrap_or_default();
+                prepare_request(mode, &base_url, &benchmark, &vintage, cell, rec, &sources)
+            })
+            .collect();
+
+        // per-chunk: key -> rendered outcome. Keeping it per chunk bounds memory; the disk cache
+        // de-duplicates across chunks.
+        let mut resolved: HashMap<&str, RowOutcome> = HashMap::new();
+        let mut failed: HashSet<&str> = HashSet::new();
+        let mut to_fetch: Vec<&Request> = Vec::new();
+        let mut queued: HashSet<&str> = HashSet::new();
+        for req in requests.iter().flatten() {
+            let key = req.key.as_str();
+            if resolved.contains_key(key) || queued.contains(key) {
+                continue;
+            }
+            // an undecodable entry - or a batch entry when this output needs a single lookup -
+            // is a miss: it is fetched (and overwritten) again
+            if let Some(dc) = &disk_cache
+                && let Ok(Some(encoded)) = dc.cache_get(&req.key)
+            {
+                match decode_cached(&encoded) {
+                    Some(Cached::Full(obj)) => {
+                        resolved.insert(key, RowOutcome::Hit(render(&obj)));
+                        continue;
+                    },
+                    Some(Cached::Batch(obj)) if batch_ok => {
+                        resolved.insert(key, RowOutcome::Hit(render(&obj)));
+                        continue;
+                    },
+                    Some(Cached::NoMatch) => {
+                        resolved.insert(key, RowOutcome::NoMatch);
+                        continue;
+                    },
+                    _ => {},
+                }
+            }
+            queued.insert(key);
+            to_fetch.push(req);
+        }
+
+        let client = &client;
+        let limiter = &limiter;
+        let (base_url, benchmark, vintage) =
+            (base_url.as_str(), benchmark.as_str(), vintage.as_str());
+        let mut responses = futures::stream::iter(to_fetch.into_iter().map(|req| async move {
+            let result = census_fetch(
+                client, limiter, base_url, benchmark, vintage, mode, &req.query, retry_base,
+            )
+            .await;
+            (req.key.as_str(), result)
+        }))
+        .buffered(concurrency);
+
+        while let Some((key, result)) = responses.next().await {
+            match result {
+                Ok(found) => {
+                    consecutive_transient = 0;
+                    let cached = found.map_or(Cached::NoMatch, Cached::Full);
+                    if let Some(dc) = &disk_cache
+                        && let Some(encoded) = encode_cached(&cached)
+                    {
+                        let _ = dc.cache_set(key.to_string(), encoded);
+                    }
+                    let outcome = match &cached {
+                        Cached::Full(obj) | Cached::Batch(obj) => RowOutcome::Hit(render(obj)),
+                        Cached::NoMatch => RowOutcome::NoMatch,
+                    };
+                    resolved.insert(key, outcome);
+                },
+                Err(CensusError::Fatal(msg)) => {
+                    wtr.flush()?;
+                    return fail_clierror!("{msg}");
+                },
+                Err(CensusError::Transient(msg)) => {
+                    log::warn!("Census Geocoder lookup failed for {key:?}: {msg}");
+                    transient_failures += 1;
+                    consecutive_transient += 1;
+                    failed.insert(key);
+                    if consecutive_transient >= CIRCUIT_BREAKER_THRESHOLD {
+                        wtr.flush()?;
+                        return fail_clierror!(
+                            "Aborting: {consecutive_transient} Census Geocoder requests in a row \
+                             failed (last error: {msg}). The service may be down or limiting \
+                             requests - lower --rate-limit or try again later. {rows_written} \
+                             rows were written before the abort."
+                        );
+                    }
+                },
+            }
+        }
+        drop(responses);
+
+        for (rec, req) in chunk.iter().zip(&requests) {
+            let outcome = match req {
+                None => RowOutcome::NoQuery,
+                Some(req) if failed.contains(req.key.as_str()) => RowOutcome::Failed,
+                Some(req) => resolved
+                    .get(req.key.as_str())
+                    .cloned()
+                    .unwrap_or(RowOutcome::NoMatch),
+            };
+            let cell = rec.get(column_index).unwrap_or_default();
+
+            if dyncols_mode {
+                let mut out_record = rec.clone();
+                if let RowOutcome::Hit(values) = outcome {
+                    for value in &values {
+                        out_record.push_field(value);
+                    }
+                } else {
+                    add_fields(&mut out_record, &invalid_result, dyncols_len);
+                }
+                wtr.write_record(&out_record)?;
+            } else {
+                let out_cell = match outcome {
+                    // an empty <column> cell is left untouched, as with opencage
+                    RowOutcome::NoQuery if mode != InputMode::Parsed && cell.trim().is_empty() => {
+                        cell.to_string()
+                    },
+                    RowOutcome::Hit(mut values) => values.pop().unwrap_or_default(),
+                    RowOutcome::NoQuery | RowOutcome::Failed | RowOutcome::NoMatch => {
+                        if invalid_result.is_empty() {
+                            cell.to_string()
+                        } else {
+                            invalid_result.clone()
+                        }
+                    },
+                };
+                let out_record = if args.flag_new_column.is_some() {
+                    let mut new_record = rec.clone();
+                    new_record.push_field(&out_cell);
+                    new_record
+                } else {
+                    replace_column_value(rec, column_index, &out_cell)
+                };
+                wtr.write_record(&out_record)?;
+            }
+            rows_written += 1;
+            if show_progress {
+                progress.inc(1);
+            }
+        }
+    }
+
+    if show_progress {
+        util::finish_progress(&progress);
+    }
+    if transient_failures > 0 {
+        wwarn!(
+            "{transient_failures} Census Geocoder lookup(s) failed after retries (network error, \
+             rate limit or server error), so those rows were {}. Set QSV_LOG_LEVEL=warn to log \
+             each failure to the qsv log file.",
+            if invalid_result.is_empty() {
+                "left unchanged"
+            } else {
+                "set to --invalid-result"
+            }
+        );
+    }
+    Ok(wtr.flush()?)
 }
 
 #[cfg(test)]
@@ -327,5 +1134,180 @@ mod tests {
         // other vintages name their layers differently: never batch
         assert!(!batch_eligible("%lat-long", "Census2020_Current"));
         assert!(!batch_eligible("%lat-long", "ACS2026_Current"));
+    }
+
+    const ADDRESS_FIXTURE: &str =
+        include_str!("../../../resources/test/census_geo_address_all.json");
+    const COORDS_FIXTURE: &str = include_str!("../../../resources/test/census_geo_coords_all.json");
+
+    #[test]
+    fn normalize_captured_responses() {
+        let body: Value = serde_json::from_str(ADDRESS_FIXTURE).unwrap();
+        let obj = normalize_single(InputMode::OneLine, &body).unwrap();
+        assert_eq!(
+            obj["matchedAddress"],
+            json!("4600 SILVER HILL RD, WASHINGTON, DC, 20233")
+        );
+        assert_eq!(
+            format_census_result(&obj, "%lat-long"),
+            "38.84505589808, -76.92836638093"
+        );
+        assert_eq!(obj["tigerLine"]["tigerLineId"], json!("657091557"));
+        assert_eq!(obj["_resultCount"], json!(1));
+        assert_eq!(obj["geographies"].as_object().unwrap().len(), 19);
+        let geoids: Vec<String> = parse_dyncols_spec(&census_geoids_dyncols(DEFAULT_VINTAGE))
+            .unwrap()
+            .1
+            .iter()
+            .map(|k| json_dotpath(&obj, k))
+            .collect();
+        assert_eq!(
+            geoids,
+            [
+                "24",
+                "24033",
+                "24033802405",
+                "240338024052",
+                "240338024052004"
+            ]
+        );
+        // flat keeps scalars only, in the layer's attribute order
+        assert_eq!(obj["flat"]["States"]["STATE"], json!("24"));
+        assert!(obj["flat"]["States"]["AREALAND"].is_number());
+
+        let body: Value = serde_json::from_str(COORDS_FIXTURE).unwrap();
+        let obj = normalize_single(InputMode::Coordinates, &body).unwrap();
+        assert_eq!(
+            format_census_result(&obj, "%location"),
+            "(38.84601, -76.92744)"
+        );
+        assert_eq!(
+            obj["flat"]["2020 Census Blocks"]["GEOID"],
+            json!("240338024052004")
+        );
+        assert!(obj.get("matchedAddress").is_none());
+
+        // no address match, or a point with no geographies: no match
+        let none = json!({"result": {"input": {}, "addressMatches": []}});
+        assert_eq!(normalize_single(InputMode::OneLine, &none), None);
+        let at_sea = json!({"result": {"input": {"location": {"x": -175.0, "y": 30.0}},
+            "geographies": {"States": [], "Counties": []}}});
+        assert_eq!(normalize_single(InputMode::Coordinates, &at_sea), None);
+    }
+
+    #[test]
+    fn coordinates_render_the_same_from_numbers_and_text() {
+        let from_json = coordinates_object(&json!({"x": -76.92836638093, "y": 38.84505589808}));
+        let from_text = coordinates_object(&json!({"x": "-76.92836638093", "y": "38.84505589808"}));
+        assert_eq!(from_json, from_text);
+        assert_eq!(coordinates_object(&json!({"x": "a", "y": 1})), None);
+    }
+
+    #[test]
+    fn requests_and_cache_keys() {
+        let key = |mode, cell: &str, rec: &[&str], sources: &[(String, ParamSource)]| {
+            prepare_request(
+                mode,
+                "http://x",
+                "B",
+                "V",
+                cell,
+                &csv::StringRecord::from(rec.to_vec()),
+                sources,
+            )
+            .map(|r| r.key)
+        };
+        // case and whitespace fold into one key
+        assert_eq!(
+            key(InputMode::OneLine, " 1  Main st ", &[], &[]),
+            key(InputMode::OneLine, "1 MAIN ST", &[], &[])
+        );
+        assert_eq!(
+            key(InputMode::OneLine, "1 Main St", &[], &[]).unwrap(),
+            "v1|http://x|onelineaddress|B|V|1 MAIN ST"
+        );
+        assert_eq!(key(InputMode::OneLine, "  ", &[], &[]), None);
+        // coordinates: 6 decimals, lon first
+        let req = prepare_request(
+            InputMode::Coordinates,
+            "http://x",
+            "B",
+            "V",
+            "(38.84601, -76.92744)",
+            &csv::StringRecord::new(),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(req.key, "v1|http://x|coordinates|B|V|-76.927440,38.846010");
+        assert_eq!(
+            req.query,
+            [
+                ("x", "-76.927440".to_string()),
+                ("y", "38.846010".to_string())
+            ]
+        );
+        assert_eq!(req.batch, ["-76.927440", "38.846010"]);
+        assert_eq!(key(InputMode::Coordinates, "91, 0", &[], &[]), None);
+        // parsed: fixed part order, empty cells not sent, incomplete rows not sent at all
+        let headers = csv::StringRecord::from(vec!["S", "C", "Z"]);
+        let params = parse_params(Some("zip={Z},street={S},city={C},state=dc")).unwrap();
+        let sources = resolve_param_sources(&params, &headers).unwrap();
+        assert_eq!(
+            key(InputMode::Parsed, "", &["1 main st", "Town", ""], &sources).unwrap(),
+            "v1|http://x|address|B|V|1 MAIN ST;TOWN;DC;"
+        );
+        assert_eq!(
+            key(InputMode::Parsed, "", &["1 main st", "", ""], &sources),
+            None
+        );
+        let req = prepare_request(
+            InputMode::Parsed,
+            "http://x",
+            "B",
+            "V",
+            "",
+            &csv::StringRecord::from(vec!["1 main st", "", "20233"]),
+            &sources,
+        )
+        .unwrap();
+        assert_eq!(
+            req.query,
+            [
+                ("street", "1 main st".to_string()),
+                ("state", "dc".to_string()),
+                ("zip", "20233".to_string())
+            ]
+        );
+        assert_eq!(req.batch, ["1 main st", "", "dc", "20233"]);
+    }
+
+    #[test]
+    fn cache_round_trip() {
+        for cached in [
+            Cached::Full(json!({"a": 1})),
+            Cached::Batch(json!({"b": 2})),
+            Cached::NoMatch,
+        ] {
+            let encoded = encode_cached(&cached).unwrap();
+            assert_eq!(decode_cached(&encoded), Some(cached));
+        }
+        // anything else is a miss, not a non-match
+        for bad in ["", "Nx", "F{not json", "X{}"] {
+            assert_eq!(decode_cached(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn census_error_reasons() {
+        assert_eq!(
+            error_reason(br#"{"errors":["Vintage must be specified"],"status":"400"}"#),
+            "Vintage must be specified"
+        );
+        assert!(
+            error_reason(
+                b"<p>An error occurred because the file exceeded the batch limit.<br> More</p>"
+            )
+            .starts_with("An error occurred because the file exceeded the batch limit. More")
+        );
     }
 }

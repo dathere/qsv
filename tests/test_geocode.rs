@@ -4169,9 +4169,898 @@ fn geocode_census_arg_validation() {
         "--census-mode batch cannot produce this output",
     );
     fails_with(&census(&["--vintage", " "]), "--vintage must not be empty");
+    fails_with(
+        &census(&["--params", "street={Street},zip={Nope}"]),
+        "--params references column \"Nope\"",
+    );
+    // an empty column selection is a usage error, not a panic
+    wrk.create("one.csv", vec![svec!["Address"], svec!["x"]]);
+    fails_with(
+        &["census", "!Address", "one.csv"],
+        "does not match any column",
+    );
     // %census-geoids expands to %dyncols:, so it cannot be used with --new-column
     fails_with(
         &census(&["-f", "%census-geoids", "-c", "geoids"]),
         "Cannot use --new-column with the '%dyncols:'",
     );
+}
+
+// ---------------------------------------------------------------------------
+// `census` tests use an in-process actix mock of the US Census Geocoder, selected with
+// QSV_CENSUS_GEOCODER_URL, so they run offline in CI. Single-record responses are built from
+// byte-exact live captures (resources/test/census_geo_{address,coords}_all.json, 2026-10-12):
+// every location gets its own record (coordinates, TIGER line, STATE/COUNTY/TRACT/BLOCK) from ONE
+// table, written into the five Census geography layers of the captured template - so a single and
+// a batch answer for the same location always agree, and a mismatch points at qsv, not the mock.
+// "4600 Silver Hill Rd" (and the point -76.92744, 38.84601) keep the captured values verbatim.
+// Routes: `/{mode}/geocoder/geographies/{searchtype}`, modes:
+//   ok       - normal behavior;
+//   flaky    - 429 (Retry-After: 0) for the first two requests, then normal;
+//   down     - always 503;
+//   redirect - 302 to the same endpoint under `ok` (must NOT be followed);
+//   huge     - a 5 MiB body (must be refused, not buffered);
+//   truncate - the first response dies mid-body (must be retried), then normal.
+// Magic inputs: NOMATCH - no match; MULTI - two matches; TIE - three matches; BADREQ - HTTP 400.
+// Like the live API, a request without benchmark or vintage is an HTTP 400, and a point west of
+// -170 (at sea) has no geographies.
+// ---------------------------------------------------------------------------
+mod census_mock {
+    use std::{
+        collections::HashMap,
+        hash::{Hash, Hasher},
+        net::SocketAddr,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+        thread,
+    };
+
+    use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
+    use serde_json::{Value, json};
+
+    // Local mock-server bind address (not production code).
+    const BIND_HOST: &str = "127.0.0.1"; // DevSkim: ignore DS162092
+
+    const ADDRESS_TEMPLATE: &str = include_str!("../resources/test/census_geo_address_all.json");
+    const COORDS_TEMPLATE: &str = include_str!("../resources/test/census_geo_coords_all.json");
+
+    /// One location's answer, shared by the single and batch handlers.
+    #[derive(Clone, Debug)]
+    pub struct Rec {
+        pub matched: String,
+        pub lon:     f64,
+        pub lat:     f64,
+        pub tiger:   String,
+        pub side:    &'static str,
+        pub state:   String,
+        pub county:  String,
+        pub tract:   String,
+        pub block:   String,
+    }
+
+    fn hash(s: &str) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        s.hash(&mut h);
+        h.finish()
+    }
+
+    fn synthetic(seed: &str, matched: String) -> Rec {
+        let h = hash(seed);
+        Rec {
+            matched,
+            lon: -74.0 + (h % 999_983) as f64 / 1_000_003.0,
+            lat: 40.0 + (h % 99_991) as f64 / 100_003.0,
+            tiger: format!("{}", 600_000_000 + h % 99_999_999),
+            side: if h.is_multiple_of(2) { "L" } else { "R" },
+            state: "36".to_string(),
+            county: format!("{:03}", 1 + (h >> 8) % 120),
+            tract: format!("{:06}", (h >> 16) % 1_000_000),
+            block: format!("{:04}", 1000 + (h >> 24) % 9000),
+        }
+    }
+
+    fn silver_hill(matched: &str) -> Rec {
+        Rec {
+            matched: matched.to_string(),
+            lon:     -76.92836638093,
+            lat:     38.84505589808,
+            tiger:   "657091557".to_string(),
+            side:    "L",
+            state:   "24".to_string(),
+            county:  "033".to_string(),
+            tract:   "802405".to_string(),
+            block:   "2004".to_string(),
+        }
+    }
+
+    /// The canonical address of a one-line address or of parsed parts: the non-empty parts,
+    /// squished, uppercased and joined with ", " - the same however it arrived.
+    pub fn canonical_address(parts: &[&str]) -> String {
+        parts
+            .iter()
+            .map(|p| p.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ")
+            .to_uppercase()
+    }
+
+    /// The matches for an address: none, one, or several (MULTI: 2, TIE: 3).
+    pub fn address_records(address: &str) -> Vec<Rec> {
+        if address.contains("NOMATCH") {
+            return Vec::new();
+        }
+        let first = if address.contains("4600 SILVER HILL") {
+            silver_hill("4600 SILVER HILL RD, WASHINGTON, DC, 20233")
+        } else {
+            synthetic(address, address.to_string())
+        };
+        let count = if address.contains("TIE") {
+            3
+        } else if address.contains("MULTI") {
+            2
+        } else {
+            1
+        };
+        let mut recs = vec![first];
+        for i in 1..count {
+            recs.push(synthetic(
+                &format!("{address}#{i}"),
+                format!("{address} #{i}"),
+            ));
+        }
+        recs
+    }
+
+    /// The record for a point, or `None` at sea.
+    pub fn point_record(x: f64, y: f64) -> Option<Rec> {
+        if x < -170.0 {
+            return None;
+        }
+        let mut rec = if (x + 76.92744).abs() < 1e-9 && (y - 38.84601).abs() < 1e-9 {
+            silver_hill("")
+        } else {
+            synthetic(&format!("{x:.6},{y:.6}"), String::new())
+        };
+        rec.lon = x;
+        rec.lat = y;
+        Some(rec)
+    }
+
+    /// The template's geographies, with the five Census layers rewritten for `rec`.
+    fn geographies(template: &Value, rec: &Rec) -> Value {
+        let mut geos = template.clone();
+        let blkgrp = &rec.block[..1];
+        let county = format!("{}{}", rec.state, rec.county);
+        let tract = format!("{county}{}", rec.tract);
+        for (layer, attrs) in [
+            ("States", vec![("STATE", &rec.state), ("GEOID", &rec.state)]),
+            (
+                "Counties",
+                vec![("COUNTY", &rec.county), ("GEOID", &county)],
+            ),
+            (
+                "Census Tracts",
+                vec![("TRACT", &rec.tract), ("GEOID", &tract)],
+            ),
+        ] {
+            let f = &mut geos[layer][0];
+            f["STATE"] = json!(rec.state);
+            for (k, v) in attrs {
+                f[k] = json!(v);
+            }
+        }
+        let bg = &mut geos["Census Block Groups"][0];
+        for (k, v) in [
+            ("STATE", rec.state.clone()),
+            ("COUNTY", rec.county.clone()),
+            ("TRACT", rec.tract.clone()),
+            ("BLKGRP", blkgrp.to_string()),
+            ("GEOID", format!("{tract}{blkgrp}")),
+        ] {
+            bg[k] = json!(v);
+        }
+        let b = &mut geos["2020 Census Blocks"][0];
+        for (k, v) in [
+            ("STATE", rec.state.clone()),
+            ("COUNTY", rec.county.clone()),
+            ("TRACT", rec.tract.clone()),
+            ("BLKGRP", blkgrp.to_string()),
+            ("BLOCK", rec.block.clone()),
+            ("GEOID", format!("{tract}{}", rec.block)),
+        ] {
+            b[k] = json!(v);
+        }
+        geos
+    }
+
+    pub fn address_json(recs: &[Rec]) -> Value {
+        let mut body: Value = serde_json::from_str(ADDRESS_TEMPLATE).unwrap();
+        let template = body["result"]["addressMatches"][0].clone();
+        let matches: Vec<Value> = recs
+            .iter()
+            .map(|rec| {
+                let mut m = template.clone();
+                m["matchedAddress"] = json!(rec.matched);
+                m["coordinates"] = json!({"x": rec.lon, "y": rec.lat});
+                m["tigerLine"] = json!({"side": rec.side, "tigerLineId": rec.tiger});
+                m["geographies"] = geographies(&template["geographies"], rec);
+                m
+            })
+            .collect();
+        body["result"]["addressMatches"] = json!(matches);
+        body
+    }
+
+    pub fn coords_json(x: f64, y: f64, rec: Option<&Rec>) -> Value {
+        let mut body: Value = serde_json::from_str(COORDS_TEMPLATE).unwrap();
+        body["result"]["input"]["location"] = json!({"x": x, "y": y});
+        let template = body["result"]["geographies"].clone();
+        body["result"]["geographies"] = match rec {
+            Some(rec) => geographies(&template, rec),
+            None => {
+                let empty: serde_json::Map<String, Value> = template
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(|k| (k.clone(), json!([])))
+                    .collect();
+                Value::Object(empty)
+            },
+        };
+        body
+    }
+
+    #[derive(Clone, Default)]
+    struct State {
+        requests: Arc<AtomicUsize>,
+        log:      Arc<Mutex<Vec<String>>>,
+    }
+
+    fn census_400(message: &str) -> HttpResponse {
+        HttpResponse::BadRequest().json(json!({"errors": [message], "status": "400"}))
+    }
+
+    async fn serve_single(
+        path: web::Path<(String, String)>,
+        query: web::Query<HashMap<String, String>>,
+        state: web::Data<State>,
+    ) -> HttpResponse {
+        let (mode, searchtype) = path.into_inner();
+        let n = state.requests.fetch_add(1, Ordering::SeqCst) + 1;
+        let mut pairs: Vec<String> = query.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        pairs.sort();
+        state
+            .log
+            .lock()
+            .unwrap()
+            .push(format!("{searchtype}?{}", pairs.join("&")));
+
+        match mode.as_str() {
+            "flaky" if n <= 2 => {
+                return HttpResponse::TooManyRequests()
+                    .insert_header(("Retry-After", "0"))
+                    .finish();
+            },
+            "down" => return HttpResponse::ServiceUnavailable().finish(),
+            "redirect" => {
+                return HttpResponse::Found()
+                    .insert_header(("Location", format!("/ok/geocoder/geographies/{searchtype}")))
+                    .finish();
+            },
+            "truncate" if n == 1 => {
+                let body = futures::stream::unfold(0u8, |step| async move {
+                    match step {
+                        0 => Some((Ok(web::Bytes::from_static(b"{\"result\": {")), 1)),
+                        1 => {
+                            rt::time::sleep(std::time::Duration::from_millis(200)).await;
+                            Some((Err(std::io::Error::other("connection dropped mid-body")), 2))
+                        },
+                        _ => None,
+                    }
+                });
+                return HttpResponse::Ok()
+                    .content_type("application/json")
+                    .streaming(body);
+            },
+            "huge" => {
+                let padding = "x".repeat(5 * 1024 * 1024);
+                return HttpResponse::Ok().json(json!({ "result": { "padding": padding } }));
+            },
+            _ => {},
+        }
+
+        let q = |k: &str| query.get(k).cloned().unwrap_or_default();
+        if q("benchmark").is_empty() {
+            return census_400("Benchmark must be specified");
+        }
+        if q("vintage").is_empty() {
+            return census_400("Vintage must be specified");
+        }
+        match searchtype.as_str() {
+            "onelineaddress" | "address" => {
+                let address = if searchtype == "address" {
+                    let street = q("street");
+                    if street.is_empty()
+                        || (q("zip").is_empty() && (q("city").is_empty() || q("state").is_empty()))
+                    {
+                        return census_400(
+                            "Specify House number and Street name along with City and State \
+                             and/or ZIP Code",
+                        );
+                    }
+                    canonical_address(&[&street, &q("city"), &q("state"), &q("zip")])
+                } else {
+                    canonical_address(&[&q("address")])
+                };
+                if address.contains("BADREQ") {
+                    return census_400("Address must be specified");
+                }
+                HttpResponse::Ok().json(address_json(&address_records(&address)))
+            },
+            "coordinates" => {
+                let (Ok(x), Ok(y)) = (q("x").parse::<f64>(), q("y").parse::<f64>()) else {
+                    return census_400("Invalid coordinates");
+                };
+                HttpResponse::Ok().json(coords_json(x, y, point_record(x, y).as_ref()))
+            },
+            _ => HttpResponse::NotFound().finish(),
+        }
+    }
+
+    async fn run_webserver(
+        tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
+        state: State,
+    ) -> std::io::Result<()> {
+        let server_builder = HttpServer::new(move || {
+            App::new().app_data(web::Data::new(state.clone())).route(
+                "/{mode}/geocoder/geographies/{searchtype}",
+                web::get().to(serve_single),
+            )
+        })
+        .workers(2);
+        let bound = match server_builder.bind((BIND_HOST, 0)) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(format!("bind failed: {e}")));
+                return Err(e);
+            },
+        };
+        let addr = bound.addrs().into_iter().next().unwrap();
+        let server = bound.run();
+        let _ = tx.send(Ok((server.handle(), addr)));
+        server.await
+    }
+
+    pub struct CensusMock {
+        handle: Option<ServerHandle>,
+        addr:   SocketAddr,
+        state:  State,
+    }
+
+    impl CensusMock {
+        pub fn start() -> Self {
+            let state = State::default();
+            let server_state = state.clone();
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || rt::System::new().block_on(run_webserver(tx, server_state)));
+            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(Ok((handle, addr))) => Self {
+                    handle: Some(handle),
+                    addr,
+                    state,
+                },
+                Ok(Err(msg)) => panic!("census mock failed to bind: {msg}"),
+                Err(e) => panic!("census mock did not start within 10s ({e:?})"),
+            }
+        }
+
+        /// The base URL for `QSV_CENSUS_GEOCODER_URL` in the given mode.
+        pub fn url(&self, mode: &str) -> String {
+            format!("http://{}/{mode}/geocoder", self.addr) // DevSkim: ignore DS137138
+        }
+
+        pub fn requests(&self) -> usize {
+            self.state.requests.load(Ordering::SeqCst)
+        }
+
+        /// Each request as "searchtype?sorted&query".
+        pub fn log(&self) -> Vec<String> {
+            self.state.log.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for CensusMock {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                rt::System::new().block_on(handle.stop(true));
+            }
+        }
+    }
+}
+
+use census_mock::CensusMock;
+
+/// A `geocode` command pointed at the census mock `url`, with an isolated cache dir and fast
+/// retries.
+fn census_cmd(wrk: &Workdir, url: &str) -> std::process::Command {
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CENSUS_GEOCODER_URL", url)
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("QSV_CENSUS_GEOCODER_RETRY_BASE_MS", "1");
+    cmd
+}
+
+/// The §3 GEOIDs of 4600 Silver Hill Rd (state, county, tract, block group, block).
+fn silver_hill_geoids() -> Vec<String> {
+    svec![
+        "24",
+        "24033",
+        "24033802405",
+        "240338024052",
+        "240338024052004"
+    ]
+}
+
+#[test]
+#[serial]
+fn geocode_census_oneline() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_oneline");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Address"],
+            svec!["4600 Silver Hill Rd, Washington, DC 20233"],
+            svec![""],
+            svec!["NOMATCH somewhere"],
+            // same address, different case and spacing: one request, from the dedupe
+            svec!["4600 silver hill rd,   washington, dc 20233"],
+        ],
+    );
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--invalid-result", "<NONE>"])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["Address"],
+        svec!["38.84505589808, -76.92836638093"],
+        svec![""],
+        svec!["<NONE>"],
+        svec!["38.84505589808, -76.92836638093"],
+    ];
+    assert_eq!(got, expected);
+    assert_eq!(mock.requests(), 2, "{:?}", mock.log());
+    assert_eq!(
+        mock.log()[0],
+        "onelineaddress?address=4600 Silver Hill Rd, Washington, DC \
+         20233&benchmark=Public_AR_Current&format=json&layers=all&vintage=Current_Current"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_census_geoids_and_dyncols() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_geoids_and_dyncols");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "Address"],
+            svec!["1", "4600 Silver Hill Rd, Washington, DC 20233"],
+            svec!["2", "NOMATCH"],
+        ],
+    );
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["-f", "%census-geoids"])
+        .args(["--invalid-result", "-"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut row1 = svec!["1", "4600 Silver Hill Rd, Washington, DC 20233"];
+    row1.extend(silver_hill_geoids());
+    assert_eq!(
+        got,
+        vec![
+            svec![
+                "id",
+                "Address",
+                "census_state",
+                "census_county",
+                "census_tract",
+                "census_blockgroup",
+                "census_block"
+            ],
+            row1,
+            svec!["2", "NOMATCH", "-", "-", "-", "-", "-"],
+        ]
+    );
+
+    // other layers, the TIGER line, a match count and a dyncols template
+    wrk.create(
+        "multi.csv",
+        vec![svec!["Address"], svec!["MULTI 1 Main St, Anytown, NY"]],
+    );
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census").arg("Address").arg("multi.csv").args([
+        "-f",
+        "%dyncols: {n:_resultCount}, {zcta:flat.2020 Census ZIP Code Tabulation Areas.GEOID}, \
+         {side:tigerLine.side}, {src:_source}, {matched:matchedAddress}",
+    ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "2", "{got:?}");
+    assert_eq!(got[1][2], "20746");
+    assert!(matches!(got[1][3].as_str(), "L" | "R"), "{got:?}");
+    assert_eq!(got[1][4], "single");
+    assert_eq!(got[1][5], "MULTI 1 MAIN ST, ANYTOWN, NY");
+}
+
+#[test]
+#[serial]
+fn geocode_census_parsed_params() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_parsed_params");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Street", "City", "Zip", "out"],
+            svec!["4600 Silver Hill Rd", "Washington", "20233", "a"],
+            // no zip: city and the literal state are enough
+            svec!["4600 Silver Hill Rd", "Washington", "", "b"],
+            // neither zip nor city: never sent (Census would answer HTTP 400)
+            svec!["4600 Silver Hill Rd", "", "", "c"],
+        ],
+    );
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("out")
+        .arg("data.csv")
+        .args(["--params", "street={Street},city={City},state=DC,zip={Zip}"])
+        .args(["-f", "%matched-address"])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let matched = "4600 SILVER HILL RD, WASHINGTON, DC, 20233";
+    assert_eq!(
+        got,
+        vec![
+            svec!["Street", "City", "Zip", "out"],
+            svec!["4600 Silver Hill Rd", "Washington", "20233", matched],
+            svec!["4600 Silver Hill Rd", "Washington", "", matched],
+            svec!["4600 Silver Hill Rd", "", "", "c"],
+        ]
+    );
+    assert_eq!(
+        mock.log(),
+        vec![
+            "address?benchmark=Public_AR_Current&city=Washington&format=json&layers=all&state=DC&\
+             street=4600 Silver Hill Rd&vintage=Current_Current&zip=20233",
+            "address?benchmark=Public_AR_Current&city=Washington&format=json&layers=all&state=DC&\
+             street=4600 Silver Hill Rd&vintage=Current_Current",
+        ]
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_census_reverse() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_reverse");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Point"],
+            svec!["38.84601, -76.92744"],
+            svec!["(38.84601, -76.92744)"],
+            svec!["not a point"],
+            svec!["95.0, 10.0"],
+            svec!["30.0, -175.0"],
+        ],
+    );
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Point")
+        .arg("data.csv")
+        .arg("--reverse")
+        .args([
+            "-f",
+            "%dyncols: {tract:flat.Census Tracts.GEOID}, {lat:coordinates.y}, {lng:coordinates.x}",
+        ])
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let hit = |p: &'static str| svec![p, "24033802405", "38.84601", "-76.92744"];
+    assert_eq!(
+        got,
+        vec![
+            svec!["Point", "tract", "lat", "lng"],
+            hit("38.84601, -76.92744"),
+            hit("(38.84601, -76.92744)"),
+            // unparseable or out of range: never sent
+            svec!["not a point", "", "", ""],
+            svec!["95.0, 10.0", "", "", ""],
+            // a point at sea: no geographies, no match
+            svec!["30.0, -175.0", "", "", ""],
+        ]
+    );
+    // x is the LONGITUDE, y the latitude
+    assert_eq!(
+        mock.log(),
+        vec![
+            "coordinates?benchmark=Public_AR_Current&format=json&layers=all&\
+             vintage=Current_Current&x=-76.927440&y=38.846010",
+            "coordinates?benchmark=Public_AR_Current&format=json&layers=all&\
+             vintage=Current_Current&x=-175.000000&y=30.000000",
+        ]
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_census_retries_and_circuit_breaker() {
+    let wrk = Workdir::new("geocode_census_retries_and_circuit_breaker");
+    wrk.create(
+        "one.csv",
+        vec![svec!["Address"], svec!["1 Main St, Anytown, NY"]],
+    );
+    // two 429s, then the success
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("flaky"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("one.csv")
+        .arg("--no-cache");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_ne!(got[1][0], "1 Main St, Anytown, NY");
+    assert_eq!(mock.requests(), 3);
+
+    // a body that dies mid-way is retried
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("truncate"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("one.csv")
+        .arg("--no-cache");
+    let again: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(again, got);
+    assert_eq!(mock.requests(), 2);
+
+    let mut rows = vec![svec!["Address"]];
+    for i in 0..15 {
+        rows.push(vec![format!("{i} Main St, Anytown, NY")]);
+    }
+    wrk.create("many.csv", rows);
+    let mock = CensusMock::start();
+    let mut cmd = census_cmd(&wrk, &mock.url("down"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("many.csv")
+        .args(["--jobs", "1"])
+        .arg("--no-cache");
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("10 Census Geocoder requests in a row failed"),
+        "stderr: {stderr}"
+    );
+    // 10 locations x (1 try + 3 retries), and nothing after the breaker trips
+    assert_eq!(mock.requests(), 40);
+}
+
+#[test]
+#[serial]
+fn geocode_census_fatal_errors() {
+    let wrk = Workdir::new("geocode_census_fatal_errors");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Address"],
+            svec!["1 Main St, Anytown, NY"],
+            svec!["BADREQ"],
+            svec!["2 Main St, Anytown, NY"],
+        ],
+    );
+    let mock = CensusMock::start();
+    // HTTP 400: Census's reason is passed on, and the run stops
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--jobs", "1"])
+        .arg("--no-cache");
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("rejected the request (HTTP 400): Address must be specified"),
+        "stderr: {stderr}"
+    );
+    // HTTP 404: a wrong base URL
+    let mut cmd = census_cmd(&wrk, &format!("{}/nope", mock.url("ok")));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .arg("--no-cache");
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("endpoint not found (HTTP 404)") && stderr.contains("/nope/geographies"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_census_no_redirects_no_huge_bodies() {
+    let wrk = Workdir::new("geocode_census_no_redirects_no_huge_bodies");
+    wrk.create(
+        "data.csv",
+        vec![svec!["Address"], svec!["1 Main St, Anytown, NY"]],
+    );
+    for mode in ["redirect", "huge"] {
+        let mock = CensusMock::start();
+        let mut cmd = census_cmd(&wrk, &mock.url(mode));
+        cmd.arg("census")
+            .arg("Address")
+            .arg("data.csv")
+            .arg("--no-cache");
+        let output = wrk.output(&mut cmd);
+        assert!(output.status.success(), "{mode}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.replace("\r\n", "\n"),
+            "Address\n\"1 Main St, Anytown, NY\"\n",
+            "{mode}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("1 Census Geocoder lookup(s) failed"),
+            "{mode}: {stderr}"
+        );
+        // the redirect target (the `ok` route) was never requested
+        assert_eq!(mock.requests(), 1, "{mode}: {:?}", mock.log());
+    }
+}
+
+#[test]
+#[serial]
+fn geocode_census_disk_cache() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_disk_cache");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["Address"],
+            svec!["4600 Silver Hill Rd, Washington, DC 20233"],
+            svec!["NOMATCH x"],
+        ],
+    );
+    let run = |format: &str| {
+        let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+        cmd.arg("census")
+            .arg("Address")
+            .arg("data.csv")
+            .args(["-f", format]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        got
+    };
+    let first = run("%+");
+    assert_eq!(first[1], svec!["38.84505589808, -76.92836638093"]);
+    assert_eq!(mock.requests(), 2);
+    // a different --formatstr is served from the cache (it stores the normalized result), and
+    // the cached non-match stays a non-match
+    let second = run("%census-geoids");
+    let mut row1 = svec!["4600 Silver Hill Rd, Washington, DC 20233"];
+    row1.extend(silver_hill_geoids());
+    assert_eq!(second[1], row1);
+    assert_eq!(second[2], svec!["NOMATCH x", "", "", "", "", ""]);
+    assert_eq!(mock.requests(), 2);
+    // the base URL is part of the key: another server is asked again
+    let mut cmd = census_cmd(&wrk, &mock.url("flaky"));
+    cmd.arg("census").arg("Address").arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(mock.requests() > 2);
+
+    let mut info = wrk.command("geocode");
+    info.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .arg("cache-info");
+    let output = wrk.output(&mut info);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .lines()
+            .any(|l| l.contains(r#""provider":"Census""#) && l.contains(r#""exists":true"#)),
+        "stdout: {stdout}"
+    );
+    assert!(
+        wrk.path("geocode-censusgeocoder_v3.redb").exists(),
+        "the cache file must not be named like the ucgeocoder proxy's own db"
+    );
+}
+
+#[test]
+#[serial]
+fn geocode_census_order_preserved_concurrently() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_census_order_preserved_concurrently");
+    let mut rows = vec![svec!["Address"]];
+    for i in 0..40 {
+        rows.push(vec![format!("{i} Main St, Anytown, NY")]);
+    }
+    wrk.create("data.csv", rows.clone());
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("census")
+        .arg("Address")
+        .arg("data.csv")
+        .args(["--jobs", "4"])
+        .args(["--batch", "7"])
+        .args(["--rate-limit", "1000"])
+        .args(["-f", "%dyncols: {matched:matchedAddress}"])
+        .arg("--no-cache");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected: Vec<Vec<String>> = std::iter::once(svec!["Address", "matched"])
+        .chain(
+            rows.iter()
+                .skip(1)
+                .map(|r| vec![r[0].clone(), r[0].to_uppercase()]),
+        )
+        .collect();
+    assert_eq!(got, expected);
+    assert_eq!(mock.requests(), 40);
+}
+
+#[test]
+#[serial]
+fn geocode_censusnow_json() {
+    let mock = CensusMock::start();
+    let wrk = Workdir::new("geocode_censusnow_json");
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("censusnow")
+        .args(["-f", "%json"])
+        .arg("4600 Silver Hill Rd, Washington, DC 20233");
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let obj: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(obj["flat"]["Counties"]["GEOID"], "24033");
+    assert_eq!(obj["coordinates"]["x"], -76.92836638093);
+    assert_eq!(obj["_source"], "single");
+    assert_eq!(obj["geographies"].as_object().unwrap().len(), 19);
+
+    let mut cmd = census_cmd(&wrk, &mock.url("ok"));
+    cmd.arg("censusnow")
+        .arg("--reverse")
+        .args(["-f", "%census-geoids"])
+        .arg("38.84601, -76.92744");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut row = svec!["38.84601, -76.92744"];
+    row.extend(silver_hill_geoids());
+    assert_eq!(got[1], row);
+}
+
+#[test]
+#[serial]
+#[ignore = "queries the live US Census Geocoder"]
+fn geocode_census_live() {
+    let wrk = Workdir::new("geocode_census_live");
+    let mut cmd = wrk.command("geocode");
+    cmd.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env_remove("QSV_CENSUS_GEOCODER_URL")
+        .arg("censusnow")
+        .args(["-f", "%census-geoids"])
+        .arg("4600 Silver Hill Rd, Washington, DC 20233");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut row = svec!["4600 Silver Hill Rd, Washington, DC 20233"];
+    row.extend(silver_hill_geoids());
+    assert_eq!(got[1], row);
 }

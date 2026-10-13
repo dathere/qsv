@@ -2769,6 +2769,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     for (cache_name, provider) in [
         (OPENCAGE_CACHE_NAME, "OpenCage"),
         (geoclient::GEOCLIENT_CACHE_NAME, "Geoclient"),
+        (census::CENSUS_CACHE_NAME, "Census"),
     ] {
         manage_one_cache(args, mode, cache_dir, cache_name, provider)?;
     }

@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [25.0.0] - <TBD> 🌐 The "Spatiotemporal" Release ⏳
+## [25.0.0] - 2026-10-14 🌐 The "Spatiotemporal" Release ⏳
 
-<TBD> commits since 24.0.0, and the theme is **SPATIOTEMPORAL**: *where* and *when*. Our company's name, datHere, is short for "data here", because we've always known that location and time are the universal join keys (and future clients can demand "I want that here!" :smile:). A 311 complaint, a property tax roll, a building permit and a Census table share no column, yet each record happened somewhere, at some time. Pin down the where and the when, and datasets that seemed unrelated line up.
+~95 commits since 24.0.0, and the theme is **SPATIOTEMPORAL**: *where* and *when*. Our company's name, datHere, is short for "data here", because we've always known that location and time are the universal join keys (and future clients can demand "I want that here!" :smile:). A 311 complaint, a property tax roll, a building permit and a Census table share no column, yet each record happened somewhere, at some time. Pin down the where and the when, and datasets that seemed unrelated line up.
 
 **Where.** Two new geocoders, both built on authoritative government sources, turn addresses into the geographies public data is keyed by:
 

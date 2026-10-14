@@ -429,6 +429,12 @@ Common options:
                            still trips (e.g., when jobs is pinned to 1 on a
                            pre-indexed file). A wwarn is emitted listing the
                            auto-enabled estimators.
+                           When modes are computed (with --mode or with the
+                           everything option) and no mode cardinality cap is
+                           set, approx cardinality is NOT auto-enabled: the exact
+                           mode table is kept either way, so it would save
+                           nothing. A wwarn suggests --mode-cardinality-cap,
+                           which is what bounds that table.
 "#;
 
 /*
@@ -1479,15 +1485,26 @@ fn try_enable_approx_sketches(
     // HLL: blocked by --infer-boolean (boolean inference requires cardinality == 2
     // exactness; HLL's ~1.5% RSE would corrupt the comparison). Mirrors the explicit
     // `--infer-boolean forces --cardinality-method exact` fallback in run().
+    // Also skipped when modes are computed without a cap: the exact mode table is kept
+    // either way and supplies an exact cardinality, so approx saves nothing there and
+    // claiming it as an OOM remedy would be false. `run()` points at the cap instead.
     if args.flag_cardinality_method == "exact"
         && !user_set_cardinality_method
         && !args.flag_infer_boolean
+        && !modes_keep_unbounded_exact_table(args)
     {
         args.flag_cardinality_method = "approx".to_string();
         enabled.push("--cardinality-method approx");
     }
 
     enabled
+}
+
+/// Whether this run keeps an exact table of every distinct value of every column for the
+/// whole run: mode/antimode tracking needs one, and only `--mode-cardinality-cap` bounds
+/// it - `--cardinality-method approx` does not (the table already yields an exact count).
+const fn modes_keep_unbounded_exact_table(args: &Args) -> bool {
+    (args.flag_everything || args.flag_mode) && args.flag_mode_cardinality_cap == 0
 }
 
 /// Big-endian stub: Apache DataSketches is not available on big-endian targets,
@@ -2241,6 +2258,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         // Sketch fallback: only for OOM (not other CliErrors)
                         if matches!(e, CliError::OutOfMemory(_)) {
+                            if modes_keep_unbounded_exact_table(&args) {
+                                wwarn!(
+                                    "OOM during memory check: mode/antimode tracking keeps every \
+                                     distinct value of every column in memory, and no estimator \
+                                     bounds that. Pass --mode-cardinality-cap <n> to drop the \
+                                     table for columns with more than <n> distinct values."
+                                );
+                            }
                             let enabled = try_enable_approx_sketches(
                                 &mut args,
                                 user_set_quantile_method,
@@ -7336,5 +7361,50 @@ mod tests {
             vec![Count(42)],
             "the common small-file case must not trip the completeness check"
         );
+    }
+
+    /// What the OOM fallback auto-enables for a given command line. The fallback itself
+    /// only fires on a real memory-check failure, which the `#[ignore]`d `stats_oom_*` tests
+    /// need a multi-GB file and a small-RAM machine to reach; this exercises its decision.
+    #[cfg(not(target_endian = "big"))]
+    fn oom_fallback_enables(argv: &[&str]) -> (Vec<&'static str>, bool, String) {
+        let mut full = vec!["qsv", "stats"];
+        full.extend_from_slice(argv);
+        full.push("data.csv");
+        let mut args: super::Args = crate::util::get_args(super::USAGE, &full).unwrap();
+        let unbounded = super::modes_keep_unbounded_exact_table(&args);
+        let enabled = super::try_enable_approx_sketches(&mut args, false, false);
+        (enabled, unbounded, args.flag_cardinality_method)
+    }
+
+    #[test]
+    #[cfg(not(target_endian = "big"))]
+    fn oom_fallback_skips_approx_cardinality_when_modes_keep_the_exact_table() {
+        for argv in [&["--everything"][..], &["--mode", "--cardinality"][..]] {
+            let (enabled, unbounded, method) = oom_fallback_enables(argv);
+            assert!(unbounded, "{argv:?}: modes keep an unbounded exact table");
+            assert!(
+                !enabled.contains(&"--cardinality-method approx"),
+                "{argv:?}: approx cardinality saves nothing here, got {enabled:?}"
+            );
+            assert_eq!(method, "exact", "{argv:?}");
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_endian = "big"))]
+    fn oom_fallback_enables_approx_cardinality_when_it_bounds_memory() {
+        for argv in [
+            &["--everything", "--mode-cardinality-cap", "1000"][..],
+            &["--cardinality", "--quartiles"][..],
+        ] {
+            let (enabled, unbounded, method) = oom_fallback_enables(argv);
+            assert!(!unbounded, "{argv:?}");
+            assert!(
+                enabled.contains(&"--cardinality-method approx"),
+                "{argv:?}: got {enabled:?}"
+            );
+            assert_eq!(method, "approx", "{argv:?}");
+        }
     }
 }

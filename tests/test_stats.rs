@@ -4533,9 +4533,41 @@ fn stats_oom_auto_enables_approx_sketches() {
         stderr.contains("--quantile-method approx"),
         "stderr should mention quantile auto-enable, got: {stderr}"
     );
+    // --everything computes modes, whose exact table is kept regardless of the
+    // cardinality method - approx would save nothing, so it is not claimed as a remedy;
+    // the cap, which does bound that table, is suggested instead.
+    assert!(
+        !stderr.contains("--cardinality-method approx"),
+        "approx cardinality saves no memory when modes are computed, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("--mode-cardinality-cap"),
+        "stderr should point at --mode-cardinality-cap, got: {stderr}"
+    );
+}
+
+#[test]
+#[ignore = "Requires a multi-GB file to trigger OOM via mem_file_check"]
+fn stats_oom_with_mode_cap_auto_enables_approx_cardinality() {
+    let (wrk, test_file) = crate::workdir::build_large_oom_csv(
+        "stats_oom_with_mode_cap_auto_enables_approx_cardinality",
+    );
+    // With a cap, a column past it drops its exact table, so the HLL estimate is what
+    // reports its cardinality - auto-enabling approx is meaningful again.
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything")
+        .arg("--memcheck")
+        .args(["--mode-cardinality-cap", "1000"])
+        .env("QSV_FREEMEMORY_HEADROOM_PCT", "90")
+        .arg(test_file);
+    let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
         stderr.contains("--cardinality-method approx"),
-        "stderr should mention cardinality auto-enable, got: {stderr}"
+        "cardinality sketch should auto-enable when a cap is set, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Pass --mode-cardinality-cap"),
+        "no cap suggestion when a cap is already set, got: {stderr}"
     );
 }
 
@@ -4547,8 +4579,11 @@ fn stats_oom_skips_approx_quantiles_with_weight() {
     // Weight column is col1 (all distinct strings — qsv will treat parse failures
     // as default weight 1.0; this is acceptable for the test because we only care
     // that --weight is *set*, which is what suppresses the quantile auto-enable).
+    // --cardinality --quartiles rather than --everything: without modes, approx
+    // cardinality is a real remedy, so its auto-enable is what this test can observe.
     let mut cmd = wrk.command("stats");
-    cmd.arg("--everything")
+    cmd.arg("--cardinality")
+        .arg("--quartiles")
         .arg("--memcheck")
         .arg("--weight")
         .arg("col1")

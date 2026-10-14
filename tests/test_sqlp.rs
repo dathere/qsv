@@ -6374,3 +6374,66 @@ fn sqlp_nested_aggregate_errors() {
         "unexpected stderr: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Polars SQL behavior changed between rev cd2e67a and 2742ad3 (both after
+// py-2.0.0). One test per upstream change, as above.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sqlp_generate_series_and_range() {
+    // pola-rs/polars#29912 added the generate_series and range table functions.
+    // generate_series includes stop; range does not.
+    let wrk = Workdir::new("sqlp_generate_series_and_range");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT * FROM generate_series(1, 7, 3)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["generate_series"], svec!["1"], svec!["4"], svec!["7"]];
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg("SELECT * FROM range(0, 7, 3)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["range"], svec!["0"], svec!["3"], svec!["6"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_read_csv_named_options() {
+    // pola-rs/polars#29917: read_csv() takes scan_csv's options as named
+    // arguments (`name => value`).
+    let wrk = Workdir::new("sqlp_read_csv_named_options");
+    wrk.create_from_string("semi.csv", "# exported 2026\n1;x\n2;y\n");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT * FROM read_csv('semi.csv', separator => ';', comment_prefix => '#', has_header \
+         => false)",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["column_0", "column_1"],
+        svec!["1", "x"],
+        svec!["2", "y"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_read_csv_unknown_option_errors() {
+    // pola-rs/polars#29917: an unknown read_csv() option is an error that lists
+    // the valid ones.
+    let wrk = Workdir::new("sqlp_read_csv_unknown_option_errors");
+    wrk.create_from_string("semi.csv", "a;b\n1;x\n");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT * FROM read_csv('semi.csv', bogus => 1)");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("unknown `read_csv` option 'bogus'") && stderr.contains("separator"),
+        "unexpected stderr: {stderr}"
+    );
+}

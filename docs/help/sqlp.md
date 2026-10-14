@@ -244,11 +244,17 @@ qsv sqlp SKIP_INPUT "select * from read_ndjson('data.jsonl') as t1 join read_ipc
 
 > you can also directly load CSVs using the Polars read_csv() SQL function. This is useful when
 > you want to bypass the regular CSV parser (with SKIP_INPUT) and use Polars' multithreaded,
-> mem-mapped CSV parser instead - making for dramatically faster queries at the cost of CSV parser
-> configurability (i.e. limited to comma delimiter, no CSV comments, etc.).
+> mem-mapped CSV parser instead - making for dramatically faster queries.
 
 ```console
 qsv sqlp SKIP_INPUT "select * from read_csv('data.csv') order by col1 desc limit 100"
+```
+
+> read_csv() takes Polars' scan_csv options as named arguments (name => value), e.g. for a
+> semicolon-delimited file with comment lines and no header row:
+
+```console
+qsv sqlp SKIP_INPUT "select * from read_csv('data.csv', separator => ';', comment_prefix => '#', has_header => false)"
 ```
 
 > note that you can also use read_csv() to read compressed files directly
@@ -271,6 +277,13 @@ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.zlib')"
 
 ```console
 qsv sqlp SKIP_INPUT "SELECT 1 AS one, '2' AS two, 3.0 AS three"
+```
+
+> generate_series(start, stop[, step]) and range(start, stop[, step]) generate a column of
+> integers. generate_series includes stop; range does not.
+
+```console
+qsv sqlp SKIP_INPUT "SELECT * FROM generate_series(1, 10, 2)"
 ```
 
 > use stdin as input

@@ -243,8 +243,8 @@ futures = "0.3"
 futures-util = "0.3"
 gender_guesser = { version = "0.2", optional = true }
 geojson = { version = "1", default-features = false, optional = true }
-geosuggest-core = { version = "0.8.5", features = ["geoip2"], optional = true }
-geosuggest-utils = { version = "0.8.5", optional = true }
+geosuggest-core = { version = "0.9.0", features = ["geoip2"], optional = true }
+geosuggest-utils = { version = "0.9.0", optional = true }
 geozero = { version = "0.15", features = [
     "with-csv",
     "with-shp",
@@ -484,7 +484,7 @@ url = "2.5"
 webdriver-downloader = { version = "0.17", optional = true }
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zip = "8"
+zip = "9"
 zmij = "1.0"
 zstd = { version = "0.14", optional = true }
 
@@ -611,7 +611,7 @@ polars = { version = "0.55", features = ["avx512"], optional = true }
 # Nothing is lost on the excluded arches: the sole consumer, tests/test_viz_geocode_auto.rs, is
 # gated on `viz` + `geocode`, and neither the s390x nor the ppc64le job enables either one.
 [target.'cfg(any(target_arch = "x86", target_arch = "x86_64", target_arch = "arm", target_arch = "aarch64"))'.dev-dependencies]
-geosuggest-core = "0.8.5"
+geosuggest-core = "0.9.0"
 
 [features]
 default = ["jemallocator"]

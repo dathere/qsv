@@ -5721,7 +5721,7 @@ pub fn select_zip_entry<R: Read + std::io::Seek>(
         // can't fail selection of a valid earlier CSV/TSV/TAB/SSV entry. The chosen
         // entry is decoded later (by `extract_zip_to_temp` via `by_index`).
         let entry = archive.by_index_raw(i)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.to_string();
         if name.ends_with('/') || !root_dir_common_filter(Path::new(&name)) {
             continue;
         }
@@ -5839,7 +5839,7 @@ fn extract_all_zip_entries(
     let mut other_supported = Vec::new();
     for i in 0..archive.len() {
         let mut zip_entry = archive.by_index(i)?;
-        let entry_name = zip_entry.name().to_string();
+        let entry_name = zip_entry.name()?.to_string();
 
         if entry_name.ends_with('/') || !root_dir_common_filter(Path::new(&entry_name)) {
             log::info!("  Skipping system file or directory: {entry_name}");

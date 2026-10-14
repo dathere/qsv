@@ -689,59 +689,71 @@ complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l toon
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -l vis-whitespace
 complete -c qsv -n "__fish_qsv_using_subcommand frequency" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l admin1 -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l api-key -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s b -l batch -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cache-dir -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cache-ttl -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cities-url -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l country -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s d -l delimiter -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s f -l formatstr -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l invalid-result -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s j -l jobs -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s k -l k_weight -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s l -l language -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l languages -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l min-score -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s c -l new-column -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l older-than -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s o -l output -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l rate-limit -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s r -l rename -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l timeout -r
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l force
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l no-annotations
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l no-cache
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s p -l progressbar
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l reverse
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-clear"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-info"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-prune"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "countryinfo"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "countryinfonow"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-check"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-load"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-reset"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-update"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "iplookup"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "iplookupnow"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "opencage"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "opencagenow"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "reverse"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "reversenow"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "suggest"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "suggestnow"
-complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l benchmark -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l census-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l cities-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l country -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l endpoint -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l invalid-result -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s k -l k_weight -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s l -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l languages -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l min-score -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l params -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l vintage -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l no-annotations
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -l reverse
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-clear"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-info"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "cache-prune"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "census"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "censusnow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "countryinfo"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "countryinfonow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "geoclient"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "geoclientnow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-check"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-load"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-reset"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "index-update"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "iplookup"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "iplookupnow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "opencage"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "opencagenow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "reverse"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "reversenow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "suggest"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "suggestnow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and not __fish_seen_subcommand_from cache-clear cache-info cache-prune census censusnow countryinfo countryinfonow geoclient geoclientnow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s j -l jobs -r
@@ -752,9 +764,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-clear" -l no-cache
@@ -764,11 +778,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s j -l jobs -r
@@ -779,9 +796,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-info" -l no-cache
@@ -791,11 +810,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s j -l jobs -r
@@ -806,23 +828,92 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -l reverse
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from cache-prune" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l benchmark -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l census-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l cities-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l country -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l endpoint -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l invalid-result -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s k -l k_weight -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s l -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l languages -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l min-score -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l params -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l vintage -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l no-annotations
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -l reverse
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from census" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l benchmark -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l census-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l cities-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l country -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l endpoint -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l invalid-result -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s k -l k_weight -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s l -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l languages -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l min-score -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l params -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l vintage -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l no-annotations
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -l reverse
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from censusnow" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s j -l jobs -r
@@ -833,9 +924,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfo" -l no-cache
@@ -845,11 +938,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s j -l jobs -r
@@ -860,23 +956,92 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -l reverse
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from countryinfonow" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l benchmark -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l census-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l cities-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l country -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l endpoint -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l invalid-result -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s k -l k_weight -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s l -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l languages -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l min-score -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l params -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l vintage -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l no-annotations
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -l reverse
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclient" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l benchmark -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l census-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l cities-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l country -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l endpoint -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l invalid-result -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s k -l k_weight -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s l -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l languages -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l min-score -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l older-than -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l params -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l vintage -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l no-annotations
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -l reverse
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from geoclientnow" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s j -l jobs -r
@@ -887,9 +1052,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-check" -l no-cache
@@ -899,11 +1066,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s j -l jobs -r
@@ -914,9 +1084,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-load" -l no-cache
@@ -926,11 +1098,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s j -l jobs -r
@@ -941,9 +1116,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-reset" -l no-cache
@@ -953,11 +1130,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s j -l jobs -r
@@ -968,9 +1148,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from index-update" -l no-cache
@@ -980,11 +1162,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s j -l jobs -r
@@ -995,9 +1180,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookup" -l no-cache
@@ -1007,11 +1194,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s j -l jobs -r
@@ -1022,9 +1212,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from iplookupnow" -l no-cache
@@ -1034,11 +1226,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s j -l jobs -r
@@ -1049,9 +1244,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencage" -l no-cache
@@ -1061,11 +1258,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s j -l jobs -r
@@ -1076,9 +1276,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from opencagenow" -l no-cache
@@ -1088,11 +1290,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s j -l jobs -r
@@ -1103,9 +1308,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reverse" -l no-cache
@@ -1115,11 +1322,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s j -l jobs -r
@@ -1130,9 +1340,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from reversenow" -l no-cache
@@ -1142,11 +1354,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s j -l jobs -r
@@ -1157,9 +1372,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggest" -l no-cache
@@ -1169,11 +1386,14 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l admin1 -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l api-key -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l benchmark -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l cache-ttl -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l census-mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l cities-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l country -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l endpoint -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l invalid-result -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s j -l jobs -r
@@ -1184,9 +1404,11 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s c -l new-column -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l params -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l vintage -r
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l no-annotations
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from suggestnow" -l no-cache
@@ -1196,8 +1418,12 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "cache-clear"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "cache-info"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "cache-prune"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "census"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "censusnow"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "countryinfo"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "countryinfonow"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "geoclient"
+complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "geoclientnow"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "index-check"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "index-load"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "index-reset"
@@ -1211,6 +1437,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "suggest"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "suggestnow"
 complete -c qsv -n "__fish_qsv_using_subcommand geocode; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s g -l geometry -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s y -l latitude -r
 complete -c qsv -n "__fish_qsv_using_subcommand geoconvert" -s x -l longitude -r
@@ -4449,8 +4676,12 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "cache-clear"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "cache-info"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "cache-prune"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "census"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "censusnow"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "countryinfo"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "countryinfonow"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "geoclient"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "geoclientnow"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "index-check"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "index-load"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from geocode" -f -a "index-reset"

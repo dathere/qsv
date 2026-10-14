@@ -722,11 +722,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -740,11 +743,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -752,11 +757,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -770,11 +778,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -782,11 +792,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -800,11 +813,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -812,11 +827,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -830,11 +848,83 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode census" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --benchmark: string
+    --cache-dir: string
+    --cache-ttl: string
+    --census-mode: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --endpoint: string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --params: string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --vintage: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode censusnow" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --benchmark: string
+    --cache-dir: string
+    --cache-ttl: string
+    --census-mode: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --endpoint: string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --params: string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -842,11 +932,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -860,11 +953,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -872,11 +967,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -890,11 +988,83 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode geoclient" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --benchmark: string
+    --cache-dir: string
+    --cache-ttl: string
+    --census-mode: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --endpoint: string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --params: string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --vintage: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode geoclientnow" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --benchmark: string
+    --cache-dir: string
+    --cache-ttl: string
+    --census-mode: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --endpoint: string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --params: string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -902,11 +1072,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -920,11 +1093,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -932,11 +1107,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -950,11 +1128,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -962,11 +1142,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -980,11 +1163,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -992,11 +1177,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1010,11 +1198,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1022,11 +1212,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1040,11 +1233,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1052,11 +1247,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1070,11 +1268,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1082,11 +1282,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1100,11 +1303,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1112,11 +1317,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1130,11 +1338,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1142,11 +1352,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1160,11 +1373,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1172,11 +1387,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1190,11 +1408,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1202,11 +1422,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1220,11 +1443,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1232,11 +1457,14 @@ module completions {
     --admin1: string
     --api-key: string
     --batch(-b): string
+    --benchmark: string
     --cache-dir: string
     --cache-ttl: string
+    --census-mode: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
+    --endpoint: string
     --force
     --formatstr(-f): string
     --invalid-result: string
@@ -1250,11 +1478,13 @@ module completions {
     --no-cache
     --older-than: string
     --output(-o): string
+    --params: string
     --progressbar(-p)
     --rate-limit: string
     --rename(-r): string
     --reverse
     --timeout: string
+    --vintage: string
     --help(-h)                # Print help
   ]
 
@@ -1271,10 +1501,22 @@ module completions {
   export extern "qsv geocode help cache-prune" [
   ]
 
+  export extern "qsv geocode help census" [
+  ]
+
+  export extern "qsv geocode help censusnow" [
+  ]
+
   export extern "qsv geocode help countryinfo" [
   ]
 
   export extern "qsv geocode help countryinfonow" [
+  ]
+
+  export extern "qsv geocode help geoclient" [
+  ]
+
+  export extern "qsv geocode help geoclientnow" [
   ]
 
   export extern "qsv geocode help index-check" [
@@ -1318,6 +1560,7 @@ module completions {
   ]
 
   export extern "qsv geoconvert" [
+    --delimiter(-d): string
     --geometry(-g): string
     --latitude(-y): string
     --longitude(-x): string
@@ -4980,10 +5223,22 @@ module completions {
   export extern "qsv help geocode cache-prune" [
   ]
 
+  export extern "qsv help geocode census" [
+  ]
+
+  export extern "qsv help geocode censusnow" [
+  ]
+
   export extern "qsv help geocode countryinfo" [
   ]
 
   export extern "qsv help geocode countryinfonow" [
+  ]
+
+  export extern "qsv help geocode geoclient" [
+  ]
+
+  export extern "qsv help geocode geoclientnow" [
   ]
 
   export extern "qsv help geocode index-check" [

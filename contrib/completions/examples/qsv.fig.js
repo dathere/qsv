@@ -3637,6 +3637,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -3649,6 +3657,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -3673,6 +3689,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -3757,6 +3781,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -3777,6 +3809,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -3829,6 +3869,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -3841,6 +3889,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -3865,6 +3921,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -3949,6 +4013,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -3969,6 +4041,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4021,6 +4101,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4033,6 +4121,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -4057,6 +4153,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -4141,6 +4245,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -4161,6 +4273,478 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "census",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "censusnow",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4213,6 +4797,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4225,6 +4817,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -4249,6 +4849,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -4333,6 +4941,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -4353,6 +4969,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4405,6 +5029,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4417,6 +5049,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -4441,6 +5081,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -4525,6 +5173,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -4545,6 +5201,478 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "geoclient",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "geoclientnow",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4597,6 +5725,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4609,6 +5745,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -4633,6 +5777,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -4717,6 +5869,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -4737,6 +5897,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4789,6 +5957,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4801,6 +5977,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -4825,6 +6009,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -4909,6 +6101,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -4929,6 +6129,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -4981,6 +6189,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -4993,6 +6209,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5017,6 +6241,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -5101,6 +6333,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -5121,6 +6361,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -5173,6 +6421,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -5185,6 +6441,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5209,6 +6473,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -5293,6 +6565,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -5313,6 +6593,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -5365,6 +6653,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -5377,6 +6673,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5401,6 +6705,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -5485,6 +6797,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -5505,6 +6825,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -5557,6 +6885,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -5569,6 +6905,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5593,6 +6937,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -5677,6 +7029,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -5697,6 +7057,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -5749,6 +7117,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -5761,6 +7137,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5785,6 +7169,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -5869,6 +7261,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -5889,6 +7289,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -5941,6 +7349,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -5953,6 +7369,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -5977,6 +7401,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -6061,6 +7493,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -6081,6 +7521,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -6133,6 +7581,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -6145,6 +7601,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -6169,6 +7633,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -6253,6 +7725,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -6273,6 +7753,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -6325,6 +7813,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -6337,6 +7833,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -6361,6 +7865,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -6445,6 +7957,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -6465,6 +7985,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -6517,6 +8045,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -6529,6 +8065,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -6553,6 +8097,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -6637,6 +8189,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -6657,6 +8217,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -6709,6 +8277,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--benchmark",
+              isRepeatable: true,
+              args: {
+                name: "benchmark",
+                isOptional: true,
+              },
+            },
+            {
               name: "--cache-dir",
               isRepeatable: true,
               args: {
@@ -6721,6 +8297,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--census-mode",
+              isRepeatable: true,
+              args: {
+                name: "census-mode",
                 isOptional: true,
               },
             },
@@ -6745,6 +8329,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--endpoint",
+              isRepeatable: true,
+              args: {
+                name: "endpoint",
                 isOptional: true,
               },
             },
@@ -6829,6 +8421,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--params",
+              isRepeatable: true,
+              args: {
+                name: "params",
+                isOptional: true,
+              },
+            },
+            {
               name: "--rate-limit",
               isRepeatable: true,
               args: {
@@ -6849,6 +8449,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--vintage",
+              isRepeatable: true,
+              args: {
+                name: "vintage",
                 isOptional: true,
               },
             },
@@ -6887,10 +8495,22 @@ const completion: Fig.Spec = {
               name: "cache-prune",
             },
             {
+              name: "census",
+            },
+            {
+              name: "censusnow",
+            },
+            {
               name: "countryinfo",
             },
             {
               name: "countryinfonow",
+            },
+            {
+              name: "geoclient",
+            },
+            {
+              name: "geoclientnow",
             },
             {
               name: "index-check",
@@ -6961,6 +8581,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--benchmark",
+          isRepeatable: true,
+          args: {
+            name: "benchmark",
+            isOptional: true,
+          },
+        },
+        {
           name: "--cache-dir",
           isRepeatable: true,
           args: {
@@ -6973,6 +8601,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "cache-ttl",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--census-mode",
+          isRepeatable: true,
+          args: {
+            name: "census-mode",
             isOptional: true,
           },
         },
@@ -6997,6 +8633,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--endpoint",
+          isRepeatable: true,
+          args: {
+            name: "endpoint",
             isOptional: true,
           },
         },
@@ -7081,6 +8725,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--params",
+          isRepeatable: true,
+          args: {
+            name: "params",
+            isOptional: true,
+          },
+        },
+        {
           name: "--rate-limit",
           isRepeatable: true,
           args: {
@@ -7101,6 +8753,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--vintage",
+          isRepeatable: true,
+          args: {
+            name: "vintage",
             isOptional: true,
           },
         },
@@ -7128,6 +8788,14 @@ const completion: Fig.Spec = {
     {
       name: "geoconvert",
       options: [
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
         {
           name: ["-g", "--geometry"],
           isRepeatable: true,
@@ -27772,10 +29440,22 @@ const completion: Fig.Spec = {
               name: "cache-prune",
             },
             {
+              name: "census",
+            },
+            {
+              name: "censusnow",
+            },
+            {
               name: "countryinfo",
             },
             {
               name: "countryinfonow",
+            },
+            {
+              name: "geoclient",
+            },
+            {
+              name: "geoclientnow",
             },
             {
               name: "index-check",

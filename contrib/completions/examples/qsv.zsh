@@ -1130,12 +1130,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1152,10 +1155,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1180,12 +1185,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1202,10 +1210,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1222,12 +1232,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1244,10 +1257,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1264,12 +1279,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1286,10 +1304,106 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(census)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--params=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(censusnow)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--params=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1306,12 +1420,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1328,10 +1445,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1348,12 +1467,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1370,10 +1492,106 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(geoclient)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--params=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(geoclientnow)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--params=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1390,12 +1608,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1412,10 +1633,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1432,12 +1655,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1454,10 +1680,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1474,12 +1702,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1496,10 +1727,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1516,12 +1749,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1538,10 +1774,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1558,12 +1796,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1580,10 +1821,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1600,12 +1843,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1622,10 +1868,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1642,12 +1890,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1664,10 +1915,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1684,12 +1937,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1706,10 +1962,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1726,12 +1984,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1748,10 +2009,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1768,12 +2031,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1790,10 +2056,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1810,12 +2078,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1832,10 +2103,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1852,12 +2125,15 @@ _arguments "${_arguments_options[@]}" : \
 '--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--benchmark=[]: :_default' \
 '--cache-dir=[]: :_default' \
 '--cache-ttl=[]: :_default' \
+'--census-mode=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--endpoint=[]: :_default' \
 '-f+[]: :_default' \
 '--formatstr=[]: :_default' \
 '--invalid-result=[]: :_default' \
@@ -1874,10 +2150,12 @@ _arguments "${_arguments_options[@]}" : \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--params=[]: :_default' \
 '--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
+'--vintage=[]: :_default' \
 '--force[]' \
 '--no-annotations[]' \
 '--no-cache[]' \
@@ -1912,11 +2190,27 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(census)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(censusnow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (countryinfo)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (countryinfonow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geoclient)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geoclientnow)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -1982,6 +2276,8 @@ esac
 ;;
 (geoconvert)
 _arguments "${_arguments_options[@]}" : \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
 '-g+[]: :_default' \
 '--geometry=[]: :_default' \
 '-y+[]: :_default' \
@@ -6707,11 +7003,27 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(census)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(censusnow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (countryinfo)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (countryinfonow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geoclient)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(geoclientnow)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -7630,8 +7942,12 @@ _qsv__subcmd__geocode_commands() {
 'cache-clear:' \
 'cache-info:' \
 'cache-prune:' \
+'census:' \
+'censusnow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'geoclient:' \
+'geoclientnow:' \
 'index-check:' \
 'index-load:' \
 'index-reset:' \
@@ -7663,6 +7979,16 @@ _qsv__subcmd__geocode__subcmd__cache-prune_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode cache-prune commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__geocode__subcmd__census_commands] )) ||
+_qsv__subcmd__geocode__subcmd__census_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode census commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__censusnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__censusnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode censusnow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__geocode__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__geocode__subcmd__countryinfo_commands() {
     local commands; commands=()
@@ -7673,14 +7999,28 @@ _qsv__subcmd__geocode__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode countryinfonow commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__geocode__subcmd__geoclient_commands] )) ||
+_qsv__subcmd__geocode__subcmd__geoclient_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode geoclient commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__geoclientnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__geoclientnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode geoclientnow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__geocode__subcmd__help_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help_commands() {
     local commands; commands=(
 'cache-clear:' \
 'cache-info:' \
 'cache-prune:' \
+'census:' \
+'censusnow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'geoclient:' \
+'geoclientnow:' \
 'index-check:' \
 'index-load:' \
 'index-reset:' \
@@ -7712,6 +8052,16 @@ _qsv__subcmd__geocode__subcmd__help__subcmd__cache-prune_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help cache-prune commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__census_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__census_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help census commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__censusnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__censusnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help censusnow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands() {
     local commands; commands=()
@@ -7721,6 +8071,16 @@ _qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands() {
 _qsv__subcmd__geocode__subcmd__help__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help countryinfonow commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__geoclient_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__geoclient_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help geoclient commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__geoclientnow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__geoclientnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help geoclientnow commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__help_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help__subcmd__help_commands() {
@@ -8248,8 +8608,12 @@ _qsv__subcmd__help__subcmd__geocode_commands() {
 'cache-clear:' \
 'cache-info:' \
 'cache-prune:' \
+'census:' \
+'censusnow:' \
 'countryinfo:' \
 'countryinfonow:' \
+'geoclient:' \
+'geoclientnow:' \
 'index-check:' \
 'index-load:' \
 'index-reset:' \
@@ -8280,6 +8644,16 @@ _qsv__subcmd__help__subcmd__geocode__subcmd__cache-prune_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode cache-prune commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__census_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__census_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode census commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__censusnow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__censusnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode censusnow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands() {
     local commands; commands=()
@@ -8289,6 +8663,16 @@ _qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands() {
 _qsv__subcmd__help__subcmd__geocode__subcmd__countryinfonow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode countryinfonow commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__geoclient_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__geoclient_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode geoclient commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__geoclientnow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__geoclientnow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode geoclientnow commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__index-check_commands] )) ||
 _qsv__subcmd__help__subcmd__geocode__subcmd__index-check_commands() {

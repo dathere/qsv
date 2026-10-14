@@ -886,7 +886,10 @@ use cached::{ConcurrentCacheBase, ConcurrentCached, RedbCache, macros::concurren
 use dynfmt2::Format;
 use geosuggest_core::{
     Engine, EngineData, EngineMetadata,
-    index::{ArchivedCitiesRecord as CitiesRecord, ArchivedCountryRecord as CountryRecord},
+    index::{
+        ArchivedAdminDivision, ArchivedCitiesRecord as CitiesRecord, ArchivedCountry,
+        ArchivedCountryRecord as CountryRecord,
+    },
     storage,
 };
 use geosuggest_utils::{IndexUpdater, IndexUpdaterSettings, SourceItem};
@@ -1164,6 +1167,13 @@ enum OcError {
 }
 
 static QSV_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Appended to index load/metadata failures. geosuggest-core 0.9.0 stamps an index format version
+/// and rejects every index built by older versions (which carry no version), so an index left over
+/// from an older qsv fails to load until it is rebuilt.
+static STALE_INDEX_HINT: &str = "An index built by an older qsv (geosuggest-core < 0.9.0) is no \
+                                 longer supported - run `qsv geocode index-reset` to fetch the \
+                                 default index, or `qsv geocode index-update --force` to rebuild \
+                                 it.";
 static DEFAULT_GEOCODE_INDEX_FILENAME: &str =
     concat!("qsv-", env!("CARGO_PKG_VERSION"), "-geocode-index.rkyv");
 static GEOIP2_FILENAME: &str = "GeoLite2-City.mmdb";
@@ -1833,7 +1843,11 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                             winfo!("Geonames index up-to-date.\n");
                         }
                     },
-                    None => return fail_incorrectusage_clierror!("Invalid Geonames index file."),
+                    None => {
+                        return fail_incorrectusage_clierror!(
+                            "Invalid Geonames index file. {STALE_INDEX_HINT}"
+                        );
+                    },
                 }
 
                 // print to stdout the index metadata as JSON
@@ -1862,7 +1876,9 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                         .map_err(|e| format!("index-update error: {e}"))?;
 
                     let Some(m) = metadata else {
-                        return fail_incorrectusage_clierror!("Invalid Geonames index file.");
+                        return fail_incorrectusage_clierror!(
+                            "Invalid Geonames index file. {STALE_INDEX_HINT}"
+                        );
                     };
                     if updater.has_updates(&m).await.map_err(|e| {
                         CliError::Network(format!("Geonames update check failed: {e}"))
@@ -3466,11 +3482,9 @@ async fn load_engine_data_resolved(
 
     let storage = storage::Storage::new();
 
-    // `load_from` skips the metadata block, so `engine.metadata` is always None here; callers that
-    // need the metadata read it with `Storage::read_metadata` (see `index-load`, issue #4431).
     let engine = storage
         .load_from(geocode_index_file.clone())
-        .map_err(|e| format!("On load index file: {e}"))?;
+        .map_err(|e| format!("On load index file: {e}. {STALE_INDEX_HINT}"))?;
 
     // A new release's index just arrived AND loaded, so the old ones are now dead weight. Pruning
     // only after the load means a bad download (a 2xx carrying a broken index) can't count toward
@@ -3684,7 +3698,7 @@ fn search_index_uncached(
                 .iter()
                 .copied()
                 .filter(|cr| {
-                    cr.admin_division.as_ref().is_some_and(|admin_division| {
+                    engine.city_admin1(cr).is_some_and(|admin_division| {
                         admin1_filter_list.iter().any(|admin1_filter| {
                             if admin1_filter.is_code {
                                 admin_division
@@ -3707,9 +3721,9 @@ fn search_index_uncached(
             pick_exact_name(&search_result, &query)?
         };
 
-        let country = cityrecord.country.as_ref()?.code.as_str();
+        let country = engine.city_country(cityrecord)?.code.as_str();
 
-        let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+        let nameslang = get_cityrecord_name_in_lang(engine, cityrecord, lang_lookup);
 
         if formatstr == "%+" {
             // default for suggest is location - e.g. "(lat, long)"
@@ -3738,6 +3752,7 @@ fn search_index_uncached(
         if formatstr.starts_with("%dyncols:") {
             let countryrecord = engine.country_info(country)?;
             add_dyncols(
+                engine,
                 record,
                 cityrecord,
                 countryrecord,
@@ -3771,8 +3786,8 @@ fn search_index_uncached(
             // if no cityrecord is found, return the IP address
             return Some(ip_addr.to_string());
         };
-        let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
-        let country = cityrecord.country.as_ref()?.code.as_str();
+        let nameslang = get_cityrecord_name_in_lang(engine, cityrecord, lang_lookup);
+        let country = engine.city_country(cityrecord)?.code.as_str();
         let capital = engine
             .capital(country)
             .map(|cr| cr.name.as_str())
@@ -3792,6 +3807,7 @@ fn search_index_uncached(
         if formatstr.starts_with("%dyncols:") {
             let countryrecord = engine.country_info(country)?;
             add_dyncols(
+                engine,
                 record,
                 cityrecord,
                 countryrecord,
@@ -3825,9 +3841,9 @@ fn search_index_uncached(
                 search_result.into_iter().next().map(|ri| ri.city)
             }?;
 
-            let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+            let nameslang = get_cityrecord_name_in_lang(engine, cityrecord, lang_lookup);
 
-            let country = cityrecord.country.as_ref()?.code.as_str();
+            let country = engine.city_country(cityrecord)?.code.as_str();
 
             if formatstr == "%+" {
                 // default for reverse is city, admin1 country - e.g. "Brooklyn, New York US"
@@ -3847,6 +3863,7 @@ fn search_index_uncached(
             if formatstr.starts_with("%dyncols:") {
                 let countryrecord = engine.country_info(country)?;
                 add_dyncols(
+                    engine,
                     record,
                     cityrecord,
                     countryrecord,
@@ -3889,6 +3906,7 @@ fn cached_dns_lookup(host: &str) -> Option<IpAddr> {
 
 /// "%dyncols:" formatstr used. Adds dynamic columns to CSV.
 fn add_dyncols(
+    engine: &Engine,
     record: &mut csv::StringRecord,
     cityrecord: &CitiesRecord,
     countryrecord: &CountryRecord,
@@ -3908,12 +3926,12 @@ fn add_dyncols(
             "admin1" => record.push_field(&nameslang.admin1name),
             "admin2" => record.push_field(&nameslang.admin2name),
             "capital" => record.push_field(capital),
-            "timezone" => record.push_field(&cityrecord.timezone),
+            "timezone" => record.push_field(engine.city_timezone(cityrecord)),
             "population" => record.push_field(&cityrecord.population.to_string()),
 
             // US FIPS fields
             "us_state_fips_code" => {
-                let us_state_code = if let Some(admin1) = cityrecord.admin_division.as_ref() {
+                let us_state_code = if let Some(admin1) = engine.city_admin1(cityrecord) {
                     // admin1 code is a US state code, the two-letter state code
                     // is the last two characters of the admin1 code
                     // e.g. US.NY -> NY
@@ -3928,9 +3946,8 @@ fn add_dyncols(
                 record.push_field(lookup_us_state_fips_code(us_state_code).unwrap_or_default());
             },
             "us_county_fips_code" => {
-                let us_county_fips_code = cityrecord
-                    .admin2_division
-                    .as_ref()
+                let us_county_fips_code = engine
+                    .city_admin2(cityrecord)
                     .and_then(|admin2| us_county_fips_part(&admin2.code))
                     .unwrap_or_default();
                 record.push_field(&us_county_fips_code);
@@ -3999,19 +4016,19 @@ fn format_result(
             "%id" => cityrecord.id.to_string(),
             "%capital" => capital.to_string(),
             "%population" => cityrecord.population.to_string(),
-            "%timezone" => cityrecord.timezone.to_string(),
-            "%cityrecord" => format!("{cityrecord:?}"),
-            "%admin1record" => format!("{:?}", cityrecord.admin_division),
-            "%admin2record" => format!("{:?}", cityrecord.admin2_division),
+            "%timezone" => engine.city_timezone(cityrecord).to_string(),
+            "%cityrecord" => format!("{:?}", CityRecordJson::new(engine, cityrecord)),
+            "%admin1record" => format!("{:?}", engine.city_admin1(cityrecord)),
+            "%admin2record" => format!("{:?}", engine.city_admin2(cityrecord)),
             "%json" => {
                 let Some(countryrecord) = engine.country_info(country) else {
                     return INVALID_COUNTRY_CODE.to_string();
                 };
-                let cr_json =
-                    simd_json::to_string(cityrecord).unwrap_or_else(|_| "null".to_string());
+                let cr_json = simd_json::to_string(&CityRecordJson::new(engine, cityrecord))
+                    .unwrap_or_else(|_| "null".to_string());
                 let country_json =
                     simd_json::to_string(countryrecord).unwrap_or_else(|_| "null".to_string());
-                let us_fips_codes_json = get_us_fips_codes(cityrecord, nameslang);
+                let us_fips_codes_json = get_us_fips_codes(engine, cityrecord, nameslang);
                 format!(
                     "{{\"cityrecord\":{cr_json}, \"countryrecord\":{country_json}, \
                      \"us_fips_codes\":{us_fips_codes_json}}}",
@@ -4021,11 +4038,11 @@ fn format_result(
                 let Some(countryrecord) = engine.country_info(country) else {
                     return INVALID_COUNTRY_CODE.to_string();
                 };
-                let cr_json =
-                    simd_json::to_string_pretty(cityrecord).unwrap_or_else(|_| "null".to_string());
+                let cr_json = simd_json::to_string_pretty(&CityRecordJson::new(engine, cityrecord))
+                    .unwrap_or_else(|_| "null".to_string());
                 let country_json = simd_json::to_string_pretty(countryrecord)
                     .unwrap_or_else(|_| "null".to_string());
-                let us_fips_codes = get_us_fips_codes(cityrecord, nameslang);
+                let us_fips_codes = get_us_fips_codes(engine, cityrecord, nameslang);
                 let us_fips_codes_json = simd_json::to_string_pretty(&us_fips_codes)
                     .unwrap_or_else(|_| "null".to_string());
                 format!(
@@ -4092,7 +4109,9 @@ fn format_result(
                 "admin1" => cityrecord_map.insert("admin1", nameslang.admin1name.clone()),
                 "admin2" => cityrecord_map.insert("admin2", nameslang.admin2name.clone()),
                 "capital" => cityrecord_map.insert("capital", capital.to_string()),
-                "timezone" => cityrecord_map.insert("timezone", cityrecord.timezone.to_string()),
+                "timezone" => {
+                    cityrecord_map.insert("timezone", engine.city_timezone(cityrecord).to_string())
+                },
                 "population" => {
                     cityrecord_map.insert("population", cityrecord.population.to_string())
                 },
@@ -4100,7 +4119,7 @@ fn format_result(
                 // US FIPS fields
                 // set US state FIPS code
                 "us_state_fips_code" => {
-                    let us_state_code = if let Some(admin1) = cityrecord.admin_division.as_ref() {
+                    let us_state_code = if let Some(admin1) = engine.city_admin1(cityrecord) {
                         admin1.code.strip_prefix("US.").unwrap_or_default()
                     } else {
                         ""
@@ -4116,9 +4135,8 @@ fn format_result(
                 // set US county FIPS code
                 "us_county_fips_code" => cityrecord_map.insert(
                     "us_county_fips_code",
-                    cityrecord
-                        .admin2_division
-                        .as_ref()
+                    engine
+                        .city_admin2(cityrecord)
                         .and_then(|admin2| us_county_fips_part(&admin2.code))
                         .unwrap_or_default(),
                 ),
@@ -4174,6 +4192,121 @@ fn format_result(
             formatted.to_string()
         } else {
             INVALID_DYNFMT.to_string()
+        }
+    }
+}
+
+/// A Geonames alternate-names map (`lang -> name`), serialized as a JSON object or `null`.
+struct NamesMapJson<'a>(Option<Vec<(&'a str, &'a str)>>);
+
+// Matches the pre-0.9.0 `Option<ArchivedHashMap>` Debug output: `None` or `Some({"en": "..."})`.
+impl std::fmt::Debug for NamesMapJson<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            Some(entries) => {
+                f.write_str("Some(")?;
+                f.debug_map()
+                    .entries(entries.iter().map(|(k, v)| (k, v)))
+                    .finish()?;
+                f.write_str(")")
+            },
+            None => f.write_str("None"),
+        }
+    }
+}
+
+impl serde::Serialize for NamesMapJson<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match &self.0 {
+            Some(entries) => {
+                let mut map = s.serialize_map(Some(entries.len()))?;
+                for (lang, name) in entries {
+                    map.serialize_entry(lang, name)?;
+                }
+                map.end()
+            },
+            None => s.serialize_none(),
+        }
+    }
+}
+
+/// The `cityrecord` object of `%json`/`%pretty-json` (and, via `Debug`, `%cityrecord`).
+/// geosuggest-core 0.9.0 moved the country, admin divisions, timezone and localized names out of
+/// `CitiesRecord` into shared tables (the record now holds bare `*_idx` integers), so serializing
+/// the record directly would drop them. This resolves them through the `Engine` and keeps the
+/// pre-0.9.0 field set and order.
+#[derive(serde::Serialize)]
+struct CityRecordJson<'a> {
+    id:              u32,
+    name:            &'a str,
+    latitude:        f32,
+    longitude:       f32,
+    country:         Option<&'a ArchivedCountry>,
+    admin_division:  Option<&'a ArchivedAdminDivision>,
+    admin2_division: Option<&'a ArchivedAdminDivision>,
+    timezone:        &'a str,
+    names:           NamesMapJson<'a>,
+    country_names:   NamesMapJson<'a>,
+    admin1_names:    NamesMapJson<'a>,
+    admin2_names:    NamesMapJson<'a>,
+    population:      u32,
+}
+
+// `%cityrecord`: the resolved record, printed as the pre-0.9.0 `{:?}` of `ArchivedCitiesRecord`
+// (same struct name, fields and order) so existing `%cityrecord` consumers see no change.
+impl std::fmt::Debug for CityRecordJson<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArchivedCitiesRecord")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("latitude", &self.latitude)
+            .field("longitude", &self.longitude)
+            .field("country", &self.country)
+            .field("admin_division", &self.admin_division)
+            .field("admin2_division", &self.admin2_division)
+            .field("timezone", &self.timezone)
+            .field("names", &self.names)
+            .field("country_names", &self.country_names)
+            .field("admin1_names", &self.admin1_names)
+            .field("admin2_names", &self.admin2_names)
+            .field("population", &self.population)
+            .finish()
+    }
+}
+
+impl<'a> CityRecordJson<'a> {
+    fn new(engine: &'a Engine, cityrecord: &'a CitiesRecord) -> Self {
+        let country = engine.city_country(cityrecord);
+        let admin_division = engine.city_admin1(cityrecord);
+        let admin2_division = engine.city_admin2(cityrecord);
+        // a macro rather than a closure/fn: the map type is rkyv's `ArchivedHashMap`, which
+        // geosuggest-core does not re-export, so it is left to inference at each use
+        macro_rules! names_of {
+            ($map:expr $(,)?) => {
+                NamesMapJson(
+                    $map.map(|m| m.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()),
+                )
+            };
+        }
+        Self {
+            id: cityrecord.id.to_native(),
+            name: cityrecord.name.as_str(),
+            latitude: cityrecord.latitude.to_native(),
+            longitude: cityrecord.longitude.to_native(),
+            country,
+            admin_division,
+            admin2_division,
+            timezone: engine.city_timezone(cityrecord),
+            names: names_of!(cityrecord.names.as_ref()),
+            country_names: names_of!(country.and_then(|c| engine.country_names(&c.code))),
+            admin1_names: names_of!(
+                admin_division.and_then(|a| engine.admin1_names(a.id.to_native())),
+            ),
+            admin2_names: names_of!(
+                admin2_division.and_then(|a| engine.admin2_names(a.id.to_native())),
+            ),
+            population: cityrecord.population.to_native(),
         }
     }
 }
@@ -4790,7 +4923,11 @@ fn get_countryinfo(
     }
 }
 
-fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> NamesLang {
+fn get_cityrecord_name_in_lang(
+    engine: &Engine,
+    cityrecord: &CitiesRecord,
+    lang_lookup: &str,
+) -> NamesLang {
     // Every name falls back to the record's own Geonames name when the index has no alternate
     // name in `lang_lookup`. geosuggest fills the per-language maps ONLY from alternateNames, so a
     // division with no `en` alternate name (Maputo City, most of Madagascar) printed blank even on
@@ -4801,25 +4938,34 @@ fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> 
         .and_then(|n| n.get(lang_lookup))
         .unwrap_or(&cityrecord.name)
         .to_string();
-    let admin1name = cityrecord
-        .admin1_names
-        .as_ref()
-        .and_then(|n| n.get(lang_lookup))
-        .or_else(|| cityrecord.admin_division.as_ref().map(|a| &a.name))
+    let admin1name = engine
+        .city_admin1(cityrecord)
+        .and_then(|a| {
+            engine
+                .admin1_names(a.id.to_native())
+                .and_then(|n| n.get(lang_lookup))
+                .or(Some(&a.name))
+        })
         .map(ToString::to_string)
         .unwrap_or_default();
-    let admin2name = cityrecord
-        .admin2_names
-        .as_ref()
-        .and_then(|n| n.get(lang_lookup))
-        .or_else(|| cityrecord.admin2_division.as_ref().map(|a| &a.name))
+    let admin2name = engine
+        .city_admin2(cityrecord)
+        .and_then(|a| {
+            engine
+                .admin2_names(a.id.to_native())
+                .and_then(|n| n.get(lang_lookup))
+                .or(Some(&a.name))
+        })
         .map(ToString::to_string)
         .unwrap_or_default();
-    let countryname = cityrecord
-        .country_names
-        .as_ref()
-        .and_then(|n| n.get(lang_lookup))
-        .or_else(|| cityrecord.country.as_ref().map(|c| &c.name))
+    let countryname = engine
+        .city_country(cityrecord)
+        .and_then(|c| {
+            engine
+                .country_names(&c.code)
+                .and_then(|n| n.get(lang_lookup))
+                .or(Some(&c.name))
+        })
         .map(ToString::to_string)
         .unwrap_or_default();
 
@@ -4918,26 +5064,24 @@ pub fn reverse_geocode_points(
             // turbofish pins the unused `countries` filter's element type (both filters are None).
             let search_result = engine.reverse::<String>((lat as f32, lon as f32), 1, None, None);
             let cityrecord = search_result?.into_iter().next().map(|ri| ri.city)?;
-            let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+            let nameslang = get_cityrecord_name_in_lang(&engine, cityrecord, lang_lookup);
             // prefer the localized country name; fall back to the 2-letter country code.
             let country = if nameslang.countryname.is_empty() {
-                cityrecord
-                    .country
-                    .as_ref()
+                engine
+                    .city_country(cityrecord)
                     .map(|c| c.code.as_str().to_string())
                     .unwrap_or_default()
             } else {
                 nameslang.countryname.clone()
             };
-            let (us_state_fips, us_county_fips) = us_fips_strings(cityrecord);
+            let (us_state_fips, us_county_fips) = us_fips_strings(&engine, cityrecord);
             Some(GeoLabel {
                 city: nameslang.cityname.clone(),
                 admin1: nameslang.admin1name.clone(),
                 country,
                 admin2: nameslang.admin2name,
-                country_iso2: cityrecord
-                    .country
-                    .as_ref()
+                country_iso2: engine
+                    .city_country(cityrecord)
                     .map(|c| c.code.as_str().to_string())
                     .unwrap_or_default(),
                 us_state_fips,
@@ -5140,8 +5284,8 @@ fn cityrecord_to_region(
     cityrecord: &CitiesRecord,
     lang_lookup: &str,
 ) -> Option<GeoRegion> {
-    let iso2 = cityrecord.country.as_ref()?.code.as_str().to_string();
-    let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+    let iso2 = engine.city_country(cityrecord)?.code.as_str().to_string();
+    let nameslang = get_cityrecord_name_in_lang(engine, cityrecord, lang_lookup);
     let country_name = if nameslang.countryname.is_empty() {
         iso2.clone()
     } else {
@@ -5151,10 +5295,7 @@ fn cityrecord_to_region(
         .country_info(&iso2)
         .map(|cr| cr.info.iso3.to_string())
         .unwrap_or_default();
-    let admin1_code = cityrecord
-        .admin_division
-        .as_ref()
-        .map(|a| a.code.to_string());
+    let admin1_code = engine.city_admin1(cityrecord).map(|a| a.code.to_string());
     let us_state_code = if iso2 == "US" {
         admin1_code
             .as_deref()
@@ -5163,7 +5304,7 @@ fn cityrecord_to_region(
     } else {
         None
     };
-    let (us_state_fips, us_county_fips) = us_fips_strings(cityrecord);
+    let (us_state_fips, us_county_fips) = us_fips_strings(engine, cityrecord);
     Some(GeoRegion {
         iso2,
         iso3,
@@ -5371,7 +5512,7 @@ fn resolve_hinted_name(
             .iter()
             .copied()
             .filter(|cr| {
-                cr.admin_division.as_ref().is_some_and(|ad| {
+                engine.city_admin1(cr).is_some_and(|ad| {
                     filters
                         .iter()
                         .any(|f| ad.code.as_str() == f.admin1_string.as_str())
@@ -5461,16 +5602,10 @@ fn us_county_fips_part(admin2_code: &str) -> Option<String> {
 /// [`GeoLabel`]. Thin wrapper over [`us_fips_from_codes`] that pulls the admin1/admin2 codes off
 /// the record.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
-fn us_fips_strings(cityrecord: &CitiesRecord) -> (String, String) {
+fn us_fips_strings(engine: &Engine, cityrecord: &CitiesRecord) -> (String, String) {
     us_fips_from_codes(
-        cityrecord
-            .admin_division
-            .as_ref()
-            .map(|admin1| &*admin1.code),
-        cityrecord
-            .admin2_division
-            .as_ref()
-            .map(|admin2| &*admin2.code),
+        engine.city_admin1(cityrecord).map(|admin1| &*admin1.code),
+        engine.city_admin2(cityrecord).map(|admin2| &*admin2.code),
     )
 }
 
@@ -5495,11 +5630,14 @@ fn us_fips_from_codes(admin1_code: Option<&str>, admin2_code: Option<&str>) -> (
     (state_fips.to_string(), us_county_fips)
 }
 
-fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_json::Value {
+fn get_us_fips_codes(
+    engine: &Engine,
+    cityrecord: &CitiesRecord,
+    nameslang: &NamesLang,
+) -> serde_json::Value {
     // None when admin1 is not a US state code; the 2-letter state code otherwise
-    let us_state_code: Option<&str> = cityrecord
-        .admin_division
-        .as_ref()
+    let us_state_code: Option<&str> = engine
+        .city_admin1(cityrecord)
         .and_then(|admin1| admin1.code.strip_prefix("US."));
 
     // emit JSON null when the admin1 isn't a US state or the code is unrecognized
@@ -5510,9 +5648,8 @@ fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_
         });
 
     // emit JSON null when admin2 isn't a valid US county code (US.XX.NNN format)
-    let us_county_fips_code = cityrecord
-        .admin2_division
-        .as_ref()
+    let us_county_fips_code = engine
+        .city_admin2(cityrecord)
         .and_then(|admin2| us_county_fips_part(&admin2.code))
         .map_or(serde_json::Value::Null, serde_json::Value::String);
     json!(

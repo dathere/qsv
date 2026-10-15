@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.10.0
+bm_version=9.11.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -467,6 +467,7 @@ function cleanup_files {
   rm -f "$filestem".csv.*
   rm -f "$filestem".stats.*
   rm -f results/hf_result.csv
+  rm -f results/hf_result.json
   rm -f results/hf_result_nocmd.csv
   rm -f results/results_work.csv
   rm -f results/run_info_work.tsv
@@ -754,6 +755,45 @@ commands_with_index=()
 commands_with_index_name=()
 commands_with_index_conclude=()
 commands_with_index_cleanup=()
+commands_without_index_expect=()
+commands_with_index_expect=()
+# benchmarks kept out of the results because their command did not exit as expected
+failed_benchmarks=()
+
+# We run hyperfine with -i, so a failing command does not abort the run - but hyperfine then
+# records the failure as a timing, and an instant failure looks like a big speedup. That hid
+# broken benchmarks for many releases (sqlp after a bad schema cache, count --width on quoted
+# delimiters, pivotp_dates hitting --max-columns). So we check the exit codes of the timed
+# runs in hyperfine's JSON export: exit_codes_ok returns 0 (true) only if every timed run
+# exited with the expected code ($1). A missing export or a null code (killed by a signal)
+# counts as a failure. jq is not needed - the array is extracted with tr & grep.
+function exit_codes_ok {
+  local expected="$1"
+  local codes
+  [ -s results/hf_result.json ] || return 1
+  codes=$(tr -d ' \t\r\n' <results/hf_result.json | grep -o '"exit_codes":\[[^]]*\]' | head -n 1)
+  codes="${codes#*\[}"
+  codes="${codes%\]}"
+  [ -n "$codes" ] || return 1
+  local code_list code
+  IFS=',' read -r -a code_list <<<"$codes"
+  for code in "${code_list[@]}"; do
+    [ "$code" == "$expected" ] || return 1
+  done
+  return 0
+}
+
+function flag_failed_benchmark {
+  local name="$1"
+  local expected="$2"
+  local codes=
+  if [ -s results/hf_result.json ]; then
+    codes=$(tr -d ' \t\r\n' <results/hf_result.json | grep -o '"exit_codes":\[[^]]*\]' | head -n 1)
+  fi
+  echo "  !!! FAILED: $name did not exit with $expected on every timed run (${codes:-no hyperfine export})."
+  echo "  !!! Its timing is NOT recorded. Run the command by hand to see the error."
+  failed_benchmarks+=("$name")
+}
 
 function add_command {
   local dest_array="$1"
@@ -788,8 +828,14 @@ function run {
   # runs (e.g. sqlp --cache-schema: the warmup writes the .pschema.json and the timed runs
   # measure loading it, but every later sqlp on $data would silently load it too).
   # Both traps above apply to --cleanup as well (verified against hyperfine 1.20).
+  # --expect-exit N is the exit code the command must return on every timed run (default 0).
+  # A benchmark whose command exits with anything else is flagged and kept out of the results
+  # (see exit_codes_ok). Only use it for commands that exit non-zero BY DESIGN while still
+  # doing the work being measured, e.g. `sortcheck` on unsorted data, or `validate
+  # --valid-output` when every row is valid - never to silence a real failure.
   local conclude=
   local cleanup=
+  local expect=0
   while true; do
     case "$1" in
     --index)
@@ -802,6 +848,10 @@ function run {
       ;;
     --cleanup)
       cleanup="$2"
+      shift 2
+      ;;
+    --expect-exit)
+      expect="$2"
       shift 2
       ;;
     *)
@@ -822,17 +872,20 @@ function run {
     if [ -n "$subset_rowcount" ]; then
       bench_rowcounts="${bench_rowcounts}${name}=${subset_rowcount};"
     fi
-    # the _conclude and _cleanup arrays are index-aligned with the _name arrays, so every
-    # benchmark appends an entry - an empty one when it has no --conclude/--cleanup command.
+    # the _conclude, _cleanup and _expect arrays are index-aligned with the _name arrays, so
+    # every benchmark appends an entry - an empty one when it has no --conclude/--cleanup
+    # command, and 0 when it has no --expect-exit.
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
       commands_without_index_conclude+=("$conclude")
       commands_without_index_cleanup+=("$cleanup")
+      commands_without_index_expect+=("$expect")
       add_command "without_index" "$@"
     else
       commands_with_index_name+=("$name")
       commands_with_index_conclude+=("$conclude")
       commands_with_index_cleanup+=("$cleanup")
+      commands_with_index_expect+=("$expect")
       add_command "with_index" "$@"
     fi
   fi
@@ -997,7 +1050,13 @@ run --index moarstats_advanced_bivariate_all_index "$qsv_bin" moarstats --advanc
 run partition "$qsv_bin" partition \'Community Board\' partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
-run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \"Complaint Type\" --try-parsedates "$data"
+# pivotp_dates (pivoting ON "Created Date") was retired: its ~841k distinct values exceed
+# pivotp's default --max-columns of 100,000, which since 23.0.1 (#4590) refuses the pivot
+# instantly, and with --max-columns 0 the 841k-column frame runs a 32 GB machine out of memory.
+# Every date column in the dataset has over 100k distinct values, so instead the dates go on
+# the index side: one row per parsed date, one column per borough. A new series - the old
+# pivotp_dates rows are not comparable.
+run pivotp_dates_rows "$qsv_bin" pivotp Borough --index \"Created Date\" --values \"Complaint Type\" --try-parsedates "$data"
 # pragmastat appends ps_* columns to the stats cache and refuses to recompute them on
 # subsequent runs unless --force is given. Without --force, only the first hyperfine run
 # does real work and the rest error out on the existing cache, so we always pass --force
@@ -1083,8 +1142,9 @@ run sort_random_seeded "$qsv_bin" sort --random --seed 42 "$data"
 run sort_random_seeded_faster "$qsv_bin" sort --random --rng faster --seed 42 "$data"
 run sort_random_seeded_secure "$qsv_bin" sort --random --rng cryptosecure --seed 42 "$data"
 run sortcheck_sorted "$qsv_bin" sortcheck data_sorted.csv
-run sortcheck_unsorted "$qsv_bin" sortcheck data_unsorted.csv
-run sortcheck_unsorted_all "$qsv_bin" sortcheck --all data_unsorted.csv
+# sortcheck exits 1 when the data is not sorted - which is what these two measure
+run --expect-exit 1 sortcheck_unsorted "$qsv_bin" sortcheck data_unsorted.csv
+run --expect-exit 1 sortcheck_unsorted_all "$qsv_bin" sortcheck --all data_unsorted.csv
 run split "$qsv_bin" split --size 50000 split_tempdir "$data"
 run split_chunks "$qsv_bin" split --chunks 20 split_tempdir_chunks "$data"
 run split_kbsize "$qsv_bin" split --kb-size 10000 split_tempdir_kbs "$data"
@@ -1181,10 +1241,11 @@ run transpose_multipass "$qsv_bin" transpose --multipass "$data"
 run validate "$qsv_bin" validate "$data" "$schema"
 run validate_batchall "$qsv_bin" validate --batch 0 "$data" "$schema"
 run validate_no_schema "$qsv_bin" validate "$data"
-run validate_valid_output "$qsv_bin" validate "$data" "$schema" --valid-output -
+# with --valid-output, validate exits 1 when ALL rows are valid (as documented), after writing them all
+run --expect-exit 1 validate_valid_output "$qsv_bin" validate "$data" "$schema" --valid-output -
 run validate_dynenum "$qsv_bin" validate "$data" "$dynenum_schema"
 run validate_dynenum_batchall "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run validate_dynenum_valid_output "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
+run --expect-exit 1 validate_dynenum_valid_output "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 if [[ "$has_readstat" -eq 1 ]]; then
   run writestat_sav "$qsv_bin" writestat stat_100kdata.csv -o benchmark_work.sav
   run writestat_sav_compress "$qsv_bin" writestat --compress stat_100kdata.csv -o benchmark_work.sav
@@ -1197,10 +1258,10 @@ fi
 run --index validate_index "$qsv_bin" validate "$data" "$schema"
 run --index validate_batchall_index "$qsv_bin" validate --batch 0 "$data" "$schema"
 run --index validate_no_schema_index "$qsv_bin" validate "$data"
-run --index validate_valid_output_index "$qsv_bin" validate "$data" "$schema" --valid-output -
+run --index --expect-exit 1 validate_valid_output_index "$qsv_bin" validate "$data" "$schema" --valid-output -
 run --index validate_dynenum_index "$qsv_bin" validate "$data" "$dynenum_schema"
 run --index validate_dynenum_batchall_index "$qsv_bin" validate --batch 0 "$data" "$dynenum_schema"
-run --index validate_dynenum_valid_output_index "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
+run --index --expect-exit 1 validate_dynenum_valid_output_index "$qsv_bin" validate "$data" "$dynenum_schema" --valid-output -
 
 # show count of commands to be benchmarked
 with_index_count=${#commands_with_index[@]}
@@ -1258,8 +1319,18 @@ for command_no_index in "${commands_without_index[@]}"; do
   if [ -n "${commands_without_index_cleanup[$idx]}" ]; then
     cleanup_args=(--cleanup "${commands_without_index_cleanup[$idx]}")
   fi
+  rm -f results/hf_result.json
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
+    --export-json results/hf_result.json \
     "${conclude_args[@]}" "${cleanup_args[@]}" "$command_no_index"
+
+  # a command that did not exit as expected is flagged, and its "timing" is not recorded
+  if ! exit_codes_ok "${commands_without_index_expect[$idx]}"; then
+    flag_failed_benchmark "${commands_without_index_name[$idx]}" "${commands_without_index_expect[$idx]}"
+    ((idx++))
+    ((name_idx++))
+    continue
+  fi
 
   # prepend version, tstamp & benchmark name to the hyperfine results
   echo "version,tstamp,name" >results/results_work.csv
@@ -1314,8 +1385,16 @@ for command_with_index in "${commands_with_index[@]}"; do
   if [ -n "${commands_with_index_cleanup[$idx]}" ]; then
     cleanup_args=(--cleanup "${commands_with_index_cleanup[$idx]}")
   fi
+  rm -f results/hf_result.json
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
+    --export-json results/hf_result.json \
     "${conclude_args[@]}" "${cleanup_args[@]}" "$command_with_index"
+  if ! exit_codes_ok "${commands_with_index_expect[$idx]}"; then
+    flag_failed_benchmark "${commands_with_index_name[$idx]}" "${commands_with_index_expect[$idx]}"
+    ((idx++))
+    ((name_idx++))
+    continue
+  fi
   echo "version,tstamp,name" >results/results_work.csv
   echo "$version,$now,${commands_with_index_name[$idx]}" >>results/results_work.csv
   "$qsv_bin" select '!command' results/hf_result.csv -o results/hf_result_nocmd.csv
@@ -1486,3 +1565,11 @@ echo -e "$version\t$now\t$now_sec\t$bm_version\t$platform\t$num_cores\t$mem_size
 mv results/run_info_work.tsv results/run_info_history.tsv
 
 echo "> 100% DONE! $total_count benchmarks executed. Elapsed time: $elapsed seconds. Total mean: $total_mean"
+
+if [ "${#failed_benchmarks[@]}" -gt 0 ]; then
+  echo ""
+  echo "> WARNING: ${#failed_benchmarks[@]} benchmark(s) FAILED and were NOT recorded in the results:"
+  printf "    %s\n" "${failed_benchmarks[@]}"
+  echo "  Run each command by hand to see the error. If a command exits non-zero BY DESIGN"
+  echo "  while still doing the measured work, queue it with run --expect-exit N."
+fi

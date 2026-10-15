@@ -319,7 +319,6 @@ use crate::{
     cmd::joinp::path_delim,
     config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util,
-    util::process_input,
 };
 
 static DEFAULT_GZIP_COMPRESSION_LEVEL: u8 = 6;
@@ -612,11 +611,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let tmpdir = tempfile::tempdir()?;
 
     let mut skip_input = false;
+    // stdin is copied to a temp `stdin.csv`, whose made-up extension must not pick the delimiter
+    let mut stdin_input: Option<PathBuf> = None;
     args.arg_input = if args.arg_input == [PathBuf::from("SKIP_INPUT")] {
         skip_input = true;
         Vec::new()
     } else {
-        process_input(args.arg_input, &tmpdir, "")?
+        let mut inputs = Vec::with_capacity(args.arg_input.len());
+        for (path, source) in util::process_input_with_sources(args.arg_input, &tmpdir, "")? {
+            if matches!(source, util::InputSource::Stdin) {
+                stdin_input = Some(path.clone());
+            }
+            inputs.push(path);
+        }
+        inputs
     };
 
     let rnull_values = if args.flag_rnull_values == "<empty string>" {
@@ -650,6 +658,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Delimiter::decode_delimiter(&delim)?.as_byte()
     } else {
         b','
+    };
+    let flag_delimiter = args.flag_delimiter;
+    let input_delim = |table: &Path| -> u8 {
+        if stdin_input.as_deref() == Some(table) {
+            delim
+        } else {
+            path_delim(table, flag_delimiter, delim)
+        }
     };
 
     let comment_char = if let Ok(comment_char) = env::var("QSV_COMMENT_CHAR") {
@@ -688,7 +704,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_infer_len == 0 && !is_sql_script && !skip_input && args.arg_input.len() == 1 {
             let rconfig =
                 Config::new(Some(args.arg_input[0].to_string_lossy().to_string()).as_ref())
-                    .delimiter(args.flag_delimiter)
+                    .delimiter(Some(Delimiter(input_delim(&args.arg_input[0]))))
                     .no_headers(false);
             util::count_rows(&rconfig).unwrap_or(0) as usize
         } else {
@@ -765,7 +781,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= table.metadata()?.modified()?;
 
-            let separator = path_delim(table, args.flag_delimiter, delim);
+            let separator = input_delim(table);
             if separator == b',' && args.flag_decimal_comma {
                 return fail_clierror!(
                     "Using --decimal-comma with a comma separator is invalid, use --delimiter to \

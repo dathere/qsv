@@ -607,8 +607,12 @@ fn scoresql_default_delimiter_env_ignored_for_csv_extension() {
     let wrk = Workdir::new("scoresql_default_delimiter_env_ignored_for_csv_extension");
     wrk.create_from_string("data.csv", "a,b\n1,2\n");
     let mut cmd = wrk.command("scoresql");
-    cmd.env("QSV_DEFAULT_DELIMITER", ";")
-        .args(["data.csv", "select b from data", "--json", "--quiet"]);
+    cmd.env("QSV_DEFAULT_DELIMITER", ";").args([
+        "data.csv",
+        "select b from data",
+        "--json",
+        "--quiet",
+    ]);
     wrk.assert_success(&mut cmd);
 }
 
@@ -629,4 +633,28 @@ fn scoresql_tsv_cache_ignores_default_delimiter_env() {
         .map(|l| l.split(',').next().unwrap())
         .collect();
     assert_eq!(fields, vec!["a", "b"]);
+}
+
+// stdin is copied to a temp `stdin.csv`; that made-up extension must not override
+// QSV_DEFAULT_DELIMITER (roborev on #4821)
+#[test]
+fn scoresql_stdin_default_delimiter_env() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("scoresql_stdin_default_delimiter_env");
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["-", "select b from stdin", "--json", "--quiet"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a;b\n1;2\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
 }

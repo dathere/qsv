@@ -90,7 +90,7 @@ use foldhash::{HashMap, HashMapExt};
 use polars::{prelude::*, sql::SQLContext};
 use serde::{Deserialize, Serialize};
 
-use crate::{CliResult, cmd::joinp::path_delim, config::Delimiter, util, util::process_input};
+use crate::{CliResult, cmd::joinp::path_delim, config::Delimiter, util};
 
 #[derive(Deserialize, Clone)]
 struct Args {
@@ -229,7 +229,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
-    args.arg_input = process_input(args.arg_input, &tmpdir, "")?;
+    // stdin is copied to a temp `stdin.csv`, whose made-up extension must not pick the delimiter
+    let mut stdin_input: Option<PathBuf> = None;
+    let mut inputs = Vec::with_capacity(args.arg_input.len());
+    for (path, source) in util::process_input_with_sources(args.arg_input, &tmpdir, "")? {
+        if matches!(source, util::InputSource::Stdin) {
+            stdin_input = Some(path.clone());
+        }
+        inputs.push(path);
+    }
+    args.arg_input = inputs;
 
     if args.arg_input.is_empty() {
         return fail_incorrectusage_clierror!("No input files provided.");
@@ -242,6 +251,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         b','
     };
+    // each input's own delimiter, shared by cache generation and the query plan
+    let input_delims: Vec<u8> = args
+        .arg_input
+        .iter()
+        .map(|p| {
+            if stdin_input.as_ref() == Some(p) {
+                delim
+            } else {
+                path_delim(p, args.flag_delimiter, delim)
+            }
+        })
+        .collect();
 
     // ── 1. Resolve table names & aliases ───────────────────────────────────
     let mut table_aliases: HashMap<String, String> = HashMap::with_capacity(args.arg_input.len());
@@ -305,8 +326,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     for (idx, input_path) in args.arg_input.iter().enumerate() {
         let tname = &table_names[idx];
-        let input_delim = path_delim(input_path, args.flag_delimiter, delim);
-        let cache = load_or_generate_caches(input_path, tname, input_delim, args.flag_quiet)?;
+        let cache = load_or_generate_caches(input_path, tname, input_delims[idx], args.flag_quiet)?;
         input_caches.push(cache);
     }
 
@@ -314,7 +334,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let plan = if args.flag_duckdb {
         get_duckdb_plan(&args, &table_names)?
     } else {
-        get_polars_plan(&args, &table_aliases, delim)?
+        get_polars_plan(&args, &table_aliases, &input_delims)?
     };
 
     // ── 5. Scoring ─────────────────────────────────────────────────────────
@@ -984,7 +1004,7 @@ fn generate_freq_cache(input_path: &Path, delim: u8) -> CliResult<()> {
 fn get_polars_plan(
     args: &Args,
     table_aliases: &HashMap<String, String>,
-    delim: u8,
+    input_delims: &[u8],
 ) -> CliResult<String> {
     let mut ctx = SQLContext::new();
 
@@ -1002,7 +1022,7 @@ fn get_polars_plan(
     let mut lossy_table_name = Cow::default();
     let mut table_name_str;
 
-    for table in &args.arg_input {
+    for (table, &separator) in args.arg_input.iter().zip(input_delims) {
         table_name_str = Path::new(table)
             .file_stem()
             .and_then(std::ffi::OsStr::to_str)
@@ -1011,7 +1031,6 @@ fn get_polars_plan(
                 &lossy_table_name
             });
 
-        let separator = path_delim(table, args.flag_delimiter, delim);
         let table_plpath = PlRefPath::new(&*table.to_string_lossy());
 
         let lf = LazyCsvReader::new(table_plpath)

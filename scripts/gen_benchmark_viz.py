@@ -148,11 +148,11 @@ RELEASE_NOTE_HTML = (
     f'<code>template</code> is 21% faster on MiniJinja 3.0 (<a href="{_PR}4785">#4785</a>). On the other side, '
     "<code>count</code> and <code>flatten</code> slowed 13-17%. The 19 benchmarks new in suite 9.9.0 have no "
     "earlier baseline, so they don't appear in the change charts. <b>The sqlp_format_*, "
-    "sqlp_lowmemory, sqlp_nooptimizations and sqlp_tryparsedates* numbers read low:</b> a schema "
-    "cache leaked from another benchmark, so their 25.0.0 runs timed a cached-schema read. From "
-    "16.0.0 to 24.0.0 the same leak made them fail, and those timings have been removed "
-    f'(<a href="{_PR}4812">#4812</a>), so their 25.0.0 deltas compare against 15.0.1. '
-    "Expect these ten to step up on the next run.")
+    "sqlp_lowmemory, sqlp_nooptimizations and sqlp_tryparsedates* benchmarks have no 25.0.0 "
+    "numbers:</b> a schema cache leaked from another benchmark, so their runs timed a "
+    f'cached-schema read (<a href="{_PR}4812">#4812</a>). Those rows were removed, along with '
+    "historical rows too fast to be real (a full scan of the 520 MB file in under 0.1 s), "
+    f'and will be back on the next run (<a href="{_PR}4823">#4823</a>).')
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
     f"> **25.0.0 — PGO is back.** The Apple Silicon prebuilt is profile-guided again ([#4757]({_PR}4757)),\n"
@@ -167,10 +167,10 @@ RELEASE_NOTE_MD = (
     "> earlier baseline, so they don't appear in the change charts.\n"
     ">\n"
     "> **The `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` and `sqlp_tryparsedates*`\n"
-    "> numbers read low:** a schema cache leaked from another benchmark, so their 25.0.0 runs timed a\n"
-    "> cached-schema read. From 16.0.0 to 24.0.0 the same leak made them fail, and those timings have\n"
-    f"> been removed ([#4812]({_PR}4812)), so their 25.0.0 deltas compare against 15.0.1. Expect these\n"
-    "> ten to step up on the next run.\n")
+    "> benchmarks have no 25.0.0 numbers:** a schema cache leaked from another benchmark, so their runs\n"
+    f"> timed a cached-schema read ([#4812]({_PR}4812)). Those rows were removed, along with historical\n"
+    "> rows too fast to be real (a full scan of the 520 MB file in under 0.1 s), and will be back on the\n"
+    f"> next run ([#4823]({_PR}4823)).\n")
 
 
 def find_qsv():

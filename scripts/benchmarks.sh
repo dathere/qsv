@@ -42,7 +42,11 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.11.0
+bm_version=9.12.0
+
+# runs of a benchmark whose means are within this percentage of each other tie in the rank
+# column (see the delta & rank comments near the end)
+rank_tie_pct=2
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -1472,7 +1476,13 @@ mv results/results_work.csv results/benchmark_results.csv
 #           recompute could flip deltas) and robust to one noisy copy of the run.
 #           The final ORDER BY breaks the same ties on mean, so row order is stable too.
 #   rank  = speed rank of this run among ALL runs of the same benchmark (1 = fastest),
-#           ranked by mean ascending.
+#           counting runs within $rank_tie_pct% as ties: 1 + the number of runs whose mean
+#           is more than $rank_tie_pct% faster. A plain rank() made flat benchmarks look like
+#           regressions: their ~60 historical runs sit within a few percent, so a 0.8% slip
+#           moved validate_no_schema_index from rank 15 to 27.
+#   slower than best (%) = how much slower this run's mean is than the fastest run ever
+#           recorded for the benchmark (0 = it is the fastest). Unlike rank it has no
+#           cliffs: a 1% slip reads as about 1%, however many runs sit nearby.
 # We recompute over the whole archive on every run - this is self-healing: it backfills the
 # columns for pre-existing historical rows the first time, and keeps ranks correct as new runs
 # accrue. "user" is a reserved word in Polars SQL, so it is quoted as b."user". Base columns are
@@ -1496,13 +1506,29 @@ with_prev as (
   select name, version,
          lag(mean) over (partition by name order by tstamp asc) as prev_mean
   from per_version
+),
+ranked as (
+  select x.name, x.version, x.tstamp, x.mean,
+         1 + sum(case when y.mean < x.mean * (1 - $rank_tie_pct / 100.0) then 1 else 0 end) as rank
+  from _t_1 x
+  join _t_1 y on x.name = y.name
+  group by x.name, x.version, x.tstamp, x.mean
+),
+best as (
+  select name, min(mean) as best_mean
+  from _t_1
+  group by name
 )
 select b.version, b.tstamp, b.name, b.mean, b.stddev, b.median,
        b.\"user\", b.system, b.min, b.max, b.recs_per_sec,
        round(((wp.prev_mean - b.mean) / wp.prev_mean) * 100, 2) as \"delta (%)\",
-       rank() over (partition by b.name order by b.mean asc) as rank
+       rk.rank as rank,
+       round(((b.mean - bs.best_mean) / bs.best_mean) * 100, 2) as \"slower than best (%)\"
 from _t_1 b
 left join with_prev wp on b.name = wp.name and b.version = wp.version
+left join ranked rk on b.name = rk.name and b.version = rk.version
+  and b.tstamp = rk.tstamp and b.mean = rk.mean
+left join best bs on b.name = bs.name
 order by b.tstamp desc, b.name asc, b.mean asc
 " -o results/results_work.csv
 mv results/results_work.csv results/benchmark_results.csv
@@ -1521,7 +1547,7 @@ mv results/results_work.csv results/benchmark_results.csv
 
 # first - for benchmark_results_display.csv, move the recs_per_sec column after the
 # mean column using the `qsv select` command
-"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,stddev,median,user,system,min,max' \
+"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,"slower than best (%)",stddev,median,user,system,min,max' \
   results/benchmark_results.csv -o results/benchmark_results_display.csv
 
 # then, round the stats columns to 3 decimal places using the `qsv apply operations round` command
@@ -1531,7 +1557,7 @@ mv results/results_work.csv results/benchmark_results.csv
 mv results/results_work.csv results/benchmark_results_display.csv
 
 # do the same for latest_results_display.csv
-"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,stddev,median,user,system,min,max' \
+"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,"slower than best (%)",stddev,median,user,system,min,max' \
   results/latest_results.csv -o results/latest_results_display.csv
 "$qsv_benchmarker_bin" apply operations round mean,stddev,median,user,system,min,max \
   results/latest_results_display.csv -o results/results_work.csv

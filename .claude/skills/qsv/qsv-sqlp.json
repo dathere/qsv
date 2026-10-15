@@ -54,8 +54,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The field delimiter for reading and writing CSV data. Must be a single character.",
-        "default": ","
+        "description": "The field delimiter for reading and writing CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--float-precision",

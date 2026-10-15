@@ -1629,3 +1629,27 @@ fn template_render_error_names_undefined_expression() {
         "RENDERING ERROR (1): undefined value: `cfg` is undefined (in template:1)"
     );
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, which overrode the .tsv extension
+// and QSV_DEFAULT_DELIMITER, so a tab-separated file was read as a single column.
+#[test]
+fn template_tsv_extension() {
+    let wrk = Workdir::new("template_tsv_extension");
+    wrk.create_from_string("in.tsv", "a\tb\n1\t2\n");
+    let mut cmd = wrk.command("template");
+    cmd.args(["--template", "{{a}}|{{b}}\n", "in.tsv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "1|2");
+}
+
+#[test]
+fn template_default_delimiter_env() {
+    let wrk = Workdir::new("template_default_delimiter_env");
+    wrk.create_from_string("in.txt", "a;b\n1;2\n");
+    let mut cmd = wrk.command("template");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["--template", "{{a}}|{{b}}\n", "in.txt"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "1|2");
+}

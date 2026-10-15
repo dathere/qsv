@@ -157,7 +157,7 @@ Common options:
     -h, --help                 Display this message
     -o, --output <file>        Write output to <file> instead of stdout.
     -d, --delimiter <arg>      The delimiter to use when writing CSV data.
-                               Must be a single character. [default: ,]
+                               Must be a single character. (default: ,)
     -q, --quiet                Do not display export summary message.
 "#;
 

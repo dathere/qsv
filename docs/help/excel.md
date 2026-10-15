@@ -187,7 +187,7 @@ qsv excel --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The delimiter to use when writing CSV data. Must be a single character. | `,` |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The delimiter to use when writing CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not display export summary message. |  |
 
 ---

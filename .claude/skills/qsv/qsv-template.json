@@ -47,8 +47,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "Field separator for reading CSV",
-        "default": ","
+        "description": "Field separator for reading CSV (default: ,)"
       },
       {
         "flag": "--globals-json",

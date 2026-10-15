@@ -1377,6 +1377,12 @@ mv results/results_work.csv results/benchmark_results.csv
 #   delta = percent FASTER than this benchmark's previous version (the most recent earlier
 #           version, by tstamp; same-version re-runs are collapsed to their latest run).
 #           Positive = faster, negative = regression. Empty when there is no earlier version.
+#           tstamp is only hour-precise, so a version's latest tstamp can hold several rows
+#           (two re-runs in the same hour, or - from v3.8.0 to v6.1.1 of this script - the
+#           same command queued twice as luau_filter_no_globals_colidx). Those ties collapse
+#           to their FASTEST mean: deterministic (a row_number() pick was not, so every
+#           recompute could flip deltas) and robust to one noisy copy of the run.
+#           The final ORDER BY breaks the same ties on mean, so row order is stable too.
 #   rank  = speed rank of this run among ALL runs of the same benchmark (1 = fastest),
 #           ranked by mean ascending.
 # We recompute over the whole archive on every run - this is self-healing: it backfills the
@@ -1387,15 +1393,21 @@ mv results/results_work.csv results/benchmark_results.csv
 # We dogfood the benchmarker binary (not the binary under test) for sqlp, since the binary
 # under test may be a variant without the polars feature (e.g. qsvlite).
 "$qsv_benchmarker_bin" sqlp results/benchmark_results.csv -q "
-with per_version as (
-  select name, version, tstamp, mean,
-         row_number() over (partition by name, version order by tstamp desc) as rn
+with latest as (
+  select name, version, max(tstamp) as tstamp
   from _t_1
+  group by name, version
+),
+per_version as (
+  select b.name, b.version, b.tstamp, min(b.mean) as mean
+  from _t_1 b
+  join latest l on b.name = l.name and b.version = l.version and b.tstamp = l.tstamp
+  group by b.name, b.version, b.tstamp
 ),
 with_prev as (
   select name, version,
          lag(mean) over (partition by name order by tstamp asc) as prev_mean
-  from per_version where rn = 1
+  from per_version
 )
 select b.version, b.tstamp, b.name, b.mean, b.stddev, b.median,
        b.\"user\", b.system, b.min, b.max, b.recs_per_sec,
@@ -1403,7 +1415,7 @@ select b.version, b.tstamp, b.name, b.mean, b.stddev, b.median,
        rank() over (partition by b.name order by b.mean asc) as rank
 from _t_1 b
 left join with_prev wp on b.name = wp.name and b.version = wp.version
-order by b.tstamp desc, b.name asc
+order by b.tstamp desc, b.name asc, b.mean asc
 " -o results/results_work.csv
 mv results/results_work.csv results/benchmark_results.csv
 

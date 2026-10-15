@@ -211,7 +211,7 @@ use polars_readstat_rs::{
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 
-use crate::{CliResult, cmd::joinp::tsvssv_delim, config::Delimiter, select::SelectColumns, util};
+use crate::{CliResult, cmd::joinp::path_delim, config::Delimiter, select::SelectColumns, util};
 
 #[derive(Deserialize)]
 struct Args {
@@ -495,7 +495,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     let w = match args.flag_output.as_ref() {
         Some(p) => {
-            delim = tsvssv_delim(p, delim);
+            delim = path_delim(p, args.flag_delimiter, delim);
             Box::new(File::create(p)?) as Box<dyn Write>
         },
         None => Box::new(io::stdout()) as Box<dyn Write>,

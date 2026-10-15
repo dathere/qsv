@@ -1279,6 +1279,17 @@ pub fn tsvssv_delim<P: AsRef<Path>>(file: P, orig_delim: u8) -> u8 {
     }
 }
 
+/// The delimiter for reading or writing `file`. An explicit `--delimiter` is applied as
+/// `tsvssv_delim` always has (a .tsv/.tab/.ssv extension still wins over it). Without one,
+/// the extension decides - a .csv is always read and written with a comma - and `fallback`
+/// (`QSV_DEFAULT_DELIMITER`, else ',') covers only unrecognized extensions.
+pub fn path_delim<P: AsRef<Path>>(file: P, flag: Option<Delimiter>, fallback: u8) -> u8 {
+    match flag {
+        Some(d) => tsvssv_delim(file, d.as_byte()),
+        None => crate::config::get_delim_by_extension(file.as_ref(), fallback).1,
+    }
+}
+
 #[test]
 fn test_tsvssv_delim() {
     assert_eq!(tsvssv_delim("test.tsv", b','), b'\t');

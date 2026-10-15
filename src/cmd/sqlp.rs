@@ -316,7 +316,7 @@ use serde::Deserialize;
 
 use crate::{
     CliResult,
-    cmd::joinp::tsvssv_delim,
+    cmd::joinp::path_delim,
     config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util,
     util::process_input,
@@ -394,7 +394,7 @@ impl OutputMode {
 
             let w = match args.flag_output.as_ref() {
                 Some(path) => {
-                    delim = tsvssv_delim(path, delim);
+                    delim = path_delim(path, args.flag_delimiter, delim);
                     Box::new(File::create(path)?) as Box<dyn Write>
                 },
                 None => Box::new(io::stdout()) as Box<dyn Write>,
@@ -765,7 +765,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut valid_schema_exists = schema_file.exists()
                 && schema_file.metadata()?.modified()? >= table.metadata()?.modified()?;
 
-            let separator = tsvssv_delim(table, delim);
+            let separator = path_delim(table, args.flag_delimiter, delim);
             if separator == b',' && args.flag_decimal_comma {
                 return fail_clierror!(
                     "Using --decimal-comma with a comma separator is invalid, use --delimiter to \
@@ -781,7 +781,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .with_missing_is_null(true)
                     .with_comment_prefix(comment_char.clone())
                     .with_null_values(Some(NullValues::AllColumns(rnull_values.clone())))
-                    .with_separator(tsvssv_delim(table, delim))
+                    .with_separator(separator)
                     .with_try_parse_dates(args.flag_try_parsedates)
                     .with_ignore_errors(args.flag_ignore_errors)
                     .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
@@ -792,7 +792,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // we don't have a valid pschema.json file,
                     // check if we have stats, as we can derive pschema.json file from it
                     valid_schema_exists = util::infer_polars_schema(
-                        args.flag_delimiter,
+                        Some(Delimiter(separator)),
                         debuglog_flag,
                         table,
                         &schema_file,
@@ -827,7 +827,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .with_missing_is_null(true)
                     .with_comment_prefix(comment_char.clone())
                     .with_null_values(Some(NullValues::AllColumns(rnull_values.clone())))
-                    .with_separator(tsvssv_delim(table, delim))
+                    .with_separator(separator)
                     .with_infer_schema_length(Some(args.flag_infer_len))
                     .with_try_parse_dates(args.flag_try_parsedates)
                     .with_ignore_errors(args.flag_ignore_errors)
@@ -841,7 +841,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // First try didn't work.
                     // Second try, infer a schema and try again
                     valid_schema_exists = util::infer_polars_schema(
-                        args.flag_delimiter,
+                        Some(Delimiter(separator)),
                         debuglog_flag,
                         table,
                         &schema_file,

@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.9.0
+bm_version=9.10.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -749,9 +749,11 @@ dynenum_schema=benchmark_data-dynenum.csv.schema.json
 commands_without_index=()
 commands_without_index_name=()
 commands_without_index_conclude=()
+commands_without_index_cleanup=()
 commands_with_index=()
 commands_with_index_name=()
 commands_with_index_conclude=()
+commands_with_index_cleanup=()
 
 function add_command {
   local dest_array="$1"
@@ -780,7 +782,14 @@ function run {
   #  2. if CMD exits non-zero, hyperfine ABORTS THE WHOLE BENCHMARK RUN. -i does not cover
   #     it (that only ignores the benchmarked program's exit code). `rm -f` is safe - it
   #     exits 0 on a missing file - but anything fancier needs its own guard.
+  # --cleanup CMD is handed to hyperfine's --cleanup, which runs CMD ONCE, after ALL of this
+  # benchmark's warmup and timing runs. Use it for benchmarks that leave behind a file that
+  # changes how LATER benchmarks behave, but that must persist across this benchmark's own
+  # runs (e.g. sqlp --cache-schema: the warmup writes the .pschema.json and the timed runs
+  # measure loading it, but every later sqlp on $data would silently load it too).
+  # Both traps above apply to --cleanup as well (verified against hyperfine 1.20).
   local conclude=
+  local cleanup=
   while true; do
     case "$1" in
     --index)
@@ -789,6 +798,10 @@ function run {
       ;;
     --conclude)
       conclude="$2"
+      shift 2
+      ;;
+    --cleanup)
+      cleanup="$2"
       shift 2
       ;;
     *)
@@ -809,15 +822,17 @@ function run {
     if [ -n "$subset_rowcount" ]; then
       bench_rowcounts="${bench_rowcounts}${name}=${subset_rowcount};"
     fi
-    # the _conclude arrays are index-aligned with the _name arrays, so every benchmark
-    # appends an entry - an empty one when it has no --conclude command.
+    # the _conclude and _cleanup arrays are index-aligned with the _name arrays, so every
+    # benchmark appends an entry - an empty one when it has no --conclude/--cleanup command.
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
       commands_without_index_conclude+=("$conclude")
+      commands_without_index_cleanup+=("$cleanup")
       add_command "without_index" "$@"
     else
       commands_with_index_name+=("$name")
       commands_with_index_conclude+=("$conclude")
+      commands_with_index_cleanup+=("$cleanup")
       add_command "with_index" "$@"
     fi
   fi
@@ -1079,7 +1094,13 @@ run --index split_chunks_index "$qsv_bin" split --chunks 20 split_tempdir_chunks
 run --index split_chunks_index_j1 "$qsv_bin" split --chunks 20 -j 1 split_tempdir_chunks_idx_j1 "$data"
 run sqlp "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run sqlp_aggregations "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
-run sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
+# sqlp loads "$data".pschema.json automatically whenever it is newer than "$data", so the
+# schema this benchmark caches must be removed when it is done (--cleanup, i.e. after its own
+# timed runs have reused it). Otherwise every later sqlp benchmark on "$data" silently loads
+# it too: they measure a cached-schema read instead of what their names say, and from 16.0.0
+# to 24.0.0 - when --cache-schema wrote date columns Polars couldn't parse (#4746) - they all
+# failed in ~70ms, which hyperfine's -i recorded as timings.
+run --cleanup "rm -f $data.pschema.json" sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_vs_duckdb duckdb :memory: '"select Borough, count(*) from read_csv_auto('\'''$data''\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_parquet_input "$qsv_bin" sqlp SKIP_INPUT -q '"select Borough, count(*) from read_parquet('\''benchmark_data.parquet'\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_expensive "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 expensive.sql
@@ -1233,8 +1254,12 @@ for command_no_index in "${commands_without_index[@]}"; do
   if [ -n "${commands_without_index_conclude[$idx]}" ]; then
     conclude_args=(--conclude "${commands_without_index_conclude[$idx]}")
   fi
+  cleanup_args=()
+  if [ -n "${commands_without_index_cleanup[$idx]}" ]; then
+    cleanup_args=(--cleanup "${commands_without_index_cleanup[$idx]}")
+  fi
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
-    "${conclude_args[@]}" "$command_no_index"
+    "${conclude_args[@]}" "${cleanup_args[@]}" "$command_no_index"
 
   # prepend version, tstamp & benchmark name to the hyperfine results
   echo "version,tstamp,name" >results/results_work.csv
@@ -1285,8 +1310,12 @@ for command_with_index in "${commands_with_index[@]}"; do
   if [ -n "${commands_with_index_conclude[$idx]}" ]; then
     conclude_args=(--conclude "${commands_with_index_conclude[$idx]}")
   fi
+  cleanup_args=()
+  if [ -n "${commands_with_index_cleanup[$idx]}" ]; then
+    cleanup_args=(--cleanup "${commands_with_index_cleanup[$idx]}")
+  fi
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
-    "${conclude_args[@]}" "$command_with_index"
+    "${conclude_args[@]}" "${cleanup_args[@]}" "$command_with_index"
   echo "version,tstamp,name" >results/results_work.csv
   echo "$version,$now,${commands_with_index_name[$idx]}" >>results/results_work.csv
   "$qsv_bin" select '!command' results/hf_result.csv -o results/hf_result_nocmd.csv

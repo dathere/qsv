@@ -376,3 +376,54 @@ fn headers_stdin_with_just_names() {
     let expected = "name\nage\ncity";
     assert_eq!(got.trim(), expected);
 }
+
+// QSV_DEFAULT_DELIMITER only applies to stdin and to paths without a recognized
+// extension: a .csv/.tsv/.tab/.ssv extension wins over it, and --delimiter wins over both.
+#[test]
+fn headers_default_delimiter_env_ignored_for_csv_extension() {
+    let wrk = Workdir::new("headers_default_delimiter_env_ignored_for_csv_extension");
+    wrk.create_from_string("in.csv", "a,b;c\n1,2;3\n");
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["--just-names", "in.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "a\nb;c");
+}
+
+#[test]
+fn headers_default_delimiter_env_applies_to_unrecognized_extension() {
+    let wrk = Workdir::new("headers_default_delimiter_env_applies_to_unrecognized_extension");
+    wrk.create_from_string("in.file", "a,b;c\n1,2;3\n");
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["--just-names", "in.file"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "a,b\nc");
+}
+
+#[test]
+fn headers_delimiter_flag_overrides_default_delimiter_env() {
+    let wrk = Workdir::new("headers_delimiter_flag_overrides_default_delimiter_env");
+    wrk.create_from_string("in.file", "a,b;c\n1,2;3\n");
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["--just-names", "--delimiter", ",", "in.file"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "a\nb;c");
+}
+
+#[test]
+fn headers_delimiter_flag_overrides_sniff_delimiter() {
+    let wrk = Workdir::new("headers_delimiter_flag_overrides_sniff_delimiter");
+    wrk.create_from_string(
+        "in.csv",
+        "name;age;city\nalice;30;nyc\nbob;40;sf\ncarol;50;la\ndave;60;chi\n",
+    );
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .args(["--just-names", "--delimiter", ",", "in.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "name;age;city");
+}

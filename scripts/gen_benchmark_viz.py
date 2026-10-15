@@ -150,9 +150,10 @@ RELEASE_NOTE_HTML = (
     "earlier baseline, so they don't appear in the change charts. <b>The sqlp_format_*, "
     "sqlp_lowmemory, sqlp_nooptimizations and sqlp_tryparsedates* benchmarks have no 25.0.0 "
     "numbers:</b> a schema cache leaked from another benchmark, so their runs timed a "
-    f'cached-schema read (<a href="{_PR}4812">#4812</a>). Those rows were removed, along with '
-    "historical rows too fast to be real (a full scan of the 520 MB file in under 0.1 s), "
-    f'and will be back on the next run (<a href="{_PR}4823">#4823</a>).')
+    f'cached-schema read (<a href="{_PR}4812">#4812</a>). Those rows were removed and will be '
+    "back on the next run. Historical rows too fast to be real were removed for good: a full "
+    "scan of the 520 MB file in under 0.1 s for <code>sqlp</code> and <code>frequency</code>, "
+    f'or geocoding 1M rows in under 0.2 s (<a href="{_PR}4823">#4823</a>).')
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
     f"> **25.0.0 — PGO is back.** The Apple Silicon prebuilt is profile-guided again ([#4757]({_PR}4757)),\n"
@@ -168,9 +169,10 @@ RELEASE_NOTE_MD = (
     ">\n"
     "> **The `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` and `sqlp_tryparsedates*`\n"
     "> benchmarks have no 25.0.0 numbers:** a schema cache leaked from another benchmark, so their runs\n"
-    f"> timed a cached-schema read ([#4812]({_PR}4812)). Those rows were removed, along with historical\n"
-    "> rows too fast to be real (a full scan of the 520 MB file in under 0.1 s), and will be back on the\n"
-    f"> next run ([#4823]({_PR}4823)).\n")
+    f"> timed a cached-schema read ([#4812]({_PR}4812)). Those rows were removed and will be back on the\n"
+    "> next run. Historical rows too fast to be real were removed for good: a full scan of the 520 MB\n"
+    "> file in under 0.1 s for `sqlp` and `frequency`, or geocoding 1M rows in under 0.2 s\n"
+    f"> ([#4823]({_PR}4823)).\n")
 
 
 def find_qsv():
@@ -599,8 +601,11 @@ def build_index(figs, info):
     parts.append("<div class=meta>" + "".join(meta) + "</div>")
     parts.append("</header>")
     parts.append(
-        "<div class=caveat><b>Read me first.</b> Throughput is records/sec = 1,000,000 rows ÷ mean "
-        "of 3 runs (2 warmups) via hyperfine. Cross-version numbers are <b>not strictly "
+        "<div class=caveat><b>Read me first.</b> Throughput is records/sec = the rows a benchmark "
+        "reads ÷ the mean of 3 runs (2 warmups) via hyperfine. That is the full 1M rows for almost "
+        "every benchmark; <code>geoconvert_csv2geojsonl</code> (745,305 rows), <code>to_ods</code> "
+        "(500,000) and the <code>pragmastat_50k*</code> series (50,000) read a smaller subset. "
+        "Cross-version numbers are <b>not strictly "
         "apples-to-apples</b> — commands gain features over time, so a command's benchmark in an "
         "old release may do less work than today's. Read the historical charts (the trend, the "
         "flagship deep-dives and the heatmap) as broad trajectory, not exact speedup. "

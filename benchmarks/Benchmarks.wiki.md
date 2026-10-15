@@ -20,9 +20,10 @@ for the methodology and the raw CSVs.
 >
 > **The `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` and `sqlp_tryparsedates*`
 > benchmarks have no 25.0.0 numbers:** a schema cache leaked from another benchmark, so their runs
-> timed a cached-schema read ([#4812](https://github.com/dathere/qsv/pull/4812)). Those rows were removed, along with historical
-> rows too fast to be real (a full scan of the 520 MB file in under 0.1 s), and will be back on the
-> next run ([#4823](https://github.com/dathere/qsv/pull/4823)).
+> timed a cached-schema read ([#4812](https://github.com/dathere/qsv/pull/4812)). Those rows were removed and will be back on the
+> next run. Historical rows too fast to be real were removed for good: a full scan of the 520 MB
+> file in under 0.1 s for `sqlp` and `frequency`, or geocoding 1M rows in under 0.2 s
+> ([#4823](https://github.com/dathere/qsv/pull/4823)).
 
 > Looking for the **full per-command timing tables**? See the classic
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the

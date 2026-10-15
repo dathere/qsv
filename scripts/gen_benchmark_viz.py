@@ -133,32 +133,41 @@ GROWTH_CEILING = 10_000_000
 # next run rather than quietly becoming a false claim about newer numbers. Set to None (or bump the
 # version and rewrite) when a newer run supersedes it. Standing behaviour does NOT belong here — it
 # goes in the affected chart's own description, which every future run keeps rendering.
-RELEASE_NOTE_VERSION = "24.0.0"
-_PGO_URL = "https://github.com/dathere/qsv/issues/4740"
-_ISSUE_URL = "https://github.com/dathere/qsv/issues/4603"
+RELEASE_NOTE_VERSION = "25.0.0"
+_PR = "https://github.com/dathere/qsv/pull/"
 RELEASE_NOTE_HTML = (
-    " <b>24.0.0 — built without PGO.</b> The Apple Silicon prebuilt benchmarked here skipped "
-    f'profile-guided optimization (<a href="{_PGO_URL}">#4740</a>); 21.1.0-23.0.1 were PGO builds. '
-    "Even so, the median benchmark held level with 23.0.1. The few that slowed by 16-35% — "
-    "<code>split_chunks_index_j1</code>, <code>extdedup</code>, <code>snappy_compress</code> and "
-    "<code>stats_index</code> — fell back to their pre-PGO (21.0.0 and earlier) range, consistent with "
-    "the lost PGO. <code>sortcheck_unsorted</code> is the exception: it held at ~10 ms through non-PGO "
-    "and PGO releases alike and is ~19 ms here, so PGO doesn't explain it. Meanwhile 23.0.1's "
-    f'un-indexed regression is fixed (<a href="{_ISSUE_URL}">#4603</a>): un-indexed <code>count</code> '
-    "is ~6x faster than on 23.0.1, and frequency, searchset and extsort cut 39-57% off their 23.0.1 "
-    "run times. Those recoveries, plus validate's ~2x faster plain scan, top this release's speedups.")
+    " <b>25.0.0 — PGO is back.</b> The Apple Silicon prebuilt is profile-guided again "
+    f'(<a href="{_PR}4757">#4757</a>), and the median benchmark held level with 24.0.0. '
+    "<code>sortcheck_unsorted</code> is back to ~11 ms, and <code>split_chunks_index_j1</code> and "
+    "<code>stats_index</code> are back in their 23.0.1 range. <code>extdedup</code> and "
+    "<code>snappy_compress</code> did not recover. They are still 19-31% slower than on 23.0.1. "
+    f'The big wins: <code>writestat</code> is 35-50x faster (<a href="{_PR}4747">#4747</a>, which takes '
+    f'column types from the stats cache instead of Polars inference). Polars 2.0 (<a href="{_PR}4760">#4760</a>) makes '
+    "<code>pivotp</code> ~5x, <code>joinp</code> ~2.6x and plain <code>sqlp</code> ~2x faster. CSV &rarr; GeoJSON "
+    f'<code>geoconvert</code> is ~3x faster now that it streams (<a href="{_PR}4800">#4800</a>), and '
+    f'<code>template</code> is 21% faster on MiniJinja 3.0 (<a href="{_PR}4785">#4785</a>). On the other side, '
+    "<code>count</code> and <code>flatten</code> slowed 13-17%. The 19 benchmarks new in suite 9.9.0 have no "
+    "earlier baseline, so they don't appear in the change charts. <b>Don't read the sqlp_format_*, "
+    "sqlp_lowmemory, sqlp_nooptimizations or sqlp_tryparsedates* numbers:</b> since 16.0.0 the "
+    "benchmark machine has timed failed runs of them (~0.06-0.47 s, while plain <code>sqlp</code> "
+    "on the same query takes 0.8-1.6 s). This is under investigation.")
 RELEASE_NOTE_MD = (
     "\n> [!NOTE]\n"
-    "> **24.0.0 — built without PGO.** The Apple Silicon prebuilt benchmarked here skipped\n"
-    f"> profile-guided optimization ([#4740]({_PGO_URL})); 21.1.0-23.0.1 were PGO builds. Even so,\n"
-    "> the median benchmark held level with 23.0.1. The few that slowed by 16-35% —\n"
-    "> `split_chunks_index_j1`, `extdedup`, `snappy_compress` and `stats_index` — fell back to their\n"
-    "> pre-PGO (21.0.0 and earlier) range, consistent with the lost PGO. `sortcheck_unsorted` is the\n"
-    "> exception: it held at ~10 ms through non-PGO and PGO releases alike and is ~19 ms here, so PGO\n"
-    "> doesn't explain it. Meanwhile 23.0.1's un-indexed regression is fixed\n"
-    f"> ([#4603]({_ISSUE_URL})): un-indexed `count` is ~6x faster than on 23.0.1, and frequency,\n"
-    "> searchset and extsort cut 39-57% off their 23.0.1 run times. Those recoveries, plus validate's\n"
-    "> ~2x faster plain scan, top this release's speedups.\n")
+    f"> **25.0.0 — PGO is back.** The Apple Silicon prebuilt is profile-guided again ([#4757]({_PR}4757)),\n"
+    "> and the median benchmark held level with 24.0.0. `sortcheck_unsorted` is back to ~11 ms, and\n"
+    "> `split_chunks_index_j1` and `stats_index` are back in their 23.0.1 range. `extdedup` and\n"
+    "> `snappy_compress` did not recover. They are still 19-31% slower than on 23.0.1. The big wins:\n"
+    f"> `writestat` is 35-50x faster ([#4747]({_PR}4747), which takes column types from the stats cache\n"
+    f"> instead of Polars inference). Polars 2.0 ([#4760]({_PR}4760)) makes `pivotp` ~5x, `joinp` ~2.6x\n"
+    "> and plain `sqlp` ~2x faster. CSV → GeoJSON `geoconvert` is ~3x faster now that it streams\n"
+    f"> ([#4800]({_PR}4800)), and `template` is 21% faster on MiniJinja 3.0 ([#4785]({_PR}4785)). On the\n"
+    "> other side, `count` and `flatten` slowed 13-17%. The 19 benchmarks new in suite 9.9.0 have no\n"
+    "> earlier baseline, so they don't appear in the change charts.\n"
+    ">\n"
+    "> **Don't read the `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` or\n"
+    "> `sqlp_tryparsedates*` numbers:** since 16.0.0 the benchmark machine has timed failed runs of\n"
+    "> them (~0.06-0.47 s, while plain `sqlp` on the same query takes 0.8-1.6 s). This is under\n"
+    "> investigation.\n")
 
 
 def find_qsv():

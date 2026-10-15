@@ -180,7 +180,9 @@ impl Config {
     /// # Details
     ///
     /// This function initializes a `Config` with the following behavior:
-    /// - Uses env var `QSV_DEFAULT_DELIMITER` for default delimiter, or ',' if not set
+    /// - Uses env var `QSV_DEFAULT_DELIMITER` for default delimiter, or ',' if not set. It applies
+    ///   to stdin and to paths without a recognized extension - a .csv, .tsv/.tab or .ssv extension
+    ///   (incl. .sz) always wins, and `--delimiter` overrides both.
     /// - Determines delimiter and Snappy compression based on file extension.
     /// - Supports sniffing delimiter and preamble rows if `QSV_SNIFF_DELIMITER` or
     ///   `QSV_SNIFF_PREAMBLE` is set.

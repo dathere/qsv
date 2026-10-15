@@ -487,6 +487,8 @@ def prep_gainers():
 def prep_delta_box():
     f1 = qsv(["luau", "map", "family", 'name:match("^[^_]+")', LATEST], tmp("db0.csv"))
     f2 = qsv(["search", "-s", "family", alt(FAMILY_BOX), f1], tmp("db1.csv"))
+    # the *_vs_duckdb rows time DuckDB, not qsv: their delta is DuckDB's run-to-run noise
+    f2 = qsv(["search", "-v", "-s", "name", "_vs_duckdb$", f2], tmp("db1b.csv"))
     # drop rows with no delta or an out-of-range artifact delta
     f3 = qsv(["search", "-s", "delta (%)", r"^-?\d", f2], tmp("db2.csv"))
     return qsv(["luau", "filter",
@@ -955,8 +957,9 @@ def main():
                     "The wider view behind the speedups: the spread of per-release change within each "
                     "family (above zero = faster). Most families cluster just north of zero — steady, "
                     f"unglamorous progress. Extreme outliers (|Δ| > {int(DELTA_CLAMP)}%, usually "
-                    "measurement noise) are omitted; the y-axis follows the remaining data, so every "
-                    "point charted here is visible."))
+                    "measurement noise) are omitted, as are the sqlp_*_vs_duckdb reference runs, "
+                    "which time DuckDB rather than qsv. The y-axis follows the remaining data, so "
+                    "every point charted here is visible."))
 
     build_index(figs, info)
     render_hero(index_src)

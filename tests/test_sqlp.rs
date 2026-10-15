@@ -6450,3 +6450,27 @@ fn sqlp_default_delimiter_env() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, vec![svec!["b"], svec!["2"]]);
 }
+
+// QSV_DEFAULT_DELIMITER only applies to unrecognized extensions: a .csv is read and
+// written with a comma (roborev on #4819).
+#[test]
+fn sqlp_default_delimiter_env_ignored_for_csv_extension() {
+    let wrk = Workdir::new("sqlp_default_delimiter_env_ignored_for_csv_extension");
+    wrk.create_from_string("data.csv", "a,b\n1,2\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["data.csv", "select b from data", "-o", "out.csv"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "b\n2\n");
+}
+
+#[test]
+fn sqlp_default_delimiter_env_ignored_for_csv_extension_cache_schema() {
+    let wrk = Workdir::new("sqlp_default_delimiter_env_ignored_for_csv_extension_cs");
+    wrk.create_from_string("data.csv", "a,b\n1,2\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .args(["--cache-schema", "data.csv", "select b from data"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "b\n2");
+}

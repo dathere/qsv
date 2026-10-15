@@ -31,7 +31,9 @@
 # However, using the `--output` option, regardless of this environment variable,
 # will automatically change the delimiter used in the generated file based on
 # the file extension - i.e. comma for `.csv`, tab for `.tsv` & `.tab` files.
-# QSV_DEFAULT_DELIMITER = , 
+# Exception: joinp, sqlp, scoresql and readstat always use tab for a `.tsv`/`.tab`
+# path and semicolon for an `.ssv` path, even when `--delimiter` is given.
+# QSV_DEFAULT_DELIMITER = ,
 
 # if true, the delimiter is automatically detected. Overrides QSV_DEFAULT_DELIMITER
 # and the file extension; the `--delimiter` option still takes precedence.

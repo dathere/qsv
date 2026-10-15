@@ -599,3 +599,34 @@ fn scoresql_default_delimiter_env() {
         .args(["in.txt", "select b from in", "--json", "--quiet"]);
     wrk.assert_success(&mut cmd);
 }
+
+// QSV_DEFAULT_DELIMITER only applies to unrecognized extensions: a .csv is read with a comma
+// (roborev on #4819).
+#[test]
+fn scoresql_default_delimiter_env_ignored_for_csv_extension() {
+    let wrk = Workdir::new("scoresql_default_delimiter_env_ignored_for_csv_extension");
+    wrk.create_from_string("data.csv", "a,b\n1,2\n");
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["data.csv", "select b from data", "--json", "--quiet"]);
+    wrk.assert_success(&mut cmd);
+}
+
+// the stats cache must parse the same columns as the query plan: a .tsv is cached with tabs,
+// even when QSV_DEFAULT_DELIMITER (or, before #4819, the forced comma) says otherwise
+#[test]
+fn scoresql_tsv_cache_ignores_default_delimiter_env() {
+    let wrk = Workdir::new("scoresql_tsv_cache_ignores_default_delimiter_env");
+    wrk.create_from_string("in.tsv", "a\tb\n1\t2\n");
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["in.tsv", "select b from in", "--json", "--quiet"]);
+    wrk.assert_success(&mut cmd);
+    let stats = wrk.read_to_string("in.stats.csv").unwrap();
+    let fields: Vec<&str> = stats
+        .lines()
+        .skip(1)
+        .map(|l| l.split(',').next().unwrap())
+        .collect();
+    assert_eq!(fields, vec!["a", "b"]);
+}

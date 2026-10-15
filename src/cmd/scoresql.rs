@@ -90,7 +90,7 @@ use foldhash::{HashMap, HashMapExt};
 use polars::{prelude::*, sql::SQLContext};
 use serde::{Deserialize, Serialize};
 
-use crate::{CliResult, cmd::joinp::tsvssv_delim, config::Delimiter, util, util::process_input};
+use crate::{CliResult, cmd::joinp::path_delim, config::Delimiter, util, util::process_input};
 
 #[derive(Deserialize, Clone)]
 struct Args {
@@ -305,7 +305,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     for (idx, input_path) in args.arg_input.iter().enumerate() {
         let tname = &table_names[idx];
-        let cache = load_or_generate_caches(input_path, tname, delim, args.flag_quiet)?;
+        let input_delim = path_delim(input_path, args.flag_delimiter, delim);
+        let cache = load_or_generate_caches(input_path, tname, input_delim, args.flag_quiet)?;
         input_caches.push(cache);
     }
 
@@ -1010,7 +1011,7 @@ fn get_polars_plan(
                 &lossy_table_name
             });
 
-        let separator = tsvssv_delim(table, delim);
+        let separator = path_delim(table, args.flag_delimiter, delim);
         let table_plpath = PlRefPath::new(&*table.to_string_lossy());
 
         let lf = LazyCsvReader::new(table_plpath)

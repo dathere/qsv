@@ -2725,3 +2725,19 @@ fn readstat_default_delimiter_env() {
     let header = got.lines().next().unwrap();
     assert!(header.contains(';') && !header.contains(','), "{header}");
 }
+
+// QSV_DEFAULT_DELIMITER only applies to unrecognized extensions: `-o out.csv` is written
+// with a comma (roborev on #4819)
+#[test]
+fn readstat_default_delimiter_env_ignored_for_csv_output() {
+    let wrk = Workdir::new("readstat_default_delimiter_env_ignored_for_csv_output");
+    let input = sample(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .arg(input)
+        .args(["-o", "out.csv"]);
+    wrk.assert_success(&mut cmd);
+    let got = wrk.read_to_string("out.csv").unwrap();
+    let header = got.lines().next().unwrap();
+    assert!(header.contains(',') && !header.contains(';'), "{header}");
+}

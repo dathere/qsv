@@ -6458,10 +6458,15 @@ fn sqlp_default_delimiter_env_ignored_for_csv_extension() {
     let wrk = Workdir::new("sqlp_default_delimiter_env_ignored_for_csv_extension");
     wrk.create_from_string("data.csv", "a,b\n1,2\n");
     let mut cmd = wrk.command("sqlp");
-    cmd.env("QSV_DEFAULT_DELIMITER", ";")
-        .args(["data.csv", "select b from data", "-o", "out.csv"]);
+    cmd.env("QSV_DEFAULT_DELIMITER", ";").args([
+        "data.csv",
+        "select a, b from data",
+        "-o",
+        "out.csv",
+    ]);
     wrk.assert_success(&mut cmd);
-    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "b\n2\n");
+    // both columns, so the output delimiter is checked too, not just the read
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "a,b\n1,2\n");
 }
 
 #[test]
@@ -6469,8 +6474,36 @@ fn sqlp_default_delimiter_env_ignored_for_csv_extension_cache_schema() {
     let wrk = Workdir::new("sqlp_default_delimiter_env_ignored_for_csv_extension_cs");
     wrk.create_from_string("data.csv", "a,b\n1,2\n");
     let mut cmd = wrk.command("sqlp");
-    cmd.env("QSV_DEFAULT_DELIMITER", "|")
-        .args(["--cache-schema", "data.csv", "select b from data"]);
+    cmd.env("QSV_DEFAULT_DELIMITER", "|").args([
+        "--cache-schema",
+        "data.csv",
+        "select b from data",
+    ]);
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "b\n2");
+}
+
+// stdin is copied to a temp `stdin.csv`; that made-up extension must not override
+// QSV_DEFAULT_DELIMITER (roborev on #4821)
+#[test]
+fn sqlp_stdin_default_delimiter_env() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("sqlp_stdin_default_delimiter_env");
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["-", "select b from stdin"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a;b\n1;2\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "b\n2");
 }

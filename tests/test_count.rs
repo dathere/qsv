@@ -791,3 +791,64 @@ fn count_no_headers_fallback_is_not_double_adjusted() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "3");
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, so count always got an explicit
+// comma that overrode the .tsv/.ssv extension delimiters and QSV_DEFAULT_DELIMITER.
+// --width-no-delims is the clearest check: read with the wrong delimiter, each line is
+// one field and its separators are counted as field bytes.
+#[test]
+fn count_width_no_delims_tsv_extension() {
+    let wrk = Workdir::new("count_width_no_delims_tsv_extension");
+    wrk.create_from_string("in.tsv", "a\tbb\nccc\td\nee\tf\n");
+    let mut cmd = wrk.command("count");
+    cmd.args(["--width-no-delims", "in.tsv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;4-3.5-3-3-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_ssv_extension() {
+    let wrk = Workdir::new("count_width_no_delims_ssv_extension");
+    wrk.create_from_string("in.ssv", "a;bb\nccc;d\nee;f\n");
+    let mut cmd = wrk.command("count");
+    cmd.args(["--width-no-delims", "in.ssv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;4-3.5-3-3-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_explicit_delimiter_overrides_extension() {
+    let wrk = Workdir::new("count_width_no_delims_explicit_delimiter_overrides_extension");
+    wrk.create_from_string("in.ssv", "a;bb\nccc;d\nee;f\n");
+    let mut cmd = wrk.command("count");
+    // an explicit comma still wins over the .ssv extension: each line is one field
+    cmd.args(["--width-no-delims", "--delimiter", ",", "in.ssv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;5-4.5-4-4-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_default_delimiter_env() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("count_width_no_delims_default_delimiter_env");
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .args(["--width-no-delims", "-"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a|bb\nccc|d\nee|f\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "2;4-3.5-3-3-0.25-0.5-0.5"
+    );
+}

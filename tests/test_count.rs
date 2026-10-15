@@ -148,7 +148,10 @@ fn count_simple_custom_delimiter() {
     );
 
     let mut cmd = wrk.command("count");
-    cmd.env("QSV_CUSTOM_DELIMITER", ";").arg("in.csv");
+    // this used to set a nonexistent QSV_CUSTOM_DELIMITER env var, so the file was read
+    // with a comma. (QSV_DEFAULT_DELIMITER would not help either: a .csv extension maps to
+    // a comma before it is consulted.) Pass the delimiter explicitly.
+    cmd.arg("--delimiter").arg(";").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
@@ -173,7 +176,7 @@ fn count_width() {
     cmd.arg("--width").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "4;16-15-15-13-1.5-1.2247-1";
+    let expected = "4;18-15.5-15-13-3.25-1.8028-1.5";
     assert_eq!(got, expected.to_string());
 }
 
@@ -194,7 +197,7 @@ fn count_width_json() {
     cmd.arg("--width").arg("--json").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"{"count":4,"max":16,"avg":15,"median":15,"min":13,"variance":1.5,"stddev":1.2247,"mad":1}"#;
+    let expected = r#"{"count":4,"max":18,"avg":15.5,"median":15,"min":13,"variance":3.25,"stddev":1.8028,"mad":1.5}"#;
     assert_eq!(got, expected.to_string());
 }
 
@@ -257,7 +260,7 @@ fn count_width_human_readable() {
     cmd.arg("--width").arg("-H").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "4;max:16 avg:15 median:15 min:13 variance:1.5 stddev:1.2247 mad:1";
+    let expected = "4;max:18 avg:15.5 median:15 min:13 variance:3.25 stddev:1.8028 mad:1.5";
     assert_eq!(got, expected.to_string());
 }
 
@@ -277,9 +280,10 @@ fn count_width_custom_delimiter() {
     );
 
     let mut cmd = wrk.command("count");
-    cmd.env("QSV_CUSTOM_DELIMITER", ";")
-        .arg("--width")
-        .arg("in.csv");
+    // this used to set a nonexistent QSV_CUSTOM_DELIMITER env var, so each line was read as
+    // ONE field with no delimiters - which made its expected widths right by accident, and
+    // hid the first-record width bug. Pass the delimiter explicitly.
+    cmd.arg("--delimiter").arg(";").arg("--width").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;18-15.5-15-13-3.25-1.8028-1.5";
@@ -307,7 +311,7 @@ fn count_width_quoted_delimiter_and_newline() {
     cmd.arg("--width").arg("--json").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"{"count":3,"max":17,"avg":12,"median":10,"min":9,"variance":12.6667,"stddev":3.559,"mad":1}"#;
+    let expected = r#"{"count":3,"max":17,"avg":12.3333,"median":10,"min":10,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
     assert_eq!(got, expected.to_string());
 }
 
@@ -331,7 +335,25 @@ fn count_width_quoted_delimiter_and_newline_indexed() {
     cmd.arg("--width").arg("--json").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"{"count":3,"max":17,"avg":12,"median":10,"min":9,"variance":12.6667,"stddev":3.559,"mad":1}"#;
+    let expected = r#"{"count":3,"max":17,"avg":12.3333,"median":10,"min":10,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+// each record's delimiters are counted from its own fields: the widths are 9 ("first,2,3"),
+// 3 ("4,5") and 1 ("6"). They used to be 7, 4 and 3 - the first record got no delimiters, and
+// every later one got the first record's count of 2.
+#[test]
+fn count_width_flexible_ragged() {
+    let wrk = Workdir::new("count_width_flexible_ragged");
+    wrk.create_from_string("in.csv", "a,b,c\nfirst,2,3\n4,5\n6\n");
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width")
+        .arg("--flexible")
+        .arg("--json")
+        .arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":9,"avg":4.3333,"median":3,"min":1,"variance":11.5556,"stddev":3.3993,"mad":2}"#;
     assert_eq!(got, expected.to_string());
 }
 

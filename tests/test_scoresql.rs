@@ -586,3 +586,16 @@ fn scoresql_quoted_null_distinct_from_keyword_null() {
          got: {suggestions:?}"
     );
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never
+// read and the query failed with "unable to find column".
+#[test]
+fn scoresql_default_delimiter_env() {
+    let wrk = Workdir::new("scoresql_default_delimiter_env");
+    wrk.create_from_string("in.txt", "a;b\n1;2\n");
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["in.txt", "select b from in", "--json", "--quiet"]);
+    wrk.assert_success(&mut cmd);
+}

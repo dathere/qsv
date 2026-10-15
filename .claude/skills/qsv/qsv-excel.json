@@ -27,8 +27,7 @@
       {
         "flag": "--delimiter",
         "type": "string",
-        "description": "The delimiter to use when writing CSV data. Must be a single character.",
-        "default": ","
+        "description": "The delimiter to use when writing CSV data. Must be a single character. (default: ,)"
       },
       {
         "flag": "--error-format",

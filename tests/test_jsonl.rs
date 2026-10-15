@@ -181,3 +181,25 @@ fn jsonl_nested() {
     ];
     assert_eq!(got, expected);
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, which overrode both the output
+// file's .tsv extension and QSV_DEFAULT_DELIMITER.
+#[test]
+fn jsonl_output_tsv_extension() {
+    let wrk = Workdir::new("jsonl_output_tsv_extension");
+    wrk.create_from_string("in.jsonl", "{\"a\":1,\"b\":2}\n");
+    let mut cmd = wrk.command("jsonl");
+    cmd.args(["in.jsonl", "-o", "out.tsv"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(wrk.read_to_string("out.tsv").unwrap(), "a\tb\n1\t2\n");
+}
+
+#[test]
+fn jsonl_default_delimiter_env() {
+    let wrk = Workdir::new("jsonl_default_delimiter_env");
+    wrk.create_from_string("in.jsonl", "{\"a\":1,\"b\":2}\n");
+    let mut cmd = wrk.command("jsonl");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";").arg("in.jsonl");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "a;b\n1;2");
+}

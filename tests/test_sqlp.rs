@@ -6437,3 +6437,16 @@ fn sqlp_read_csv_unknown_option_errors() {
         "unexpected stderr: {stderr}"
     );
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
+#[test]
+fn sqlp_default_delimiter_env() {
+    let wrk = Workdir::new("sqlp_default_delimiter_env");
+    wrk.create_from_string("in.txt", "a;b\n1;2\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";")
+        .env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["in.txt", "select b from in"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["b"], svec!["2"]]);
+}

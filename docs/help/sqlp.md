@@ -383,7 +383,7 @@ qsv sqlp --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
-| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading and writing CSV data. Must be a single character. | `,` |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading and writing CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return result shape to stderr. |  |
 
 ---

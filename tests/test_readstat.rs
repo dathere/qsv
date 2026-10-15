@@ -2713,3 +2713,15 @@ fn readstat_dictionary_sentinel_edge_cases() {
     assert_eq!(p["null_values"], serde_json::json!(["9"]));
     assert!(p.get("null_values_truncated").is_none());
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
+#[test]
+fn readstat_default_delimiter_env() {
+    let wrk = Workdir::new("readstat_default_delimiter_env");
+    let input = sample(&wrk, "sav");
+    let mut cmd = wrk.command("readstat");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";").arg(input);
+    let got: String = wrk.stdout(&mut cmd);
+    let header = got.lines().next().unwrap();
+    assert!(header.contains(';') && !header.contains(','), "{header}");
+}

@@ -140,7 +140,7 @@ Common options:
     -n, --no-headers            When set, the first row will not be interpreted
                                 as headers. Templates must use numeric 1-based indices
                                 with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}})
-    --delimiter <sep>           Field separator for reading CSV [default: ,]
+    --delimiter <sep>           Field separator for reading CSV (default: ,)
     -p, --progressbar           Show progress bars. Not valid for stdin.
 "#;
 
@@ -679,7 +679,6 @@ fn init_lookup_globals(
     flag_ckan_api: &str,
     flag_ckan_token: Option<&str>,
 ) -> CliResult<()> {
-    // safety: flag_delimiter has a docopt default
     DELIMITER.set(flag_delimiter).unwrap();
 
     let qsv_cache_dir = lookup::set_qsv_cache_dir(flag_cache_dir)?;

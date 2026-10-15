@@ -145,7 +145,7 @@ qsv template --help
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}}) |  |
-| &nbsp;`‑‑delimiter`&nbsp; | string | Field separator for reading CSV | `,` |
+| &nbsp;`‑‑delimiter`&nbsp; | string | Field separator for reading CSV (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 
 ---

@@ -287,6 +287,54 @@ fn count_width_custom_delimiter() {
     assert_eq!(got, expected.to_string());
 }
 
+// quoted fields containing the delimiter or a newline used to make --width and
+// --width-no-delims fail ("found record with 3 fields, but the previous record has 2 fields"),
+// as quoting was turned off for them. Widths exclude the quote characters.
+fn quoted_width_rows() -> Vec<Vec<String>> {
+    vec![
+        svec!["letter", "text"],
+        svec!["beta", "plain"],
+        svec!["alpha", "x, y"],
+        svec!["gamma", "line1\nline2"],
+    ]
+}
+
+#[test]
+fn count_width_quoted_delimiter_and_newline() {
+    let wrk = Workdir::new("count_width_quoted_delimiter_and_newline");
+    wrk.create("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":17,"avg":12,"median":10,"min":9,"variance":12.6667,"stddev":3.559,"mad":1}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+#[test]
+fn count_width_no_delims_quoted_delimiter_and_newline() {
+    let wrk = Workdir::new("count_width_no_delims_quoted_delimiter_and_newline");
+    wrk.create("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width-no-delims").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":16,"avg":11.3333,"median":9,"min":9,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+#[test]
+fn count_width_quoted_delimiter_and_newline_indexed() {
+    let wrk = Workdir::new("count_width_quoted_delimiter_and_newline_indexed");
+    wrk.create_indexed("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":17,"avg":12,"median":10,"min":9,"variance":12.6667,"stddev":3.559,"mad":1}"#;
+    assert_eq!(got, expected.to_string());
+}
+
 #[test]
 fn count_flexible() {
     let wrk = Workdir::new("count_flexible");

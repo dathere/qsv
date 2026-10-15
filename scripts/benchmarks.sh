@@ -506,7 +506,7 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f benchmark_data.json
   rm -f benchmark_data.snappy
   rm -f benchmark_data.parquet
-  rm -f benchmark_data.csv.schema.json
+  rm -f benchmark_data.csv.schema.json benchmark_data.csv.schema.json.tmp
   rm -f searchset_patterns.txt
   rm -f searchset_patterns_unicode.txt
   echo "> Benchmark data reset..."
@@ -602,7 +602,16 @@ fi
 
 if [ ! -r benchmark_data.csv.schema.json ]; then
   echo "   benchmark_data.csv.schema.json..."
-  "$qsv_benchmarker_bin" schema "$data" --stdout >benchmark_data.csv.schema.json
+  # write to a temp file and rename on success: an interrupted run must not leave a truncated
+  # schema behind, as the -r check above would keep it. validate then fails with exit 1, which
+  # the --expect-exit 1 validate --valid-output benchmarks would accept as a successful timing.
+  if "$qsv_benchmarker_bin" schema "$data" --stdout >benchmark_data.csv.schema.json.tmp; then
+    mv benchmark_data.csv.schema.json.tmp benchmark_data.csv.schema.json
+  else
+    rm -f benchmark_data.csv.schema.json.tmp
+    echo "Failed to generate benchmark_data.csv.schema.json" >&2
+    exit 1
+  fi
 fi
 
 if [ ! -r benchmark_data.snappy ]; then

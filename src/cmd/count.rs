@@ -84,8 +84,8 @@ Common options:
                            without an index.
     -n, --no-headers       When set, the first row will be included in
                            the count.
-    -d, --delimiter <arg>  The delimiter to use when reading CSV data.
-                           Must be a single character. [default: ,]
+    -d, --delimiter <arg>  The field delimiter for reading CSV data.
+                           Must be a single character. (default: ,)
 "#;
 
 use log::info;

@@ -1806,3 +1806,16 @@ fn excel_cell_precedence() {
 
     assert_eq!(got, expected);
 }
+
+// --delimiter used to carry a docopt `[default: ,]`, so `-o out.tsv` was written with commas.
+#[test]
+fn excel_output_tsv_extension() {
+    let wrk = Workdir::new("excel_output_tsv_extension");
+    let xlsx_file = wrk.load_test_file("excel-xlsx.xlsx");
+    let mut cmd = wrk.command("excel");
+    cmd.args([&xlsx_file, "-o", "out.tsv"]);
+    wrk.assert_success(&mut cmd);
+    let got = wrk.read_to_string("out.tsv").unwrap();
+    let header = got.lines().next().unwrap();
+    assert!(header.contains('\t') && !header.contains(','), "{header}");
+}

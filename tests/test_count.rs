@@ -148,7 +148,10 @@ fn count_simple_custom_delimiter() {
     );
 
     let mut cmd = wrk.command("count");
-    cmd.env("QSV_CUSTOM_DELIMITER", ";").arg("in.csv");
+    // this used to set a nonexistent QSV_CUSTOM_DELIMITER env var, so the file was read
+    // with a comma. (QSV_DEFAULT_DELIMITER would not help either: a .csv extension maps to
+    // a comma before it is consulted.) Pass the delimiter explicitly.
+    cmd.arg("--delimiter").arg(";").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "3";
@@ -173,7 +176,7 @@ fn count_width() {
     cmd.arg("--width").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "4;16-15-15-13-1.5-1.2247-1";
+    let expected = "4;18-15.5-15-13-3.25-1.8028-1.5";
     assert_eq!(got, expected.to_string());
 }
 
@@ -194,7 +197,7 @@ fn count_width_json() {
     cmd.arg("--width").arg("--json").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"{"count":4,"max":16,"avg":15,"median":15,"min":13,"variance":1.5,"stddev":1.2247,"mad":1}"#;
+    let expected = r#"{"count":4,"max":18,"avg":15.5,"median":15,"min":13,"variance":3.25,"stddev":1.8028,"mad":1.5}"#;
     assert_eq!(got, expected.to_string());
 }
 
@@ -257,7 +260,7 @@ fn count_width_human_readable() {
     cmd.arg("--width").arg("-H").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = "4;max:16 avg:15 median:15 min:13 variance:1.5 stddev:1.2247 mad:1";
+    let expected = "4;max:18 avg:15.5 median:15 min:13 variance:3.25 stddev:1.8028 mad:1.5";
     assert_eq!(got, expected.to_string());
 }
 
@@ -277,13 +280,80 @@ fn count_width_custom_delimiter() {
     );
 
     let mut cmd = wrk.command("count");
-    cmd.env("QSV_CUSTOM_DELIMITER", ";")
-        .arg("--width")
-        .arg("in.csv");
+    // this used to set a nonexistent QSV_CUSTOM_DELIMITER env var, so each line was read as
+    // ONE field with no delimiters - which made its expected widths right by accident, and
+    // hid the first-record width bug. Pass the delimiter explicitly.
+    cmd.arg("--delimiter").arg(";").arg("--width").arg("in.csv");
 
     let got: String = wrk.stdout(&mut cmd);
     let expected = "4;18-15.5-15-13-3.25-1.8028-1.5";
 
+    assert_eq!(got, expected.to_string());
+}
+
+// quoted fields containing the delimiter or a newline used to make --width and
+// --width-no-delims fail ("found record with 3 fields, but the previous record has 2 fields"),
+// as quoting was turned off for them. Widths exclude the quote characters.
+fn quoted_width_rows() -> Vec<Vec<String>> {
+    vec![
+        svec!["letter", "text"],
+        svec!["beta", "plain"],
+        svec!["alpha", "x, y"],
+        svec!["gamma", "line1\nline2"],
+    ]
+}
+
+#[test]
+fn count_width_quoted_delimiter_and_newline() {
+    let wrk = Workdir::new("count_width_quoted_delimiter_and_newline");
+    wrk.create("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":17,"avg":12.3333,"median":10,"min":10,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+#[test]
+fn count_width_no_delims_quoted_delimiter_and_newline() {
+    let wrk = Workdir::new("count_width_no_delims_quoted_delimiter_and_newline");
+    wrk.create("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width-no-delims").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":16,"avg":11.3333,"median":9,"min":9,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+#[test]
+fn count_width_quoted_delimiter_and_newline_indexed() {
+    let wrk = Workdir::new("count_width_quoted_delimiter_and_newline_indexed");
+    wrk.create_indexed("in.csv", quoted_width_rows());
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width").arg("--json").arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":17,"avg":12.3333,"median":10,"min":10,"variance":10.8889,"stddev":3.2998,"mad":0}"#;
+    assert_eq!(got, expected.to_string());
+}
+
+// each record's delimiters are counted from its own fields: the widths are 9 ("first,2,3"),
+// 3 ("4,5") and 1 ("6"). They used to be 7, 4 and 3 - the first record got no delimiters, and
+// every later one got the first record's count of 2.
+#[test]
+fn count_width_flexible_ragged() {
+    let wrk = Workdir::new("count_width_flexible_ragged");
+    wrk.create_from_string("in.csv", "a,b,c\nfirst,2,3\n4,5\n6\n");
+    let mut cmd = wrk.command("count");
+    cmd.arg("--width")
+        .arg("--flexible")
+        .arg("--json")
+        .arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"count":3,"max":9,"avg":4.3333,"median":3,"min":1,"variance":11.5556,"stddev":3.3993,"mad":2}"#;
     assert_eq!(got, expected.to_string());
 }
 
@@ -720,4 +790,65 @@ fn count_no_headers_fallback_is_not_double_adjusted() {
     cmd.args(["--no-headers", "in.csv"]);
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "3");
+}
+
+// --delimiter used to carry a docopt `[default: ,]`, so count always got an explicit
+// comma that overrode the .tsv/.ssv extension delimiters and QSV_DEFAULT_DELIMITER.
+// --width-no-delims is the clearest check: read with the wrong delimiter, each line is
+// one field and its separators are counted as field bytes.
+#[test]
+fn count_width_no_delims_tsv_extension() {
+    let wrk = Workdir::new("count_width_no_delims_tsv_extension");
+    wrk.create_from_string("in.tsv", "a\tbb\nccc\td\nee\tf\n");
+    let mut cmd = wrk.command("count");
+    cmd.args(["--width-no-delims", "in.tsv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;4-3.5-3-3-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_ssv_extension() {
+    let wrk = Workdir::new("count_width_no_delims_ssv_extension");
+    wrk.create_from_string("in.ssv", "a;bb\nccc;d\nee;f\n");
+    let mut cmd = wrk.command("count");
+    cmd.args(["--width-no-delims", "in.ssv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;4-3.5-3-3-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_explicit_delimiter_overrides_extension() {
+    let wrk = Workdir::new("count_width_no_delims_explicit_delimiter_overrides_extension");
+    wrk.create_from_string("in.ssv", "a;bb\nccc;d\nee;f\n");
+    let mut cmd = wrk.command("count");
+    // an explicit comma still wins over the .ssv extension: each line is one field
+    cmd.args(["--width-no-delims", "--delimiter", ",", "in.ssv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "2;5-4.5-4-4-0.25-0.5-0.5");
+}
+
+#[test]
+fn count_width_no_delims_default_delimiter_env() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("count_width_no_delims_default_delimiter_env");
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .args(["--width-no-delims", "-"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a|bb\nccc|d\nee|f\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "2;4-3.5-3-3-0.25-0.5-0.5"
+    );
 }

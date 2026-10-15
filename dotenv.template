@@ -23,8 +23,10 @@
 # `scripts/qsv-tune.ps1` on Windows). It is dry-run by default; see docs/PERFORMANCE.md.
 # ==============================================================================
 
-# single ascii character to use as delimiter.  Overrides `--delimiter` option.
-# Defaults to "," (comma) for CSV files & "\t" (tab) for TSV files when not set.
+# single ascii character to use as delimiter when reading stdin or a file without
+# a recognized extension. Files ending in `.csv`, `.tsv`/`.tab` or `.ssv` (or their
+# `.sz` snappy variants) are always read with comma, tab or semicolon respectively,
+# and the `--delimiter` option overrides this variable. Defaults to "," (comma).
 # Note that this will also set the delimiter for qsv's output to stdout.
 # However, using the `--output` option, regardless of this environment variable,
 # will automatically change the delimiter used in the generated file based on
@@ -32,7 +34,8 @@
 # QSV_DEFAULT_DELIMITER = , 
 
 # if true, the delimiter is automatically detected. Overrides QSV_DEFAULT_DELIMITER
-# and `--delimiter` option. Note that this does not work with stdin.
+# and the file extension; the `--delimiter` option still takes precedence.
+# Note that this does not work with stdin.
 QSV_SNIFF_DELIMITER = False
 
 # if true, qsv will attempt to sniff the number of preamble rows.

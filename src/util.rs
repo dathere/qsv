@@ -6089,6 +6089,14 @@ pub fn infer_polars_schema(
     let qsv_bin = current_exe()?;
     let mut sniff_cmd = std::process::Command::new(&qsv_bin);
     let table_str = table.to_string_lossy().to_string();
+    // without an explicit delimiter, sniff guesses one, and on a single-column file of
+    // dates it picks '/' and loses the date columns. Use the delimiter qsv itself would
+    // read the table with (extension, then QSV_DEFAULT_DELIMITER).
+    let delimiter = delimiter.or_else(|| {
+        Some(crate::config::Delimiter(
+            Config::new(Some(&table_str)).get_delimiter(),
+        ))
+    });
     sniff_cmd.args(["sniff", "--json"]);
     if let Some(d) = delimiter {
         let delim_byte = d.as_byte();

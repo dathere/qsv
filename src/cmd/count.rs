@@ -84,8 +84,8 @@ Common options:
                            without an index.
     -n, --no-headers       When set, the first row will be included in
                            the count.
-    -d, --delimiter <arg>  The delimiter to use when reading CSV data.
-                           Must be a single character. [default: ,]
+    -d, --delimiter <arg>  The field delimiter for reading CSV data.
+                           Must be a single character. (default: ,)
 "#;
 
 use log::info;
@@ -134,9 +134,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let conf = Config::new(args.arg_input.as_ref())
         .no_headers_flag(args.flag_no_headers)
-        // we also want to count the quotes when computing width
-        .quoting(!(args.flag_width || args.flag_width_no_delims))
-        // and ignore differing column counts as well
+        // quoting stays on for --width/--width-no-delims too: with it off, a quoted field
+        // containing the delimiter splits into an extra field (a hard error unless
+        // --flexible) and one containing a newline splits the record, breaking the count.
+        // So the widths exclude quote characters, as the USAGE text documents.
         .flexible(args.flag_flexible)
         .delimiter(args.flag_delimiter);
 
@@ -297,13 +298,24 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
         }
         Ok((count, empty_record_stats))
     } else {
-        // read the first record to get the number of delimiters
-        // and the width of the first record
+        // a record's width is its field bytes, plus - unless --width-no-delims - its
+        // delimiters: one fewer than its number of fields. Counted per record, so the first
+        // record gets its delimiters too, and ragged records (--flexible) get their own count.
+        let include_delims = count_delims_mode == CountDelimsMode::IncludeDelims;
+        let width_of = |record: &csv::ByteRecord| {
+            record.as_slice().len()
+                + if include_delims {
+                    record.len().saturating_sub(1)
+                } else {
+                    0
+                }
+        };
+
         if !rdr.read_byte_record(&mut record)? {
             return Ok((0, empty_record_stats));
         }
 
-        let mut curr_width = record.as_slice().len();
+        let mut curr_width = width_of(&record);
 
         let mut max = curr_width;
         let mut min = curr_width;
@@ -320,18 +332,10 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
         widths.push(curr_width);
         let mut manual_count = 1_u64;
 
-        // number of delimiters is number of fields minus 1
-        // we subtract 1 because the last field doesn't have a delimiter
-        let record_numdelims = if count_delims_mode == CountDelimsMode::IncludeDelims {
-            record.len().saturating_sub(1)
-        } else {
-            0
-        };
-
         while rdr.read_byte_record(&mut record)? {
             manual_count += 1;
 
-            curr_width = record.as_slice().len() + record_numdelims;
+            curr_width = width_of(&record);
 
             // we don't want to overflow total_width, so we do saturating_add
             total_width = total_width.saturating_add(curr_width);

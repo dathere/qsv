@@ -119,7 +119,7 @@ qsv count --help
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑f,`<br>`‑‑flexible`&nbsp; | flag | Do not validate if the CSV has different number of fields per record, increasing performance when counting without an index. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will be included in the count. |  |
-| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The delimiter to use when reading CSV data. Must be a single character. | `,` |
+| &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---
 **Source:** [`src/cmd/count.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/count.rs)

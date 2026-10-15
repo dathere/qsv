@@ -1,6 +1,6 @@
 # Benchmarks
 
-qsv's benchmark suite runs 305 benchmarks on a **1,000,000-row × 41-column, 520 MB**
+qsv's benchmark suite runs 302 benchmarks on a **1,000,000-row × 41-column, 520 MB**
 sample of NYC's 311 data, timed with [hyperfine](https://github.com/sharkdp/hyperfine)
 (2 warmups + 3 timed runs each). See
 [`scripts/results/README.md`](https://github.com/dathere/qsv/blob/master/scripts/results/README.md)
@@ -18,10 +18,11 @@ for the methodology and the raw CSVs.
 > other side, `count` and `flatten` slowed 13-17%. The 19 benchmarks new in suite 9.9.0 have no
 > earlier baseline, so they don't appear in the change charts.
 >
-> **Don't read the `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` or
-> `sqlp_tryparsedates*` numbers:** since 16.0.0 the benchmark machine has timed failed runs of
-> them (~0.06-0.47 s, while plain `sqlp` on the same query takes 0.8-1.6 s). This is under
-> investigation.
+> **The `sqlp_format_*`, `sqlp_lowmemory`, `sqlp_nooptimizations` and `sqlp_tryparsedates*`
+> numbers read low:** a schema cache leaked from another benchmark, so their 25.0.0 runs timed a
+> cached-schema read. From 16.0.0 to 24.0.0 the same leak made them fail, and those timings have
+> been removed ([#4812](https://github.com/dathere/qsv/pull/4812)), so their 25.0.0 deltas compare against 15.0.1. Expect these
+> ten to step up on the next run.
 
 > Looking for the **full per-command timing tables**? See the classic
 > [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the

@@ -164,7 +164,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     // build schema for each field by their inferred type, min/max value/length, and unique values
     let properties_map: Map<String, Value> =
-        match infer_schema_from_stats(&schema_args, &input_filename, args.flag_quiet) {
+        match infer_schema_from_stats(&schema_args, &input_filename, args.flag_quiet, false) {
             Ok(map) => map,
             Err(e) => {
                 return fail_clierror!("Failed to infer field types: {e}");

@@ -220,7 +220,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // build schema for each field by their inferred type, min/max value/length, and unique values
     let mut properties_map: Map<String, Value> =
-        match infer_schema_from_stats(&args, &input_filename, false) {
+        match infer_schema_from_stats(&args, &input_filename, false, true) {
             Ok(map) => map,
             Err(e) => {
                 return fail_clierror!(
@@ -305,6 +305,7 @@ pub fn infer_schema_from_stats(
     args: &util::SchemaArgs,
     input_filename: &str,
     quiet: bool,
+    infer_unicode_lengths: bool,
 ) -> CliResult<Map<String, Value>> {
     // invoke cmd::stats
     let (csv_fields, csv_stats) = util::get_stats_records(args, StatsMode::Schema)?;
@@ -352,11 +353,15 @@ pub fn infer_schema_from_stats(
 
     // Stats lengths count UTF-8 bytes; JSON Schema lengths count Unicode scalar values.
     // ASCII columns can reuse stats, but non-ASCII strings need character bounds.
-    let unicode_columns: Vec<usize> = csv_stats
-        .iter()
-        .enumerate()
-        .filter_map(|(i, stats)| (stats.r#type == "String" && !stats.is_ascii).then_some(i))
-        .collect();
+    let unicode_columns: Vec<usize> = if infer_unicode_lengths {
+        csv_stats
+            .iter()
+            .enumerate()
+            .filter_map(|(i, stats)| (stats.r#type == "String" && !stats.is_ascii).then_some(i))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let mut unicode_lengths: HashMap<usize, (usize, usize)> = HashMap::new();
     if !unicode_columns.is_empty() {
         let mut rdr = Config::new(args.arg_input.as_ref())

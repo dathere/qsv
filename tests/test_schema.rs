@@ -570,6 +570,35 @@ fn generate_schema_ignore_case_patterns_portable_escapes() {
     wrk.assert_err(&mut validate_bad);
 }
 
+// `İ` lowercases to `i` + U+0307, which no case-insensitive regex maps back to `İ`, so the
+// pattern accepts both. (A single-value İzmir column is avoided: its byte-based minLength
+// is a separate bug.)
+#[test]
+#[file_serial]
+fn generate_schema_ignore_case_patterns_dotted_capital_i() {
+    let wrk = Workdir::new("generate_schema_ignore_case_patterns_dotted_capital_i");
+    wrk.create_from_string(
+        "cities.csv",
+        "id,city,g\n1,İzmir,x\n2,izmir,y\n3,Ankara,x\n4,ANKARA,y\n",
+    );
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("cities.csv")
+        .args(["--enum-threshold", "3"])
+        .arg("--ignore-case");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "cities.csv.schema.json");
+    assert_eq!(
+        props["city"]["pattern"],
+        "^(?i:ankara|izmir|(?:i\u{307}|\u{130})zmir)$"
+    );
+
+    let mut validate = wrk.command("validate");
+    validate.args(["cities.csv", "cities.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+}
+
 #[test]
 #[file_serial]
 fn generate_schema_tsv_delimiter_detection_issue_2997() {

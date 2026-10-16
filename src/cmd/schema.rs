@@ -1026,7 +1026,7 @@ fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
             }
             enum_list
                 .iter()
-                .filter_map(|v| v.as_str().map(escape_regex_literal))
+                .filter_map(|v| v.as_str().map(ignore_case_literal))
                 .collect()
         } else if let Some(Value::String(const_value)) = field_map.get("const") {
             // a --pattern-columns pattern was derived from the original-case values,
@@ -1035,7 +1035,7 @@ fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
                 field_map.remove("const");
                 continue;
             }
-            vec![escape_regex_literal(const_value)]
+            vec![ignore_case_literal(const_value)]
         } else {
             continue;
         };
@@ -1069,4 +1069,12 @@ fn escape_regex_literal(value: &str) -> String {
         escaped.push(c);
     }
     escaped
+}
+
+/// Escape a case-folded value for use inside a `(?i:...)` pattern.
+/// `İ` (U+0130) is the only character whose lowercase form is longer than itself: it
+/// lowercases to `i` + U+0307 (combining dot above), and no case-insensitive regex maps
+/// that back to `İ`. So the source's `İzmir` would not match `(?i:i̇zmir)`; accept both.
+fn ignore_case_literal(folded_value: &str) -> String {
+    escape_regex_literal(folded_value).replace("i\u{307}", "(?:i\u{307}|\u{130})")
 }

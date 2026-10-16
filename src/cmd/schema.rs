@@ -66,8 +66,12 @@ Schema options:
     -i, --ignore-case          Ignore case when compiling unique values for enum constraints.
                                String columns are then checked against the enum threshold
                                by their case-insensitive cardinality.
-                               Do note however that the `validate` command is case-sensitive
-                               when validating against enum constraints.
+                               As the `validate` command is case-sensitive, the
+                               enum & const constraints of String columns are written
+                               as equivalent case-insensitive regex patterns instead
+                               (e.g. "^(?i:false|true)$"). These use the inline `(?i:...)`
+                               modifier, which other JSON Schema validators may not
+                               support, e.g. on older JavaScript engines.
     --strict-dates             Enforce Internet Datetime format (RFC-3339) for
                                detected date/datetime columns. Otherwise, even if
                                columns are inferred as date/datetime, they are set
@@ -243,6 +247,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             field_def_map.insert("pattern".to_string(), pattern.clone());
             winfo!("Added regex pattern constraint for field: {field_name} -> {pattern}");
         }
+    }
+
+    if args.flag_ignore_case {
+        apply_ignore_case_patterns(&mut properties_map);
     }
 
     // generate list of required fields
@@ -999,4 +1007,74 @@ fn should_emit_pattern_constraint(field_def: &Value) -> bool {
     let has_enum = field_def.get("enum").is_some();
 
     type_list.contains(&Value::String("string".to_string())) && !has_enum
+}
+
+/// With --ignore-case, frequency case-folds the unique values, so a String field's enum/const
+/// holds lowercased values that the case-sensitive `validate` would reject in the source data.
+/// Replace them with an equivalent case-insensitive regex pattern.
+fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
+    for (field_name, field_def) in properties_map.iter_mut() {
+        let Some(field_map) = field_def.as_object_mut() else {
+            continue;
+        };
+
+        let values: Vec<String> = if let Some(Value::Array(enum_list)) = field_map.get("enum") {
+            // integer enums are not affected by case folding; nulls are already allowed
+            // by the "null" type of nullable fields
+            if !enum_list.iter().all(|v| v.is_string() || v.is_null()) {
+                continue;
+            }
+            enum_list
+                .iter()
+                .filter_map(|v| v.as_str().map(ignore_case_literal))
+                .collect()
+        } else if let Some(Value::String(const_value)) = field_map.get("const") {
+            // a --pattern-columns pattern was derived from the original-case values,
+            // so it already constrains the field
+            if field_map.contains_key("pattern") {
+                field_map.remove("const");
+                continue;
+            }
+            vec![ignore_case_literal(const_value)]
+        } else {
+            continue;
+        };
+
+        if values.is_empty() {
+            continue;
+        }
+
+        field_map.remove("enum");
+        field_map.remove("const");
+        let pattern = format!("^(?i:{})$", values.join("|"));
+        winfo!("Case-insensitive pattern constraint for field '{field_name}': {pattern}");
+        field_map.insert("pattern".to_string(), Value::String(pattern));
+    }
+}
+
+/// Escape a literal for a regex `pattern` outside a character class. Unlike `regex::escape`,
+/// only the ECMA-262 syntax characters are escaped: escapes like `\-`, `\#`, `\&` and `\~`
+/// are fine in Rust regex but invalid in ECMA-262 unicode mode, which is how other JSON Schema
+/// validators (e.g. AJV) compile patterns. Outside a class, those characters are literals in
+/// both.
+fn escape_regex_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        if matches!(
+            c,
+            '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '[' | ']' | '{' | '}'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+
+/// Escape a case-folded value for use inside a `(?i:...)` pattern.
+/// `İ` (U+0130) is the only character whose lowercase form is longer than itself: it
+/// lowercases to `i` + U+0307 (combining dot above), and no case-insensitive regex maps
+/// that back to `İ`. So the source's `İzmir` would not match `(?i:i̇zmir)`; accept both.
+fn ignore_case_literal(folded_value: &str) -> String {
+    escape_regex_literal(folded_value).replace("i\u{307}", "(?:i\u{307}|\u{130})")
 }

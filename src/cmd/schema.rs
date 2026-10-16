@@ -350,6 +350,34 @@ pub fn infer_schema_from_stats(
     // invoke cmd::frequency to get unique values for each field
     let unique_values_map = get_unique_values(args, &column_select_arg)?;
 
+    // Stats lengths count UTF-8 bytes; JSON Schema lengths count Unicode scalar values.
+    // ASCII columns can reuse stats, but non-ASCII strings need character bounds.
+    let unicode_columns: Vec<usize> = csv_stats
+        .iter()
+        .enumerate()
+        .filter_map(|(i, stats)| (stats.r#type == "String" && !stats.is_ascii).then_some(i))
+        .collect();
+    let mut unicode_lengths: HashMap<usize, (usize, usize)> = HashMap::new();
+    if !unicode_columns.is_empty() {
+        let mut rdr = Config::new(args.arg_input.as_ref())
+            .delimiter(args.flag_delimiter)
+            .no_headers_flag(args.flag_no_headers)
+            .reader()?;
+        let mut record = csv::StringRecord::new();
+        while rdr.read_record(&mut record)? {
+            for &i in &unicode_columns {
+                let len = record[i].chars().count();
+                unicode_lengths
+                    .entry(i)
+                    .and_modify(|(min, max)| {
+                        *min = (*min).min(len);
+                        *max = (*max).max(len);
+                    })
+                    .or_insert((len, len));
+            }
+        }
+    }
+
     // map holds "properties" object of json schema
     let mut properties_map: Map<String, Value> = Map::with_capacity(csv_fields.len());
 
@@ -395,8 +423,13 @@ pub fn infer_schema_from_stats(
             "String" => {
                 type_list.push(Value::String("string".to_string()));
 
+                let (min_length, max_length) = match unicode_lengths.get(&i) {
+                    Some(&(min, max)) => (Some(min), Some(max)),
+                    None => (stats_record.min_length, stats_record.max_length),
+                };
+
                 // minLength constraint
-                if let Some(min_length) = stats_record.min_length {
+                if let Some(min_length) = min_length {
                     field_map.insert(
                         "minLength".to_string(),
                         Value::Number(Number::from(min_length)),
@@ -404,7 +437,7 @@ pub fn infer_schema_from_stats(
                 }
 
                 // maxLength constraint
-                if let Some(max_length) = stats_record.max_length {
+                if let Some(max_length) = max_length {
                     field_map.insert(
                         "maxLength".to_string(),
                         Value::Number(Number::from(max_length)),

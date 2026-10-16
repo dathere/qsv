@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`schema` now infers Unicode character lengths instead of UTF-8 byte lengths for non-ASCII strings.** Generated `minLength` and `maxLength` constraints now use JSON Schema's character-count semantics, so validating the original CSV no longer rejects short non-ASCII values such as `李`. ASCII bounds are unchanged.
 - **`count --width` and `--width-no-delims` no longer fail on quoted fields that contain the delimiter** ([#4814](https://github.com/dathere/qsv/pull/4814)). Since 20.0.0 they turned CSV quoting off, so a field like `"x, y"` split into an extra field and the command errored out with "found record with 3 fields, but the previous record has 2 fields". Quoting is on again, and the widths exclude quote characters, as documented.
 - **`count --width` now counts the first record's delimiters** ([#4816](https://github.com/dathere/qsv/pull/4816)). The first record's width was short by its number of fields minus one, skewing every width stat. Delimiters are now also counted per record, so with `--flexible`, ragged records no longer borrow the first record's count.
 - **`count --delimiter` no longer overrides `.tsv`/`.tab`/`.ssv` extension delimiters or `QSV_DEFAULT_DELIMITER`** ([#4817](https://github.com/dathere/qsv/pull/4817)). Its USAGE declared a docopt `[default: ,]`, so `count` always read with a comma: `count --width` on a `.tsv` measured each line as one field. The default is now plain help text, as in the other commands.

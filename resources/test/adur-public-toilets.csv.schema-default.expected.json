@@ -17,7 +17,8 @@
       "maxLength": 55,
       "type": [
         "string"
-      ]
+      ],
+      "const": "http://opendatacommunities.org/id/district-council/adur"
     },
     "OrganisationLabel": {
       "description": "OrganisationLabel column from adur-public-toilets.csv",
@@ -38,7 +39,8 @@
       "maxLength": 32,
       "type": [
         "string"
-      ]
+      ],
+      "const": "http://id.esd.org.uk/service/579"
     },
     "ServiceTypeLabel": {
       "description": "ServiceTypeLabel column from adur-public-toilets.csv",
@@ -46,7 +48,8 @@
       "maxLength": 14,
       "type": [
         "string"
-      ]
+      ],
+      "const": "Public toilets"
     },
     "LocationText": {
       "description": "LocationText column from adur-public-toilets.csv",
@@ -139,7 +142,8 @@
       "maxLength": 124,
       "type": [
         "string"
-      ]
+      ],
+      "const": "http://www.ordnancesurvey.co.uk/business-and-government/help-and-support/public-sector/guidance/derived-data-exemptions.html"
     },
     "Category": {
       "description": "Category column from adur-public-toilets.csv",
@@ -183,7 +187,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "FamilyToilet": {
       "description": "FamilyToilet column from adur-public-toilets.csv",
@@ -191,7 +196,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "ChangingPlace": {
       "description": "ChangingPlace column from adur-public-toilets.csv",
@@ -199,7 +205,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "AutomaticPublicConvenience": {
       "description": "AutomaticPublicConvenience column from adur-public-toilets.csv",
@@ -207,7 +214,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "FullTimeStaffing": {
       "description": "FullTimeStaffing column from adur-public-toilets.csv",
@@ -215,7 +223,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "PartOfCommunityScheme": {
       "description": "PartOfCommunityScheme column from adur-public-toilets.csv",
@@ -223,7 +232,8 @@
       "maxLength": 2,
       "type": [
         "string"
-      ]
+      ],
+      "const": "No"
     },
     "CommunitySchemeName": {
       "description": "CommunitySchemeName column from adur-public-toilets.csv",
@@ -243,7 +253,8 @@
       "maxLength": 66,
       "type": [
         "string"
-      ]
+      ],
+      "const": "http://www.adur-worthing.gov.uk/streets-and-travel/public-toilets/"
     },
     "OpeningHours": {
       "description": "OpeningHours column from adur-public-toilets.csv",
@@ -305,7 +316,8 @@
       "maxLength": 12,
       "type": [
         "string"
-      ]
+      ],
+      "const": "01903 221471"
     },
     "Notes": {
       "description": "Notes column from adur-public-toilets.csv",

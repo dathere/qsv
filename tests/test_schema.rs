@@ -280,8 +280,9 @@ fn generate_schema_with_const_and_enum_constraints() {
     // run schema command with value constraints option
     let mut cmd = wrk.command("schema");
     cmd.arg("enum_const_test.csv");
+    // enum_col has 6 distinct values (enum), first & second have 9 (no enum)
     cmd.arg("--enum-threshold");
-    cmd.arg("5");
+    cmd.arg("6");
 
     wrk.assert_success(&mut cmd);
 
@@ -298,7 +299,7 @@ fn generate_schema_with_const_and_enum_constraints() {
     let expected_schema = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "JSON Schema for enum_const_test.csv",
-  "description": "Inferred JSON Schema with `qsv schema enum_const_test.csv --enum-threshold 5`",
+  "description": "Inferred JSON Schema with `qsv schema enum_const_test.csv --enum-threshold 6`",
   "type": "object",
   "properties": {
     "first": {
@@ -307,17 +308,6 @@ fn generate_schema_with_const_and_enum_constraints() {
       "maximum": 9,
       "type": [
         "integer"
-      ],
-      "enum": [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9
       ]
     },
     "second": {
@@ -326,17 +316,6 @@ fn generate_schema_with_const_and_enum_constraints() {
       "maxLength": 2,
       "type": [
         "string"
-      ],
-      "enum": [
-        "r1",
-        "r2",
-        "r3",
-        "r4",
-        "r5",
-        "r6",
-        "r7",
-        "r8",
-        "r9"
       ]
     },
     "const_col": {
@@ -374,6 +353,131 @@ fn generate_schema_with_const_and_enum_constraints() {
 }"#;
 
     assert_eq!(output_schema_string, expected_schema);
+}
+
+fn schema_properties(wrk: &Workdir, schema_file: &str) -> serde_json::Map<String, Value> {
+    let schema_string: String = wrk.from_str(&wrk.path(schema_file));
+    let schema_json: Value = serde_json::from_str(&schema_string).unwrap();
+    schema_json["properties"].as_object().unwrap().clone()
+}
+
+// #4829: when no column was at or under --enum-threshold, every column got an exhaustive enum
+#[test]
+#[file_serial]
+fn generate_schema_enum_threshold_all_columns_above() {
+    let wrk = Workdir::new("generate_schema_enum_threshold_all_columns_above");
+    let mut csv = String::from("id,txt,k\n");
+    for i in 1..=80 {
+        csv.push_str(&format!("{i},v{i},K\n"));
+    }
+    wrk.create_from_string("high_card.csv", &csv);
+
+    // without a constant column nothing is selected for cmd::frequency at all, which used to
+    // fall through to "select all columns"
+    let mut csv_no_const = String::from("id,txt\n");
+    for i in 1..=80 {
+        csv_no_const.push_str(&format!("{i},v{i}\n"));
+    }
+    wrk.create_from_string("high_card_only.csv", &csv_no_const);
+
+    for threshold in ["1", "50"] {
+        let mut cmd = wrk.command("schema");
+        cmd.arg("high_card_only.csv")
+            .args(["--enum-threshold", threshold]);
+        wrk.assert_success(&mut cmd);
+
+        let props = schema_properties(&wrk, "high_card_only.csv.schema.json");
+        assert!(!props["id"].as_object().unwrap().contains_key("enum"));
+        assert!(!props["txt"].as_object().unwrap().contains_key("enum"));
+
+        let mut validate = wrk.command("validate");
+        validate.args(["high_card_only.csv", "high_card_only.csv.schema.json"]);
+        wrk.assert_success(&mut validate);
+
+        let mut cmd = wrk.command("schema");
+        cmd.arg("high_card.csv")
+            .args(["--enum-threshold", threshold]);
+        wrk.assert_success(&mut cmd);
+
+        let props = schema_properties(&wrk, "high_card.csv.schema.json");
+        assert!(!props["id"].as_object().unwrap().contains_key("enum"));
+        assert!(!props["txt"].as_object().unwrap().contains_key("enum"));
+        assert_eq!(props["k"]["const"], "K");
+        assert!(!props["k"].as_object().unwrap().contains_key("enum"));
+    }
+}
+
+// #4829: with at least one low cardinality column, constant columns lost their const
+#[test]
+#[file_serial]
+fn generate_schema_enum_threshold_mixed_cardinality_keeps_const() {
+    let wrk = Workdir::new("generate_schema_enum_threshold_mixed_cardinality_keeps_const");
+    let mut csv = String::from("id,k,cat\n");
+    for i in 1..=80 {
+        csv.push_str(&format!("{i},K,c{}\n", i % 3));
+    }
+    wrk.create_from_string("mixed.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("mixed.csv");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "mixed.csv.schema.json");
+    assert!(!props["id"].as_object().unwrap().contains_key("enum"));
+    assert_eq!(props["k"]["const"], "K");
+    assert_eq!(props["cat"]["enum"], serde_json::json!(["c0", "c1", "c2"]));
+
+    let mut validate = wrk.command("validate");
+    validate.args(["mixed.csv", "mixed.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+}
+
+// #4829: with a low cardinality column present, --strict-formats skipped high cardinality
+// String columns
+#[test]
+#[file_serial]
+fn generate_schema_strict_formats_high_cardinality_column() {
+    let wrk = Workdir::new("generate_schema_strict_formats_high_cardinality_column");
+    let mut csv = String::from("cat,email\n");
+    for i in 1..=80 {
+        csv.push_str(&format!("c{},user{i}@example.com\n", i % 3));
+    }
+    wrk.create_from_string("emails.csv", &csv);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("emails.csv").arg("--strict-formats");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "emails.csv.schema.json");
+    assert_eq!(props["email"]["format"], "email");
+    assert!(!props["email"].as_object().unwrap().contains_key("enum"));
+    assert!(props["cat"].as_object().unwrap().contains_key("enum"));
+}
+
+// #4829: stats cardinality is case-sensitive, so with --ignore-case a column can be
+// under --enum-threshold only after case folding
+#[test]
+#[file_serial]
+fn generate_schema_ignore_case_enum_threshold() {
+    let wrk = Workdir::new("generate_schema_ignore_case_enum_threshold");
+    wrk.create_from_string(
+        "case.csv",
+        "flag,name,g,n\nYes,Mark,x,a\nyes,John,y,\nNo,Bob,x,b\nno,Mary,y,a\nYES,Ann,x,b\n",
+    );
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("case.csv")
+        .args(["--enum-threshold", "2"])
+        .arg("--ignore-case");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "case.csv.schema.json");
+    // flag: 5 distinct values, 2 once case-folded
+    assert_eq!(props["flag"]["enum"].as_array().unwrap().len(), 2);
+    assert!(!props["name"].as_object().unwrap().contains_key("enum"));
+    assert!(props["g"].as_object().unwrap().contains_key("enum"));
+    // n: a, b and an empty value - cardinality 3 with or without --ignore-case
+    assert!(!props["n"].as_object().unwrap().contains_key("enum"));
 }
 
 #[test]

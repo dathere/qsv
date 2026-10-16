@@ -471,13 +471,72 @@ fn generate_schema_ignore_case_enum_threshold() {
         .arg("--ignore-case");
     wrk.assert_success(&mut cmd);
 
+    // with --ignore-case, String enums are written as case-insensitive patterns
     let props = schema_properties(&wrk, "case.csv.schema.json");
     // flag: 5 distinct values, 2 once case-folded
-    assert_eq!(props["flag"]["enum"].as_array().unwrap().len(), 2);
-    assert!(!props["name"].as_object().unwrap().contains_key("enum"));
-    assert!(props["g"].as_object().unwrap().contains_key("enum"));
+    assert_eq!(props["flag"]["pattern"], "^(?i:no|yes)$");
+    assert!(!props["flag"].as_object().unwrap().contains_key("enum"));
+    assert!(!props["name"].as_object().unwrap().contains_key("pattern"));
+    assert_eq!(props["g"]["pattern"], "^(?i:x|y)$");
     // n: a, b and an empty value - cardinality 3 with or without --ignore-case
-    assert!(!props["n"].as_object().unwrap().contains_key("enum"));
+    assert!(!props["n"].as_object().unwrap().contains_key("pattern"));
+
+    let mut validate = wrk.command("validate");
+    validate.args(["case.csv", "case.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+}
+
+// --ignore-case enum/const values are case-folded, and `validate` is case-sensitive, so they
+// used to reject the source data. They are now written as case-insensitive regex patterns.
+#[test]
+#[file_serial]
+fn generate_schema_ignore_case_patterns_validate_source() {
+    let wrk = Workdir::new("generate_schema_ignore_case_patterns_validate_source");
+    wrk.create_from_string(
+        "case.csv",
+        "flag,k,sym,num\nTrue,Kx,A.b|(c),1\ntrue,Kx,a.B|(C),2\nFalse,Kx,[x]^$*+?{1},1\nfalse,Kx,,\
+         2\nTRUE,Kx,A.b|(c),1\n",
+    );
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("case.csv")
+        .args(["--enum-threshold", "3"])
+        .arg("--ignore-case");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "case.csv.schema.json");
+    assert_eq!(props["flag"]["pattern"], "^(?i:false|true)$");
+    assert!(!props["flag"].as_object().unwrap().contains_key("enum"));
+    // const
+    assert_eq!(props["k"]["pattern"], "^(?i:kx)$");
+    assert!(!props["k"].as_object().unwrap().contains_key("const"));
+    // regex metacharacters are escaped; the empty value is allowed by the "null" type
+    assert_eq!(
+        props["sym"]["pattern"],
+        r"^(?i:\[x\]\^\$\*\+\?\{1\}|a\.b\|\(c\))$"
+    );
+    assert!(
+        props["sym"]["type"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::String("null".to_string()))
+    );
+    // integer enums are not case-folded, so they stay enums
+    assert_eq!(props["num"]["enum"], serde_json::json!([1, 2]));
+
+    let mut validate = wrk.command("validate");
+    validate.args(["case.csv", "case.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+
+    // still rejects other values, and the escaped "." only matches a literal dot
+    wrk.create_from_string("bad.csv", "flag,k,sym,num\nmaybe,KX,aXb|(c),1\n");
+    let mut validate_bad = wrk.command("validate");
+    validate_bad.args(["bad.csv", "case.csv.schema.json"]);
+    wrk.assert_err(&mut validate_bad);
+    let errors: String = wrk.from_str(&wrk.path("bad.csv.validation-errors.tsv"));
+    assert!(errors.contains("\"maybe\" does not match"));
+    assert!(errors.contains("\"aXb|(c)\" does not match"));
+    assert!(!errors.contains("\"KX\""));
 }
 
 #[test]

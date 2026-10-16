@@ -66,8 +66,9 @@ Schema options:
     -i, --ignore-case          Ignore case when compiling unique values for enum constraints.
                                String columns are then checked against the enum threshold
                                by their case-insensitive cardinality.
-                               Do note however that the `validate` command is case-sensitive
-                               when validating against enum constraints.
+                               As the `validate` command is case-sensitive, the
+                               enum & const constraints of String columns are written
+                               as equivalent case-insensitive regex patterns instead.
     --strict-dates             Enforce Internet Datetime format (RFC-3339) for
                                detected date/datetime columns. Otherwise, even if
                                columns are inferred as date/datetime, they are set
@@ -243,6 +244,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             field_def_map.insert("pattern".to_string(), pattern.clone());
             winfo!("Added regex pattern constraint for field: {field_name} -> {pattern}");
         }
+    }
+
+    if args.flag_ignore_case {
+        apply_ignore_case_patterns(&mut properties_map);
     }
 
     // generate list of required fields
@@ -999,4 +1004,47 @@ fn should_emit_pattern_constraint(field_def: &Value) -> bool {
     let has_enum = field_def.get("enum").is_some();
 
     type_list.contains(&Value::String("string".to_string())) && !has_enum
+}
+
+/// With --ignore-case, frequency case-folds the unique values, so a String field's enum/const
+/// holds lowercased values that the case-sensitive `validate` would reject in the source data.
+/// Replace them with an equivalent case-insensitive regex pattern.
+fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
+    for (field_name, field_def) in properties_map.iter_mut() {
+        let Some(field_map) = field_def.as_object_mut() else {
+            continue;
+        };
+
+        let values: Vec<String> = if let Some(Value::Array(enum_list)) = field_map.get("enum") {
+            // integer enums are not affected by case folding; nulls are already allowed
+            // by the "null" type of nullable fields
+            if !enum_list.iter().all(|v| v.is_string() || v.is_null()) {
+                continue;
+            }
+            enum_list
+                .iter()
+                .filter_map(|v| v.as_str().map(regex::escape))
+                .collect()
+        } else if let Some(Value::String(const_value)) = field_map.get("const") {
+            // a --pattern-columns pattern was derived from the original-case values,
+            // so it already constrains the field
+            if field_map.contains_key("pattern") {
+                field_map.remove("const");
+                continue;
+            }
+            vec![regex::escape(const_value)]
+        } else {
+            continue;
+        };
+
+        if values.is_empty() {
+            continue;
+        }
+
+        field_map.remove("enum");
+        field_map.remove("const");
+        let pattern = format!("^(?i:{})$", values.join("|"));
+        winfo!("Case-insensitive pattern constraint for field '{field_name}': {pattern}");
+        field_map.insert("pattern".to_string(), Value::String(pattern));
+    }
 }

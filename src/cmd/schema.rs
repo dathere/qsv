@@ -70,9 +70,8 @@ Schema options:
                                enum & const constraints of String columns are written
                                as equivalent case-insensitive regex patterns instead
                                (e.g. "^(?i:false|true)$"). These use the inline `(?i:...)`
-                               flag and escapes of the Rust regex syntax `validate` uses,
-                               so other JSON Schema validators, which expect ECMA-262
-                               regexes, may reject them.
+                               modifier, which other JSON Schema validators may not
+                               support, e.g. on older JavaScript engines.
     --strict-dates             Enforce Internet Datetime format (RFC-3339) for
                                detected date/datetime columns. Otherwise, even if
                                columns are inferred as date/datetime, they are set
@@ -1027,7 +1026,7 @@ fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
             }
             enum_list
                 .iter()
-                .filter_map(|v| v.as_str().map(regex::escape))
+                .filter_map(|v| v.as_str().map(escape_regex_literal))
                 .collect()
         } else if let Some(Value::String(const_value)) = field_map.get("const") {
             // a --pattern-columns pattern was derived from the original-case values,
@@ -1036,7 +1035,7 @@ fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
                 field_map.remove("const");
                 continue;
             }
-            vec![regex::escape(const_value)]
+            vec![escape_regex_literal(const_value)]
         } else {
             continue;
         };
@@ -1051,4 +1050,23 @@ fn apply_ignore_case_patterns(properties_map: &mut Map<String, Value>) {
         winfo!("Case-insensitive pattern constraint for field '{field_name}': {pattern}");
         field_map.insert("pattern".to_string(), Value::String(pattern));
     }
+}
+
+/// Escape a literal for a regex `pattern` outside a character class. Unlike `regex::escape`,
+/// only the ECMA-262 syntax characters are escaped: escapes like `\-`, `\#`, `\&` and `\~`
+/// are fine in Rust regex but invalid in ECMA-262 unicode mode, which is how other JSON Schema
+/// validators (e.g. AJV) compile patterns. Outside a class, those characters are literals in
+/// both.
+fn escape_regex_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        if matches!(
+            c,
+            '\\' | '^' | '$' | '.' | '|' | '?' | '*' | '+' | '(' | ')' | '[' | ']' | '{' | '}'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
 }

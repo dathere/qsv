@@ -539,6 +539,37 @@ fn generate_schema_ignore_case_patterns_validate_source() {
     assert!(!errors.contains("\"KX\""));
 }
 
+// only ECMA-262 syntax characters are escaped: `\-`, `\#`, `\&` and `\~` (as regex::escape
+// writes them) are invalid in ECMA-262 unicode mode, so e.g. AJV failed to compile the schema
+#[test]
+#[file_serial]
+fn generate_schema_ignore_case_patterns_portable_escapes() {
+    let wrk = Workdir::new("generate_schema_ignore_case_patterns_portable_escapes");
+    wrk.create_from_string(
+        "punct.csv",
+        "flag,k\nTrue,K-x#&~ /\ntrue,K-x#&~ /\nfalse,K-x#&~ /\n",
+    );
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("punct.csv")
+        .args(["--enum-threshold", "3"])
+        .arg("--ignore-case");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "punct.csv.schema.json");
+    assert_eq!(props["k"]["pattern"], "^(?i:k-x#&~ /)$");
+
+    let mut validate = wrk.command("validate");
+    validate.args(["punct.csv", "punct.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+
+    // the unescaped characters are still literals
+    wrk.create_from_string("bad.csv", "flag,k\ntrue,K-y#&~ /\n");
+    let mut validate_bad = wrk.command("validate");
+    validate_bad.args(["bad.csv", "punct.csv.schema.json"]);
+    wrk.assert_err(&mut validate_bad);
+}
+
 #[test]
 #[file_serial]
 fn generate_schema_tsv_delimiter_detection_issue_2997() {

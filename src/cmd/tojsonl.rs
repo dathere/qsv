@@ -377,7 +377,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 // an empty value is treated as the falsy side of the
                                 // boolean pair (the t/null, y/null, 1/null inference rule
                                 // explicitly admits null as the false case).
-                                if let 't' | 'y' | '1' = boolcheck(field, &mut temp_string2) {
+                                // Trim regardless of --trim: the boolean domain was inferred
+                                // from trimmed values, so " True " must not become false.
+                                if let 't' | 'y' | '1' = boolcheck(field.trim(), &mut temp_string2)
+                                {
                                     "true"
                                 } else {
                                     "false"

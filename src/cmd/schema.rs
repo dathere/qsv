@@ -68,7 +68,11 @@ Schema options:
                                by their case-insensitive cardinality.
                                As the `validate` command is case-sensitive, the
                                enum & const constraints of String columns are written
-                               as equivalent case-insensitive regex patterns instead.
+                               as equivalent case-insensitive regex patterns instead
+                               (e.g. "^(?i:false|true)$"). These use the inline `(?i:...)`
+                               flag and escapes of the Rust regex syntax `validate` uses,
+                               so other JSON Schema validators, which expect ECMA-262
+                               regexes, may reject them.
     --strict-dates             Enforce Internet Datetime format (RFC-3339) for
                                detected date/datetime columns. Otherwise, even if
                                columns are inferred as date/datetime, they are set

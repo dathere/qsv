@@ -87,7 +87,7 @@ qsv schema --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑enum‑threshold`&nbsp; | string | Cardinality threshold for adding enum constraints. Enum constraints are compiled for String & Integer types. | `50` |
-| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints. |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Ignore case when compiling unique values for enum constraints. String columns are then checked against the enum threshold by their case-insensitive cardinality. Do note however that the `validate` command is case-sensitive when validating against enum constraints. |  |
 | &nbsp;`‑‑strict‑dates`&nbsp; | flag | Enforce Internet Datetime format (RFC-3339) for detected date/datetime columns. Otherwise, even if columns are inferred as date/datetime, they are set to type "string" in the schema instead of "date" or "date-time". |  |
 | &nbsp;`‑‑strict‑formats`&nbsp; | flag | Enforce JSON Schema format constraints for detected email, hostname, and IP address columns. When enabled, String fields are checked against email, hostname, IPv4, and IPv6 formats. Format constraints are only added if ALL unique values in the field match the detected format. |  |
 | &nbsp;`‑‑pattern‑columns`&nbsp; | string | Select columns to derive regex pattern constraints. That is, this will create a regular expression that matches all values for each specified column. Columns are selected using `select` syntax (see `qsv select --help` for details). |  |

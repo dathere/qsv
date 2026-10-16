@@ -64,6 +64,8 @@ Schema options:
                                Enum constraints are compiled for String & Integer types.
                                [default: 50]
     -i, --ignore-case          Ignore case when compiling unique values for enum constraints.
+                               String columns are then checked against the enum threshold
+                               by their case-insensitive cardinality.
                                Do note however that the `validate` command is case-sensitive
                                when validating against enum constraints.
     --strict-dates             Enforce Internet Datetime format (RFC-3339) for
@@ -345,6 +347,8 @@ pub fn infer_schema_from_stats(
         args.flag_enum_threshold,
         &mut const_column_indices,
         &csv_stats,
+        args.flag_strict_formats,
+        args.flag_ignore_case,
     );
 
     // invoke cmd::frequency to get unique values for each field
@@ -434,7 +438,13 @@ pub fn infer_schema_from_stats(
                             .unwrap_or(&empty_string)
                             .to_string(),
                     );
-                } else if let Some(values) = unique_values_map.get(&header_string) {
+                } else if let Some(values) = unique_values_map.get(&header_string)
+                    && (low_cardinality_column_indices.contains(&((i + 1) as u64))
+                        // values excludes nulls, but stats cardinality counts them
+                        || (args.flag_ignore_case
+                            && values.len() as u64 + u64::from(col_null_count > 0)
+                                <= args.flag_enum_threshold))
+                {
                     for value in values {
                         enum_list.push(Value::String(value.to_string()));
                     }
@@ -457,7 +467,9 @@ pub fn infer_schema_from_stats(
 
                 // enum constraint — silently skip values that don't parse so
                 // a single malformed value doesn't sink the whole enum list
-                if let Some(values) = unique_values_map.get(&header_string) {
+                if low_cardinality_column_indices.contains(&((i + 1) as u64))
+                    && let Some(values) = unique_values_map.get(&header_string)
+                {
                     for value in values {
                         if let Ok(int_value) =
                             atoi_simd::parse::<i64, false, false>(value.as_bytes())
@@ -587,31 +599,42 @@ pub fn infer_schema_from_stats(
     Ok(properties_map)
 }
 
-/// get column selector argument string for low cardinality columns
+/// get column selector argument string for the columns whose unique values are needed
+/// (low cardinality, constant and, with --strict-formats, String columns)
 fn build_low_cardinality_column_selector_arg(
     low_cardinality_column_indices: &mut Vec<u64>,
     enum_cardinality_threshold: u64,
     const_column_indices: &mut Vec<u64>,
     csv_stats: &[StatsData],
+    strict_formats: bool,
+    ignore_case: bool,
 ) -> String {
     low_cardinality_column_indices.clear();
 
-    // identify low cardinality columns
+    // columns whose unique values we need from cmd::frequency (1-based column selector):
+    // low cardinality columns for enum, constant columns for const, and every String column
+    // with --strict-formats (format inference) or --ignore-case (stats cardinality is
+    // case-sensitive, so a column may only fall under the threshold once case-folded)
+    let mut selected_column_indices: Vec<u64> = Vec::new();
+
     csv_stats.iter().enumerate().for_each(|(i, stat)| {
-        // get Cardinality
+        let col_index = (i + 1) as u64;
         let col_cardinality = stat.cardinality;
 
         if col_cardinality == 1 {
-            const_column_indices.push((i + 1) as u64);
+            const_column_indices.push(col_index);
+            selected_column_indices.push(col_index);
         } else if col_cardinality > 1 && col_cardinality <= enum_cardinality_threshold {
-            // column selector uses 1-based index
-            low_cardinality_column_indices.push((i + 1) as u64);
+            low_cardinality_column_indices.push(col_index);
+            selected_column_indices.push(col_index);
+        } else if (strict_formats || ignore_case) && stat.r#type == "String" {
+            selected_column_indices.push(col_index);
         }
     });
 
     debug!("low cardinality columns: {low_cardinality_column_indices:?}");
 
-    let column_select_arg: String = low_cardinality_column_indices
+    let column_select_arg: String = selected_column_indices
         .iter()
         .map(ToString::to_string)
         .join(",");
@@ -678,12 +701,11 @@ fn get_unique_values(
     args: &util::SchemaArgs,
     column_select_arg: &str,
 ) -> CliResult<HashMap<String, Vec<String>>> {
-    // Note: an empty `column_select_arg` is intentionally allowed to fall
-    // through here. SelectColumns::parse("") expands to "select all columns",
-    // which lets frequency build a unique-values map for every column —
-    // including those whose cardinality exceeds `--enum-threshold`. That is
-    // load-bearing: enum constraints are emitted from this map regardless of
-    // whether the column was in `low_cardinality_column_indices`.
+    // An empty `column_select_arg` must NOT reach cmd::frequency: SelectColumns::parse("")
+    // means "select all columns", which would emit enums for every column (#4829).
+    if column_select_arg.is_empty() {
+        return Ok(HashMap::new());
+    }
 
     // prepare arg for invoking cmd::frequency
     let freq_args = crate::cmd::frequency::Args {

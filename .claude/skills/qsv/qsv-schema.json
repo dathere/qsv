@@ -39,7 +39,7 @@
       {
         "flag": "--ignore-case",
         "type": "flag",
-        "description": "Ignore case when compiling unique values for enum constraints. Do note however that the `validate` command is case-sensitive when validating against enum constraints."
+        "description": "Ignore case when compiling unique values for enum constraints. String columns are then checked against the enum threshold by their case-insensitive cardinality. Do note however that the `validate` command is case-sensitive when validating against enum constraints."
       },
       {
         "flag": "--memcheck",

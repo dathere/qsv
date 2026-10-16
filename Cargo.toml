@@ -549,6 +549,12 @@ plotly = { git = "https://github.com/plotly/plotly.rs", rev = "00fe0512e9f924bd0
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }
 
+# use our patched fork to bump zip to 9 until our PR is merged & released: every zip 8.x
+# is yanked, so webdriver-downloader 0.17's `zip = "^8"` breaks a fresh `cargo update`.
+# https://github.com/ik1ne/webdriver-downloader/pull/67 - it's semver-breaking upstream
+# (ZipError is in its public API), so expect 0.18.0: bump the dep above when dropping this.
+webdriver-downloader = { git = "https://github.com/jqnatividad/webdriver-downloader", rev = "19795f9006f77ea3592bbc0ea26e00247a3df4c3" }
+
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
 # It's qsv's policy to use the latest upstream of polars/py-polars

@@ -306,6 +306,34 @@ fn tojsonl_boolean_case_insensitive_with_low_cardinality_column() {
     assert_eq!(got, expected);
 }
 
+// the boolean domain is inferred from trimmed values, so without --trim a padded " True "
+// must still convert to true, not false
+#[test]
+#[serial]
+fn tojsonl_boolean_padded_values_without_trim() {
+    let wrk = Workdir::new("tojsonl_boolean_padded_values_without_trim");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["flag", "g"],
+            svec!["True", "x"],
+            svec!["False", "y"],
+            svec!["false", "x"],
+            svec![" True ", "y"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"{"flag":true,"g":"x"}
+{"flag":false,"g":"y"}
+{"flag":false,"g":"x"}
+{"flag":true,"g":"y"}"#;
+    assert_eq!(got, expected);
+}
+
 #[test]
 #[serial]
 fn tojsonl_is_boolean_case_sensitive() {

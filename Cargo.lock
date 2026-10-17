@@ -2023,7 +2023,7 @@ dependencies = [
 [[package]]
 name = "csvs_convert"
 version = "0.13.2"
-source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats-redux#6dd65a56e813edcb3185cd348aa11e9343abe4c1"
+source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats-redux#8ba42bd56408d8b3512cc9a02ac8fceed70b1bad"
 dependencies = [
  "chrono",
  "counter",
@@ -8105,12 +8105,12 @@ dependencies = [
 
 [[package]]
 name = "rust_xlsxwriter"
-version = "0.99.1"
+version = "0.100.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f2d2cda7223168a14fb86bc7411dbc3379bd7d49749ecc53b91ed98585b6b0"
+checksum = "c44904ffb6c57b148ffcc8ce3011c28bc49b97e1a8343b2d632283cd566e1393"
 dependencies = [
  "tempfile",
- "zip 8.6.0",
+ "zip 9.0.4",
 ]
 
 [[package]]

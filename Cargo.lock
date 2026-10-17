@@ -2108,16 +2108,6 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25ae13da2f202d56bd7f91c25fba009e7717a1e4a1cc98a76d844b65ae912e9d"
-dependencies = [
- "darling_core 0.23.0",
- "darling_macro 0.23.0",
-]
-
-[[package]]
-name = "darling"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed17f5901b6630b993ca003def43f2f8ef4014fc13b047b57aad617ff32bc2ec"
@@ -2133,19 +2123,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d00b9596d185e565c2207a0b01f8bd1a135483d02d9b7b0a54b11da8d53412e"
 dependencies = [
  "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9865a50f7c335f53564bb694ef660825eb8610e0a53d3e11bf1b0d3df31e03b0"
-dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
@@ -2173,17 +2150,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc34b93ccb385b40dc71c6fceac4b2ad23662c7eeb248cf10d529b7e055b6ead"
 dependencies = [
  "darling_core 0.20.11",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "darling_macro"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac3984ec7bd6cfa798e62b4a642426a5be0e68f9401cfc2a01e3fa9ea2fcdb8d"
-dependencies = [
- "darling_core 0.23.0",
  "quote",
  "syn 2.0.119",
 ]
@@ -2395,9 +2361,9 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "6.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
 dependencies = [
  "dirs-sys",
 ]
@@ -4768,15 +4734,6 @@ checksum = "e20f57f9918e5bd7bc58c22cdd70a6afc7375d4dd9683af5f2b34bd3d2bba619"
 
 [[package]]
 name = "lzma-rust2"
-version = "0.16.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca93e534d1142d1d0dcca6d25fe302508a5dfb40b302802904577725ea0b695b"
-dependencies = [
- "sha2 0.11.1",
-]
-
-[[package]]
-name = "lzma-rust2"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7277c9742229dc25243236d578b6471a798c554512c6f6a04365ec2e87c2a3bb"
@@ -6024,14 +5981,13 @@ dependencies = [
 
 [[package]]
 name = "plotly"
-version = "0.14.1"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+version = "0.15.0"
+source = "git+https://github.com/dathere/plotly?rev=a21da1f14717728b7f9fbc84fa99118eab52a8fd#a21da1f14717728b7f9fbc84fa99118eab52a8fd"
 dependencies = [
  "askama",
  "async-trait",
  "dyn-clone",
  "erased-serde",
- "once_cell",
  "plotly_derive",
  "plotly_static",
  "rand 0.10.3",
@@ -6047,19 +6003,19 @@ dependencies = [
 
 [[package]]
 name = "plotly_derive"
-version = "0.14.1"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+version = "0.15.0"
+source = "git+https://github.com/dathere/plotly?rev=a21da1f14717728b7f9fbc84fa99118eab52a8fd#a21da1f14717728b7f9fbc84fa99118eab52a8fd"
 dependencies = [
- "darling 0.23.0",
+ "darling 0.24.1",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.9",
 ]
 
 [[package]]
 name = "plotly_static"
-version = "0.1.0"
-source = "git+https://github.com/plotly/plotly.rs?rev=00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d#00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d"
+version = "0.2.0"
+source = "git+https://github.com/dathere/plotly?rev=a21da1f14717728b7f9fbc84fa99118eab52a8fd#a21da1f14717728b7f9fbc84fa99118eab52a8fd"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -6073,7 +6029,6 @@ dependencies = [
  "tokio",
  "urlencoding",
  "webdriver-downloader",
- "zip 8.6.0",
 ]
 
 [[package]]
@@ -11015,25 +10970,12 @@ version = "8.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
 dependencies = [
- "aes",
- "bzip2",
- "constant_time_eq 0.4.2",
  "crc32fast",
- "deflate64",
  "flate2",
- "getrandom 0.4.3",
- "hmac",
  "indexmap 2.14.2",
- "lzma-rust2 0.16.5",
  "memchr",
- "pbkdf2",
- "ppmd-rust",
- "sha1",
- "time",
  "typed-path",
- "zeroize",
  "zopfli",
- "zstd 0.13.3",
 ]
 
 [[package]]

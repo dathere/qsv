@@ -324,7 +324,7 @@ phf = { version = "0.14", features = ["macros"] }
 # keeps the base `viz` build lean; `plotly_embed_js` (via the `viz` feature) makes the
 # HTML self-contained, and `static_export_default` (via `viz_static`) adds PNG/SVG/PDF
 # export through a webdriver-managed headless browser. NO polars dependency. See #302.
-plotly = { version = "0.14.1", default-features = false, optional = true }
+plotly = { version = "0.15", default-features = false, optional = true }
 # viz UI localization. Locale YAMLs live under src/cmd/locales/ (NOT a top-level
 # locales/ dir) so the existing "src/**/*" package include covers them; rust-i18n
 # resolves the path relative to CARGO_MANIFEST_DIR at compile time.
@@ -542,9 +542,8 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# Our PRs have been merged upstream! We can now use the official plotly crate instead of our fork
-# until the next plotly.rs release.
-plotly = { git = "https://github.com/plotly/plotly.rs", rev = "00fe0512e9f924bd0fc2edfc6cc617a1604f4e0d" }
+# plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442) until 0.15.0 is on crates.io.
+plotly = { git = "https://github.com/dathere/plotly", rev = "a21da1f14717728b7f9fbc84fa99118eab52a8fd" }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }

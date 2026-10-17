@@ -571,8 +571,8 @@ fn generate_schema_ignore_case_patterns_portable_escapes() {
 }
 
 // `İ` lowercases to `i` + U+0307, which no case-insensitive regex maps back to `İ`, so the
-// pattern accepts both. (A single-value İzmir column is avoided: its byte-based minLength
-// is a separate bug.)
+// pattern accepts both. (See schema_unicode_lengths_with_ignore_case for a single-value
+// İzmir column.)
 #[test]
 #[file_serial]
 fn generate_schema_ignore_case_patterns_dotted_capital_i() {
@@ -1126,4 +1126,73 @@ fn schema_stats_jsonl_never_out_permissions_its_source_csv() {
             "sanity: {artifact} should contain source values, else this test proves nothing"
         );
     }
+}
+
+// stats lengths count UTF-8 bytes, but JSON Schema minLength/maxLength count characters, so
+// non-ASCII String columns used to get byte bounds that rejected their own source data
+#[test]
+#[file_serial]
+fn schema_unicode_character_bounds_validate_original_csv() {
+    // Explicitly cover a String column above and at the enum threshold.
+    for threshold in [2, 50] {
+        let wrk = Workdir::new(&format!("schema_unicode_character_bounds_{threshold}"));
+        wrk.create_from_string(
+            "unicode.csv",
+            "name,ascii,optional,flag\n上海,abc,é,yes\n李,defg,,no\n😀😀,hij,e\u{301},yes\n",
+        );
+        let mut schema = wrk.command("schema");
+        schema
+            .arg("unicode.csv")
+            .args(["--enum-threshold", &threshold.to_string()]);
+        wrk.assert_success(&mut schema);
+
+        let text: String = wrk.from_str(&wrk.path("unicode.csv.schema.json"));
+        let schema: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(schema["properties"]["name"]["minLength"], 1);
+        assert_eq!(schema["properties"]["name"]["maxLength"], 2);
+        assert_eq!(schema["properties"]["ascii"]["minLength"], 3);
+        assert_eq!(schema["properties"]["ascii"]["maxLength"], 4);
+        assert_eq!(schema["properties"]["optional"]["minLength"], 0);
+        assert_eq!(schema["properties"]["optional"]["maxLength"], 2);
+        assert_eq!(
+            schema["properties"]["flag"]["enum"],
+            serde_json::json!(["no", "yes"])
+        );
+        assert_eq!(
+            schema["properties"]["name"].get("enum").is_some(),
+            threshold == 50
+        );
+        assert_eq!(
+            schema["properties"]["ascii"].get("enum").is_some(),
+            threshold == 50
+        );
+
+        let mut validate = wrk.command("validate");
+        validate.args(["unicode.csv", "unicode.csv.schema.json"]);
+        wrk.assert_success(&mut validate);
+    }
+}
+
+// `İ` is 2 bytes in UTF-8, so a single-value İzmir column got minLength 6 and the
+// --ignore-case schema rejected its own source data
+#[test]
+#[file_serial]
+fn schema_unicode_lengths_with_ignore_case() {
+    let wrk = Workdir::new("schema_unicode_lengths_with_ignore_case");
+    wrk.create_from_string("c.csv", "id,city\n1,İzmir\n2,İzmir\n3,İzmir\n");
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("c.csv")
+        .args(["--enum-threshold", "3"])
+        .arg("--ignore-case");
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "c.csv.schema.json");
+    assert_eq!(props["city"]["minLength"], 5);
+    assert_eq!(props["city"]["maxLength"], 5);
+    assert_eq!(props["city"]["pattern"], "^(?i:(?:i\u{307}|\u{130})zmir)$");
+
+    let mut validate = wrk.command("validate");
+    validate.args(["c.csv", "c.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
 }

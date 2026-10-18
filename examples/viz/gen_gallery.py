@@ -315,12 +315,14 @@ LAZY_GL_JS = (
     "function show(el){var r=reg.get(el);if(r.live)return;r.live=true;"
     "Promise.resolve(r.render()).then(function(){el.style.minHeight=\"\";"
     "if(typeof qsvInitPlot===\"function\")qsvInitPlot(el);},function(){});}"
-    # purge drops plotly's event handlers (and the layout a camera fit was baked from), so clear
-    # the per-plot init flags for the next render to redo them. The gl3d wheel fix is a plain DOM
-    # listener on the same element and survives, so its flag stays.
+    # purge drops plotly's event handlers, so clear the init flag for the next render to redo
+    # them. Keep __qsvBaked: qsvApplyCamera writes the fitted zoom into the FIGS layout that the
+    # next render reuses, so re-capturing it would re-apply the size correction and drift the
+    # zoom on every revisit. The gl3d wheel fix is a plain DOM listener on the same element and
+    # survives purge, so its flag stays too.
     "function hide(el){var r=reg.get(el);if(!r.live||fsHolds(el))return;"
     "el.style.minHeight=el.offsetHeight+\"px\";r.live=false;"
-    "delete el.__qsvInitFit;delete el.__qsvBaked;Plotly.purge(el);}"
+    "delete el.__qsvInitFit;Plotly.purge(el);}"
     "if(window.IntersectionObserver){"
     "io=new IntersectionObserver(function(es){es.forEach(function(e){"
     "(e.isIntersecting?show:hide)(e.target);});},{rootMargin:M});"

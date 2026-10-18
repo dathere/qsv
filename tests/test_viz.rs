@@ -5795,8 +5795,17 @@ fn viz_smart_cyclic_panel_draws_every_real_cycle() {
     );
     // the second ring sits in its own side-by-side polar subplot
     assert!(html.contains(r#""subplot":"polar2""#));
+    // every ring reads like a clock face: first phase at 12 o'clock, running clockwise
+    assert_eq!(
+        html.matches(r#""angularaxis":{"direction":"clockwise","rotation":90.0}"#)
+            .count(),
+        2,
+        "both rings should be clockwise from the top: {html}"
+    );
     assert!(
-        html.contains(r#""polar2":{"domain":{"x":[0.53"#),
+        html.contains(
+            r#""polar2":{"angularaxis":{"direction":"clockwise","rotation":90.0},"domain":{"x":[0.53"#
+        ),
         "html: {html}"
     );
 }

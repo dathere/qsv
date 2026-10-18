@@ -41044,10 +41044,20 @@ fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) 
     // taller top band (with the title lifted to sit above the spill, see
     // POLAR_TITLE_Y_SHIFT) keeps the title clear of the 12-o'clock label, and a taller
     // bottom band keeps the 6-o'clock label from being clipped by the panel edge.
+    // read like a clock face (and like `viz barpolar`): the first phase (00h, Mon, Jan) at
+    // 12 o'clock, running clockwise. `cyclic_panel_inline_html` copies this `polar` onto every
+    // ring's subplot.
     let mut layout = Layout::new()
         .show_legend(false)
         .height(row_height)
-        .margin(Margin::new().top(64).bottom(44).left(20).right(20).pad(4));
+        .margin(Margin::new().top(64).bottom(44).left(20).right(20).pad(4))
+        .polar(
+            LayoutPolar::new().angular_axis(
+                AngularAxis::new()
+                    .direction(PolarDirection::Clockwise)
+                    .rotation(90.0),
+            ),
+        );
     if !themed {
         layout = layout
             .font(Font::new().family(FONT_FAMILY).color(INK).size(12))

@@ -547,7 +547,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 
 # plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442: full plotly.js 3.7 trace coverage)
 # until 0.15.0 is on crates.io.
-plotly = { git = "https://github.com/dathere/plotly", rev = "43a4ee42b48176f962d6f2ff852058c7337049bc" }
+plotly = { git = "https://github.com/dathere/plotly", rev = "3223bd7df96cb587e054c09cc70a1ee0c62ef52c" }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }

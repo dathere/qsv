@@ -313,9 +313,14 @@ LAZY_GL_JS = (
     "var M=\"100% 0px\",reg=new Map(),io=null;"
     "function fsHolds(el){var f=document.fullscreenElement;return !!f&&(f===el||el.contains(f));}"
     "function show(el){var r=reg.get(el);if(r.live)return;r.live=true;"
-    "Promise.resolve(r.render()).then(function(){el.style.minHeight=\"\";},function(){});}"
+    "Promise.resolve(r.render()).then(function(){el.style.minHeight=\"\";"
+    "if(typeof qsvInitPlot===\"function\")qsvInitPlot(el);},function(){});}"
+    # purge drops plotly's event handlers (and the layout a camera fit was baked from), so clear
+    # the per-plot init flags for the next render to redo them. The gl3d wheel fix is a plain DOM
+    # listener on the same element and survives, so its flag stays.
     "function hide(el){var r=reg.get(el);if(!r.live||fsHolds(el))return;"
-    "el.style.minHeight=el.offsetHeight+\"px\";r.live=false;Plotly.purge(el);}"
+    "el.style.minHeight=el.offsetHeight+\"px\";r.live=false;"
+    "delete el.__qsvInitFit;delete el.__qsvBaked;Plotly.purge(el);}"
     "if(window.IntersectionObserver){"
     "io=new IntersectionObserver(function(es){es.forEach(function(e){"
     "(e.isIntersecting?show:hide)(e.target);});},{rootMargin:M});"
@@ -485,10 +490,10 @@ FS_BUTTON_JS = (
     'function qsvInstallGl3dFix(gd){if(gd.__qsvGl3dFix||!qsvSceneKeys(gd).length)return;'
     'gd.__qsvGl3dFix=true;gd.addEventListener("wheel",function(e){'
     'if(document.fullscreenElement!==gd)e.stopPropagation();},{capture:true,passive:true});}'
-    'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
-    'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
-    'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
-    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);qsvApplyScrollZoom(gd);qsvInstallGl3dFix(gd);'
+    # Per-plot setup, also called by qsvLazy after each lazy render (a lazily-rendered figure isn't
+    # a .js-plotly-plot yet when qsvInitFit scans). Returns false while the plot has no data yet.
+    'function qsvInitPlot(gd){if(gd.__qsvInitFit)return true;if(!gd.data)return false;'
+    'gd.__qsvInitFit=true;qsvFitNow(gd);qsvApplyScrollZoom(gd);qsvInstallGl3dFix(gd);'
     # Core/Full extent buttons bake an assumed-px zoom; adopt the clicked extent as the new fit
     # reference and re-aim the camera for the current size (mirrors the CLI handler in viz.rs).
     'if(gd.on)gd.on("plotly_buttonclicked",function(ed){try{'
@@ -496,8 +501,11 @@ FS_BUTTON_JS = (
     'var hit=false;Object.keys(gd.__qsvBaked).forEach(function(k){var z=args[k+".zoom"];'
     'if(typeof z!=="number")return;var c=args[k+".center"];'
     'gd.__qsvBaked[k]={z:z,c:(c!==undefined?c:gd.__qsvBaked[k].c)};hit=true;});'
-    'if(hit)setTimeout(function(){qsvFitNow(gd);},0);}catch(e){}});'
-    '}else pending=true;});'
+    'if(hit)setTimeout(function(){qsvFitNow(gd);},0);}catch(e){}});return true;}'
+    'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
+    'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
+    'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){'
+    'if(!qsvInitPlot(gd))pending=true;});'
     'if(pending&&qsvTries++<100)setTimeout(qsvInitFit,50);}setTimeout(qsvInitFit,0);'
     # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
     # the post-resize dims rather than stale pre-change ones.

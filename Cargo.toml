@@ -180,7 +180,7 @@ bytemuck = { version = "1.24", features = [
 byteorder = "1.5"
 bytes = "1"
 cached = { version = "4", features = ["ahash", "redb_store", "redis_store"] }
-calamine = { version = "0.36", features = ["chrono"] }
+calamine = { version = "0.37", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
@@ -532,9 +532,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
-
-# use latest upstream of calamine with zip 9 fix and other recent improvements
-calamine = { git = "https://github.com/tafia/calamine", rev = "b05d6cd2e6c1b4bce4a390f9d097fdcb8822313f" }
 
 # use latest upstream now that our PR has been merged
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6acf060" }

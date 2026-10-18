@@ -763,6 +763,11 @@ FIGURES = [
     ("radar", "Multi-axis brand comparison (per-axis mean per series).",
      False, ["radar", "product_ratings.csv", "--cols", "battery,camera,performance,display,value,design",
              "--series", "brand"]),
+    ("barpolar", "Wind rose: 1,440 synthetic hourly observations counted per compass direction and "
+     "stacked by speed band. Compass points sit at their true bearings on a 16-point rose, and the "
+     "bars run clockwise from north.",
+     False, ["barpolar", "wind_obs.csv", "--x", "direction", "--series", "speed_band",
+             "--title", "Wind rose by speed band (km/h)"]),
     ("sankey", "Web session funnel (duplicate edges aggregated).",
      True, ["sankey", "web_flows.csv", "--source", "source", "--target", "target", "--value", "sessions"]),
     ("treemap", "Part-to-whole spend by plan then region, sized by summed monthly_spend. Rounded "

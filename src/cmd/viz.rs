@@ -43,6 +43,13 @@ Chart types (subcommands):
     ohlc        Financial OHLC bars (same inputs as candlestick).
     sankey      Flow diagram. --source, --target, optional --value column.
     radar       Polar/radar chart of numeric --cols, optional --series per trace.
+    barpolar    Polar bar chart (a wind rose): one bar per --x category around the
+                circle, clockwise from the top, as long as the --y total (rows are
+                counted when --y is omitted; see --agg). Compass points (N, NE, NNE...)
+                sit at their bearings on a full 8- or 16-point rose. Other categories
+                get evenly spaced slots in the order they first appear in the file
+                (numeric ones sort ascending); --degrees places numeric angles at their
+                true bearing instead. --series stacks one colored segment per value.
     treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
                 (levels, outermost first), optional --value and --agg.
     sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.
@@ -155,6 +162,12 @@ Examples:
   # Radar chart comparing numeric metrics, one trace per team
   qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 
+  # Wind rose: observation counts per compass direction, stacked by speed band
+  qsv viz barpolar wind.csv --x direction --series speed_band -o windrose.html
+
+  # Wind rose from bearings in degrees, each bar at its true angle
+  qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html
+
   # Parallel coordinates across four measures, each line colored by price
   qsv viz parcoords cars.csv --cols mpg,horsepower,weight,acceleration --color price -o parcoords.html
 
@@ -205,6 +218,7 @@ Usage:
     qsv viz ohlc        [options] <input>
     qsv viz sankey      [options] <input>
     qsv viz radar       [options] <input>
+    qsv viz barpolar    [options] <input>
     qsv viz map         [options] <input>
     qsv viz geo         [options] <input>
     qsv viz choropleth  [options] <input>
@@ -233,7 +247,7 @@ viz options:
                            numeric axes, in order (default: all numeric).
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
-                           radar, map and geo.
+                           radar, barpolar (stacked), map and geo.
     --color <col>          For scatter/scatter3d/map/geo: a numeric column to encode as
                            marker color (a continuous colorscale with a colorbar). For
                            categorical coloring, use the --series option instead. Cannot
@@ -248,6 +262,11 @@ viz options:
                            third data variable. In map density mode, this column is the
                            heatmap weight.
     --donut                Render a pie chart as a donut (with a center hole).
+    --degrees              For barpolar: read --x as an angle in degrees (0 = north,
+                           clockwise) and draw each bar at that angle, so gaps in the
+                           data stay gaps. Without it, each distinct --x value gets an
+                           evenly spaced slot, which suits hours, months and complete
+                           degree bins (compass names are placed by bearing either way).
     --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
     --high <col>           High-price column for candlestick/ohlc charts.
     --low <col>            Low-price column for candlestick/ohlc charts.
@@ -271,6 +290,8 @@ viz options:
                            the density grid (default: 20).
     --agg <fn>             How to combine values. For bar/line, aggregate the y values
                            when the x value repeats: one of sum, mean, count, min, max.
+                           For barpolar, the same per category (and series): sum by
+                           default, and only count when the y column is omitted.
                            For treemap/sunburst/icicle, only the additive aggregations
                            apply: count (the default) or sum (which requires --value).
                            For choropleth, how rows sharing a region are combined: sum
@@ -781,10 +802,10 @@ use plotly::layout::update_menu::{
     Button, ButtonBuilder, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
 };
 use plotly::{
-    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Parcoords, Pie, Plot, Sankey,
-    Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces,
-    Treemap, Violin, Waterfall,
+    Bar, BarPolar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour,
+    DensityMap, Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Parcoords, Pie, Plot,
+    Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace,
+    Traces, Treemap, Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -796,11 +817,11 @@ use plotly::{
     funnel::Connector as FunnelConnector,
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
-        Animation, AnimationMode, AnimationOptions, Annotation, Axis, AxisType, CategoryOrder,
-        Center, Frame, FrameSettings, GeoFitBounds, GeoResolution, HoverMode, Layout, LayoutGeo,
-        LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection, ProjectionType,
-        RangeSlider, Slider, SliderCurrentValue, SliderStepBuilder, TransitionSettings,
-        themes::BuiltinTheme,
+        AngularAxis, AngularAxisType, Animation, AnimationMode, AnimationOptions, Annotation, Axis,
+        AxisType, CategoryOrder, Center, Frame, FrameSettings, GeoFitBounds, GeoResolution,
+        HoverMode, Layout, LayoutGeo, LayoutMap, LayoutPolar, LayoutScene, MapBounds, MapStyle,
+        Margin, ModeBar, PolarBarMode, PolarDirection, Projection, ProjectionType, RangeSlider,
+        Slider, SliderCurrentValue, SliderStepBuilder, TransitionSettings, themes::BuiltinTheme,
     },
     parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
     parcoords::{Dimension as ParcoordsDimension, ParcoordsLine},
@@ -1631,6 +1652,7 @@ struct Args {
     cmd_ohlc:                bool,
     cmd_sankey:              bool,
     cmd_radar:               bool,
+    cmd_barpolar:            bool,
     cmd_map:                 bool,
     cmd_geo:                 bool,
     cmd_treemap:             bool,
@@ -1647,6 +1669,7 @@ struct Args {
     flag_cols:               Option<SelectColumns>,
     flag_series:             Option<SelectColumns>,
     flag_donut:              bool,
+    flag_degrees:            bool,
     // scatter encodings: map a numeric column to per-point marker color (continuous
     // colorscale) and/or marker size (bubble chart). Mutually exclusive with --series.
     flag_color:              Option<SelectColumns>,
@@ -2324,6 +2347,10 @@ fn build_plot(
         }
     }
 
+    if args.flag_degrees && !matches!(kind, Chart::BarPolar) {
+        return fail_incorrectusage_clierror!("--degrees only applies to `viz barpolar`.");
+    }
+
     // --rangeslider adds an x-axis navigator strip; it only makes sense on cartesian charts with a
     // real x-axis (ordered x especially: line, candlestick/ohlc), so reject it on non-cartesian
     // kinds (map/geo/choropleth/pie/sankey/radar/hierarchy/splom/parcats/scatter3d/heatmap/
@@ -2441,6 +2468,10 @@ fn build_plot(
     if matches!(chart_kind(args), Chart::Parcoords) {
         return build_parcoords_plot(args);
     }
+    // barpolar draws on a `polar` subplot, whose bar mode and angular axis it sets itself.
+    if matches!(chart_kind(args), Chart::BarPolar) {
+        return build_barpolar_plot(args);
+    }
 
     let mut plot = Plot::new();
 
@@ -2555,6 +2586,7 @@ enum Chart {
     Ohlc,
     Sankey,
     Radar,
+    BarPolar,
     Map,
     Geo,
     Choropleth,
@@ -2597,6 +2629,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Sankey
     } else if args.cmd_radar {
         Chart::Radar
+    } else if args.cmd_barpolar {
+        Chart::BarPolar
     } else if args.cmd_map {
         Chart::Map
     } else if args.cmd_geo {
@@ -12634,6 +12668,199 @@ fn build_funnel_chart(args: &Args) -> CliResult<Box<dyn Trace>> {
         .connector(FunnelConnector::new().visible(true)))
 }
 
+/// `viz barpolar`: a polar bar chart (wind rose). Each `--x` category is one angular slot, its bar
+/// as long as the `--agg` of `--y` over that category's rows (sum by default), or the row count
+/// when `--y` is omitted. `--series` splits each bar into stacked, colored segments.
+///
+/// By default the angular axis is forced to `category`: plotly would otherwise read numeric
+/// labels (hours, months) as DEGREES and bunch "1".."12" into a 12-degree wedge. Numeric labels
+/// are sorted ascending instead, and the rest keep first-appearance order like `viz funnel`.
+/// Evenly spaced slots misplace sparse bearings (only 0, 90 and 135 would get thirds of the
+/// circle), so `--degrees` switches to a linear axis that draws each bar at its true angle,
+/// normalized into [0, 360) so 360 and 0 share a bar. Either way the axis runs clockwise from
+/// 12 o'clock, the wind-rose and clock-face convention.
+fn build_barpolar_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let theta_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let value_idx = match args.flag_y.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "y")?),
+        None => None,
+    };
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let agg = match (parse_agg(args.flag_agg.as_deref())?, value_idx) {
+        (Some(agg), Some(_)) => agg,
+        (None | Some(Agg::Count), None) => Agg::Count,
+        (Some(_), None) => {
+            return fail_incorrectusage_clierror!(
+                "--agg sum/mean/min/max needs a --y value column. Without --y, `viz barpolar` \
+                 counts the rows in each category."
+            );
+        },
+        (None, Some(_)) => Agg::Sum,
+    };
+
+    let mut theta_order: Vec<String> = Vec::new();
+    let mut theta_seen: HashSet<String> = HashSet::new();
+    let mut series_order: Vec<String> = Vec::new();
+    let mut grouped: HashMap<String, (Vec<String>, Vec<f64>)> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let mut theta = cell_to_string(record.get(theta_idx));
+        if theta.is_empty() {
+            continue;
+        }
+        if args.flag_degrees {
+            let Some(deg) = theta.trim().parse::<f64>().ok().filter(|v| v.is_finite()) else {
+                return fail_clierror!(
+                    "--degrees needs a numeric angle in --x, but found `{theta}`. Drop --degrees \
+                     to give each --x value its own evenly spaced slot."
+                );
+            };
+            theta = (deg.rem_euclid(360.0) + 0.0).to_string();
+        }
+        let r = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        let series = series_idx.map_or_else(String::new, |i| cell_to_string(record.get(i)));
+        if !theta_seen.contains(&theta) {
+            theta_seen.insert(theta.clone());
+            theta_order.push(theta.clone());
+        }
+        let entry = if let Some(e) = grouped.get_mut(&series) {
+            e
+        } else {
+            series_order.push(series.clone());
+            grouped.entry(series).or_default()
+        };
+        entry.0.push(theta);
+        entry.1.push(r);
+    }
+    if theta_order.is_empty() {
+        return fail_clierror!("No data found for the barpolar chart.");
+    }
+    let numeric: Option<Vec<f64>> = theta_order
+        .iter()
+        .map(|t| t.trim().parse::<f64>().ok().filter(|v| v.is_finite()))
+        .collect();
+    let compass = if args.flag_degrees {
+        None
+    } else {
+        compass_rose(&theta_order)
+    };
+    if let Some(rose) = compass {
+        // every slot of the rose, present or not, so each bar sits at its true bearing; the
+        // trace thetas are rewritten to the rose's canonical spelling to match the categories
+        for (thetas, _) in grouped.values_mut() {
+            for t in thetas.iter_mut() {
+                let upper = t.trim().to_ascii_uppercase();
+                if let Some(canon) = rose.iter().find(|p| **p == upper) {
+                    *t = (*canon).to_string();
+                }
+            }
+        }
+        theta_order = rose.iter().map(|p| (*p).to_string()).collect();
+    } else if let Some(keys) = numeric {
+        let mut keyed: Vec<(f64, String)> = keys.into_iter().zip(theta_order).collect();
+        keyed.sort_by(|a, b| a.0.total_cmp(&b.0));
+        theta_order = keyed.into_iter().map(|(_, t)| t).collect();
+    }
+
+    let theta_label = escape_hover(&col_label(&headers, theta_idx, nh));
+    let r_label = match value_idx {
+        Some(i) if !matches!(agg, Agg::Count) => escape_hover(&col_label(&headers, i, nh)),
+        _ => t!("viz.chart.count").into_owned(),
+    };
+    // stacked segments read inside-out, so binned series ("0-10", "10-20", "30+") stack in
+    // numeric order rather than in whichever order the bins first occur
+    let leading: Option<Vec<f64>> = series_order.iter().map(|s| leading_number(s)).collect();
+    if let Some(keys) = leading {
+        let mut keyed: Vec<(f64, String)> = keys.into_iter().zip(series_order).collect();
+        keyed.sort_by(|a, b| a.0.total_cmp(&b.0));
+        series_order = keyed.into_iter().map(|(_, s)| s).collect();
+    }
+    let mut plot = Plot::new();
+    for series in series_order {
+        let (thetas, rs) = grouped.remove(&series).unwrap_or_default();
+        let (thetas, rs) = aggregate(thetas, rs, agg);
+        if rs.iter().any(|v| *v < 0.0) {
+            return fail_clierror!(
+                "A polar bar cannot represent a negative total; check the --y column."
+            );
+        }
+        let extra = if series.is_empty() {
+            String::new()
+        } else {
+            "%{fullData.name}".to_string()
+        };
+        let mut trace = BarPolar::new(thetas, rs).hover_template(format!(
+            "{theta_label}: %{{theta}}<br>{r_label}: %{{r:,.4~g}}<extra>{extra}</extra>"
+        ));
+        if !series.is_empty() {
+            trace = trace.name(escape_hover(&series));
+        }
+        plot.add_trace(trace);
+    }
+
+    let angular = if args.flag_degrees {
+        AngularAxis::new().axis_type(AngularAxisType::Linear)
+    } else {
+        AngularAxis::new()
+            .axis_type(AngularAxisType::Category)
+            .category_order(CategoryOrder::Array)
+            .category_array(theta_order.iter().map(|t| t.as_str().into()).collect())
+    }
+    .direction(PolarDirection::Clockwise)
+    .rotation(90.0);
+    let layout = build_layout(args, None, None)?.polar(
+        LayoutPolar::new()
+            .bar_mode(PolarBarMode::Stack)
+            .angular_axis(angular),
+    );
+    plot.set_layout(layout);
+    Ok(plot)
+}
+
+/// The number a label starts with ("10-20" -> 10, "30+" -> 30, "-5 to 0" -> -5), if any.
+fn leading_number(label: &str) -> Option<f64> {
+    let t = label.trim_start();
+    let end = t
+        .char_indices()
+        .find(|&(i, c)| !(c.is_ascii_digit() || c == '.' || (i == 0 && c == '-')))
+        .map_or(t.len(), |(i, _)| i);
+    t[..end].parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// The 16-point compass rose, clockwise from north.
+const COMPASS_16: [&str; 16] = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW",
+    "NNW",
+];
+
+/// When every label is a compass point (case-insensitive), the full rose those labels belong to:
+/// the 8-point rose, or the 16-point one if any label is a 16-point-only direction (NNE...). A
+/// direction absent from the data still gets its slot, so the bars land on their true bearings
+/// instead of being spread evenly across whatever directions happen to occur.
+fn compass_rose(labels: &[String]) -> Option<Vec<&'static str>> {
+    let mut needs_16 = false;
+    for label in labels {
+        let upper = label.trim().to_ascii_uppercase();
+        let pos = COMPASS_16.iter().position(|p| *p == upper)?;
+        needs_16 |= pos % 2 == 1;
+    }
+    Some(if needs_16 {
+        COMPASS_16.to_vec()
+    } else {
+        COMPASS_16.iter().step_by(2).copied().collect()
+    })
+}
+
 /// Non-fatal advisory: a pie of many NEAR-EQUAL slices is the worst case for a pie chart — humans
 /// compare angles/areas poorly, so similar slices are nearly indistinguishable and a bar chart is
 /// strictly easier to read. Measured by the coefficient of variation (stddev / mean) of the slice
@@ -21139,7 +21366,7 @@ enum PanelKind {
     /// hour-of-day, day-of-week, month-of-year — that `seasonal_strength` finds a real cycle in,
     /// one polar ring per cycle, strongest first, with the seasonal index (record volume relative
     /// to its local average, 1.0 = typical) as the radial value. Exposes periodicity (rush-hour,
-    /// weekly, seasonal) that the absolute `TimeSeries` timeline hides. Drawn as `ScatterPolar`
+    /// weekly, seasonal) that the absolute `TimeSeries` timeline hides. Drawn as `BarPolar`
     /// subplots side by side; like `Scatter3D`, a polar subplot can't share the typed x/y grid,
     /// so it is HTML-only and rendered via the inline path.
     CyclicProfile { rings: Vec<CyclicRing> },
@@ -29903,7 +30130,7 @@ fn add_bubble_traces_and_frames(
 }
 
 /// One ring of a `CyclicProfile`: `theta` are the phase labels and `r` the matching seasonal
-/// index, both CLOSED (first element repeated at the end) so the polar line connects around.
+/// index, one entry per phase (one polar bar each).
 struct CyclicRing {
     /// The cycle's name ("hour of day"), for the panel title and the trace name.
     word:  String,
@@ -30358,17 +30585,10 @@ fn build_cyclic_panel(
     scored.sort_by(|a, b| b.1.strength.total_cmp(&a.1.strength));
     let rings: Vec<CyclicRing> = scored
         .into_iter()
-        .map(|(axis, score)| {
-            // close the ring: repeat the first phase/value at the end so the line connects around.
-            let mut theta = axis.labels();
-            theta.push(theta[0].clone());
-            let mut r = score.index;
-            r.push(r[0]);
-            CyclicRing {
-                word: axis.word(),
-                theta,
-                r,
-            }
+        .map(|(axis, score)| CyclicRing {
+            word:  axis.word(),
+            theta: axis.labels(),
+            r:     score.index,
         })
         .collect();
     let q_axis = rings
@@ -40798,7 +41018,7 @@ fn inline_panel_plot_scatter3d(
 }
 
 // cyclic-seasonality panels use a `polar` subplot — plotly auto-creates it from the
-// ScatterPolar trace (as the standalone `viz radar` does), so they own their whole Plot
+// BarPolar trace (as the standalone `viz barpolar` does), so they own their whole Plot
 // here too.
 #[inline(never)]
 fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
@@ -40810,11 +41030,9 @@ fn inline_panel_plot_cyclic_profile(panel: &Panel, theme: Option<BuiltinTheme>) 
     let mut plot = Plot::new();
     for (i, ring) in rings.iter().enumerate() {
         plot.add_trace(
-            ScatterPolar::new(ring.theta.clone(), ring.r.clone())
-                // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
-                // just a single hover on the ring.
-                .mode(Mode::LinesMarkers)
-                .fill(Fill::ToSelf)
+            // one bar per phase (hour/day/month), its length the seasonal index (1.0 = average),
+            // so each phase is its own hover target and the busiest phases read by length.
+            BarPolar::new(ring.theta.clone(), ring.r.clone())
                 .name(escape_hover(&ring.word))
                 .subplot(cyclic_polar_ref(i))
                 .hover_template(&t!("viz.hover.polar_index")),

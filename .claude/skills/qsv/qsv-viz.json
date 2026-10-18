@@ -10,9 +10,10 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: bar, box, candlestick, choropleth, contour, funnel, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, parcoords, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, treemap, violin",
+        "description": "Subcommand to execute. Valid values: bar, barpolar, box, candlestick, choropleth, contour, funnel, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, parcoords, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, treemap, violin",
         "enum": [
           "bar",
+          "barpolar",
           "box",
           "candlestick",
           "choropleth",
@@ -50,7 +51,7 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "How to combine values. For bar/line, aggregate the y values when the x value repeats: one of sum, mean, count, min, max. For treemap/sunburst/icicle, only the additive aggregations apply: count (the default) or sum (which requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count; pass mean for an intensive measure (a density, rate, index or per-capita figure), since summing those is meaningless and the count/sum hover's \"share of total\" line would be too. On a bubble animation (see the slider option), it collapses each entity x frame cell to a single bubble and defaults to mean, the cell centroid; count is rejected there, since a row count is not a position. For smart (with a GeoJSON), how its region map combines the value column per region: sum (the default, and the only one that also gets a rate panel when a denominator is available), mean, min or max; count keeps the row-count map even when every region has the same number of rows, and takes no value column."
+        "description": "How to combine values. For bar/line, aggregate the y values when the x value repeats: one of sum, mean, count, min, max. For barpolar, the same per category (and series): sum by default, and only count when the y column is omitted. For treemap/sunburst/icicle, only the additive aggregations apply: count (the default) or sum (which requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count; pass mean for an intensive measure (a density, rate, index or per-capita figure), since summing those is meaningless and the count/sum hover's \"share of total\" line would be too. On a bubble animation (see the slider option), it collapses each entity x frame cell to a single bubble and defaults to mean, the cell centroid; count is rejected there, since a row count is not a position. For smart (with a GeoJSON), how its region map combines the value column per region: sum (the default, and the only one that also gets a rate panel when a denominator is available), mean, min or max; count keeps the row-count map even when every region has the same number of rows, and takes no value column."
       },
       {
         "flag": "--annotation",
@@ -108,6 +109,11 @@
         "flag": "--dataset-pid",
         "type": "string",
         "description": "A persistent identifier (PID) for the dataset - typically a full URL such as a DOI (https://doi.org/10.1234/abc) or other citable link. When set, a \"PID\" row is added to the metadata table at the top of the Data Schematic. http(s) and mailto values become a clickable link; any other scheme is shown as plain text. HTML output only. Only affects `smart`."
+      },
+      {
+        "flag": "--degrees",
+        "type": "flag",
+        "description": "For barpolar: read --x as an angle in degrees (0 = north, clockwise) and draw each bar at that angle, so gaps in the data stay gaps. Without it, each distinct --x value gets an evenly spaced slot, which suits hours, months and complete degree bins (compass names are placed by bearing either way)."
       },
       {
         "flag": "--delimiter",
@@ -348,7 +354,7 @@
       {
         "flag": "--series",
         "type": "string",
-        "description": "Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo."
+        "description": "Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), map and geo."
       },
       {
         "flag": "--size",
@@ -562,6 +568,14 @@
     {
       "description": "Radar chart comparing numeric metrics, one trace per team",
       "command": "qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html"
+    },
+    {
+      "description": "Wind rose: observation counts per compass direction, stacked by speed band",
+      "command": "qsv viz barpolar wind.csv --x direction --series speed_band -o windrose.html"
+    },
+    {
+      "description": "Wind rose from bearings in degrees, each bar at its true angle",
+      "command": "qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html"
     },
     {
       "description": "Parallel coordinates across four measures, each line colored by price",

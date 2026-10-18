@@ -10,7 +10,7 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: bar, barpolar, box, candlestick, choropleth, contour, funnel, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, parcoords, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, treemap, violin",
+        "description": "Subcommand to execute. Valid values: bar, barpolar, box, candlestick, choropleth, contour, funnel, geo, heatmap, histogram, icicle, line, map, ohlc, parcats, parcoords, pie, radar, sankey, scatter, scatter3d, smart, splom, sunburst, ternary, treemap, violin",
         "enum": [
           "bar",
           "barpolar",
@@ -36,6 +36,7 @@
           "smart",
           "splom",
           "sunburst",
+          "ternary",
           "treemap",
           "violin"
         ]
@@ -92,7 +93,7 @@
       {
         "flag": "--color",
         "type": "string",
-        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis)."
+        "description": "For scatter/scatter3d/ternary/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis)."
       },
       {
         "flag": "--color-scale",
@@ -103,7 +104,7 @@
       {
         "flag": "--cols",
         "type": "string",
-        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric)."
+        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric). For ternary: exactly 3 numeric columns, the a, b and c parts."
       },
       {
         "flag": "--dataset-pid",
@@ -354,12 +355,12 @@
       {
         "flag": "--series",
         "type": "string",
-        "description": "Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), map and geo."
+        "description": "Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), ternary, map and geo."
       },
       {
         "flag": "--size",
         "type": "string",
-        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight."
+        "description": "For scatter/scatter3d/ternary/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight."
       },
       {
         "flag": "--slider",
@@ -576,6 +577,10 @@
     {
       "description": "Wind rose from bearings in degrees, each bar at its true angle",
       "command": "qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html"
+    },
+    {
+      "description": "Ternary plot of soil texture (sand/silt/clay shares), colored by organic matter",
+      "command": "qsv viz ternary soils.csv --cols sand,silt,clay --color organic_pct -o ternary.html"
     },
     {
       "description": "Parallel coordinates across four measures, each line colored by price",

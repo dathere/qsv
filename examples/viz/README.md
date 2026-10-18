@@ -84,6 +84,7 @@ as `text/plain`, so a browser won't render it):
 | `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini, **Benford** first digits for the budget columns) |
 | `onboarding_funnel.csv` | 60 channel-weeks of `visits,signups,activated,subscribed` — four stage columns that nest in every row | `smart` (pipeline **funnel**) |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
+| `soil_samples.csv` | **320 SYNTHETIC** soil samples in 4 texture classes: `sand_pct`/`silt_pct`/`clay_pct` (summing to 100) and `organic_matter_pct` | `ternary` |
 | `wind_obs.csv` | **1,440 SYNTHETIC** hourly wind observations (60 days): 16-point compass `direction`, `bearing_deg`, `speed_kmh` and a `speed_band`, with prevailing south-westerlies | `barpolar` (wind rose) |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
@@ -430,6 +431,10 @@ qsv viz radar product_ratings.csv --cols battery,camera,performance,display,valu
 # Compass points sit at their true bearings (a missing direction keeps its empty slot); --degrees
 # does the same for a numeric bearing column
 qsv viz barpolar wind_obs.csv --x direction --series speed_band -o barpolar.html
+
+# ternary — three parts of a whole: each soil sample sits at its sand/silt/clay shares, one color
+# per texture class. Rows with a blank, negative or all-zero part are skipped and counted
+qsv viz ternary soil_samples.csv --cols sand_pct,silt_pct,clay_pct --series texture -o ternary.html
 
 # treemap — part-to-whole hierarchy (--cols are the levels, outer first); sized by a --value sum
 qsv viz treemap customer_spend.csv --cols plan,region --value monthly_spend --agg sum -o treemap.html

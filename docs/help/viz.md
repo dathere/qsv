@@ -64,6 +64,13 @@ barpolar    Polar bar chart (a wind rose): one bar per --x category around the
             get evenly spaced slots in the order they first appear in the file
             (numeric ones sort ascending); --degrees places numeric angles at their
             true bearing instead. --series stacks one colored segment per value.
+ternary     Ternary (triangle) plot of three parts of a whole: --cols names exactly
+            3 numeric columns (a, b, c), and each row is drawn at its shares
+            a/(a+b+c), b/(a+b+c) and c/(a+b+c). Optional --series, or --color/--size.
+            Rows with a blank, non-numeric or negative part, or parts summing to 0,
+            are skipped (and counted on stderr).
+            The first column's corner is the top, the second's bottom-left and the
+            third's bottom-right.
 treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
             (levels, outermost first), optional --value and --agg.
 sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.
@@ -262,6 +269,12 @@ qsv viz barpolar wind.csv --x direction --series speed_band -o windrose.html
 qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html
 ```
 
+> Ternary plot of soil texture (sand/silt/clay shares), colored by organic matter
+
+```console
+qsv viz ternary soils.csv --cols sand,silt,clay --color organic_pct -o ternary.html
+```
+
 > Parallel coordinates across four measures, each line colored by price
 
 ```console
@@ -348,6 +361,7 @@ qsv viz ohlc        [options] <input>
 qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
 qsv viz barpolar    [options] <input>
+qsv viz ternary     [options] <input>
 qsv viz map         [options] <input>
 qsv viz geo         [options] <input>
 qsv viz choropleth  [options] <input>
@@ -369,10 +383,10 @@ qsv viz --help
 | &nbsp;`‑x,`<br>`‑‑x`&nbsp; | string | Column for the x-axis / category / bin / group. |  |
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d. |  |
-| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric). |  |
-| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), map and geo. |  |
-| &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis). |  |
-| &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight. |  |
+| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric). For ternary: exactly 3 numeric columns, the a, b and c parts. |  |
+| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), ternary, map and geo. |  |
+| &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/ternary/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis). |  |
+| &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/ternary/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
 | &nbsp;`‑‑degrees`&nbsp; | flag | For barpolar: read --x as an angle in degrees (0 = north, clockwise) and draw each bar at that angle, so gaps in the data stay gaps. Without it, each distinct --x value gets an evenly spaced slot, which suits hours, months and complete degree bins (compass names are placed by bearing either way). |  |
 | &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |

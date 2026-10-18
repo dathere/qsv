@@ -23087,3 +23087,137 @@ fn viz_barpolar_stacks_binned_series_in_numeric_order() {
         "binned series should stack low to high"
     );
 }
+
+/// Soil samples: sand/silt/clay parts plus an organic-matter measure and a texture class. Rows
+/// s3-s6 are unplottable (blank part, negative part, all-zero parts, non-numeric `om`).
+fn ternary_csv(wrk: &Workdir) {
+    wrk.create_from_string(
+        "soils.csv",
+        "sample,sand,silt,clay,om,texture\ns1,60,30,10,2.1,loam\ns2,20,50,30,3.5,silt\ns3,,40,20,\
+         1.0,loam\ns4,10,-5,95,1.2,clay\ns5,0,0,0,4.0,clay\ns6,33,33,34,x,loam\ns7,5,15,80,5.5,\
+         clay\n",
+    );
+}
+
+#[test]
+fn viz_ternary_normalizes_parts_and_skips_bad_rows() {
+    let wrk = Workdir::new("viz_ternary_normalizes_parts_and_skips_bad_rows");
+    ternary_csv(&wrk);
+    let out_html = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "ternary",
+        "soils.csv",
+        "--cols",
+        "sand,silt,clay",
+        "--color",
+        "om",
+        "-o",
+        &out_html,
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    // blank part, negative part, all-zero parts and a non-numeric --color value are each skipped
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("viz ternary: skipped 4 row(s)"), "{stderr}");
+
+    let html = wrk.read_to_string("t.html").unwrap();
+    assert!(html.contains(r#""type":"scatterternary""#));
+    // each row is drawn at its shares of a+b+c
+    assert!(
+        html.contains(r#""a":[0.6,0.2,0.05],"b":[0.3,0.5,0.15],"c":[0.1,0.3,0.8]"#),
+        "html: {html}"
+    );
+    // the hover pairs each raw part with its share, plus the --color value
+    assert!(
+        html.contains(r#"sand: 60 (60.0%)\u003cbr\u003esilt: 30 (30.0%)\u003cbr\u003eclay: 10 (10.0%)\u003cbr\u003eom: 2.1"#),
+        "html: {html}"
+    );
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    // the three axes are titled by their columns and read as percentages
+    assert!(
+        html.contains(
+            r#""ternary":{"aaxis":{"title":{"text":"sand"},"tickformat":".0%"},"baxis":{"title":{"text":"silt"},"tickformat":".0%"},"caxis":{"title":{"text":"clay"},"tickformat":".0%"}}"#
+        ),
+        "html: {html}"
+    );
+}
+
+#[test]
+fn viz_ternary_series_and_size() {
+    let wrk = Workdir::new("viz_ternary_series_and_size");
+    ternary_csv(&wrk);
+    let out_html = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "ternary",
+        "soils.csv",
+        "--cols",
+        "sand,silt,clay",
+        "--series",
+        "texture",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("t.html").unwrap();
+    // one trace per --series value with a plottable row (loam s1, silt s2, clay s7), in
+    // first-appearance order
+    assert_eq!(html.matches(r#""type":"scatterternary""#).count(), 3);
+    let pos = |n: &str| html.find(&format!(r#""name":"{n}""#)).expect(n);
+    assert!(pos("loam") < pos("silt") && pos("silt") < pos("clay"));
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "ternary",
+        "soils.csv",
+        "--cols",
+        "sand,silt,clay",
+        "--size",
+        "om",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("s.html").unwrap();
+    // --size becomes a bubble size array, rescaled into the readable pixel range
+    assert!(html.contains(r#""size":["#), "html: {html}");
+}
+
+#[test]
+fn viz_ternary_usage_errors() {
+    let wrk = Workdir::new("viz_ternary_usage_errors");
+    ternary_csv(&wrk);
+    wrk.create_from_string("bad.csv", "a,b,c\n,1,2\n-1,2,3\n");
+    for (args, expected) in [
+        (
+            &["ternary", "soils.csv", "--cols", "sand,silt"][..],
+            "needs --cols with exactly 3 numeric columns",
+        ),
+        (
+            &[
+                "ternary",
+                "soils.csv",
+                "--cols",
+                "sand,silt,clay",
+                "--series",
+                "texture",
+                "--size",
+                "om",
+            ][..],
+            "--color/--size cannot be combined with --series",
+        ),
+        (
+            &["ternary", "bad.csv", "--cols", "a,b,c"][..],
+            "viz ternary found no plottable rows",
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(args);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{args:?} should fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(expected), "{args:?}: {stderr}");
+    }
+}

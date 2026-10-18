@@ -50,6 +50,13 @@ Chart types (subcommands):
                 get evenly spaced slots in the order they first appear in the file
                 (numeric ones sort ascending); --degrees places numeric angles at their
                 true bearing instead. --series stacks one colored segment per value.
+    ternary     Ternary (triangle) plot of three parts of a whole: --cols names exactly
+                3 numeric columns (a, b, c), and each row is drawn at its shares
+                a/(a+b+c), b/(a+b+c) and c/(a+b+c). Optional --series, or --color/--size.
+                Rows with a blank, non-numeric or negative part, or parts summing to 0,
+                are skipped (and counted on stderr).
+                The first column's corner is the top, the second's bottom-left and the
+                third's bottom-right.
     treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
                 (levels, outermost first), optional --value and --agg.
     sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.
@@ -168,6 +175,9 @@ Examples:
   # Wind rose from bearings in degrees, each bar at its true angle
   qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html
 
+  # Ternary plot of soil texture (sand/silt/clay shares), colored by organic matter
+  qsv viz ternary soils.csv --cols sand,silt,clay --color organic_pct -o ternary.html
+
   # Parallel coordinates across four measures, each line colored by price
   qsv viz parcoords cars.csv --cols mpg,horsepower,weight,acceleration --color price -o parcoords.html
 
@@ -219,6 +229,7 @@ Usage:
     qsv viz sankey      [options] <input>
     qsv viz radar       [options] <input>
     qsv viz barpolar    [options] <input>
+    qsv viz ternary     [options] <input>
     qsv viz map         [options] <input>
     qsv viz geo         [options] <input>
     qsv viz choropleth  [options] <input>
@@ -244,17 +255,18 @@ viz options:
                            For splom: the numeric columns to cross-plot (default:
                            all numeric). For parcats: the categorical dimensions
                            to flow across (best with 3-4). For parcoords: the
-                           numeric axes, in order (default: all numeric).
+                           numeric axes, in order (default: all numeric). For
+                           ternary: exactly 3 numeric columns, the a, b and c parts.
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
-                           radar, barpolar (stacked), map and geo.
-    --color <col>          For scatter/scatter3d/map/geo: a numeric column to encode as
+                           radar, barpolar (stacked), ternary, map and geo.
+    --color <col>          For scatter/scatter3d/ternary/map/geo: a numeric column to encode as
                            marker color (a continuous colorscale with a colorbar). For
                            categorical coloring, use the --series option instead. Cannot
                            be combined with --series. In map density mode, this column is
                            the heatmap weight. For parcoords: the numeric column that
                            colors each line (default: the first axis).
-    --size <col>           For scatter/scatter3d/map/geo: a numeric column to encode as
+    --size <col>           For scatter/scatter3d/ternary/map/geo: a numeric column to encode as
                            marker size, producing a bubble chart (values are rescaled to
                            a readable pixel range). Cannot be combined with --series,
                            EXCEPT on an animated scatter (see the --slider option), where
@@ -804,8 +816,8 @@ use plotly::layout::update_menu::{
 use plotly::{
     Bar, BarPolar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour,
     DensityMap, Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Parcoords, Pie, Plot,
-    Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace,
-    Traces, Treemap, Violin, Waterfall,
+    Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, ScatterTernary, Splom,
+    Sunburst, Trace, Traces, Treemap, Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -819,9 +831,10 @@ use plotly::{
     layout::{
         AngularAxis, AngularAxisType, Animation, AnimationMode, AnimationOptions, Annotation, Axis,
         AxisType, CategoryOrder, Center, Frame, FrameSettings, GeoFitBounds, GeoResolution,
-        HoverMode, Layout, LayoutGeo, LayoutMap, LayoutPolar, LayoutScene, MapBounds, MapStyle,
-        Margin, ModeBar, PolarBarMode, PolarDirection, Projection, ProjectionType, RangeSlider,
-        Slider, SliderCurrentValue, SliderStepBuilder, TransitionSettings, themes::BuiltinTheme,
+        HoverMode, Layout, LayoutGeo, LayoutMap, LayoutPolar, LayoutScene, LayoutTernary,
+        MapBounds, MapStyle, Margin, ModeBar, PolarBarMode, PolarDirection, Projection,
+        ProjectionType, RangeSlider, Slider, SliderCurrentValue, SliderStepBuilder, TernaryAxis,
+        TransitionSettings, themes::BuiltinTheme,
     },
     parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
     parcoords::{Dimension as ParcoordsDimension, ParcoordsLine},
@@ -1653,6 +1666,7 @@ struct Args {
     cmd_sankey:              bool,
     cmd_radar:               bool,
     cmd_barpolar:            bool,
+    cmd_ternary:             bool,
     cmd_map:                 bool,
     cmd_geo:                 bool,
     cmd_treemap:             bool,
@@ -2330,11 +2344,16 @@ fn build_plot(
         }
         if !matches!(
             kind,
-            Chart::Scatter | Chart::Scatter3D | Chart::Map | Chart::Geo | Chart::Parcoords
+            Chart::Scatter
+                | Chart::Scatter3D
+                | Chart::Ternary
+                | Chart::Map
+                | Chart::Geo
+                | Chart::Parcoords
         ) {
             return fail_incorrectusage_clierror!(
-                "--color/--size only apply to `viz scatter`, `viz scatter3d`, `viz map` and `viz \
-                 geo` (and --color to `viz parcoords`)."
+                "--color/--size only apply to `viz scatter`, `viz scatter3d`, `viz ternary`, `viz \
+                 map` and `viz geo` (and --color to `viz parcoords`)."
             );
         }
         if args.flag_series.is_some() && !bubble_anim {
@@ -2472,6 +2491,10 @@ fn build_plot(
     if matches!(chart_kind(args), Chart::BarPolar) {
         return build_barpolar_plot(args);
     }
+    // ternary draws on a `ternary` subplot (a triangle with an a/b/c axis per side)
+    if matches!(chart_kind(args), Chart::Ternary) {
+        return build_ternary_plot(args);
+    }
 
     let mut plot = Plot::new();
 
@@ -2587,6 +2610,7 @@ enum Chart {
     Sankey,
     Radar,
     BarPolar,
+    Ternary,
     Map,
     Geo,
     Choropleth,
@@ -2631,6 +2655,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Radar
     } else if args.cmd_barpolar {
         Chart::BarPolar
+    } else if args.cmd_ternary {
+        Chart::Ternary
     } else if args.cmd_map {
         Chart::Map
     } else if args.cmd_geo {
@@ -12822,6 +12848,166 @@ fn build_barpolar_plot(args: &Args) -> CliResult<Plot> {
         LayoutPolar::new()
             .bar_mode(PolarBarMode::Stack)
             .angular_axis(angular),
+    );
+    plot.set_layout(layout);
+    Ok(plot)
+}
+
+/// One plotted `viz ternary` row: its raw parts, plus any `--color`/`--size` encoding.
+struct TernaryPoint {
+    parts: [f64; 3],
+    color: Option<f64>,
+    size:  Option<f64>,
+}
+
+/// `viz ternary`: a ternary (triangle) plot of three parts of a whole. `--cols` names exactly three
+/// numeric columns, the a, b and c parts; each row is drawn at its shares of their sum, so the axes
+/// read 0-100%. A row is skipped when a part is blank, non-numeric or negative (a negative share
+/// has no place in the triangle), when its parts sum to zero, or when a requested
+/// `--color`/`--size` value is missing; skipped rows are counted on stderr, and a file with nothing
+/// left is an error.
+///
+/// `--series` splits the points into one colored trace per value (as `viz scatter` does), while
+/// `--color`/`--size` encode numeric columns onto a single trace; the two can't be combined
+/// (checked in `build_plot`). The hover shows each part's raw value next to its share.
+fn build_ternary_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let cols = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
+    let [a_idx, b_idx, c_idx] = cols[..] else {
+        return fail_incorrectusage_clierror!(
+            "viz ternary needs --cols with exactly 3 numeric columns (the a, b and c parts); got \
+             {}.",
+            cols.len()
+        );
+    };
+    let opt_col = |sel: Option<&SelectColumns>, flag: &str| -> CliResult<Option<usize>> {
+        sel.map(|s| resolve_one(Some(s), &headers, nh, flag))
+            .transpose()
+    };
+    let series_idx = opt_col(args.flag_series.as_ref(), "series")?;
+    let color_idx = opt_col(args.flag_color.as_ref(), "color")?;
+    let size_idx = opt_col(args.flag_size.as_ref(), "size")?;
+
+    let mut series_order: Vec<String> = Vec::new();
+    let mut grouped: HashMap<String, Vec<TernaryPoint>> = HashMap::new();
+    let mut skipped = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let parts = [a_idx, b_idx, c_idx].map(|i| parse_f64(record.get(i)));
+        let [Some(a), Some(b), Some(c)] = parts else {
+            skipped += 1;
+            continue;
+        };
+        let encoding = |idx: Option<usize>| idx.map(|i| parse_f64(record.get(i)));
+        let (color, size) = (encoding(color_idx), encoding(size_idx));
+        if a < 0.0
+            || b < 0.0
+            || c < 0.0
+            || a + b + c <= 0.0
+            || matches!(color, Some(None))
+            || matches!(size, Some(None))
+        {
+            skipped += 1;
+            continue;
+        }
+        let series = series_idx.map_or_else(String::new, |i| cell_to_string(record.get(i)));
+        let point = TernaryPoint {
+            parts: [a, b, c],
+            color: color.flatten(),
+            size:  size.flatten(),
+        };
+        if let Some(points) = grouped.get_mut(&series) {
+            points.push(point);
+        } else {
+            series_order.push(series.clone());
+            grouped.insert(series, vec![point]);
+        }
+    }
+    if series_order.is_empty() {
+        return fail_clierror!(
+            "viz ternary found no plottable rows: every row has a blank, non-numeric or negative \
+             part, parts that sum to zero, or a missing --color/--size value."
+        );
+    }
+    if skipped > 0 {
+        viz_note(&format!(
+            "viz ternary: skipped {skipped} row(s) with a blank, non-numeric or negative part, \
+             parts that sum to zero, or a missing --color/--size value."
+        ));
+    }
+
+    let labels = [a_idx, b_idx, c_idx].map(|i| escape_hover(&col_label(&headers, i, nh)));
+    let color_label = color_idx.map(|i| escape_hover(&col_label(&headers, i, nh)));
+    let size_label = size_idx.map(|i| escape_hover(&col_label(&headers, i, nh)));
+
+    let mut plot = Plot::new();
+    for series in series_order {
+        let points = grouped.remove(&series).unwrap_or_default();
+        let mut shares: [Vec<f64>; 3] = Default::default();
+        let mut hover = Vec::with_capacity(points.len());
+        let mut colors = Vec::new();
+        let mut sizes = Vec::new();
+        for p in &points {
+            let total: f64 = p.parts.iter().sum();
+            let mut lines: Vec<String> = Vec::with_capacity(6);
+            if !series.is_empty() {
+                lines.push(escape_hover(&series));
+            }
+            for k in 0..3 {
+                let share = p.parts[k] / total;
+                shares[k].push(share);
+                lines.push(format!(
+                    "{}: {} ({:.1}%)",
+                    labels[k],
+                    fmt_measure(p.parts[k]),
+                    share * 100.0
+                ));
+            }
+            if let (Some(cl), Some(c)) = (&color_label, p.color) {
+                lines.push(format!("{cl}: {}", fmt_measure(c)));
+                colors.push(c);
+            }
+            if let (Some(sl), Some(s)) = (&size_label, p.size) {
+                lines.push(format!("{sl}: {}", fmt_measure(s)));
+                sizes.push(s);
+            }
+            hover.push(lines.join("<br>"));
+        }
+        let mut marker = Marker::new();
+        if !sizes.is_empty() {
+            marker = marker.size_array(scale_bubble_sizes(&sizes));
+        }
+        if !colors.is_empty() {
+            marker = marker
+                .color_array(colors)
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title(color_label.clone().unwrap_or_default()));
+        }
+        let [a, b, c] = shares;
+        let mut trace = ScatterTernary::new(a, b, c)
+            .mode(Mode::Markers)
+            .marker(marker)
+            .hover_text_array(hover)
+            // ScatterTernary takes hoverinfo as a flaglist string, not the `HoverInfo` enum
+            .hover_info("text");
+        if !series.is_empty() {
+            trace = trace.name(escape_hover(&series));
+        }
+        plot.add_trace(trace);
+    }
+
+    let [a_label, b_label, c_label] = labels;
+    let axis = |label: String| {
+        TernaryAxis::new()
+            .title(Title::with_text(label))
+            .tick_format(".0%")
+    };
+    let layout = build_layout(args, None, None)?.ternary(
+        LayoutTernary::new()
+            .a_axis(axis(a_label))
+            .b_axis(axis(b_label))
+            .c_axis(axis(c_label)),
     );
     plot.set_layout(layout);
     Ok(plot)

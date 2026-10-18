@@ -768,6 +768,10 @@ FIGURES = [
      "bars run clockwise from north.",
      False, ["barpolar", "wind_obs.csv", "--x", "direction", "--series", "speed_band",
              "--title", "Wind rose by speed band (km/h)"]),
+    ("ternary", "Soil texture triangle: 320 synthetic samples placed at their sand/silt/clay shares, "
+     "one color per texture class. Hover shows each part's raw value and share.",
+     False, ["ternary", "soil_samples.csv", "--cols", "sand_pct,silt_pct,clay_pct",
+             "--series", "texture", "--title", "Soil texture by class"]),
     ("sankey", "Web session funnel (duplicate edges aggregated).",
      True, ["sankey", "web_flows.csv", "--source", "source", "--target", "target", "--value", "sessions"]),
     ("treemap", "Part-to-whole spend by plan then region, sized by summed monthly_spend. Rounded "

@@ -137,6 +137,106 @@ fn geoconvert_geojson_to_csv_max_length_inline() {
 }
 
 #[test]
+fn geoconvert_geojson_to_csv_properties_in_different_order() {
+    // geozero's CsvWriter takes the columns from the first feature and panicked
+    // ("CSV features must all have the same column names") when a later feature
+    // listed the same properties in another order.
+    let wrk = Workdir::new("geoconvert_geojson_to_csv_properties_in_different_order");
+    wrk.create_from_string(
+        "data.geojson",
+        r#"{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
+   "properties": {"name": "a", "pop": 1}},
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3, 4]},
+   "properties": {"pop": 2, "name": "b"}}
+]}"#,
+    );
+    let mut cmd = wrk.command("geoconvert");
+    cmd.args(["data.geojson", "geojson", "csv"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["geometry", "name", "pop"],
+        svec!["POINT(1 2)", "a", "1"],
+        svec!["POINT(3 4)", "b", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn geoconvert_geojson_to_csv_missing_and_null_properties() {
+    // A property can be absent or null in some features, a feature's properties
+    // can be null, and a property can first appear after the first feature. Every
+    // property becomes a column (in the order first seen), and is empty where a
+    // feature has no value for it. geozero's CsvWriter used to fail with "found
+    // record with 2 fields, but the previous record has 3 fields", or panic
+    // with an index out of bounds.
+    let wrk = Workdir::new("geoconvert_geojson_to_csv_missing_and_null_properties");
+    wrk.create_from_string(
+        "data.geojson",
+        r#"{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
+   "properties": {"name": "a", "pop": null}},
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3, 4]},
+   "properties": {"name": "b", "pop": 2, "area": 5.5}},
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [5, 6]},
+   "properties": {"area": 7.5}},
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [7, 8]},
+   "properties": null}
+]}"#,
+    );
+    let expected = vec![
+        svec!["geometry", "name", "pop", "area"],
+        svec!["POINT(1 2)", "a", "", ""],
+        svec!["POINT(3 4)", "b", "2", "5.5"],
+        svec!["POINT(5 6)", "", "", "7.5"],
+        svec!["POINT(7 8)", "", "", ""],
+    ];
+
+    let mut cmd = wrk.command("geoconvert");
+    cmd.args(["data.geojson", "geojson", "csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, expected);
+
+    // same from stdin, and through the --max-length path
+    let mut cmd = wrk.command("geoconvert");
+    cmd.args(["-", "geojson", "csv", "--max-length", "3"])
+        .stdin(std::fs::File::open(wrk.path("data.geojson")).unwrap());
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], expected[0]);
+    assert_eq!(got[2], svec!["POI...", "b", "2", "5.5"]);
+    assert_eq!(got[4], svec!["POI...", "", "", ""]);
+}
+
+#[test]
+fn geoconvert_geojson_to_csv_null_before_other_properties() {
+    // Even when every feature has the same properties, a null one that is not the
+    // last made geozero's CsvWriter panic (index out of bounds) from the second
+    // feature on: the reader skips nulls but still counts them in the property
+    // index. A property that is null in every feature gets no column, as before.
+    let wrk = Workdir::new("geoconvert_geojson_to_csv_null_before_other_properties");
+    wrk.create_from_string(
+        "data.geojson",
+        r#"{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
+   "properties": {"name": "a", "pop": null, "area": 1.5}},
+  {"type": "Feature", "geometry": {"type": "Point", "coordinates": [3, 4]},
+   "properties": {"name": "b", "pop": null, "area": 2.5}}
+]}"#,
+    );
+    let mut cmd = wrk.command("geoconvert");
+    cmd.args(["data.geojson", "geojson", "csv"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["geometry", "name", "area"],
+        svec!["POINT(1 2)", "a", "1.5"],
+        svec!["POINT(3 4)", "b", "2.5"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn geoconvert_csv_partial_latlon_flag_errors() {
     // Regression: only one of --latitude/--longitude must produce a clear error,
     // not the generic "specify --geometry or --latitude/--longitude" message.

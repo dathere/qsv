@@ -588,23 +588,31 @@ impl OwnedValue {
     }
 }
 
-/// Sits between geozero's shapefile reader and an output writer, fixing two
-/// problems with how the reader drives the writer:
-/// - It yields each record's fields in `HashMap` order, which differs from record to record, and
-///   leaves out null fields. `CsvWriter` panics unless every feature has the same columns in the
-///   same order. So each feature's properties are buffered and re-emitted in the .dbf's field
-///   order; with `fill_missing` (CSV), a null field is written as an empty string.
-/// - It discards the result of most writer calls (`.ok()`), so a failed write would go unnoticed.
-///   The first error is kept for `take_error`.
-struct DbfFieldOrder<'a, P> {
-    inner:        &'a mut P,
-    fields:       Vec<String>,
-    values:       Vec<Option<OwnedValue>>,
-    fill_missing: bool,
-    error:        Option<geozero::error::GeozeroError>,
+/// Sits between a geozero reader and an output writer, and re-emits each
+/// feature's properties in a fixed field order. `CsvWriter` takes its columns from
+/// the first feature, and panics unless every later feature has the same columns
+/// in the same order, but:
+/// - the shapefile reader yields each record's fields in `HashMap` order, which differs from
+///   record to record, and leaves out null fields. The field order is the .dbf's.
+/// - GeoJSON features can list their properties in any order, leave some out, have them null
+///   (the reader leaves those out) or have no properties at all. The field order is every
+///   property name, in the order first seen (see `geojson_property_names`).
+///
+/// So each feature's properties are buffered and re-emitted in field order; with
+/// `fill_missing` (CSV), a missing field is written as an empty string.
+///
+/// The shapefile reader also discards the result of most writer calls (`.ok()`), so a failed
+/// write would go unnoticed. The first error is kept for `take_error`.
+struct FieldOrder<'a, P> {
+    inner:              &'a mut P,
+    fields:             Vec<String>,
+    values:             Vec<Option<OwnedValue>>,
+    fill_missing:       bool,
+    properties_written: bool,
+    error:              Option<geozero::error::GeozeroError>,
 }
 
-impl<'a, P: FeatureProcessor> DbfFieldOrder<'a, P> {
+impl<'a, P: FeatureProcessor> FieldOrder<'a, P> {
     fn new(inner: &'a mut P, fields: Vec<String>, fill_missing: bool) -> Self {
         let values = fields.iter().map(|_| None).collect();
         Self {
@@ -612,8 +620,26 @@ impl<'a, P: FeatureProcessor> DbfFieldOrder<'a, P> {
             fields,
             values,
             fill_missing,
+            properties_written: false,
             error: None,
         }
+    }
+
+    /// Write the buffered properties to `inner`, in field order.
+    fn write_properties(&mut self) -> geozero::error::Result<()> {
+        self.properties_written = true;
+        let mut idx = 0;
+        for (name, value) in self.fields.iter().zip(&self.values) {
+            match value {
+                Some(value) => self.inner.property(idx, name, &value.as_column_value())?,
+                None if self.fill_missing => {
+                    self.inner.property(idx, name, &ColumnValue::String(""))?
+                },
+                None => continue,
+            };
+            idx += 1;
+        }
+        Ok(())
     }
 
     fn track(&mut self, result: geozero::error::Result<()>) -> geozero::error::Result<()> {
@@ -633,7 +659,7 @@ impl<'a, P: FeatureProcessor> DbfFieldOrder<'a, P> {
     }
 }
 
-impl<P: FeatureProcessor> PropertyProcessor for DbfFieldOrder<'_, P> {
+impl<P: FeatureProcessor> PropertyProcessor for FieldOrder<'_, P> {
     fn property(
         &mut self,
         _idx: usize,
@@ -647,7 +673,7 @@ impl<P: FeatureProcessor> PropertyProcessor for DbfFieldOrder<'_, P> {
     }
 }
 
-impl<P: FeatureProcessor> FeatureProcessor for DbfFieldOrder<'_, P> {
+impl<P: FeatureProcessor> FeatureProcessor for FieldOrder<'_, P> {
     fn dataset_begin(&mut self, name: Option<&str>) -> geozero::error::Result<()> {
         let result = self.inner.dataset_begin(name);
         self.track(result)
@@ -659,12 +685,24 @@ impl<P: FeatureProcessor> FeatureProcessor for DbfFieldOrder<'_, P> {
     }
 
     fn feature_begin(&mut self, idx: u64) -> geozero::error::Result<()> {
+        self.properties_written = false;
         let result = self.inner.feature_begin(idx);
         self.track(result)
     }
 
     fn feature_end(&mut self, idx: u64) -> geozero::error::Result<()> {
-        let result = self.inner.feature_end(idx);
+        // A GeoJSON feature with no properties never calls properties_begin/end, but
+        // with fill_missing its row still needs a (blank) value for every field.
+        let mut result = Ok(());
+        if self.fill_missing && !self.properties_written && !self.fields.is_empty() {
+            self.values.iter_mut().for_each(|value| *value = None);
+            result = self
+                .inner
+                .properties_begin()
+                .and_then(|()| self.write_properties())
+                .and_then(|()| self.inner.properties_end());
+        }
+        let result = result.and_then(|()| self.inner.feature_end(idx));
         self.track(result)
     }
 
@@ -675,23 +713,9 @@ impl<P: FeatureProcessor> FeatureProcessor for DbfFieldOrder<'_, P> {
     }
 
     fn properties_end(&mut self) -> geozero::error::Result<()> {
-        let mut result = Ok(());
-        let mut idx = 0;
-        for (name, value) in self.fields.iter().zip(&self.values) {
-            let written = match value {
-                Some(value) => self.inner.property(idx, name, &value.as_column_value()),
-                None if self.fill_missing => {
-                    self.inner.property(idx, name, &ColumnValue::String(""))
-                },
-                None => continue,
-            };
-            if let Err(err) = written {
-                result = Err(err);
-                break;
-            }
-            idx += 1;
-        }
-        let result = result.and_then(|()| self.inner.properties_end());
+        let result = self
+            .write_properties()
+            .and_then(|()| self.inner.properties_end());
         self.track(result)
     }
 
@@ -706,7 +730,7 @@ impl<P: FeatureProcessor> FeatureProcessor for DbfFieldOrder<'_, P> {
     }
 }
 
-impl<P: FeatureProcessor> GeomProcessor for DbfFieldOrder<'_, P> {
+impl<P: FeatureProcessor> GeomProcessor for FieldOrder<'_, P> {
     fn dimensions(&self) -> CoordDimensions {
         self.inner.dimensions()
     }
@@ -877,17 +901,56 @@ impl<P: FeatureProcessor> GeomProcessor for DbfFieldOrder<'_, P> {
 }
 
 /// Stream a shapefile's features into an output writer, with each feature's
-/// properties in the .dbf's field order (see `DbfFieldOrder`).
+/// properties in the .dbf's field order (see `FieldOrder`).
 fn convert_shp<T: Read + Seek, P: FeatureProcessor>(
     reader: geozero::shp::ShpReader<T>,
     writer: &mut P,
     fields: Vec<String>,
     fill_missing: bool,
 ) -> CliResult<()> {
-    let mut ordered = DbfFieldOrder::new(writer, fields, fill_missing);
+    let mut ordered = FieldOrder::new(writer, fields, fill_missing);
     for feature in reader.iter_features(&mut ordered)? {
         feature?;
     }
+    ordered.take_error()
+}
+
+/// The CSV columns for a GeoJSON document's properties: every property name that
+/// has a non-null value in at least one feature, in the order first seen. A
+/// property that is null everywhere is left out, as geozero's reader skips null
+/// values. If the document isn't valid JSON, this returns no names and geozero's
+/// reader reports the parse error.
+fn geojson_property_names(geojson: &str) -> Vec<String> {
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(geojson) else {
+        return Vec::new();
+    };
+    let features = match doc.get("type").and_then(serde_json::Value::as_str) {
+        Some("FeatureCollection") => match doc.get("features") {
+            Some(serde_json::Value::Array(features)) => features.iter().collect(),
+            _ => Vec::new(),
+        },
+        Some("Feature") => vec![&doc],
+        _ => Vec::new(),
+    };
+    let mut names = indexmap::IndexSet::new();
+    for feature in features {
+        if let Some(serde_json::Value::Object(properties)) = feature.get("properties") {
+            for (name, value) in properties {
+                if !value.is_null() && !names.contains(name.as_str()) {
+                    names.insert(name.clone());
+                }
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// Convert a GeoJSON document to CSV, with every feature's properties in the
+/// same columns (see `FieldOrder`).
+fn convert_geojson_to_csv<W: Write>(geojson: &str, wtr: W) -> CliResult<()> {
+    let mut csv_writer = CsvWriter::new(wtr);
+    let mut ordered = FieldOrder::new(&mut csv_writer, geojson_property_names(geojson), true);
+    geozero::geojson::GeoJson(geojson).process(&mut ordered)?;
     ordered.take_error()
 }
 
@@ -908,24 +971,29 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         InputFormat::Geojson => {
             let mut buf_reader = open_input_reader(args.arg_input.as_deref())?;
             let mut wtr = create_writer(args.flag_output.as_deref())?;
-            let mut geometry = geozero::geojson::GeoJsonReader(&mut buf_reader);
 
             match args.arg_output_format {
                 OutputFormat::Csv => {
+                    // geozero reads the whole document into memory anyway. CSV needs
+                    // every property name before the header row is written, so read it
+                    // here and scan it for them first.
+                    let mut geojson = String::new();
+                    buf_reader.read_to_string(&mut geojson)?;
                     if let Some(max_len) = max_length {
                         process_csv_with_max_length(&mut wtr, max_len, |writer| {
-                            geometry.process(&mut CsvWriter::new(writer))?;
-                            Ok(())
+                            convert_geojson_to_csv(&geojson, writer)
                         })?;
                     } else {
-                        geometry.process(&mut CsvWriter::new(&mut wtr))?;
+                        convert_geojson_to_csv(&geojson, &mut wtr)?;
                     }
                 },
                 OutputFormat::Svg => {
-                    geometry.process(&mut SvgWriter::new(&mut wtr, false))?;
+                    geozero::geojson::GeoJsonReader(&mut buf_reader)
+                        .process(&mut SvgWriter::new(&mut wtr, false))?;
                 },
                 OutputFormat::Geojsonl => {
-                    geometry.process(&mut GeoJsonLineWriter::new(&mut wtr))?;
+                    geozero::geojson::GeoJsonReader(&mut buf_reader)
+                        .process(&mut GeoJsonLineWriter::new(&mut wtr))?;
                 },
                 OutputFormat::Geojson => unreachable!("rejected above"),
             }

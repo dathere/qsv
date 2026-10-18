@@ -22696,3 +22696,203 @@ fn viz_check_geojson_key_works_on_smart() {
     // check mode short-circuits BEFORE any plotting work
     assert!(!report.contains("plotly"), "{report}");
 }
+
+// Three measures that move together (a, b = 2a + noise, c = 100 - a + noise) plus an
+// independent `noise` column, so parallel coordinates has a correlated core and one axis
+// that relates to nothing.
+fn parcoords_csv(wrk: &Workdir) {
+    let mut rows = String::from("grp,a,b,c,noise\n");
+    for i in 0..60_u32 {
+        let a = f64::from(i % 20);
+        let jitter = f64::from((i * 7) % 3);
+        let b = 2.0 * a + jitter;
+        let c = 100.0 - a + jitter;
+        // a fixed, uncorrelated sequence
+        let noise = f64::from((i * 37) % 11);
+        let grp = ["x", "y", "z"][(i % 3) as usize];
+        rows.push_str(&format!("{grp},{a},{b},{c},{noise}\n"));
+    }
+    wrk.create_from_string("pc.csv", &rows);
+}
+
+#[test]
+fn viz_parcoords_standalone() {
+    let wrk = Workdir::new("viz_parcoords_standalone");
+    parcoords_csv(&wrk);
+
+    let out_html = wrk.path("pc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "parcoords",
+        "pc.csv",
+        "--cols",
+        "a,b,c",
+        "--color",
+        "b",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("pc.html").unwrap();
+    assert!(html.contains(r#""type":"parcoords""#));
+    // one dimension per --cols entry, in --cols order
+    let a = html.find(r#""label":"a""#).expect("axis a");
+    let b = html.find(r#""label":"b""#).expect("axis b");
+    let c = html.find(r#""label":"c""#).expect("axis c");
+    assert!(a < b && b < c, "axes must keep --cols order");
+    // lines are colored by --color through a continuous colorscale with a titled colorbar
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"b"}}"#));
+}
+
+#[test]
+fn viz_parcoords_color_column_need_not_be_an_axis() {
+    // --color names a column outside --cols: it colors the lines but is not drawn as an axis
+    let wrk = Workdir::new("viz_parcoords_color_column_need_not_be_an_axis");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["parcoords", "pc.csv", "--cols", "a,b", "--color", "noise"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(html.contains(r#""type":"parcoords""#));
+    assert!(html.contains(r#""label":"a""#) && html.contains(r#""label":"b""#));
+    assert!(
+        !html.contains(r#""label":"noise""#),
+        "the color-only column must not become an axis"
+    );
+    assert!(html.contains(r#""colorbar":{"title":{"text":"noise"}}"#));
+}
+
+#[test]
+fn viz_parcoords_rejects_size() {
+    let wrk = Workdir::new("viz_parcoords_rejects_size");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["parcoords", "pc.csv", "--cols", "a,b,c", "--size", "a"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--size doesn't apply to `viz parcoords`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn viz_parcoords_non_numeric_color_errors() {
+    let wrk = Workdir::new("viz_parcoords_non_numeric_color_errors");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["parcoords", "pc.csv", "--cols", "a,b,c", "--color", "grp"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("isn't a numeric column"), "{stderr}");
+}
+
+#[test]
+fn viz_parcoords_needs_two_numeric_cols() {
+    let wrk = Workdir::new("viz_parcoords_needs_two_numeric_cols");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["parcoords", "pc.csv", "--cols", "a,grp"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("needs at least 2 numeric --cols"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn viz_parcoords_samples_above_point_budget() {
+    // 60 rows against a 10-point budget: lines are stride-sampled and the title says so
+    let wrk = Workdir::new("viz_parcoords_samples_above_point_budget");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_MAX_POINTS", "10")
+        .args(["parcoords", "pc.csv", "--cols", "a,b,c"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        array_len_after(&html, r#""type":"parcoords""#, "values"),
+        Some(10)
+    );
+    assert!(
+        html.contains("Parallel coordinates (sampled)"),
+        "sampled title cue"
+    );
+}
+
+#[test]
+fn viz_smart_parcoords_panel() {
+    let wrk = Workdir::new("viz_smart_parcoords_panel");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(html.contains(r#""type":"parcoords""#));
+    // the uncorrelated column is left out, and the correlated core is chained so that
+    // neighboring axes are the strong pairs (b and c both track a)
+    let start = html.find(r#""type":"parcoords""#).unwrap();
+    let trace = &html[start..start + html[start..].find("\"line\"").unwrap()];
+    assert!(!trace.contains(r#""label":"noise""#), "{trace}");
+    for axis in ["a", "b", "c"] {
+        assert!(trace.contains(&format!(r#""label":"{axis}""#)), "{trace}");
+    }
+    assert!(html.contains("Parallel coordinates: "));
+}
+
+#[test]
+fn viz_smart_parcoords_needs_three_correlated_measures() {
+    // only two measures correlate (a, b); c and noise are independent of everything, so there's
+    // no 3-axis correlated core and the panel is not drawn
+    let wrk = Workdir::new("viz_smart_parcoords_needs_three_correlated_measures");
+    let mut rows = String::from("grp,a,b,c,noise\n");
+    for i in 0..60_u32 {
+        let a = f64::from(i % 20);
+        let b = 2.0 * a + f64::from((i * 7) % 3);
+        let c = f64::from((i * 13) % 7);
+        let noise = f64::from((i * 37) % 11);
+        let grp = ["x", "y", "z"][(i % 3) as usize];
+        rows.push_str(&format!("{grp},{a},{b},{c},{noise}\n"));
+    }
+    wrk.create_from_string("pc.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(!html.contains(r#""type":"parcoords""#));
+}
+
+#[test]
+fn viz_smart_parcoords_survives_panel_cap() {
+    // an overview panel, like parcats: it's prepended among the correlation drill-downs, so a
+    // tight --max-charts still keeps it
+    let wrk = Workdir::new("viz_smart_parcoords_survives_panel_cap");
+    parcoords_csv(&wrk);
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv", "--max-charts", "4"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(html.contains(r#""type":"parcoords""#));
+}
+
+#[test]
+fn viz_smart_no_parcoords_opts_out() {
+    // the same correlated fixture that draws the panel by default (viz_smart_parcoords_panel)
+    let wrk = Workdir::new("viz_smart_no_parcoords_opts_out");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv", "--no-parcoords"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(!html.contains(r#""type":"parcoords""#));
+    // the correlation heatmap it would have sat beside is still drawn
+    assert!(html.contains(r#""type":"heatmap""#));
+}

@@ -53,6 +53,9 @@ Chart types (subcommands):
     parcats     Parallel categories: ribbons showing how rows flow across the
                 categorical --cols (best with 3-4). Complements sankey, which takes
                 2 columns.
+    parcoords   Parallel coordinates: one line per row across the numeric --cols
+                (default: all numeric), with an optional numeric --color column.
+                The numeric twin of parcats. Drag along an axis to filter rows.
     map         Point map (or --density heatmap) on MapLibre tile basemaps. Pick the
                 coordinate columns with the lat/lon options below.
     geo         Point map on a projection basemap - coastlines/land/countries, no tiles
@@ -152,6 +155,9 @@ Examples:
   # Radar chart comparing numeric metrics, one trace per team
   qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 
+  # Parallel coordinates across four measures, each line colored by price
+  qsv viz parcoords cars.csv --cols mpg,horsepower,weight,acceleration --color price -o parcoords.html
+
   # Point map of earthquakes, marker color by magnitude and size by depth
   qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map.html
 
@@ -207,6 +213,7 @@ Usage:
     qsv viz icicle      [options] <input>
     qsv viz splom       [options] <input>
     qsv viz parcats     [options] <input>
+    qsv viz parcoords   [options] <input>
     qsv viz --help
 
 
@@ -222,7 +229,8 @@ viz options:
                            outermost first (e.g. region,category,subcategory).
                            For splom: the numeric columns to cross-plot (default:
                            all numeric). For parcats: the categorical dimensions
-                           to flow across (best with 3-4).
+                           to flow across (best with 3-4). For parcoords: the
+                           numeric axes, in order (default: all numeric).
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
                            radar, map and geo.
@@ -230,7 +238,8 @@ viz options:
                            marker color (a continuous colorscale with a colorbar). For
                            categorical coloring, use the --series option instead. Cannot
                            be combined with --series. In map density mode, this column is
-                           the heatmap weight.
+                           the heatmap weight. For parcoords: the numeric column that
+                           colors each line (default: the first axis).
     --size <col>           For scatter/scatter3d/map/geo: a numeric column to encode as
                            marker size, producing a bubble chart (values are rescaled to
                            a readable pixel range). Cannot be combined with --series,
@@ -460,7 +469,7 @@ choropleth options:
 
 smart options:
     --max-charts <n>       Maximum number of panels in the Data Schematic. 0 (the default)
-                           means auto: draw every eligible column (up to 64), for both HTML
+                           means auto: draw every eligible column (up to 65), for both HTML
                            and static image export. Up to 8 cartesian panels render as one
                            typed subplot grid; beyond 8, HTML switches to an inline-div grid
                            and static export uses domain-positioned axes to fit one image.
@@ -547,6 +556,9 @@ smart options:
                            (parent/child structure); icicle is an opt-in level-aligned
                            alternative. An explicit style also bypasses the association
                            screen that would otherwise skip an uninformative panel.
+                           Only affects `smart`.
+    --no-parcoords         Don't add the parallel-coordinates panel, which `smart` otherwise
+                           draws when 3 or more numeric columns correlate (|r| >= 0.3).
                            Only affects `smart`.
     --dictionary <src>     Use a describegpt Data Dictionary to guide panel selection from
                            each field's semantic role/concept (falling back to its content
@@ -770,9 +782,9 @@ use plotly::layout::update_menu::{
 };
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter,
-    Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap,
-    Violin, Waterfall,
+    Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Parcoords, Pie, Plot, Sankey,
+    Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces,
+    Treemap, Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -791,6 +803,7 @@ use plotly::{
         themes::BuiltinTheme,
     },
     parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
+    parcoords::{Dimension as ParcoordsDimension, ParcoordsLine},
     sankey::{Arrangement, Link, Node},
     splom::SplomDimension,
     sunburst::InsideTextOrientation,
@@ -821,8 +834,10 @@ use crate::{
 const MAX_SUBPLOTS: usize = 8;
 
 /// Hard ceiling on panels for the inline-div HTML Data Schematic (used when `--max-charts` exceeds
-/// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets.
-const MAX_PANELS_INLINE: usize = 64;
+/// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets. It was 64
+/// before the parallel-coordinates overview panel; the extra slot keeps that panel from crowding
+/// a per-column chart out of an auto-sized (`--max-charts 0`) Data Schematic.
+const MAX_PANELS_INLINE: usize = 65;
 
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
@@ -959,6 +974,21 @@ const PARCATS_MAX_DIMS: usize = 4;
 /// heaviest tuples (by row count) and drops the long tail (logged), matching the bounded-node
 /// approach of the hierarchy (`HIER_MAX_NODES`) and Sankey panels.
 const PARCATS_MAX_PATHS: usize = 200;
+
+/// `viz smart` parallel-coordinates (parcoords) panel bounds — the numeric twin of parcats. It
+/// needs at least `PARCOORDS_MIN_DIMS` measures that each correlate with another at
+/// |r| >= `PARCOORDS_MIN_ABS_R` (an axis that relates to nothing just adds uncorrelated noise
+/// between its neighbors), and keeps at most `PARCOORDS_MAX_DIMS` axes, past which the crossings
+/// stop being readable.
+const PARCOORDS_MIN_DIMS: usize = 3;
+const PARCOORDS_MAX_DIMS: usize = 6;
+const PARCOORDS_MIN_ABS_R: f64 = 0.3;
+
+/// Max lines (rows) embedded in the `viz smart` parcoords panel. Far below `MAX_SMART_POINTS`:
+/// every line carries one value per axis as plain JSON (this panel is not gzip'd or
+/// typed-array encoded like the maps), and past a few thousand lines the plot saturates into
+/// solid bands anyway. Rows beyond the cap are stride-sampled, with a "(sampled)" title cue.
+const PARCOORDS_SMART_MAX_LINES: usize = 5_000;
 
 /// Minimum correlation ratio η² (ANOVA effect size: between-group variance / total variance) for
 /// `viz smart` to add a "measure by dimension" bar. η² ranges 0..1; 0.06 is Cohen's conventional
@@ -1609,6 +1639,7 @@ struct Args {
     cmd_choropleth:          bool,
     cmd_splom:               bool,
     cmd_parcats:             bool,
+    cmd_parcoords:           bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
     flag_y:                  Option<SelectColumns>,
@@ -1671,6 +1702,7 @@ struct Args {
     flag_no_other:           bool,
     flag_smarter:            bool,
     flag_bivariate:          bool,
+    flag_no_parcoords:       bool,
     flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
@@ -2266,13 +2298,20 @@ fn build_plot(
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
+        // parcoords takes --color (it colors the lines) but has no marker to size
+        if matches!(kind, Chart::Parcoords) && args.flag_size.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--size doesn't apply to `viz parcoords` (its lines have no marker size). Use \
+                 --color to color the lines by a numeric column."
+            );
+        }
         if !matches!(
             kind,
-            Chart::Scatter | Chart::Scatter3D | Chart::Map | Chart::Geo
+            Chart::Scatter | Chart::Scatter3D | Chart::Map | Chart::Geo | Chart::Parcoords
         ) {
             return fail_incorrectusage_clierror!(
                 "--color/--size only apply to `viz scatter`, `viz scatter3d`, `viz map` and `viz \
-                 geo`."
+                 geo` (and --color to `viz parcoords`)."
             );
         }
         if args.flag_series.is_some() && !bubble_anim {
@@ -2398,6 +2437,10 @@ fn build_plot(
     if matches!(chart_kind(args), Chart::Parcats) {
         return build_parcats_plot(args);
     }
+    // parcoords (parallel coordinates) is domain-based too, with one axis per dimension.
+    if matches!(chart_kind(args), Chart::Parcoords) {
+        return build_parcoords_plot(args);
+    }
 
     let mut plot = Plot::new();
 
@@ -2520,6 +2563,7 @@ enum Chart {
     Icicle,
     Splom,
     Parcats,
+    Parcoords,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -2569,6 +2613,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Splom
     } else if args.cmd_parcats {
         Chart::Parcats
+    } else if args.cmd_parcoords {
+        Chart::Parcoords
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -11294,6 +11340,127 @@ fn build_parcats_plot(args: &Args) -> CliResult<Plot> {
     Ok(plot)
 }
 
+/// Build the `Plot` for `viz parcoords`: parallel coordinates over the numeric `--cols` (default:
+/// all numeric columns, minus near-unique integer IDs), one polyline per row. `--color` names the
+/// numeric column that colors the lines (default: the first axis); it needn't be one of the axes.
+/// Rows are listwise-complete across the axes and the color column, and stride-sampled down to
+/// the `MAX_SMART_POINTS` budget (with a "(sampled)" title cue) so a large file stays responsive.
+/// Domain-based (no cartesian axes), so it owns its whole `Plot`.
+fn build_parcoords_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let explicit_cols = args.flag_cols.is_some();
+    let mut candidates: Vec<usize> = if explicit_cols {
+        resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?
+    } else {
+        (0..headers.len()).collect()
+    };
+    let color_idx = match args.flag_color.as_ref() {
+        Some(sel) => Some(resolve_one(Some(sel), &headers, nh, "color")?),
+        None => None,
+    };
+    // the color column is read alongside the axes (so rows stay aligned), but is only drawn as an
+    // axis when it's also one of the --cols (or --cols is omitted)
+    let color_is_axis = color_idx.is_none_or(|c| !explicit_cols || candidates.contains(&c));
+    if let Some(c) = color_idx
+        && !candidates.contains(&c)
+    {
+        candidates.push(c);
+    }
+    let (labels, mut columns, kept) =
+        read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
+
+    let color_pos = match color_idx {
+        Some(c) => match kept.iter().position(|&k| k == c) {
+            Some(p) => Some(p),
+            None => {
+                return fail_incorrectusage_clierror!(
+                    "parcoords --color {} isn't a numeric column (or, with --cols omitted, is a \
+                     near-unique integer ID column, which is skipped).",
+                    col_label(&headers, c, nh)
+                );
+            },
+        },
+        None => None,
+    };
+    let n_axes = if color_is_axis {
+        labels.len()
+    } else {
+        labels.len() - 1
+    };
+    if n_axes < 2 {
+        return fail_incorrectusage_clierror!(
+            "parcoords needs at least 2 numeric --cols (best with 3 or more)."
+        );
+    }
+    let n_rows = columns.first().map_or(0, Vec::len);
+    if n_rows == 0 {
+        return fail_clierror!(
+            "parcoords found no rows where all selected numeric columns parse together (nothing \
+             to plot)."
+        );
+    }
+
+    // endpoint-inclusive stride sampling (as `downsample_pair`), applied to every column alike
+    let cap = *MAX_SMART_POINTS;
+    let sampled = n_rows > cap;
+    if sampled {
+        let idx: Vec<usize> = (0..cap)
+            .map(|i| {
+                if cap == 1 {
+                    0
+                } else {
+                    i * (n_rows - 1) / (cap - 1)
+                }
+            })
+            .collect();
+        for col in &mut columns {
+            *col = idx.iter().map(|&i| col[i]).collect();
+        }
+        eprintln!(
+            "viz parcoords: sampled {cap} of {n_rows} rows (raise the budget with \
+             QSV_VIZ_MAX_POINTS)."
+        );
+    }
+
+    let line_pos = color_pos.unwrap_or(0);
+    let line_label = labels[line_pos].clone();
+    let line_values = columns[line_pos].clone();
+    let dimensions: Vec<ParcoordsDimension> = labels
+        .into_iter()
+        .zip(columns)
+        .enumerate()
+        .filter(|&(i, _)| color_is_axis || Some(i) != color_pos)
+        .map(|(_, (label, values))| {
+            ParcoordsDimension::new()
+                .label(escape_hover(&label))
+                .values(values)
+        })
+        .collect();
+    let line = ParcoordsLine::new()
+        .color_array(line_values)
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .show_scale(true)
+        .color_bar(ColorBar::new().title(escape_hover(&line_label)));
+
+    let mut plot = Plot::new();
+    plot.add_trace(Parcoords::new(dimensions).line(line));
+    let base_title = args
+        .flag_title
+        .clone()
+        .or_else(|| sampled.then(|| t!("viz.title.parcoords").into_owned()));
+    let mut layout = Layout::new();
+    if let Some(title) = base_title {
+        let title = if sampled {
+            t!("viz.title.sampled", q_name = title).into_owned()
+        } else {
+            title
+        };
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
 /// Build the parcats dimensions with a count-ordered `categoryarray` baked into each axis (so the
 /// heaviest categories cluster together — the view the chart opens in), plus a `ParcatsLine` that
 /// colors each ribbon by its FIRST dimension's category (color-by-source, like a Sankey) and
@@ -11570,6 +11737,117 @@ fn parcats_panel(
         },
     );
     Ok(Some((panel, dim_idxs)))
+}
+
+/// Axis order for the `viz smart` parallel-coordinates panel, as positions into the square
+/// correlation `matrix`. Eligible measures correlate with at least one other at
+/// |r| >= `PARCOORDS_MIN_ABS_R` (NaN counts as 0); past `PARCOORDS_MAX_DIMS`, the ones with the
+/// strongest such link are kept. The order starts from the strongest pair and greedily grows a
+/// chain, adding at either end the measure most correlated with that end, so neighboring axes —
+/// the only pairs parallel coordinates lets you read — are the strong relationships. Returns the
+/// order plus the position (in it) of the strongest pair's first member, which colors the lines.
+/// `None` when fewer than `PARCOORDS_MIN_DIMS` measures are eligible.
+fn parcoords_axis_order(matrix: &[Vec<f64>]) -> Option<(Vec<usize>, usize)> {
+    let n = matrix.len();
+    let r = |i: usize, j: usize| {
+        let v = matrix[i][j].abs();
+        if v.is_finite() { v } else { 0.0 }
+    };
+    let best_link = |k: usize| {
+        (0..n)
+            .filter(|&j| j != k)
+            .map(|j| r(k, j))
+            .fold(0.0, f64::max)
+    };
+    let mut eligible: Vec<usize> = (0..n)
+        .filter(|&k| best_link(k) >= PARCOORDS_MIN_ABS_R)
+        .collect();
+    if eligible.len() < PARCOORDS_MIN_DIMS {
+        return None;
+    }
+    if eligible.len() > PARCOORDS_MAX_DIMS {
+        eligible.sort_by(|&a, &b| best_link(b).total_cmp(&best_link(a)).then(a.cmp(&b)));
+        eligible.truncate(PARCOORDS_MAX_DIMS);
+        eligible.sort_unstable();
+    }
+    let (mut first, mut second, mut best) = (eligible[0], eligible[1], -1.0);
+    for (a, &i) in eligible.iter().enumerate() {
+        for &j in &eligible[a + 1..] {
+            if r(i, j) > best {
+                (first, second, best) = (i, j, r(i, j));
+            }
+        }
+    }
+    let mut chain = std::collections::VecDeque::from([first, second]);
+    let mut rest: Vec<usize> = eligible
+        .into_iter()
+        .filter(|&k| k != first && k != second)
+        .collect();
+    while !rest.is_empty() {
+        let (front, back) = (chain[0], chain[chain.len() - 1]);
+        // ties go to the lower index and to the back end, for deterministic output
+        let (pos, at_front, _) = rest
+            .iter()
+            .enumerate()
+            .fold((0, false, -1.0), |acc, (p, &k)| {
+                let (rb, rf) = (r(back, k), r(front, k));
+                if rb > acc.2 && rb >= rf {
+                    (p, false, rb)
+                } else if rf > acc.2 {
+                    (p, true, rf)
+                } else {
+                    acc
+                }
+            });
+        let k = rest.remove(pos);
+        if at_front {
+            chain.push_front(k);
+        } else {
+            chain.push_back(k);
+        }
+    }
+    let order: Vec<usize> = chain.into();
+    let color = order.iter().position(|&k| k == first).unwrap_or(0);
+    Some((order, color))
+}
+
+/// Build the `viz smart` parallel-coordinates overview from the columns and matrix already read
+/// for the correlation heatmap (no extra data pass). `None` when fewer than `PARCOORDS_MIN_DIMS`
+/// measures are correlated enough to be worth reading together (see `parcoords_axis_order`).
+/// Rows beyond `PARCOORDS_SMART_MAX_LINES` are stride-sampled. HTML-only (domain-based).
+fn parcoords_panel(labels: &[String], columns: &[Vec<f64>], matrix: &[Vec<f64>]) -> Option<Panel> {
+    let (order, color) = parcoords_axis_order(matrix)?;
+    let n_rows = columns.first().map_or(0, Vec::len);
+    if n_rows < 2 {
+        return None;
+    }
+    let cap = PARCOORDS_SMART_MAX_LINES;
+    let rows: Vec<usize> = if n_rows > cap {
+        (0..cap).map(|i| i * (n_rows - 1) / (cap - 1)).collect()
+    } else {
+        (0..n_rows).collect()
+    };
+    let axis_labels: Vec<String> = order.iter().map(|&k| labels[k].clone()).collect();
+    let axis_columns: Vec<Vec<f64>> = order
+        .iter()
+        .map(|&k| rows.iter().map(|&r| columns[k][r]).collect())
+        .collect();
+    let mut title = t!(
+        "viz.title.parcoords_dims",
+        q_dims = axis_labels.join(" \u{b7} ")
+    )
+    .into_owned();
+    if n_rows > cap {
+        title = t!("viz.title.sampled", q_name = title).into_owned();
+    }
+    Some(Panel::new(
+        title,
+        PanelKind::Parcoords {
+            labels: axis_labels,
+            columns: axis_columns,
+            color,
+        },
+    ))
 }
 
 /// Returns true when the joint category tuples form a strict rollup tree: across every adjacent
@@ -16699,6 +16977,7 @@ fn tour_overview_key(kind: &PanelKind) -> Option<&'static str> {
         PanelKind::Hierarchy { .. } => Some("@hierarchy"),
         PanelKind::Sankey { .. } => Some("@sankey"),
         PanelKind::Parcats { .. } => Some("@parcats"),
+        PanelKind::Parcoords { .. } => Some("@parcoords"),
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -16810,6 +17089,7 @@ fn tour_panel_explanation(
         PanelKind::Hierarchy { .. } => t!("viz.tour.explain.hierarchy").into_owned(),
         PanelKind::Sankey { .. } => t!("viz.tour.explain.sankey").into_owned(),
         PanelKind::Parcats { .. } => t!("viz.tour.explain.parcats").into_owned(),
+        PanelKind::Parcoords { .. } => t!("viz.tour.explain.parcoords").into_owned(),
         PanelKind::AnimatedScatterPair { .. } => {
             t!("viz.tour.explain.animated_scatter").into_owned()
         },
@@ -21210,6 +21490,15 @@ enum PanelKind {
         dim_labels: Vec<String>,
         tuples:     Vec<Vec<String>>,
         counts:     Vec<f64>,
+    },
+    /// `viz smart` parallel-coordinates (parcoords) overview: one line per row across 3-6
+    /// correlated numeric measures (the numeric twin of `Parcats`). `columns[k]` holds axis `k`'s
+    /// row-aligned values, axes ordered so neighbors are strongly correlated, and the lines are
+    /// colored by axis `color`. Domain-based, so it renders on the inline path only.
+    Parcoords {
+        labels:  Vec<String>,
+        columns: Vec<Vec<f64>>,
+        color:   usize,
     },
 }
 
@@ -36190,6 +36479,15 @@ impl<'a> SmartCtx<'a> {
                 // the rendered panel.
                 // The coefficient is named in the title (and in every cell's hover): a Spearman
                 // matrix reported as plain "Correlation" would be read as Pearson's r.
+                // parallel-coordinates overview of the correlated measures, read off the same
+                // columns and the same coefficient the heatmap shows. Built here, before the
+                // heatmap below consumes `labels` and `matrix`. HTML-only (domain-based).
+                let parcoords = if self.out_format.is_image() || self.args.flag_no_parcoords {
+                    None
+                } else {
+                    parcoords_panel(&labels, &columns, &matrix)
+                };
+
                 let corr_title = if spearman_corr {
                     t!("viz.title.corr_spearman")
                 } else {
@@ -36228,6 +36526,10 @@ impl<'a> SmartCtx<'a> {
                     at += 1;
                 }
                 if let Some(panel) = scatter3d_panel {
+                    self.panels.insert(at, panel);
+                    at += 1;
+                }
+                if let Some(panel) = parcoords {
                     self.panels.insert(at, panel);
                 }
             }
@@ -37072,6 +37374,7 @@ impl<'a> SmartCtx<'a> {
                     | PanelKind::Hierarchy { .. }
                     | PanelKind::Sankey { .. }
                     | PanelKind::Parcats { .. }
+                    | PanelKind::Parcoords { .. }
                     | PanelKind::AnimatedScatterPair { .. }
                     | PanelKind::AnimatedGeo { .. }
                     | PanelKind::AnimatedBubble { .. }
@@ -37284,7 +37587,8 @@ impl<'a> SmartCtx<'a> {
                 | PanelKind::ChoroplethMap { .. }
                 | PanelKind::Hierarchy { .. }
                 | PanelKind::Sankey { .. }
-                | PanelKind::Parcats { .. } => None,
+                | PanelKind::Parcats { .. }
+                | PanelKind::Parcoords { .. } => None,
             })
             .collect();
         let top_n = self.args.flag_limit.max(1);
@@ -38040,6 +38344,7 @@ fn panel_trace(
         | PanelKind::Hierarchy { .. }
         | PanelKind::Sankey { .. }
         | PanelKind::Parcats { .. }
+        | PanelKind::Parcoords { .. }
         | PanelKind::AnimatedScatterPair { .. }
         | PanelKind::AnimatedGeo { .. }
         | PanelKind::AnimatedBubble { .. } => {
@@ -39092,7 +39397,8 @@ fn smart_grid_parts(
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. }
             | PanelKind::Sankey { .. }
-            | PanelKind::Parcats { .. } => None,
+            | PanelKind::Parcats { .. }
+            | PanelKind::Parcoords { .. } => None,
         })
         .flat_map(<[String]>::iter)
         .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
@@ -39869,6 +40175,7 @@ fn smart_inline_panel_plot(
         PanelKind::Hierarchy { .. } => inline_panel_plot_hierarchy(panel, theme),
         PanelKind::Sankey { .. } => inline_panel_plot_sankey(panel, theme),
         PanelKind::Parcats { .. } => inline_panel_plot_parcats(panel, theme),
+        PanelKind::Parcoords { .. } => inline_panel_plot_parcoords(panel, theme),
         PanelKind::AnimatedGeo { .. } => inline_panel_plot_animated_geo(panel, theme),
         PanelKind::AnimatedBubble { .. } => inline_panel_plot_animated_bubble(panel, theme),
         PanelKind::AnimatedScatterPair { .. } => {
@@ -40754,6 +41061,52 @@ fn inline_panel_plot_parcats(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot
         .height(row_height)
         .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
         .update_menus(vec![parcats_order_toggle_menu(&ordered)]);
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG);
+    }
+    let layout = inline_panel_title(layout, panel, themed, Vec::new());
+    plot.set_layout(apply_theme(layout, theme));
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
+
+// Parallel coordinates: one line per row across the measure axes (no cartesian axes), the numeric
+// twin of the parcats panel above.
+#[inline(never)]
+fn inline_panel_plot_parcoords(panel: &Panel, theme: Option<BuiltinTheme>) -> Plot {
+    let themed = theme.is_some();
+    let row_height = panel_render_height(&panel.kind, panel.axis_log);
+    let PanelKind::Parcoords {
+        labels,
+        columns,
+        color,
+    } = &panel.kind
+    else {
+        unreachable!("smart_inline_panel_plot dispatches on panel.kind")
+    };
+    let dimensions: Vec<ParcoordsDimension> = labels
+        .iter()
+        .zip(columns)
+        .map(|(label, values)| {
+            ParcoordsDimension::new()
+                .label(escape_hover(label))
+                .values(values.clone())
+        })
+        .collect();
+    let line = ParcoordsLine::new()
+        .color_array(columns[*color].clone())
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+        .show_scale(true)
+        .color_bar(ColorBar::new().title(escape_hover(&labels[*color])));
+    let mut plot = Plot::new();
+    plot.add_trace(Parcoords::new(dimensions).line(line));
+    // parcoords draws its axis labels ABOVE the axes, so the top band is taller than parcats'
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(row_height)
+        .margin(Margin::new().top(84).bottom(28).left(48).right(48).pad(4));
     if !themed {
         layout = layout
             .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -42884,7 +43237,8 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::ChoroplethMap { .. }
         | PanelKind::Hierarchy { .. }
         | PanelKind::Sankey { .. }
-        | PanelKind::Parcats { .. } => true,
+        | PanelKind::Parcats { .. }
+        | PanelKind::Parcoords { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -55163,6 +55517,54 @@ mod tests {
             drawn * 100 <= trials * 5,
             "{drawn} of {trials} noise series drawn"
         );
+    }
+
+    #[test]
+    fn parcoords_axis_order_chains_by_correlation() {
+        // 0-1 strongest (0.9), 2 links to 1 (0.7), 3 links to 0 (0.6), 4 relates to nothing
+        let m = vec![
+            vec![1.0, 0.9, 0.2, 0.6, 0.0],
+            vec![0.9, 1.0, 0.7, 0.1, 0.05],
+            vec![0.2, 0.7, 1.0, 0.0, 0.1],
+            vec![0.6, 0.1, 0.0, 1.0, f64::NAN],
+            vec![0.0, 0.05, 0.1, f64::NAN, 1.0],
+        ];
+        let (order, color) = parcoords_axis_order(&m).expect("4 eligible measures");
+        // 4 (best link 0.1) is dropped; the chain grows 0-1 → 0-1-2 (|r| 0.7 at the back)
+        // → 3-0-1-2 (|r| 0.6 at the front)
+        assert_eq!(order, vec![3, 0, 1, 2]);
+        // lines are colored by the strongest pair's first member, wherever it ends up
+        assert_eq!(order[color], 0);
+    }
+
+    #[test]
+    fn parcoords_axis_order_needs_three_eligible() {
+        let m = vec![
+            vec![1.0, 0.9, 0.1],
+            vec![0.9, 1.0, 0.2],
+            vec![0.1, 0.2, 1.0],
+        ];
+        assert!(parcoords_axis_order(&m).is_none());
+    }
+
+    #[test]
+    fn parcoords_axis_order_caps_axes() {
+        // 8 measures all correlated at 0.5, except 7 which links more strongly: the cap keeps
+        // PARCOORDS_MAX_DIMS axes and never drops the strongest link
+        let n = 8;
+        let mut m = vec![vec![0.5; n]; n];
+        for (i, row) in m.iter_mut().enumerate() {
+            row[i] = 1.0;
+        }
+        m[6][7] = -0.95;
+        m[7][6] = -0.95;
+        let (order, _) = parcoords_axis_order(&m).unwrap();
+        assert_eq!(order.len(), PARCOORDS_MAX_DIMS);
+        assert!(order.contains(&6) && order.contains(&7));
+        // the strongest pair (a negative r counts by magnitude) are neighbors
+        let p6 = order.iter().position(|&k| k == 6).unwrap();
+        let p7 = order.iter().position(|&k| k == 7).unwrap();
+        assert_eq!(p6.abs_diff(p7), 1);
     }
 
     #[test]

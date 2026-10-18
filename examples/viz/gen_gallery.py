@@ -289,6 +289,68 @@ RESIZE_REPORTER_JS = (
     "[\"wheel\",\"touchstart\",\"keydown\",\"pointerdown\"].forEach(function(t){"
     "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
+# Trace types plotly.js draws with WebGL. Chrome keeps only ~16 live WebGL contexts per page (and
+# same-origin iframes share that budget), dropping the OLDEST when a new one is created — the lost
+# plots go blank and plotly never recovers them. With 50+ figures and ~17 Data Schematic iframes the
+# gallery needs well over that (parcoords alone uses 3), so figures with any of these traces are
+# rendered lazily by LAZY_GL_JS instead of all at once.
+WEBGL_TRACE_TYPES = {
+    "scatter3d", "surface", "mesh3d", "cone", "streamtube", "volume", "isosurface",
+    "splom", "parcoords", "scattergl", "scatterpolargl",
+    "scattermap", "densitymap", "choroplethmap",
+    "scattermapbox", "densitymapbox", "choroplethmapbox",
+}
+
+# Keeps the page's live WebGL contexts under the browser cap. `qsvLazy(id, render)` registers a
+# WebGL figure: `render()` (its newPlot call) runs when the figure comes within a viewport of the
+# screen, and `Plotly.purge` releases it once it scrolls further away, pinning its height so the
+# layout doesn't jump. The Data Schematic iframes get the same treatment by swapping their `src`
+# for about:blank (height pinned the same way; RESIZE_LISTENER_JS re-sizes them on reload). An
+# element in fullscreen is never released. Without IntersectionObserver everything renders
+# eagerly, as before.
+LAZY_GL_JS = (
+    "var qsvLazy=(function(){"
+    "var M=\"100% 0px\",reg=new Map(),io=null;"
+    "function fsHolds(el){var f=document.fullscreenElement;return !!f&&(f===el||el.contains(f));}"
+    "function show(el){var r=reg.get(el);if(r.live)return;r.live=true;"
+    "Promise.resolve(r.render()).then(function(){el.style.minHeight=\"\";"
+    "if(typeof qsvInitPlot===\"function\")qsvInitPlot(el);},function(){});}"
+    # purge drops plotly's event handlers, so clear the init flag for the next render to redo
+    # them. Keep __qsvBaked: qsvApplyCamera writes the fitted zoom into the FIGS layout that the
+    # next render reuses, so re-capturing it would re-apply the size correction and drift the
+    # zoom on every revisit. The gl3d wheel fix is a plain DOM listener on the same element and
+    # survives purge, so its flag stays too.
+    "function hide(el){var r=reg.get(el);if(!r.live||fsHolds(el))return;"
+    "el.style.minHeight=el.offsetHeight+\"px\";r.live=false;"
+    "delete el.__qsvInitFit;Plotly.purge(el);}"
+    "if(window.IntersectionObserver){"
+    "io=new IntersectionObserver(function(es){es.forEach(function(e){"
+    "(e.isIntersecting?show:hide)(e.target);});},{rootMargin:M});"
+    "var fo=new IntersectionObserver(function(es){es.forEach(function(e){var f=e.target;"
+    "if(e.isIntersecting){if(f.dataset.src&&f.getAttribute(\"src\")===\"about:blank\")"
+    "f.setAttribute(\"src\",f.dataset.src);}"
+    "else if(!fsHolds(f)&&f.getAttribute(\"src\")!==\"about:blank\"){"
+    "if(!f.dataset.src)f.dataset.src=f.getAttribute(\"src\");"
+    "if(f.clientHeight>0)f.style.height=f.clientHeight+\"px\";"
+    "f.setAttribute(\"src\",\"about:blank\");}});},{rootMargin:M});"
+    "var d=document.getElementsByClassName(\"dash\");"
+    "for(var i=0;i<d.length;i++)fo.observe(d[i]);}"
+    "return function(id,render){var el=document.getElementById(id);"
+    "if(!io||!el){render();return;}reg.set(el,{render:render,live:false});io.observe(el);};"
+    "})();")
+
+
+def uses_webgl(fig):
+    """True when any trace in a plotly figure dict is drawn with WebGL (see WEBGL_TRACE_TYPES)."""
+    return any(t.get("type") in WEBGL_TRACE_TYPES for t in (fig or {}).get("data") or [])
+
+
+def lazy_if_webgl(fig, div_id, call):
+    """Wrap a figure's `Plotly.newPlot(...)` statement in `qsvLazy` when it uses WebGL."""
+    if not uses_webgl(fig):
+        return call
+    return f'qsvLazy("{div_id}",function(){{return {call.rstrip(";")};}});'
+
 # Added to the gallery once: sizes each iframe to the height its Data Schematic reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
 # content-derived (see RESIZE_REPORTER_JS) and therefore viewport-independent, so applying it can
@@ -430,10 +492,10 @@ FS_BUTTON_JS = (
     'function qsvInstallGl3dFix(gd){if(gd.__qsvGl3dFix||!qsvSceneKeys(gd).length)return;'
     'gd.__qsvGl3dFix=true;gd.addEventListener("wheel",function(e){'
     'if(document.fullscreenElement!==gd)e.stopPropagation();},{capture:true,passive:true});}'
-    'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
-    'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
-    'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
-    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);qsvApplyScrollZoom(gd);qsvInstallGl3dFix(gd);'
+    # Per-plot setup, also called by qsvLazy after each lazy render (a lazily-rendered figure isn't
+    # a .js-plotly-plot yet when qsvInitFit scans). Returns false while the plot has no data yet.
+    'function qsvInitPlot(gd){if(gd.__qsvInitFit)return true;if(!gd.data)return false;'
+    'gd.__qsvInitFit=true;qsvFitNow(gd);qsvApplyScrollZoom(gd);qsvInstallGl3dFix(gd);'
     # Core/Full extent buttons bake an assumed-px zoom; adopt the clicked extent as the new fit
     # reference and re-aim the camera for the current size (mirrors the CLI handler in viz.rs).
     'if(gd.on)gd.on("plotly_buttonclicked",function(ed){try{'
@@ -441,8 +503,11 @@ FS_BUTTON_JS = (
     'var hit=false;Object.keys(gd.__qsvBaked).forEach(function(k){var z=args[k+".zoom"];'
     'if(typeof z!=="number")return;var c=args[k+".center"];'
     'gd.__qsvBaked[k]={z:z,c:(c!==undefined?c:gd.__qsvBaked[k].c)};hit=true;});'
-    'if(hit)setTimeout(function(){qsvFitNow(gd);},0);}catch(e){}});'
-    '}else pending=true;});'
+    'if(hit)setTimeout(function(){qsvFitNow(gd);},0);}catch(e){}});return true;}'
+    'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
+    'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
+    'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){'
+    'if(!qsvInitPlot(gd))pending=true;});'
     'if(pending&&qsvTries++<100)setTimeout(qsvInitFit,50);}setTimeout(qsvInitFit,0);'
     # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
     # the post-resize dims rather than stale pre-change ones.
@@ -730,6 +795,14 @@ FIGURES = [
      "smart auto-adds this panel for 3-4 associated many-to-many categoricals (and suppresses the "
      "hierarchy on the same columns); genuine rollup trees still auto-select a treemap/sunburst.",
      True, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+    ("parcoords", "Parallel coordinates over four numeric columns (units_sold, revenue, discount_pct, "
+     "profit_margin_pct): one line per row, crossing each axis at its value and <b>colored by "
+     "revenue</b>. Lines running parallel between two axes mean those columns rise together; "
+     "crossing lines mean one falls as the other rises. <b>Drag along an axis</b> to filter rows "
+     "(drag several to combine filters). The numeric twin of parcats; viz smart auto-adds it when "
+     "3+ measures are correlated, chaining the axes so neighbors are the strongest pairs.",
+     True, ["parcoords", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct",
+            "--color", "revenue"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
     ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap, "
@@ -2258,12 +2331,13 @@ def main():
                 f'gap:14px">{cells}</div></figure>'
             )
             for k in range(len(panels)):
-                plots.append(
+                plots.append(lazy_if_webgl(
+                    panels[k], f"{gid}-p{k}",
                     f'Plotly.newPlot("{gid}-p{k}", FIGS[{idx}][{k}].data, '
                     f'FIGS[{idx}][{k}].layout || {{}}, '
                     f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn,qsvLegendBtn]}}, '
                     f'FIGS[{idx}][{k}].config || {{}}));'
-                )
+                ))
         else:
             figs.append(result["fig"])
             cls = "cell full" if full else "cell"
@@ -2274,12 +2348,13 @@ def main():
             # animation frames live on the figure object but the positional newPlot(div,data,layout,
             # config) form drops them, so re-add via Plotly.addFrames once newPlot resolves (mirrors
             # the CLI's FULLSCREEN_SCRIPT enhance() fix). No-op for the non-animated figures.
-            plots.append(
+            plots.append(lazy_if_webgl(
+                result["fig"], gid,
                 f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
                 f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn,qsvLegendBtn]}}, '
                 f'FIGS[{idx}].config || {{}})).then(function(){{'
                 f'var fr=FIGS[{idx}].frames; if(fr&&fr.length)Plotly.addFrames("{gid}",fr);}});'
-            )
+            ))
 
     # Final, clickable-screenshot entries (full-width cells, no plotly figure): each opens its
     # standalone Data Schematic in its own popup window on click; target=_blank is the no-JS fallback and
@@ -2354,6 +2429,7 @@ def main():
         + "</div>\n<script>\n"
         + figs_json + "\n"
         + FS_BUTTON_JS + "\n"
+        + LAZY_GL_JS + "\n"
         + "\n".join(plots) + "\n"
         + "</script>\n"
         + RESIZE_LISTENER_JS + "\n"

@@ -69,6 +69,8 @@ ternary     Ternary (triangle) plot of three parts of a whole: --cols names exac
             a/(a+b+c), b/(a+b+c) and c/(a+b+c). Optional --series, or --color/--size.
             Rows with a blank, non-numeric or negative part, or parts summing to 0,
             are skipped (and counted on stderr).
+            The first column's corner is the top, the second's bottom-left and the
+            third's bottom-right.
 treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
             (levels, outermost first), optional --value and --agg.
 sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.

@@ -23000,7 +23000,7 @@ fn viz_barpolar_degrees_places_true_angles() {
     );
     // a linear angular axis (true bearings), no category slots; 360 folds onto 0
     assert!(html.contains(r#""type":"linear""#), "html: {html}");
-    assert!(html.contains(r#""categoryarray":null"#));
+    assert!(!html.contains(r#""categoryorder":"array""#));
     assert!(
         html.contains(r#""theta":["0","45","90","180","270"]"#),
         "html: {html}"

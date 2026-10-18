@@ -5981,7 +5981,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.15.0"
-source = "git+https://github.com/dathere/plotly?rev=55555b2fad67f29c1963e77a86ef55feae98983d#55555b2fad67f29c1963e77a86ef55feae98983d"
+source = "git+https://github.com/dathere/plotly?rev=43a4ee42b48176f962d6f2ff852058c7337049bc#43a4ee42b48176f962d6f2ff852058c7337049bc"
 dependencies = [
  "askama",
  "async-trait",
@@ -6003,7 +6003,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.15.0"
-source = "git+https://github.com/dathere/plotly?rev=55555b2fad67f29c1963e77a86ef55feae98983d#55555b2fad67f29c1963e77a86ef55feae98983d"
+source = "git+https://github.com/dathere/plotly?rev=43a4ee42b48176f962d6f2ff852058c7337049bc#43a4ee42b48176f962d6f2ff852058c7337049bc"
 dependencies = [
  "darling 0.24.1",
  "proc-macro2",
@@ -6014,7 +6014,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.2.0"
-source = "git+https://github.com/dathere/plotly?rev=55555b2fad67f29c1963e77a86ef55feae98983d#55555b2fad67f29c1963e77a86ef55feae98983d"
+source = "git+https://github.com/dathere/plotly?rev=43a4ee42b48176f962d6f2ff852058c7337049bc#43a4ee42b48176f962d6f2ff852058c7337049bc"
 dependencies = [
  "anyhow",
  "base64 0.23.1",

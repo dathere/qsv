@@ -22929,6 +22929,9 @@ fn viz_barpolar_counts_rows_and_stacks_series() {
     // non-numeric series keep first-appearance order
     assert!(html.find(r#""name":"calm""#) < html.find(r#""name":"breezy""#));
     assert!(html.contains(r#""barmode":"stack""#));
+    // unset polar fields must be omitted: a `null` bgcolor/axis overrides the --theme template
+    // (a white polar disc on plotly_dark)
+    assert!(!html.contains(r#""bgcolor":null"#) && !html.contains(r#""radialaxis":null"#));
     assert!(html.contains(r#""direction":"clockwise","rotation":90.0"#));
     // no --y: bar length counts rows, and the hover says so
     assert!(

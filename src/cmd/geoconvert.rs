@@ -592,11 +592,11 @@ impl OwnedValue {
 /// feature's properties in a fixed field order. `CsvWriter` takes its columns from
 /// the first feature, and panics unless every later feature has the same columns
 /// in the same order, but:
-/// - the shapefile reader yields each record's fields in `HashMap` order, which differs from
-///   record to record, and leaves out null fields. The field order is the .dbf's.
-/// - GeoJSON features can list their properties in any order, leave some out, have them null
-///   (the reader leaves those out) or have no properties at all. The field order is every
-///   property name, in the order first seen (see `geojson_property_names`).
+/// - the shapefile reader yields each record's fields in `HashMap` order, which differs from record
+///   to record, and leaves out null fields. The field order is the .dbf's.
+/// - GeoJSON features can list their properties in any order, leave some out, have them null (the
+///   reader leaves those out) or have no properties at all. The field order is every property name,
+///   in the order first seen (see `geojson_property_names`).
 ///
 /// So each feature's properties are buffered and re-emitted in field order; with
 /// `fill_missing` (CSV), a missing field is written as an empty string.

@@ -5,6 +5,11 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`qsv-viz` skill regenerated for the new `parcoords` subcommand** (PR2_PLACEHOLDER): parallel coordinates across numeric `--cols`, with `--color` coloring the lines. The `--cols` and `--color` descriptions cover it, and a usage example was added.
+
 ## [25.0.0] - 2026-10-14
 
 Companion release to qsv 25.0.0, "The Spatiotemporal Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 25.0.0 because the regenerated skill JSONs advertise subcommands and options that only exist in the new binary (`geocode census`/`geoclient`, `sqlp`'s `read_csv()` named options and `generate_series()`/`range()`). The headline for MCP/Cowork users is **`qsv-geocode`'s two new online geocoders**: the keyless US Census Geocoder (with vintages, so you get *when* as well as *where*) and NYC's Geoclient. The skill count stays at **57**. Update your qsv binary first.

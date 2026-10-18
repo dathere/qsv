@@ -440,6 +440,10 @@ qsv viz icicle sales_sample.csv --cols region,product_category,payment_method -o
 # auto-picks this over a treemap/sunburst for 3-4 associated many-to-many categoricals
 qsv viz parcats sales_sample.csv --cols region,product_category,payment_method -o parcats.html
 
+# parcoords — parallel coordinates: one line per row across the numeric --cols, colored by
+# --color; drag along an axis to filter. viz smart auto-adds it when 3+ measures are correlated
+qsv viz parcoords sales_sample.csv --cols units_sold,revenue,discount_pct,profit_margin_pct --color revenue -o parcoords.html
+
 # splom — scatter-plot matrix: every pairwise scatter of --cols in an N x N grid with shared axes,
 # so correlation structure is legible at a glance. Standalone only — viz smart covers the same
 # ground with its correlation heatmap plus the strongest-pair scatter and 3D scatter drill-downs

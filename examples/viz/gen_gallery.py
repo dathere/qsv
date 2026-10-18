@@ -785,6 +785,14 @@ FIGURES = [
      "smart auto-adds this panel for 3-4 associated many-to-many categoricals (and suppresses the "
      "hierarchy on the same columns); genuine rollup trees still auto-select a treemap/sunburst.",
      True, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+    ("parcoords", "Parallel coordinates over four numeric columns (units_sold, revenue, discount_pct, "
+     "profit_margin_pct): one line per row, crossing each axis at its value and <b>colored by "
+     "revenue</b>. Lines running parallel between two axes mean those columns rise together; "
+     "crossing lines mean one falls as the other rises. <b>Drag along an axis</b> to filter rows "
+     "(drag several to combine filters). The numeric twin of parcats; viz smart auto-adds it when "
+     "3+ measures are correlated, chaining the axes so neighbors are the strongest pairs.",
+     True, ["parcoords", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct",
+            "--color", "revenue"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
     ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap, "

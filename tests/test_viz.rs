@@ -9340,23 +9340,18 @@ fn viz_area_only_applies_to_funnel() {
     let wrk = Workdir::new("viz_area_only_applies_to_funnel");
     funnel_stages(&wrk);
 
-    let mut cmd = wrk.command("viz");
-    cmd.args([
-        "pie",
-        "stages.csv",
-        "--x",
-        "stage",
-        "--y",
-        "amount",
-        "--area",
-    ]);
-    let out = wrk.output(&mut cmd);
-    assert!(!out.status.success());
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("--area only applies to `viz funnel`"),
-        "{stderr}"
-    );
+    // `viz smart` dispatches before `build_plot`, so it needs the same rejection
+    for sub in ["pie", "smart"] {
+        let mut cmd = wrk.command("viz");
+        cmd.args([sub, "stages.csv", "--x", "stage", "--y", "amount", "--area"]);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{sub}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("--area only applies to `viz funnel`"),
+            "{sub}: {stderr}"
+        );
+    }
 }
 
 #[test]
@@ -23146,6 +23141,10 @@ fn viz_barpolar_usage_errors() {
                 "gust",
                 "--degrees",
             ][..],
+            "--degrees only applies to `viz barpolar`",
+        ),
+        (
+            &["smart", "wind.csv", "--degrees"][..],
             "--degrees only applies to `viz barpolar`",
         ),
     ] {

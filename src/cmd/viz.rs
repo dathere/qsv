@@ -1972,6 +1972,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "--geojson only applies to `viz choropleth` and `viz smart`."
         );
     }
+    // checked here, before dispatch, so `viz smart` (which never reaches `build_plot`) can't
+    // silently ignore them either
+    if args.flag_degrees && !args.cmd_barpolar {
+        return fail_incorrectusage_clierror!("--degrees only applies to `viz barpolar`.");
+    }
+    if args.flag_area && !args.cmd_funnel {
+        return fail_incorrectusage_clierror!("--area only applies to `viz funnel`.");
+    }
     if args.flag_denominator_key.is_some() {
         if !(args.cmd_choropleth || args.cmd_smart) {
             return fail_incorrectusage_clierror!(
@@ -2375,13 +2383,6 @@ fn build_plot(
                  --slider <col> --series <entity> --size <measure>`.)"
             );
         }
-    }
-
-    if args.flag_degrees && !matches!(kind, Chart::BarPolar) {
-        return fail_incorrectusage_clierror!("--degrees only applies to `viz barpolar`.");
-    }
-    if args.flag_area && !matches!(kind, Chart::Funnel) {
-        return fail_incorrectusage_clierror!("--area only applies to `viz funnel`.");
     }
 
     // --rangeslider adds an x-axis navigator strip; it only makes sense on cartesian charts with a

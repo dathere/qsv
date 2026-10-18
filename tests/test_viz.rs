@@ -5714,7 +5714,7 @@ fn cyclic_dashboard(wrk: &Workdir, rows: &str) -> String {
 fn viz_smart_cyclic_seasonality_panel() {
     let wrk = Workdir::new("viz_smart_cyclic_seasonality_panel");
     // 20 days of a daytime rush (5 records/hour 08-18h, 1 otherwise) -> a polar hour-of-day
-    // seasonality profile (HTML-only, ScatterPolar).
+    // seasonality profile (HTML-only, one BarPolar bar per hour).
     let mut rows = String::new();
     for day in 1..=20 {
         for h in 0..24 {
@@ -5728,7 +5728,7 @@ fn viz_smart_cyclic_seasonality_panel() {
         html.contains("Records by hour of day"),
         "expected an hour-of-day cyclic panel"
     );
-    assert!(html.contains(r#""type":"scatterpolar""#));
+    assert!(html.contains(r#""type":"barpolar""#));
     // the ring plots the seasonal index (× average), not raw counts
     assert!(
         html.contains("× average"),
@@ -5763,7 +5763,7 @@ fn viz_smart_cyclic_panel_weekday_only_on_a_datetime() {
         "expected a day-of-week cyclic panel"
     );
     assert_eq!(
-        html.matches(r#""type":"scatterpolar""#).count(),
+        html.matches(r#""type":"barpolar""#).count(),
         1,
         "flat hours must not get a ring of their own"
     );
@@ -5789,14 +5789,23 @@ fn viz_smart_cyclic_panel_draws_every_real_cycle() {
     assert!(html.contains("hour of day"), "expected an hour-of-day ring");
     assert!(html.contains("day of week"), "expected a day-of-week ring");
     assert_eq!(
-        html.matches(r#""type":"scatterpolar""#).count(),
+        html.matches(r#""type":"barpolar""#).count(),
         2,
         "one ring per real cycle"
     );
     // the second ring sits in its own side-by-side polar subplot
     assert!(html.contains(r#""subplot":"polar2""#));
+    // every ring reads like a clock face: first phase at 12 o'clock, running clockwise
+    assert_eq!(
+        html.matches(r#""angularaxis":{"direction":"clockwise","rotation":90.0}"#)
+            .count(),
+        2,
+        "both rings should be clockwise from the top: {html}"
+    );
     assert!(
-        html.contains(r#""polar2":{"domain":{"x":[0.53"#),
+        html.contains(
+            r#""polar2":{"angularaxis":{"direction":"clockwise","rotation":90.0},"domain":{"x":[0.53"#
+        ),
         "html: {html}"
     );
 }
@@ -5822,7 +5831,7 @@ fn viz_smart_cyclic_panel_skips_flat_and_midnight_default_timestamps() {
         !html.contains("Records by"),
         "flat hours + default-midnight stamps should not draw a cyclic panel"
     );
-    assert!(!html.contains(r#""type":"scatterpolar""#));
+    assert!(!html.contains(r#""type":"barpolar""#));
 }
 
 #[test]
@@ -5845,7 +5854,7 @@ fn viz_smart_cyclic_panel_keeps_real_midnight_on_an_hourly_grid() {
         }
         let html = cyclic_dashboard(&wrk, &rows);
         assert!(
-            !html.contains(r#""type":"scatterpolar""#),
+            !html.contains(r#""type":"barpolar""#),
             "{name}: flat on-the-hour data must not draw a cyclic ring"
         );
     }
@@ -22895,4 +22904,186 @@ fn viz_smart_no_parcoords_opts_out() {
     assert!(!html.contains(r#""type":"parcoords""#));
     // the correlation heatmap it would have sat beside is still drawn
     assert!(html.contains(r#""type":"heatmap""#));
+}
+
+/// A tiny wind log: compass directions (with gaps — no SE/SW/NW), bearings in degrees (360 and 0
+/// both meaning north), a speed band to stack by, and a gust value.
+fn barpolar_csv(wrk: &Workdir) {
+    wrk.create_from_string(
+        "wind.csv",
+        "direction,bearing,band,gust\nN,0,calm,3\nn,360,breezy,8\nNE,45,calm,2\nE,90,breezy,9\nE,\
+         90,calm,1\nS,180,breezy,12\nW,270,calm,4\nNE,45,breezy,7\n",
+    );
+}
+
+/// Runs `viz barpolar` with `extra` args (uncompressed) and returns the HTML.
+fn barpolar_html(wrk: &Workdir, extra: &[&str]) -> String {
+    let out_html = wrk.path("wr.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["barpolar", "wind.csv", "-o", &out_html])
+        .args(extra);
+    wrk.assert_success(&mut cmd);
+    wrk.read_to_string("wr.html").unwrap()
+}
+
+#[test]
+fn viz_barpolar_counts_rows_and_stacks_series() {
+    let wrk = Workdir::new("viz_barpolar_counts_rows_and_stacks_series");
+    barpolar_csv(&wrk);
+    let html = barpolar_html(&wrk, &["--x", "direction", "--series", "band"]);
+    // one stacked trace per --series value, drawn clockwise from 12 o'clock
+    assert_eq!(html.matches(r#""type":"barpolar""#).count(), 2);
+    assert!(html.contains(r#""name":"calm""#) && html.contains(r#""name":"breezy""#));
+    // non-numeric series keep first-appearance order
+    assert!(html.find(r#""name":"calm""#) < html.find(r#""name":"breezy""#));
+    assert!(html.contains(r#""barmode":"stack""#));
+    // unset polar fields must be omitted: a `null` bgcolor/axis overrides the --theme template
+    // (a white polar disc on plotly_dark)
+    assert!(!html.contains(r#""bgcolor":null"#) && !html.contains(r#""radialaxis":null"#));
+    assert!(html.contains(r#""direction":"clockwise","rotation":90.0"#));
+    // no --y: bar length counts rows, and the hover says so
+    assert!(
+        html.contains("count: %{r"),
+        "hover should label the radius as a count"
+    );
+    // compass points take their bearings on a full 8-point rose (gaps stay empty slots), and a
+    // lower-case label is folded onto the rose's own spelling
+    assert!(
+        html.contains(r#""categoryarray":["N","NE","E","SE","S","SW","W","NW"]"#),
+        "html: {html}"
+    );
+    assert!(
+        html.contains(r#""theta":["N","E","S","NE"]"#),
+        "breezy thetas: {html}"
+    );
+}
+
+#[test]
+fn viz_barpolar_sixteen_point_rose() {
+    let wrk = Workdir::new("viz_barpolar_sixteen_point_rose");
+    wrk.create_from_string("wind.csv", "direction\nN\nNNE\nE\nE\n");
+    let html = barpolar_html(&wrk, &["--x", "direction"]);
+    assert!(
+        html.contains(
+            r#""categoryarray":["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"]"#
+        ),
+        "a 16-point label should switch to the 16-point rose: {html}"
+    );
+}
+
+#[test]
+fn viz_barpolar_sums_y_and_sorts_numeric_slots() {
+    let wrk = Workdir::new("viz_barpolar_sums_y_and_sorts_numeric_slots");
+    wrk.create_from_string("h.csv", "hour,n\n10,1\n2,4\n1,2\n10,5\n");
+    let out_html = wrk.path("h.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1").args([
+        "barpolar", "h.csv", "--x", "hour", "--y", "n", "-o", &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("h.html").unwrap();
+    // --y with no --agg sums per category
+    assert!(html.contains(r#""r":[6.0,4.0,2.0]"#), "html: {html}");
+    // numeric labels are evenly spaced slots in ascending order, not first-appearance order
+    assert!(
+        html.contains(r#""categoryarray":["1","2","10"]"#),
+        "html: {html}"
+    );
+    assert!(html.contains(r#""type":"category""#));
+    assert!(html.contains("n: %{r"), "hover should name the --y column");
+}
+
+#[test]
+fn viz_barpolar_degrees_places_true_angles() {
+    let wrk = Workdir::new("viz_barpolar_degrees_places_true_angles");
+    barpolar_csv(&wrk);
+    let html = barpolar_html(
+        &wrk,
+        &[
+            "--x",
+            "bearing",
+            "--y",
+            "gust",
+            "--agg",
+            "mean",
+            "--degrees",
+        ],
+    );
+    // a linear angular axis (true bearings), no category slots; 360 folds onto 0
+    assert!(html.contains(r#""type":"linear""#), "html: {html}");
+    assert!(!html.contains(r#""categoryorder":"array""#));
+    assert!(
+        html.contains(r#""theta":["0","45","90","180","270"]"#),
+        "html: {html}"
+    );
+    assert!(
+        html.contains(r#""r":[5.5,4.5,5.0,12.0,4.0]"#),
+        "html: {html}"
+    );
+}
+
+#[test]
+fn viz_barpolar_usage_errors() {
+    let wrk = Workdir::new("viz_barpolar_usage_errors");
+    barpolar_csv(&wrk);
+    for (args, expected) in [
+        (
+            &["barpolar", "wind.csv", "--x", "direction", "--degrees"][..],
+            "--degrees needs a numeric angle in --x, but found `N`",
+        ),
+        (
+            &["barpolar", "wind.csv", "--x", "direction", "--agg", "sum"][..],
+            "--agg sum/mean/min/max needs a --y value column",
+        ),
+        (
+            &[
+                "bar",
+                "wind.csv",
+                "--x",
+                "direction",
+                "--y",
+                "gust",
+                "--degrees",
+            ][..],
+            "--degrees only applies to `viz barpolar`",
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(args);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{args:?} should fail");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(expected), "{args:?}: {stderr}");
+    }
+}
+
+#[test]
+fn viz_barpolar_rejects_negative_totals() {
+    let wrk = Workdir::new("viz_barpolar_rejects_negative_totals");
+    wrk.create_from_string("neg.csv", "dir,v\nN,3\nS,-5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["barpolar", "neg.csv", "--x", "dir", "--y", "v"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("negative total"), "{stderr}");
+}
+
+#[test]
+fn viz_barpolar_stacks_binned_series_in_numeric_order() {
+    let wrk = Workdir::new("viz_barpolar_stacks_binned_series_in_numeric_order");
+    wrk.create_from_string(
+        "wind.csv",
+        "direction,band\nN,20-30\nE,0-10\nS,30+\nW,10-20\n",
+    );
+    let html = barpolar_html(&wrk, &["--x", "direction", "--series", "band"]);
+    let pos = |name: &str| {
+        html.find(&format!(r#""name":"{name}""#))
+            .unwrap_or_else(|| panic!("series {name}"))
+    };
+    assert!(
+        pos("0-10") < pos("10-20") && pos("10-20") < pos("20-30") && pos("20-30") < pos("30+"),
+        "binned series should stack low to high"
+    );
 }

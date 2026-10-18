@@ -57,6 +57,13 @@ candlestick Financial OHLC. --x = date column, plus --ohlc-open/--high/--low/--c
 ohlc        Financial OHLC bars (same inputs as candlestick).
 sankey      Flow diagram. --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
+barpolar    Polar bar chart (a wind rose): one bar per --x category around the
+            circle, clockwise from the top, as long as the --y total (rows are
+            counted when --y is omitted; see --agg). Compass points (N, NE, NNE...)
+            sit at their bearings on a full 8- or 16-point rose. Other categories
+            get evenly spaced slots in the order they first appear in the file
+            (numeric ones sort ascending); --degrees places numeric angles at their
+            true bearing instead. --series stacks one colored segment per value.
 treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension columns
             (levels, outermost first), optional --value and --agg.
 sunburst    Same inputs as treemap, as concentric rings. Better for deep hierarchies.
@@ -243,6 +250,18 @@ qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
 qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 ```
 
+> Wind rose: observation counts per compass direction, stacked by speed band
+
+```console
+qsv viz barpolar wind.csv --x direction --series speed_band -o windrose.html
+```
+
+> Wind rose from bearings in degrees, each bar at its true angle
+
+```console
+qsv viz barpolar wind.csv --x bearing_deg --degrees -o windrose.html
+```
+
 > Parallel coordinates across four measures, each line colored by price
 
 ```console
@@ -328,6 +347,7 @@ qsv viz candlestick [options] <input>
 qsv viz ohlc        [options] <input>
 qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
+qsv viz barpolar    [options] <input>
 qsv viz map         [options] <input>
 qsv viz geo         [options] <input>
 qsv viz choropleth  [options] <input>
@@ -350,10 +370,11 @@ qsv viz --help
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d. |  |
 | &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric). |  |
-| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo. |  |
+| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, barpolar (stacked), map and geo. |  |
 | &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis). |  |
 | &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
+| &nbsp;`‑‑degrees`&nbsp; | flag | For barpolar: read --x as an angle in degrees (0 = north, clockwise) and draw each bar at that angle, so gaps in the data stay gaps. Without it, each distinct --x value gets an evenly spaced slot, which suits hours, months and complete degree bins (compass names are placed by bearing either way). |  |
 | &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |
 | &nbsp;`‑‑high`&nbsp; | string | High-price column for candlestick/ohlc charts. |  |
 | &nbsp;`‑‑low`&nbsp; | string | Low-price column for candlestick/ohlc charts. |  |
@@ -363,7 +384,7 @@ qsv viz --help
 | &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst/icicle: a numeric measure summed per sector (when omitted, each row counts as 1). For smart: the numeric column its region map aggregates per region (see the agg option), in place of the dictionary's additive measure. |  |
 | &nbsp;`‑‑sankey‑value‑order`&nbsp; | flag | Order sankey nodes by total flow (largest at the top of each column) instead of plotly's default crossing-minimizing "snap" order. Either way the chart carries an on-screen "node order" button to flip between the two layouts, and link ribbons are always colored by their source node. Applies to the `sankey` chart AND the `smart` Data Schematic flow panel. |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20). |  |
-| &nbsp;`‑‑agg`&nbsp; | string | How to combine values. For bar/line, aggregate the y values when the x value repeats: one of sum, mean, count, min, max. For treemap/sunburst/icicle, only the additive aggregations apply: count (the default) or sum (which requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count; pass mean for an intensive measure (a density, rate, index or per-capita figure), since summing those is meaningless and the count/sum hover's "share of total" line would be too. On a bubble animation (see the slider option), it collapses each entity x frame cell to a single bubble and defaults to mean, the cell centroid; count is rejected there, since a row count is not a position. For smart (with a GeoJSON), how its region map combines the value column per region: sum (the default, and the only one that also gets a rate panel when a denominator is available), mean, min or max; count keeps the row-count map even when every region has the same number of rows, and takes no value column. |  |
+| &nbsp;`‑‑agg`&nbsp; | string | How to combine values. For bar/line, aggregate the y values when the x value repeats: one of sum, mean, count, min, max. For barpolar, the same per category (and series): sum by default, and only count when the y column is omitted. For treemap/sunburst/icicle, only the additive aggregations apply: count (the default) or sum (which requires --value). For choropleth, how rows sharing a region are combined: sum when --value is given, else count; pass mean for an intensive measure (a density, rate, index or per-capita figure), since summing those is meaningless and the count/sum hover's "share of total" line would be too. On a bubble animation (see the slider option), it collapses each entity x frame cell to a single bubble and defaults to mean, the cell centroid; count is rejected there, since a row count is not a position. For smart (with a GeoJSON), how its region map combines the value column per region: sum (the default, and the only one that also gets a rate panel when a denominator is available), mean, min or max; count keeps the row-count map even when every region has the same number of rows, and takes no value column. |  |
 | &nbsp;`‑‑box‑points`&nbsp; | string | Which sample points to draw alongside a box or violin. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). Applies to `viz box`, `viz violin` AND `viz smart`. For `viz box` the default is outliers; for `viz smart` an explicit mode OVERRIDES a size-based heuristic and is applied to every panel. `none` only hides a violin's points, since its KDE needs the values anyway; the cache-only escape hatch is `--violin off` with this set to none. For the heuristic's thresholds, see <https://github.com/dathere/qsv/wiki/Visualization#distribution-panels> |  |
 
 <a name="map-options"></a>

@@ -84,6 +84,7 @@ as `text/plain`, so a browser won't render it):
 | `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini, **Benford** first digits for the budget columns) |
 | `onboarding_funnel.csv` | 60 channel-weeks of `visits,signups,activated,subscribed` — four stage columns that nest in every row | `smart` (pipeline **funnel**) |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
+| `wind_obs.csv` | **1,440 SYNTHETIC** hourly wind observations (60 days): 16-point compass `direction`, `bearing_deg`, `speed_kmh` and a `speed_band`, with prevailing south-westerlies | `barpolar` (wind rose) |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
 | `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
@@ -424,6 +425,11 @@ qsv viz sankey web_flows.csv --source source --target target --value sessions -o
 
 # radar — multi-axis brand comparison (one polygon per --series value, per-axis mean)
 qsv viz radar product_ratings.csv --cols battery,camera,performance,display,value,design --series brand -o radar.html
+
+# barpolar — wind rose: hourly observations counted per compass direction, stacked by speed band.
+# Compass points sit at their true bearings (a missing direction keeps its empty slot); --degrees
+# does the same for a numeric bearing column
+qsv viz barpolar wind_obs.csv --x direction --series speed_band -o barpolar.html
 
 # treemap — part-to-whole hierarchy (--cols are the levels, outer first); sized by a --value sum
 qsv viz treemap customer_spend.csv --cols plan,region --value monthly_spend --agg sum -o treemap.html

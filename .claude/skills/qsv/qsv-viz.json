@@ -60,6 +60,11 @@
         "description": "Caption note drawn at the bottom of the plot (e.g. to note a clipped outlier). Cartesian charts only."
       },
       {
+        "flag": "--area",
+        "type": "flag",
+        "description": "For funnel: draw a funnel area, whose stacked sections are sized by each stage's share of the total and labeled with its value and percent of the total, instead of bars labeled with the conversion from the previous stage."
+      },
+      {
         "flag": "--bins",
         "type": "number",
         "description": "Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20)."
@@ -541,6 +546,10 @@
     {
       "description": "Funnel of a pipeline whose stages are ROWS (stage column + amount column)",
       "command": "qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html"
+    },
+    {
+      "description": "The same pipeline as a funnel area, each section sized by its share of the total",
+      "command": "qsv viz funnel pipeline.csv --x stage --y amount --area -o funnelarea.html"
     },
     {
       "description": "Correlation heatmap over all numeric columns",

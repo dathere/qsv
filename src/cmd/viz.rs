@@ -35,7 +35,8 @@ Chart types (subcommands):
     pie         --x = label column, optional --y = value column.
     funnel      Stage-by-stage drop-off. --x = stage column, optional --y = value column
                 (counts stage occurrences when omitted). Stages keep the order they first
-                appear in the file, so the rows define the pipeline.
+                appear in the file, so the rows define the pipeline. --area draws it as a
+                funnel area instead: stacked sections sized by each stage's share.
     heatmap     Correlation matrix of numeric columns (default; subset with --cols), or a
                 category x category pivot with --x/--y/--z.
     contour     2D density contour of --x and --y, binned into a --bins x --bins grid.
@@ -147,6 +148,9 @@ Examples:
 
   # Funnel of a pipeline whose stages are ROWS (stage column + amount column)
   qsv viz funnel pipeline.csv --x stage --y amount -o funnel.html
+
+  # The same pipeline as a funnel area, each section sized by its share of the total
+  qsv viz funnel pipeline.csv --x stage --y amount --area -o funnelarea.html
 
   # Correlation heatmap over all numeric columns
   qsv viz heatmap data.csv -o corr.html
@@ -274,6 +278,10 @@ viz options:
                            third data variable. In map density mode, this column is the
                            heatmap weight.
     --donut                Render a pie chart as a donut (with a center hole).
+    --area                 For funnel: draw a funnel area, whose stacked sections are sized
+                           by each stage's share of the total and labeled with its value
+                           and percent of the total, instead of bars labeled with the
+                           conversion from the previous stage.
     --degrees              For barpolar: read --x as an angle in degrees (0 = north,
                            clockwise) and draw each bar at that angle, so gaps in the
                            data stay gaps. Without it, each distinct --x value gets an
@@ -815,9 +823,9 @@ use plotly::layout::update_menu::{
 };
 use plotly::{
     Bar, BarPolar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour,
-    DensityMap, Funnel, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Parcoords, Pie, Plot,
-    Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar, ScatterTernary, Splom,
-    Sunburst, Trace, Traces, Treemap, Violin, Waterfall,
+    DensityMap, Funnel, FunnelArea, HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats,
+    Parcoords, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap, ScatterPolar,
+    ScatterTernary, Splom, Sunburst, Trace, Traces, Treemap, Violin, Waterfall,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -1684,6 +1692,7 @@ struct Args {
     flag_series:             Option<SelectColumns>,
     flag_donut:              bool,
     flag_degrees:            bool,
+    flag_area:               bool,
     // scatter encodings: map a numeric column to per-point marker color (continuous
     // colorscale) and/or marker size (bubble chart). Mutually exclusive with --series.
     flag_color:              Option<SelectColumns>,
@@ -2368,6 +2377,9 @@ fn build_plot(
 
     if args.flag_degrees && !matches!(kind, Chart::BarPolar) {
         return fail_incorrectusage_clierror!("--degrees only applies to `viz barpolar`.");
+    }
+    if args.flag_area && !matches!(kind, Chart::Funnel) {
+        return fail_incorrectusage_clierror!("--area only applies to `viz funnel`.");
     }
 
     // --rangeslider adds an x-axis navigator strip; it only makes sense on cartesian charts with a
@@ -12688,6 +12700,13 @@ fn build_funnel_chart(args: &Args) -> CliResult<Box<dyn Trace>> {
     }
 
     // plotly draws index 0 at the TOP and works downward, so first-appearance order is fed as-is.
+    // --area: a FunnelArea sizes each section by its share of the total, so its labels carry the
+    // share of the total; the bar funnel's "percent previous" (conversion) has no meaning there.
+    if args.flag_area {
+        return Ok(FunnelArea::new(values)
+            .labels(order)
+            .text_info("label+value+percent"));
+    }
     Ok(Funnel::new(values, order)
         .orientation(Orientation::Horizontal)
         .text_info("value+percent previous")

@@ -9260,6 +9260,68 @@ fn viz_funnel_rejects_a_negative_stage_total() {
 }
 
 #[test]
+fn viz_funnel_area_sizes_sections_by_share() {
+    // --area swaps the bar funnel for a FunnelArea: same stages, same file order and the same
+    // per-stage totals, but labeled with each stage's share of the total, not the conversion from
+    // the previous stage (which a share-sized section doesn't show)
+    let wrk = Workdir::new("viz_funnel_area_sizes_sections_by_share");
+    funnel_stages(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel",
+        "stages.csv",
+        "--x",
+        "stage",
+        "--y",
+        "amount",
+        "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"funnelarea""#), "html: {html}");
+    assert!(!html.contains(r#""type":"funnel""#), "html: {html}");
+    assert!(
+        html.contains(r#""values":[48210.0,12980.0,7412.0,2104.0,861.0]"#),
+        "stage totals in file order; html: {html}"
+    );
+    assert!(
+        html.contains(r#""labels":["Visited","Signedup","Activated","Subscribed","Renewed"]"#),
+        "html: {html}"
+    );
+    assert!(
+        html.contains(r#""textinfo":"label+value+percent""#),
+        "html: {html}"
+    );
+}
+
+#[test]
+fn viz_area_only_applies_to_funnel() {
+    let wrk = Workdir::new("viz_area_only_applies_to_funnel");
+    funnel_stages(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "pie",
+        "stages.csv",
+        "--x",
+        "stage",
+        "--y",
+        "amount",
+        "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--area only applies to `viz funnel`"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn viz_contour_non_numeric_errors() {
     let wrk = Workdir::new("viz_contour_non_numeric_errors");
     quakes(&wrk);

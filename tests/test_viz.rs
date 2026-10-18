@@ -22882,3 +22882,17 @@ fn viz_smart_parcoords_survives_panel_cap() {
     let html: String = wrk.stdout(&mut cmd);
     assert!(html.contains(r#""type":"parcoords""#));
 }
+
+#[test]
+fn viz_smart_no_parcoords_opts_out() {
+    // the same correlated fixture that draws the panel by default (viz_smart_parcoords_panel)
+    let wrk = Workdir::new("viz_smart_no_parcoords_opts_out");
+    parcoords_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv", "--no-parcoords"]);
+    let html: String = wrk.stdout(&mut cmd);
+    assert!(!html.contains(r#""type":"parcoords""#));
+    // the correlation heatmap it would have sat beside is still drawn
+    assert!(html.contains(r#""type":"heatmap""#));
+}

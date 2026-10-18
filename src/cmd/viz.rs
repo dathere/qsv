@@ -469,7 +469,7 @@ choropleth options:
 
 smart options:
     --max-charts <n>       Maximum number of panels in the Data Schematic. 0 (the default)
-                           means auto: draw every eligible column (up to 64), for both HTML
+                           means auto: draw every eligible column (up to 65), for both HTML
                            and static image export. Up to 8 cartesian panels render as one
                            typed subplot grid; beyond 8, HTML switches to an inline-div grid
                            and static export uses domain-positioned axes to fit one image.
@@ -556,6 +556,9 @@ smart options:
                            (parent/child structure); icicle is an opt-in level-aligned
                            alternative. An explicit style also bypasses the association
                            screen that would otherwise skip an uninformative panel.
+                           Only affects `smart`.
+    --no-parcoords         Don't add the parallel-coordinates panel, which `smart` otherwise
+                           draws when 3 or more numeric columns correlate (|r| >= 0.3).
                            Only affects `smart`.
     --dictionary <src>     Use a describegpt Data Dictionary to guide panel selection from
                            each field's semantic role/concept (falling back to its content
@@ -831,8 +834,10 @@ use crate::{
 const MAX_SUBPLOTS: usize = 8;
 
 /// Hard ceiling on panels for the inline-div HTML Data Schematic (used when `--max-charts` exceeds
-/// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets.
-const MAX_PANELS_INLINE: usize = 64;
+/// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets. It was 64
+/// before the parallel-coordinates overview panel; the extra slot keeps that panel from crowding
+/// a per-column chart out of an auto-sized (`--max-charts 0`) Data Schematic.
+const MAX_PANELS_INLINE: usize = 65;
 
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
@@ -1697,6 +1702,7 @@ struct Args {
     flag_no_other:           bool,
     flag_smarter:            bool,
     flag_bivariate:          bool,
+    flag_no_parcoords:       bool,
     flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
@@ -36476,7 +36482,7 @@ impl<'a> SmartCtx<'a> {
                 // parallel-coordinates overview of the correlated measures, read off the same
                 // columns and the same coefficient the heatmap shows. Built here, before the
                 // heatmap below consumes `labels` and `matrix`. HTML-only (domain-based).
-                let parcoords = if self.out_format.is_image() {
+                let parcoords = if self.out_format.is_image() || self.args.flag_no_parcoords {
                     None
                 } else {
                     parcoords_panel(&labels, &columns, &matrix)

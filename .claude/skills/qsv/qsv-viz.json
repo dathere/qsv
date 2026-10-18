@@ -264,7 +264,7 @@
       {
         "flag": "--max-charts",
         "type": "number",
-        "description": "Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export. Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid and static export uses domain-positioned axes to fit one image. Set a positive <n> to cap the panel count instead; eligible columns beyond the cap are reported but not drawn.",
+        "description": "Maximum number of panels in the Data Schematic. 0 (the default) means auto: draw every eligible column (up to 65), for both HTML and static image export. Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid and static export uses domain-positioned axes to fit one image. Set a positive <n> to cap the panel count instead; eligible columns beyond the cap are reported but not drawn.",
         "default": 0
       },
       {
@@ -281,6 +281,11 @@
         "flag": "--no-other",
         "type": "flag",
         "description": "Omit the \"Other (N)\" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default. When just ONE category is left over, it is charted under its own name instead of as an opaque \"Other (1)\" bar."
+      },
+      {
+        "flag": "--no-parcoords",
+        "type": "flag",
+        "description": "Don't add the parallel-coordinates panel, which `smart` otherwise draws when 3 or more numeric columns correlate (|r| >= 0.3). Only affects `smart`."
       },
       {
         "flag": "--no-snap",

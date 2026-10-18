@@ -545,8 +545,9 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442) until 0.15.0 is on crates.io.
-plotly = { git = "https://github.com/dathere/plotly", rev = "a21da1f14717728b7f9fbc84fa99118eab52a8fd" }
+# plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442: full plotly.js 3.7 trace coverage)
+# until 0.15.0 is on crates.io.
+plotly = { git = "https://github.com/dathere/plotly", rev = "55555b2fad67f29c1963e77a86ef55feae98983d" }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }

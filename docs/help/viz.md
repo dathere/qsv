@@ -67,6 +67,9 @@ splom       Scatter-plot matrix: every pair of numeric --cols in a grid, with ea
 parcats     Parallel categories: ribbons showing how rows flow across the
             categorical --cols (best with 3-4). Complements sankey, which takes
             2 columns.
+parcoords   Parallel coordinates: one line per row across the numeric --cols
+            (default: all numeric), with an optional numeric --color column.
+            The numeric twin of parcats. Drag along an axis to filter rows.
 map         Point map (or --density heatmap) on MapLibre tile basemaps. Pick the
             coordinate columns with the lat/lon options below.
 geo         Point map on a projection basemap - coastlines/land/countries, no tiles
@@ -240,6 +243,12 @@ qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
 qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 ```
 
+> Parallel coordinates across four measures, each line colored by price
+
+```console
+qsv viz parcoords cars.csv --cols mpg,horsepower,weight,acceleration --color price -o parcoords.html
+```
+
 > Point map of earthquakes, marker color by magnitude and size by depth
 
 ```console
@@ -327,6 +336,7 @@ qsv viz sunburst    [options] <input>
 qsv viz icicle      [options] <input>
 qsv viz splom       [options] <input>
 qsv viz parcats     [options] <input>
+qsv viz parcoords   [options] <input>
 qsv viz --help
 ```
 
@@ -339,9 +349,9 @@ qsv viz --help
 | &nbsp;`‑x,`<br>`‑‑x`&nbsp; | string | Column for the x-axis / category / bin / group. |  |
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d. |  |
-| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). |  |
+| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst/icicle: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). For parcoords: the numeric axes, in order (default: all numeric). |  |
 | &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo. |  |
-| &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. |  |
+| &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. For parcoords: the numeric column that colors each line (default: the first axis). |  |
 | &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series, EXCEPT on an animated scatter (see the --slider option), where the --series column names the entity and this column is the third data variable. In map density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
 | &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |

@@ -375,6 +375,8 @@ viz:
     agg_mean: "mean"
     # Suffixes decorating a title whose base is a column name.
     sampled: "%{q_name} (sampled)"
+    parcoords: "Parallel coordinates"
+    parcoords_dims: "Parallel coordinates: %{q_dims}"
     benford: "%{q_label} — Benford first digits (%{q_verdict}, MAD %{q_mad})"
     benford_close: "close conformity"
     benford_acceptable: "acceptable conformity"
@@ -705,6 +707,7 @@ viz:
       hierarchy: "These categorical columns nest, so their composition is drawn as an interactive hierarchy - click a segment to descend."
       sankey: "A directed flow links these two columns, so their crossings are drawn as a Sankey diagram - ribbon width is flow volume."
       parcats: "Several categorical columns are read together here: each ribbon traces rows that share the same combination of categories."
+      parcoords: "Several numeric columns are read together here: each line is one row, crossing every axis at its value. Lines running parallel between neighboring axes mean those columns rise and fall together; lines that cross mean one falls as the other rises. Drag along an axis to filter the rows."
       animated_scatter: "The correlated pair also spans time, so the scatter is animated: press Play to watch the relationship build chronologically."
       animated_geo: "The mapped points are dated, so the map is animated - press Play to watch events accumulate across the map over time."
       animated_bubble: "Each bubble is one category tracing its path through two measures over time - press Play to run the clock."

@@ -281,7 +281,9 @@ viz options:
     --area                 For funnel: draw a funnel area, whose stacked sections are sized
                            by each stage's share of the total and labeled with its value
                            and percent of the total, instead of bars labeled with the
-                           conversion from the previous stage.
+                           conversion from the previous stage. Its outline always narrows,
+                           so a stage larger than the one before it can't show as growth;
+                           a warning names the first such stage.
     --degrees              For barpolar: read --x as an angle in degrees (0 = north,
                            clockwise) and draw each bar at that angle, so gaps in the
                            data stay gaps. Without it, each distinct --x value gets an
@@ -12703,6 +12705,19 @@ fn build_funnel_chart(args: &Args) -> CliResult<Box<dyn Trace>> {
     // --area: a FunnelArea sizes each section by its share of the total, so its labels carry the
     // share of the total; the bar funnel's "percent previous" (conversion) has no meaning there.
     if args.flag_area {
+        // the bar funnel shows a stage that outruns its predecessor as a wider bar; a funnel area's
+        // outline narrows regardless, so say so rather than let growth pass as a drop-off
+        if let Some(i) = (1..values.len()).find(|&i| values[i] > values[i - 1]) {
+            viz_note(&format!(
+                "viz funnel --area: stage `{}` ({}) is larger than `{}` ({}) before it. A funnel \
+                 area always narrows, so it can't show that growth; drop --area to see it as a \
+                 wider bar.",
+                order[i],
+                fmt_measure(values[i]),
+                order[i - 1],
+                fmt_measure(values[i - 1])
+            ));
+        }
         return Ok(FunnelArea::new(values)
             .labels(order)
             .text_info("label+value+percent"));

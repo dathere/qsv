@@ -9298,6 +9298,44 @@ fn viz_funnel_area_sizes_sections_by_share() {
 }
 
 #[test]
+fn viz_funnel_area_warns_when_a_stage_grows() {
+    // a funnel area's outline always narrows, so a stage that outruns its predecessor would read
+    // as a normal drop-off; --area names the first such stage on stderr (and still draws)
+    let wrk = Workdir::new("viz_funnel_area_warns_when_a_stage_grows");
+    wrk.create_from_string(
+        "grow.csv",
+        "stage,amount\nVisited,1000\nSubscribed,200\nRenewed,260\nUpgraded,300\n",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel", "grow.csv", "--x", "stage", "--y", "amount", "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("stage `Renewed` (260) is larger than `Subscribed` (200) before it"),
+        "{stderr}"
+    );
+
+    // a strictly narrowing pipeline gets no warning
+    funnel_stages(&wrk);
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel",
+        "stages.csv",
+        "--x",
+        "stage",
+        "--y",
+        "amount",
+        "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("is larger than"));
+}
+
+#[test]
 fn viz_area_only_applies_to_funnel() {
     let wrk = Workdir::new("viz_area_only_applies_to_funnel");
     funnel_stages(&wrk);

@@ -80,7 +80,7 @@ as `text/plain`, so a browser won't render it):
 | `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble & 3D), `histogram`, `box`, `pie`, `heatmap`, `contour` |
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
-| `signup_funnel.csv` | 15 rows of `stage,channel,users` — 5 signup stages x 3 channels, the stages already in process order | `funnel` (stages as ROWS, summed per stage; no dictionary needed) |
+| `signup_funnel.csv` | 15 rows of `stage,channel,users` — 5 signup stages x 3 channels, the stages already in process order | `funnel` (stages as ROWS, summed per stage; no dictionary needed), `funnel --area` |
 | `nyc_capital_projects.csv` | 12,587 NYC capital projects (CPDB): managing agency, project type, and three budget aggregates that do NOT nest | `smart` (pipeline **bridge**, Lorenz/Gini, **Benford** first digits for the budget columns) |
 | `onboarding_funnel.csv` | 60 channel-weeks of `visits,signups,activated,subscribed` — four stage columns that nest in every row | `smart` (pipeline **funnel**) |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
@@ -420,6 +420,11 @@ qsv viz candlestick stock_prices.csv --x date --ohlc-open open --high high --low
 
 # ohlc — open-high-low-close bars
 qsv viz ohlc stock_prices.csv --x date --ohlc-open open --high high --low low --close close -o ohlc.html
+
+# funnel — signup stages as ROWS, summed per stage, labeled with conversion from the previous stage;
+# --area draws the same totals as a funnel area sized by each stage's share of the total
+qsv viz funnel signup_funnel.csv --x stage --y users -o funnel.html
+qsv viz funnel signup_funnel.csv --x stage --y users --area -o funnelarea.html
 
 # sankey — session funnel (duplicate source->target pairs are aggregated)
 qsv viz sankey web_flows.csv --source source --target target --value sessions -o sankey.html

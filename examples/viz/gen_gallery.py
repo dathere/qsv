@@ -743,6 +743,11 @@ FIGURES = [
      "from the previous stage. This is the row-shaped counterpart to the column-shaped pipeline "
      "<code>viz smart</code> detects automatically.",
      False, ["funnel", "signup_funnel.csv", "--x", "stage", "--y", "users"]),
+    ("funnel --area",
+     "The same signup pipeline as a funnel area: each section is sized by its stage's share of the "
+     "total and labelled with its value and percent of the total, rather than the conversion from "
+     "the previous stage.",
+     False, ["funnel", "signup_funnel.csv", "--x", "stage", "--y", "users", "--area"]),
     ("heatmap (correlation)", "Pearson correlation matrix over numeric columns.",
      False, ["heatmap", "sales_sample.csv"]),
     ("scatter (correlated pair)",

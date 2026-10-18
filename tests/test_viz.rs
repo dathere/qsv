@@ -9260,6 +9260,101 @@ fn viz_funnel_rejects_a_negative_stage_total() {
 }
 
 #[test]
+fn viz_funnel_area_sizes_sections_by_share() {
+    // --area swaps the bar funnel for a FunnelArea: same stages, same file order and the same
+    // per-stage totals, but labeled with each stage's share of the total, not the conversion from
+    // the previous stage (which a share-sized section doesn't show)
+    let wrk = Workdir::new("viz_funnel_area_sizes_sections_by_share");
+    funnel_stages(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel",
+        "stages.csv",
+        "--x",
+        "stage",
+        "--y",
+        "amount",
+        "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"funnelarea""#), "html: {html}");
+    assert!(!html.contains(r#""type":"funnel""#), "html: {html}");
+    assert!(
+        html.contains(r#""values":[48210.0,12980.0,7412.0,2104.0,861.0]"#),
+        "stage totals in file order; html: {html}"
+    );
+    assert!(
+        html.contains(r#""labels":["Visited","Signedup","Activated","Subscribed","Renewed"]"#),
+        "html: {html}"
+    );
+    assert!(
+        html.contains(r#""textinfo":"label+value+percent""#),
+        "html: {html}"
+    );
+}
+
+#[test]
+fn viz_funnel_area_warns_when_a_stage_grows() {
+    // a funnel area's outline always narrows, so a stage that outruns its predecessor would read
+    // as a normal drop-off; --area names the first such stage on stderr (and still draws)
+    let wrk = Workdir::new("viz_funnel_area_warns_when_a_stage_grows");
+    wrk.create_from_string(
+        "grow.csv",
+        "stage,amount\nVisited,1000\nSubscribed,200\nRenewed,260\nUpgraded,300\n",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel", "grow.csv", "--x", "stage", "--y", "amount", "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("stage `Renewed` (260) is larger than `Subscribed` (200) before it"),
+        "{stderr}"
+    );
+
+    // a strictly narrowing pipeline gets no warning
+    funnel_stages(&wrk);
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "funnel",
+        "stages.csv",
+        "--x",
+        "stage",
+        "--y",
+        "amount",
+        "--area",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("is larger than"));
+}
+
+#[test]
+fn viz_area_only_applies_to_funnel() {
+    let wrk = Workdir::new("viz_area_only_applies_to_funnel");
+    funnel_stages(&wrk);
+
+    // `viz smart` dispatches before `build_plot`, so it needs the same rejection
+    for sub in ["pie", "smart"] {
+        let mut cmd = wrk.command("viz");
+        cmd.args([sub, "stages.csv", "--x", "stage", "--y", "amount", "--area"]);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{sub}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("--area only applies to `viz funnel`"),
+            "{sub}: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn viz_contour_non_numeric_errors() {
     let wrk = Workdir::new("viz_contour_non_numeric_errors");
     quakes(&wrk);
@@ -23046,6 +23141,10 @@ fn viz_barpolar_usage_errors() {
                 "gust",
                 "--degrees",
             ][..],
+            "--degrees only applies to `viz barpolar`",
+        ),
+        (
+            &["smart", "wind.csv", "--degrees"][..],
             "--degrees only applies to `viz barpolar`",
         ),
     ] {

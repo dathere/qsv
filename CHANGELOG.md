@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`viz smart`: optional live mode for Data Schematics with [qsv-clientd](https://github.com/dathere/qsv-client)** ([#4848](https://github.com/dathere/qsv/pull/4848)).
+  - **Embedded source block.** Smart HTML now embeds a `qsv-schematic-source` JSON block. It contains the qsv version, a per-render `schematic_uuid`, a SHA-256 fingerprint of the input (local files only, about 0.4s per GB), the row count, the PID and the smart arguments.
+  - **Arguments are redacted.** The input path and `-o/--output` are stripped from the recorded arguments, and file-valued flags keep only a basename and are listed in `redacted`.
+  - **Bridge script.** A small bridge script also lets an open schematic use qsv-clientd, an optional per-user daemon from qsv-client. After you approve a pairing code with `qsv-clientd approve`, the schematic can drill into the rows behind a frequency bar, refresh its stats, re-render itself, fetch the latest data, and run read-only queries.
+  - **Inert by default.** The bridge does nothing unless the schematic was opened from disk or is served from loopback, so published schematics never contact the viewer's machine or trigger local-network permission prompts. Without the daemon, schematics are unchanged.
+  - **Opt-out and port.** `--no-daemon-bridge` (or `QSV_VIZ_NO_DAEMON=1`) leaves the script out. `QSV_CLIENTD_PORT` sets the port it probes (default 14470).
+  - **Build.** The `viz` feature now enables `sha2`.
+
 ## [26.0.0] - 2026-10-19 🧭 The "New Angles" Release 📐
 
 ~57 commits since 25.0.0, and the theme is **NEW ANGLES**: four new ways to look at your data in `viz`, three of them off the usual x/y grid. Some data doesn't fit a scatter plot. Wind directions, hours of the day and months go around a circle, soil textures and vote shares are parts of a whole, and a table with six correlated measures has more dimensions than two axes can show.

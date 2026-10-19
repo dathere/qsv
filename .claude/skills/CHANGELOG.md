@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`qsv-sqlp` gains three `read_ndjson()` examples** for the named options it takes since the polars bump ([#4846](https://github.com/dathere/qsv/pull/4846), [#4847](https://github.com/dathere/qsv/pull/4847)): `infer_schema_length => NULL` to infer from the whole file, `schema_overrides` to type a column or read a nested object as JSON text (CSV output can't hold nested data), and `schema` with `ignore_errors` and `include_file_paths`.
 - **`qsv-viz` skill regenerated for the new `funnel --area` option** ([#4842](https://github.com/dathere/qsv/pull/4842)), which draws a funnel as a funnel area sized by each stage's share of the total. A usage example was added.
 - **`qsv-viz` skill regenerated for the new `ternary` subcommand** ([#4841](https://github.com/dathere/qsv/pull/4841)): a ternary plot of three parts of a whole, taken from exactly three numeric `--cols`. The `--cols`, `--series`, `--color` and `--size` descriptions cover it, and a usage example was added.
 - **`qsv-viz` skill regenerated for the new `barpolar` subcommand** ([#4840](https://github.com/dathere/qsv/pull/4840)): a polar bar chart (wind rose) of `--x` categories, sized by `--y`/`--agg` or row counts. The `--series` and `--agg` descriptions cover it, the new `--degrees` option places numeric bearings at their true angle, and two usage examples were added.

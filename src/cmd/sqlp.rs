@@ -136,6 +136,18 @@ Examples:
   # semicolon-delimited file with comment lines and no header row:
   $ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv', separator => ';', comment_prefix => '#', has_header => false)"
 
+  # read_ndjson() takes Polars' scan_ndjson options the same way: schema, schema_overrides,
+  # infer_schema_length, ignore_errors and include_file_paths.
+  # Infer the schema from the whole file, so a key that first appears late isn't dropped
+  # (by default, only the first 100 rows are used):
+  $ qsv sqlp SKIP_INPUT "select * from read_ndjson('events.jsonl', infer_schema_length => NULL)"
+  # Type a column, and read a nested object as its JSON text. CSV output can't hold nested
+  # data, so this avoids the "CSV format does not support nested data" error:
+  $ qsv sqlp SKIP_INPUT "select * from read_ndjson('events.jsonl', schema_overrides => {'date': 'DATE', 'payload': 'VARCHAR'})"
+  # Use an explicit schema, turn values that don't fit it into nulls, and add a column with
+  # each row's source file:
+  $ qsv sqlp SKIP_INPUT "select * from read_ndjson('events.jsonl', schema => {'id': 'INT', 'name': 'VARCHAR'}, ignore_errors => true, include_file_paths => 'source')"
+
   # note that you can also use read_csv() to read compressed files directly
   # gzip, zstd and zlib automatic decompression are supported
   $ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv.gz')"

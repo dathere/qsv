@@ -346,10 +346,13 @@ polars = { version = "0.55", features = [
     # (AVX-512 is an x86 ISA extension; inert on aarch64 et al.)
     # "aws",
     "binary_encoding",
-    # "bitwise",
-    "business",
+    # "bitwise" powers the BIT_COUNT SQL function in sqlp. polars-sql cfg-gates
+    # it, so without it sqlp rejects it as "unsupported function 'bit_count'".
+    "bitwise",
+    # "business" and "coalesce" were dropped: qsv calls no business-day API, and
+    # upstream "coalesce" gates no code (polars-plan defines it as `coalesce = []`).
+    # SQL COALESCE and `joinp --coalesce` work without either.
     # "cloud",
-    "coalesce",
     "cross_join",
     "cse",
     "csv",
@@ -383,10 +386,19 @@ polars = { version = "0.55", features = [
     "performant",
     "pivot",
     "rank",
+    # "regex" and "string_normalize" back joinp's key transforms
+    # (.str().replace_all() for leading zeros, .str().normalize() for Unicode).
+    # They are listed explicitly because otherwise they only arrive transitively
+    # through polars-sql's own polars-lazy feature list.
+    "regex",
+    # "rolling_window" powers `ROWS <n> PRECEDING` window frames (moving
+    # aggregates) in sqlp. Without it, polars-sql fails at plan time with
+    # "'ROWS <n> PRECEDING' window frames require the 'rolling_window' feature".
+    "rolling_window",
     "semi_anti_join",
     "serde-lazy",
     "strings",
-    # "string_normalize",
+    "string_normalize",
     # "string_pad",
     "sql",
     "timezones",

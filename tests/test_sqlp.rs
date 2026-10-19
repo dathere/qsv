@@ -5104,6 +5104,73 @@ fn sqlp_approx_quantile() {
     );
 }
 
+#[test]
+fn sqlp_rows_preceding_window_frame() {
+    // `ROWS <n> PRECEDING` window frames compile to rolling aggregates, which
+    // polars-sql cfg-gates on polars' `rolling_window` feature. Without it,
+    // sqlp fails at plan time ("... require the 'rolling_window' feature").
+    let wrk = Workdir::new("sqlp_rows_preceding_window_frame");
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["id", "v"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT id, AVG(v) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS ma, \
+         SUM(v) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS ms FROM t ORDER BY \
+         id",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "ma", "ms"],
+            svec!["1", "10.0", "10"],
+            svec!["2", "15.0", "30"],
+            svec!["3", "25.0", "60"],
+            svec!["4", "35.0", "90"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_bit_count() {
+    // BIT_COUNT is cfg-gated in polars-sql on polars' `bitwise` feature;
+    // without it sqlp rejects it as "unsupported function 'bit_count'".
+    let wrk = Workdir::new("sqlp_bit_count");
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["v"],
+            svec!["0"],
+            svec!["7"],
+            svec!["10"],
+            svec!["255"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("SELECT v, BIT_COUNT(v) AS bc FROM t");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["v", "bc"],
+            svec!["0", "0"],
+            svec!["7", "3"],
+            svec!["10", "2"],
+            svec!["255", "8"],
+        ]
+    );
+}
+
 /// Fixture for the window-function tests: two groups, correlated a/b pairs.
 fn window_fixture(wrk: &Workdir) {
     wrk.create(

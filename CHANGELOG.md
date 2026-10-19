@@ -6,9 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [26.0.0] - <TBD> 🧭 The "New Angles" Release 📐
+## [26.0.0] - 2026-10-19 🧭 The "New Angles" Release 📐
 
-<TBD> commits since 25.0.0, and the theme is **NEW ANGLES**: four new ways to look at your data in `viz`, three of them off the usual x/y grid. Some data doesn't fit a scatter plot. Wind directions, hours of the day and months go around a circle, soil textures and vote shares are parts of a whole, and a table with six correlated measures has more dimensions than two axes can show.
+~57 commits since 25.0.0, and the theme is **NEW ANGLES**: four new ways to look at your data in `viz`, three of them off the usual x/y grid. Some data doesn't fit a scatter plot. Wind directions, hours of the day and months go around a circle, soil textures and vote shares are parts of a whole, and a table with six correlated measures has more dimensions than two axes can show.
 
 **POLAR.** [`viz barpolar`](https://github.com/dathere/qsv/blob/master/docs/help/viz.md) draws a wind rose: one bar per direction, clockwise from north, with compass labels (`N`, `NE`, `NNE`...) at their true bearings and `--degrees` for a numeric bearing column. The `viz smart` seasonality panel now uses polar bars too, so hour of day, day of week and month read like a clock face, starting at the top and running clockwise.
 

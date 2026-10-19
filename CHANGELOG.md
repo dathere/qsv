@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`qsvpy314` binary variant** ([#4832](https://github.com/dathere/qsv/pull/4832)), built with Python 3.14, alongside `qsvpy311`, `qsvpy312` and `qsvpy313`.
 
 ### Changed
-- **deps: Polars bumped to upstream rev [`b951cd7`](https://github.com/pola-rs/polars/commit/b951cd7072489d54276b38586924ea4a21b838dc)** (from `2742ad3`). New in `sqlp`:
+- **deps: Polars bumped to upstream rev [`b951cd7`](https://github.com/pola-rs/polars/commit/b951cd7072489d54276b38586924ea4a21b838dc)** (from `2742ad3`, [#4846](https://github.com/dathere/qsv/pull/4846)). New in `sqlp`:
   - **`REGEXP_REPLACE(str, pattern, replacement[, flags])` and `DATE_TRUNC(unit, ts)`** ([#29967](https://github.com/pola-rs/polars/pull/29967)). `REGEXP_REPLACE` follows PostgreSQL: it replaces only the first match unless you pass the `'g'` flag, and `'i'` ignores case.
   - **A `read_ndjson()` table function** ([#29954](https://github.com/pola-rs/polars/pull/29954)), e.g. `qsv sqlp SKIP_INPUT "SELECT * FROM read_ndjson('data.ndjson')"`.
   - **Computed `GROUP BY` keys on the same column work** ([#29965](https://github.com/pola-rs/polars/pull/29965)). `GROUP BY ip % 3, ip % 2` used to fail with "group_by keys contained duplicate output name 'ip'".

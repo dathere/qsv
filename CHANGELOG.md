@@ -22,10 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Saying what you mean.** `--delimiter` and `QSV_DEFAULT_DELIMITER` now follow the documented precedence in seven commands, `schema` output validates the CSV it was inferred from (`--ignore-case`, `--enum-threshold` and non-ASCII string lengths), `count --width` is fixed for quoted fields, and `geoconvert` handles GeoJSON features with different properties.
 
-> [!IMPORTANT]
-> **Why 26.0.0: two changes can alter existing output.**
-> - `excel`, `jsonl` and `readstat` now follow `QSV_DEFAULT_DELIMITER` on output, as other qsv writers already do. If you set it only to read semicolon files, these three now write semicolons to stdout too ([#4819](https://github.com/dathere/qsv/pull/4819)).
-> - `schema` can generate stricter schemas: a column with a single value in the input now always gets a `const` constraint, so `validate` rejects later data with any other value there. Generate schemas from representative data, and loosen `const`/`enum` where values are expected to change ([#4830](https://github.com/dathere/qsv/pull/4830)).
+This is 26.0.0 rather than 25.1.0 because two changes can alter existing output; see [Breaking Changes](#v26-breaking-changes).
 
 Same data, new angles.
 
@@ -38,6 +35,11 @@ Thanks to everyone who made 26.0.0 possible:
 
 ---
 <a id="v26-changes" name="v26-changes"></a>
+
+<a id="v26-breaking-changes" name="v26-breaking-changes"></a>
+### Breaking Changes
+- **`excel`, `jsonl` and `readstat` now follow `QSV_DEFAULT_DELIMITER` on output** ([#4819](https://github.com/dathere/qsv/pull/4819)), as other qsv writers already do. If you set it only to read semicolon files, these three now write semicolons to stdout as well. Unset it for those commands, or pass `--delimiter ,`, to keep commas.
+- **`schema` can generate stricter schemas** ([#4830](https://github.com/dathere/qsv/pull/4830)). A column that holds a single value in the input now always gets a `const` constraint, which most files with a low-cardinality column used to lose, so `validate` rejects later data with any other value there (e.g. a changed phone number or URL). Generate schemas from a representative dataset, and loosen or remove `const`/`enum` constraints where values are expected to change.
 
 ### Added
 - **`viz parcoords` and a parallel-coordinates panel in `viz smart`** ([#4839](https://github.com/dathere/qsv/pull/4839)), using the new plotly.js 3.7 trace types from [#4838](https://github.com/dathere/qsv/pull/4838). `viz parcoords` draws one line per row across the numeric `--cols` and colors the lines by an optional numeric `--color` column; drag along an axis to filter rows. It is the numeric counterpart of `viz parcats`. `viz smart` adds the panel when 3 or more measures correlate (|r| ≥ 0.3), reusing the columns it already reads for the correlation heatmap. It shows up to 6 axes, ordered so neighboring axes are the strongest pairs, and samples down to 5,000 lines. Pass `--no-parcoords` to leave it out. The auto `--max-charts 0` ceiling rises from 64 to 65 panels, so the new panel doesn't push a per-column chart out of a wide Data Schematic. The viz gallery now renders WebGL figures and Data Schematic iframes only near the viewport: with every figure live at once it exceeded Chrome's limit on WebGL contexts, which left splom, 3D and map figures blank.

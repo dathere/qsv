@@ -6034,7 +6034,7 @@ dependencies = [
 [[package]]
 name = "polars"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -6059,7 +6059,7 @@ dependencies = [
 [[package]]
 name = "polars-arrow"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "atoi_simd",
  "avro-schema",
@@ -6104,7 +6104,7 @@ dependencies = [
 [[package]]
 name = "polars-async"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "atomic-waker",
  "crossbeam-channel",
@@ -6123,7 +6123,7 @@ dependencies = [
 [[package]]
 name = "polars-buffer"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bytemuck",
  "either",
@@ -6135,7 +6135,7 @@ dependencies = [
 [[package]]
 name = "polars-compute"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "atoi_simd",
  "bytemuck",
@@ -6160,7 +6160,7 @@ dependencies = [
 [[package]]
 name = "polars-config"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "polars-error",
  "serde",
@@ -6170,7 +6170,7 @@ dependencies = [
 [[package]]
 name = "polars-core"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "atoi_simd",
  "bitflags 2.13.2",
@@ -6211,7 +6211,7 @@ dependencies = [
 [[package]]
 name = "polars-defs"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6227,7 +6227,7 @@ dependencies = [
 [[package]]
 name = "polars-descriptions"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "serde",
  "strum_macros 0.28.0",
@@ -6236,7 +6236,7 @@ dependencies = [
 [[package]]
 name = "polars-dtype"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "boxcar",
  "hashbrown 0.17.1",
@@ -6250,7 +6250,7 @@ dependencies = [
 [[package]]
 name = "polars-error"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -6264,7 +6264,7 @@ dependencies = [
 [[package]]
 name = "polars-expr"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bitflags 2.13.2",
  "hashbrown 0.17.1",
@@ -6292,7 +6292,7 @@ dependencies = [
 [[package]]
 name = "polars-io"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "async-trait",
  "atoi_simd",
@@ -6308,7 +6308,6 @@ dependencies = [
  "futures",
  "glob",
  "hashbrown 0.17.1",
- "home",
  "itoa",
  "libc",
  "memchr",
@@ -6345,7 +6344,7 @@ dependencies = [
 [[package]]
 name = "polars-json"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6366,7 +6365,7 @@ dependencies = [
 [[package]]
 name = "polars-lazy"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bitflags 2.13.2",
  "chrono",
@@ -6395,7 +6394,7 @@ dependencies = [
 [[package]]
 name = "polars-mem-engine"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "memmap2",
  "polars-arrow",
@@ -6418,7 +6417,7 @@ dependencies = [
 [[package]]
 name = "polars-observer"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "parking_lot",
  "polars-descriptions",
@@ -6428,7 +6427,7 @@ dependencies = [
 [[package]]
 name = "polars-ooc"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "async-trait",
  "boxcar",
@@ -6449,7 +6448,7 @@ dependencies = [
 [[package]]
 name = "polars-ops"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "argminmax",
  "base64 0.22.1",
@@ -6487,7 +6486,7 @@ dependencies = [
 [[package]]
 name = "polars-parquet"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "async-stream",
  "aws-lc-rs",
@@ -6528,7 +6527,7 @@ dependencies = [
 [[package]]
 name = "polars-plan"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bitflags 2.13.2",
  "blake3",
@@ -6592,7 +6591,7 @@ dependencies = [
 [[package]]
 name = "polars-row"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",
@@ -6607,7 +6606,7 @@ dependencies = [
 [[package]]
 name = "polars-schema"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "indexmap 2.14.2",
  "polars-error",
@@ -6619,7 +6618,7 @@ dependencies = [
 [[package]]
 name = "polars-sql"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bitflags 2.13.2",
  "hex",
@@ -6641,7 +6640,7 @@ dependencies = [
 [[package]]
 name = "polars-stream"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -6674,6 +6673,7 @@ dependencies = [
  "polars-ops",
  "polars-parquet",
  "polars-plan",
+ "polars-row",
  "polars-time",
  "polars-utils",
  "rand 0.10.3",
@@ -6690,7 +6690,7 @@ dependencies = [
 [[package]]
 name = "polars-testing"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "polars-core",
  "polars-ops",
@@ -6699,7 +6699,7 @@ dependencies = [
 [[package]]
 name = "polars-time"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "bytemuck",
  "chrono",
@@ -6722,7 +6722,7 @@ dependencies = [
 [[package]]
 name = "polars-utils"
 version = "0.55.1"
-source = "git+https://github.com/pola-rs/polars?rev=2742ad318fdca47af635def34850268b6fe49c71#2742ad318fdca47af635def34850268b6fe49c71"
+source = "git+https://github.com/pola-rs/polars?rev=b951cd7072489d54276b38586924ea4a21b838dc#b951cd7072489d54276b38586924ea4a21b838dc"
 dependencies = [
  "argminmax",
  "bincode",

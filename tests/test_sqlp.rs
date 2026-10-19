@@ -6505,6 +6505,115 @@ fn sqlp_read_csv_unknown_option_errors() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Polars SQL behavior changed between rev 2742ad3 and b951cd7 (both after
+// py-2.0.0). One test per upstream change, as above.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sqlp_regexp_replace() {
+    // pola-rs/polars#29967 added REGEXP_REPLACE. It follows PostgreSQL: only the
+    // first match is replaced unless the 'g' flag is given, and 'i' ignores case.
+    let wrk = Workdir::new("sqlp_regexp_replace");
+    wrk.create(
+        "n.csv",
+        vec![svec!["name"], svec!["Alice"], svec!["bob"], svec!["AL"]],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("n.csv").arg(
+        "SELECT REGEXP_REPLACE(name, '[aeiou]', '_') AS first, REGEXP_REPLACE(name, '[aeiou]', \
+         '_', 'g') AS every, REGEXP_REPLACE(name, 'a', '_', 'gi') AS nocase FROM n",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["first", "every", "nocase"],
+        svec!["Al_ce", "Al_c_", "_lice"],
+        svec!["b_b", "b_b", "bob"],
+        svec!["AL", "AL", "_L"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_date_trunc() {
+    // pola-rs/polars#29967 added DATE_TRUNC.
+    let wrk = Workdir::new("sqlp_date_trunc");
+    wrk.create(
+        "n.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2024-03-15 10:30:00", "5"],
+            svec!["2024-03-20 08:00:00", "7"],
+            svec!["2024-04-02 12:00:00", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("n.csv").arg(
+        "SELECT DATE_TRUNC('month', CAST(ts AS TIMESTAMP)) AS m, SUM(v) AS s FROM n GROUP BY m \
+         ORDER BY m",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["m", "s"],
+        svec!["2024-03-01T00:00:00.000000", "12"],
+        svec!["2024-04-01T00:00:00.000000", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_read_ndjson_table_function() {
+    // pola-rs/polars#29954 added the read_ndjson table function.
+    let wrk = Workdir::new("sqlp_read_ndjson_table_function");
+    wrk.create_from_string("d.ndjson", "{\"a\":1,\"b\":\"x\"}\n{\"a\":2,\"b\":\"y\"}\n");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT * FROM read_ndjson('d.ndjson')");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn sqlp_group_by_computed_keys() {
+    // pola-rs/polars#29965 fixed wrong results and name clashes for computed
+    // GROUP BY keys. Before it, two keys over the same column (`ip % 3`, `ip % 2`)
+    // both took the default name `ip`, and the query failed with "group_by keys
+    // contained duplicate output name 'ip'".
+    let wrk = Workdir::new("sqlp_group_by_computed_keys");
+    wrk.create(
+        "ip.csv",
+        vec![
+            svec!["ip"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"],
+            svec!["6"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("ip.csv").arg(
+        "SELECT ip % 3 AS x, (ip % 2) + 10 AS y FROM ip GROUP BY ip % 3, ip % 2 ORDER BY x, y",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["x", "y"],
+        svec!["0", "10"],
+        svec!["0", "11"],
+        svec!["1", "10"],
+        svec!["1", "11"],
+        svec!["2", "10"],
+        svec!["2", "11"],
+    ];
+    assert_eq!(got, expected);
+}
+
 // --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
 #[test]
 fn sqlp_default_delimiter_env() {

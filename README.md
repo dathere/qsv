@@ -137,6 +137,9 @@
 > [!TIP]
 > To install the qsv MCP Server and/or the qsv Claude Cowork plugin, see the [Getting Started guide](.claude/skills/docs/guides/START_HERE.md).
 
+> [!TIP]
+> To run qsv from Python, use **[qsv-client](https://github.com/dathere/qsv-client)** (`pip install qsv-client`). It stops qsv and every process qsv started on a timeout, raises typed exceptions instead of making you parse stderr, and reports the installed binary's version, features and commands. It has sync and asyncio clients and no runtime dependencies. qsv itself is not bundled: install qsv 25.0.0 or later using one of the options below.
+
 ### Option 0: qsv pro
 
 If you prefer to explore your data using a graphical interface instead of the command-line, feel free to try out **[qsv pro](https://qsvpro.dathere.com)**. Leveraging qsv, qsv pro can help you quickly analyze spreadsheet data by just dropping a file, along with many other interactive features. Learn more at [qsvpro.dathere.com](https://qsvpro.dathere.com) or download qsv pro directly by clicking one of the badges below.

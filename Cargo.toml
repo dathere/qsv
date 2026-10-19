@@ -764,6 +764,8 @@ viz = [
     "dep:rust-i18n",
     "plotly/plotly_embed_js",
     "base64-simd",
+    # SHA-256 fingerprint of the input in the Data Schematic's `qsv-schematic-source` block
+    "dep:sha2",
 ]
 # viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
 # which drives a headless Chrome/Chromium through chromedriver. NOT Firefox: this

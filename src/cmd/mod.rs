@@ -158,6 +158,8 @@ pub mod viz;
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub mod viz_census;
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
+pub mod viz_daemon;
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub mod viz_i18n;
 #[cfg(all(feature = "readstat", feature = "feature_capable"))]
 pub mod writestat;

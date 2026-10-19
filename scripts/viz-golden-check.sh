@@ -71,10 +71,12 @@ run_case() {
         >"$OUT/$name.stdout" 2>"$OUT/$name.stderr"
     local rc=$?
 
-    # Normalize the two by-design nondeterministic sinks so a byte-diff is meaningful.
+    # Normalize the by-design nondeterministic sinks so a byte-diff is meaningful.
     # perl (not `sed -i`) because in-place editing is spelled incompatibly on BSD vs GNU sed.
     if [[ "$ext" == "html" ]]; then
         perl -i -pe 's/\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/<TIMESTAMP>/g' "$OUT/$name.$ext"
+        # the qsv-schematic-source block's per-render id (see cmd::viz_daemon)
+        perl -i -pe 's/"schematic_uuid":"[0-9a-f-]{36}"/"schematic_uuid":"<UUID>"/g' "$OUT/$name.$ext"
     fi
     perl -i -pe 's/\(elapsed: [\d.]+s\)/(elapsed: <T>)/g' "$OUT/$name.stderr"
 

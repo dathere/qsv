@@ -8038,6 +8038,7 @@ fn viz_progressbar_env_stdout_unaffected() {
     // "Compiled:" label, which is localized. Keep in sync with the same normalization in
     // scripts/viz-golden-check.sh:77.
     let ts_re = regex::Regex::new(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC").unwrap();
+    let uuid_re = regex::Regex::new(r#""schematic_uuid":"[0-9a-f-]{36}""#).unwrap();
     let mask = |raw: &[u8]| -> String {
         let html = String::from_utf8(raw.to_vec()).expect("viz smart stdout must be valid UTF-8");
         // Guard against the normalizer silently becoming a no-op if the timestamp format ever
@@ -8047,7 +8048,11 @@ fn viz_progressbar_env_stdout_unaffected() {
             "expected a `YYYY-MM-DD HH:MM UTC` build timestamp in the dashboard HTML - if the \
              format changed, update this test AND scripts/viz-golden-check.sh"
         );
-        ts_re.replace_all(&html, "<TIMESTAMP>").into_owned()
+        let html = ts_re.replace_all(&html, "<TIMESTAMP>");
+        // ...and the qsv-schematic-source block's per-render id, fresh on every run by design
+        uuid_re
+            .replace_all(&html, r#""schematic_uuid":"<UUID>""#)
+            .into_owned()
     };
 
     assert_eq!(
@@ -19261,8 +19266,19 @@ fn viz_smart_default_and_explicit_english_agree() {
         out
     };
 
-    let a = strip_compiled(wrk.read_to_string("no_lang.html").unwrap());
-    let b = strip_compiled(wrk.read_to_string("explicit_en.html").unwrap());
+    // The qsv-schematic-source provenance block records each run's own arguments (`--language
+    // en` here) and a fresh per-render id, so it legitimately differs too: blank it out.
+    let strip_source = |html: String| {
+        let re = regex::Regex::new(
+            r#"(<script id="qsv-schematic-source" type="application/json">)[^<]*(</script>)"#,
+        )
+        .unwrap();
+        re.replace(&html, "${1}SOURCE${2}").into_owned()
+    };
+    let a = strip_source(strip_compiled(wrk.read_to_string("no_lang.html").unwrap()));
+    let b = strip_source(strip_compiled(
+        wrk.read_to_string("explicit_en.html").unwrap(),
+    ));
     assert!(
         a.contains("COMPILED_TIMESTAMP"),
         "the Compiled: stamp should have been found and normalized; if the metadata format \
@@ -23319,4 +23335,290 @@ fn viz_ternary_usage_errors() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains(expected), "{args:?}: {stderr}");
     }
+}
+
+// ---- qsv-clientd live mode: the `qsv-schematic-source` provenance block, the bridge script and
+// the drill-down hooks. All named `viz_smart_daemon_*` so they can be run as a group.
+
+/// The parsed `qsv-schematic-source` JSON of a smart HTML page.
+fn daemon_source_json(html: &str) -> serde_json::Value {
+    let open = r#"<script id="qsv-schematic-source" type="application/json">"#;
+    let start = html.find(open).expect("qsv-schematic-source block") + open.len();
+    let end = start + html[start..].find("</script>").expect("closing tag");
+    serde_json::from_str(&html[start..end]).expect("source JSON parses")
+}
+
+/// The raw text of the `qsv-schematic-source` block, as it sits in the page.
+fn daemon_source_raw(html: &str) -> &str {
+    let open = r#"<script id="qsv-schematic-source" type="application/json">"#;
+    let start = html.find(open).expect("qsv-schematic-source block") + open.len();
+    &html[start..start + html[start..].find("</script>").expect("closing tag")]
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+const DAEMON_CSV: &str = "region,revenue,quarter\neast,1000,Q1\neast,1200,Q2\nwest,5000,Q1\nwest,\
+                          5200,Q2\nnorth,3000,Q1\n";
+
+#[test]
+fn viz_smart_daemon_source_json() {
+    let wrk = Workdir::new("viz_smart_daemon_source_json");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "--limit", "5", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    let src = daemon_source_json(&html);
+    assert_eq!(src["schema"], 1);
+    assert_eq!(src["qsv_version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        src["schematic_uuid"]
+            .as_str()
+            .is_some_and(|u| u.len() == 36),
+        "{src}"
+    );
+    assert_eq!(src["fingerprint"]["algo"], "sha256");
+    assert_eq!(
+        src["fingerprint"]["digest"],
+        sha256_hex(DAEMON_CSV.as_bytes())
+    );
+    assert_eq!(src["fingerprint"]["bytes"], DAEMON_CSV.len());
+    assert_eq!(src["rows"], 5);
+    // neither the input nor the output path (nor the -o flag) is recorded
+    assert_eq!(src["viz_args"], serde_json::json!(["--limit", "5"]));
+    assert_eq!(src["redacted"], serde_json::json!([]));
+    assert_eq!(src["pid"], serde_json::Value::Null);
+}
+
+#[test]
+fn viz_smart_daemon_source_json_strips_output_forms() {
+    let wrk = Workdir::new("viz_smart_daemon_source_json_strips_output_forms");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        &format!("--output={out_html}"),
+        "--grid-cols",
+        "3",
+        "data.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let src = daemon_source_json(&wrk.read_to_string("dash.html").unwrap());
+    assert_eq!(src["viz_args"], serde_json::json!(["--grid-cols", "3"]));
+}
+
+#[test]
+fn viz_smart_daemon_file_flags_keep_basename() {
+    let wrk = Workdir::new("viz_smart_daemon_file_flags_keep_basename");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    wrk.create_subdir("private").unwrap();
+    wrk.create_from_string("private/notes.txt", "context for describegpt\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let ctx = wrk.path("private/notes.txt").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "--dictionary-context",
+        &ctx,
+        "--dictionary=/no/such/dir/dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    let src = daemon_source_json(&html);
+    assert_eq!(
+        src["viz_args"],
+        serde_json::json!([
+            "--dictionary-context",
+            "notes.txt",
+            "--dictionary=dict.json"
+        ])
+    );
+    assert_eq!(
+        src["redacted"],
+        serde_json::json!(["--dictionary-context", "--dictionary"])
+    );
+    // no directory of the rendering machine leaks into the provenance block
+    let raw = daemon_source_raw(&html);
+    assert!(!raw.contains("private"), "{raw}");
+    assert!(!raw.contains("/no/such"), "{raw}");
+}
+
+#[test]
+fn viz_smart_daemon_dictionary_infer_not_redacted() {
+    // a keyword value is not a path: recording it verbatim lets a re-render reuse it as-is
+    let wrk = Workdir::new("viz_smart_daemon_dictionary_infer_not_redacted");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    // --tour-steps 0 keeps this independent of the dictionary; `infer` with no LLM soft-fails
+    cmd.args([
+        "smart",
+        "data.csv",
+        "--dictionary",
+        "infer",
+        "--tour-steps",
+        "0",
+        "-o",
+        &out_html,
+    ])
+    .env("QSV_LLM_BASE_URL", "http://127.0.0.1:9/v1")
+    .env("QSV_LLM_APIKEY", "");
+    wrk.assert_success(&mut cmd);
+
+    let src = daemon_source_json(&wrk.read_to_string("dash.html").unwrap());
+    assert_eq!(
+        src["viz_args"],
+        serde_json::json!(["--dictionary", "infer", "--tour-steps", "0"])
+    );
+    assert_eq!(src["redacted"], serde_json::json!([]));
+}
+
+#[test]
+fn viz_smart_daemon_pid_cannot_close_the_script() {
+    let wrk = Workdir::new("viz_smart_daemon_pid_cannot_close_the_script");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let pid = "https://doi.org/10.1/x</script><script>alert(1)</script>&";
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "--dataset-pid", pid, "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    let raw = daemon_source_raw(&html);
+    assert!(!raw.contains('<') && !raw.contains('>'), "{raw}");
+    // ...and the escaped form still round-trips to the original value
+    let src = daemon_source_json(&html);
+    assert_eq!(src["pid"], pid);
+    assert!(src["viz_args"].as_array().unwrap().iter().any(|a| a == pid));
+}
+
+#[test]
+fn viz_smart_daemon_bridge_default_and_port() {
+    let wrk = Workdir::new("viz_smart_daemon_bridge_default_and_port");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html])
+        .env_remove("QSV_CLIENTD_PORT")
+        .env_remove("QSV_VIZ_NO_DAEMON");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#"<script id="qsv-daemon-bridge">"#));
+    assert!(html.contains(r#"var BASE = "http://127.0.0.1:" + 14470;"#));
+    // the probe is gated to file:// and loopback pages, ahead of any network request
+    let gate = r#"if (!(location.protocol === "file:" || LOOPBACK_HOSTS.indexOf(location.hostname) !== -1)) return;"#;
+    let gate_at = html.find(gate).expect("loopback/file: gate in the bridge");
+    assert!(html.contains(r#"var LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]", "::1"];"#));
+    let bridge = &html[html.find(r#"<script id="qsv-daemon-bridge">"#).unwrap()..];
+    let first_fetch = html.len() - bridge.len() + bridge.find("fetch(").unwrap();
+    // (the `typeof fetch` feature test before it is not a call)
+    assert!(
+        gate_at < first_fetch,
+        "the gate must precede every fetch call"
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html])
+        .env("QSV_CLIENTD_PORT", "15555")
+        .env_remove("QSV_VIZ_NO_DAEMON");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#"var BASE = "http://127.0.0.1:" + 15555;"#));
+    assert!(!html.contains("+ 14470;"));
+}
+
+#[test]
+fn viz_smart_daemon_bridge_opt_out() {
+    let wrk = Workdir::new("viz_smart_daemon_bridge_opt_out");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "--no-daemon-bridge", "-o", &out_html])
+        .env_remove("QSV_VIZ_NO_DAEMON");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(!html.contains("qsv-daemon-bridge"));
+    assert!(!html.contains("127.0.0.1"));
+    // the provenance block stays, and records the opt-out flag like any other argument
+    let src = daemon_source_json(&html);
+    assert_eq!(src["viz_args"], serde_json::json!(["--no-daemon-bridge"]));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_DAEMON", "1");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(!html.contains("qsv-daemon-bridge"));
+    assert!(!html.contains("127.0.0.1"));
+    daemon_source_json(&html);
+}
+
+#[test]
+fn viz_smart_daemon_stdin_input_rejected() {
+    // `viz smart` refuses stdin outright, so a page with an unfingerprintable stdin input can't
+    // exist; the fingerprint gate for stdin/URL/`dc:` inputs is unit-tested in cmd::viz_daemon.
+    let wrk = Workdir::new("viz_smart_daemon_stdin_input_rejected");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "-"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_smart_daemon_column_hook_inline_grid() {
+    // boston311 has non-cartesian panels, so it renders as the inline-div grid: each frequency
+    // bar's cell names its raw column
+    let wrk = Workdir::new("viz_smart_daemon_column_hook_inline_grid");
+    let input = wrk.load_test_file("boston311-100.csv");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", &input, "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"<div class="qsv-viz-cell" data-qsv-column="case_status">"#),
+        "no data-qsv-column hook on the case_status frequency chart"
+    );
+    // the input was copied into the workdir by absolute path: it must not be recorded
+    let raw = daemon_source_raw(&html);
+    assert!(!raw.contains("boston311"), "{raw}");
+}
+
+#[test]
+fn viz_smart_daemon_column_hook_typed_grid() {
+    // two categorical columns render as ONE typed plotly grid, so the hook is an x-axis map on
+    // the grid wrapper instead
+    let wrk = Workdir::new("viz_smart_daemon_column_hook_typed_grid");
+    wrk.create_from_string(
+        "data.csv",
+        "color,size,n\nred,S,1\nblue,M,2\nred,L,3\nblue,S,4\ngreen,M,5\nred,S,6\n",
+    );
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(
+            r#"<div class="qsv-viz-plot" data-qsv-axis-columns="{&quot;x&quot;:&quot;color&quot;,&quot;x2&quot;:&quot;size&quot;}">"#
+        ),
+        "no data-qsv-axis-columns map on the typed grid"
+    );
 }

@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.0.0] - 2026-10-19
+
+Companion release to qsv 26.0.0, "The New Angles Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 26.0.0 because the regenerated skill JSONs advertise subcommands and options that only exist in the new binary (`viz barpolar`, `ternary` and `parcoords`, `funnel --area`, `--degrees`, `--no-parcoords`, and `sqlp`'s `read_ndjson()` named options). The headline for MCP/Cowork users is **`qsv-viz`'s new chart types**: wind roses, ternary plots, parallel coordinates and funnel areas. The skill count stays at **57**. Update your qsv binary first.
+
 ### Changed
 - **`qsv-sqlp` gains three `read_ndjson()` examples** for the named options it takes since the polars bump ([#4846](https://github.com/dathere/qsv/pull/4846), [#4847](https://github.com/dathere/qsv/pull/4847)): `infer_schema_length => NULL` to infer from the whole file, `schema_overrides` to type a column or read a nested object as JSON text (CSV output can't hold nested data), and `schema` with `ignore_errors` and `include_file_paths`.
 - **`qsv-viz` skill regenerated for the new `funnel --area` option** ([#4842](https://github.com/dathere/qsv/pull/4842)), which draws a funnel as a funnel area sized by each stage's share of the total. A usage example was added.
 - **`qsv-viz` skill regenerated for the new `ternary` subcommand** ([#4841](https://github.com/dathere/qsv/pull/4841)): a ternary plot of three parts of a whole, taken from exactly three numeric `--cols`. The `--cols`, `--series`, `--color` and `--size` descriptions cover it, and a usage example was added.
 - **`qsv-viz` skill regenerated for the new `barpolar` subcommand** ([#4840](https://github.com/dathere/qsv/pull/4840)): a polar bar chart (wind rose) of `--x` categories, sized by `--y`/`--agg` or row counts. The `--series` and `--agg` descriptions cover it, the new `--degrees` option places numeric bearings at their true angle, and two usage examples were added.
 - **`qsv-viz` skill regenerated for the new `parcoords` subcommand** ([#4839](https://github.com/dathere/qsv/pull/4839)): parallel coordinates across numeric `--cols`, with `--color` coloring the lines. The `--cols` and `--color` descriptions cover it, and a usage example was added. New `--no-parcoords` option turns off the matching `smart` panel, and the `--max-charts` description now says auto draws up to 65 panels.
+- **`--delimiter` no longer has a default value in six tool schemas** ([#4817](https://github.com/dathere/qsv/pull/4817), [#4819](https://github.com/dathere/qsv/pull/4819)): `qsv-count`, `qsv-excel`, `qsv-jsonl`, `qsv-readstat`, `qsv-sqlp` and `qsv-template`. The skills declared `"default": ","`, which the MCP server passes into each tool's input schema, so a client or agent that fills in schema defaults sent an explicit comma that overrode a `.tsv`/`.ssv` extension or `QSV_DEFAULT_DELIMITER`. The comma is now only mentioned in the description.
+- **`qsv-schema`'s `--ignore-case` description** follows the `schema` fixes ([#4830](https://github.com/dathere/qsv/pull/4830), [#4831](https://github.com/dathere/qsv/pull/4831)): String columns are checked against the enum threshold case-insensitively, and their `enum`/`const` values are written as case-insensitive patterns, so `validate` accepts the data the schema was inferred from.
 
 ## [25.0.0] - 2026-10-14
 

@@ -320,6 +320,25 @@ def recent_versions(n):
     return out
 
 
+def latest_with_prev_baseline():
+    """LATEST restricted to benchmarks that also have a row for the previous release. A
+    benchmark's `delta (%)` is measured against its last archived run, which for a benchmark that
+    is new or was pruned for a release can be many releases back (e.g. the sqlp_format_* series vs
+    15.0.1 in the 26.0.0 run) — charting that as "vs previous version" misattributes the gain."""
+    vers = recent_versions(2)
+    prev = vers[1] if len(vers) > 1 else None
+    with open(HISTORY, encoding="utf-8") as fh:
+        prev_names = {r["name"] for r in csv.DictReader(fh) if r["version"] == prev}
+    out = tmp("latest_prev_baseline.csv")
+    with open(LATEST, encoding="utf-8", newline="") as src, \
+            open(out, "w", encoding="utf-8", newline="") as dst:
+        reader = csv.DictReader(src)
+        writer = csv.DictWriter(dst, fieldnames=reader.fieldnames)
+        writer.writeheader()
+        writer.writerows(r for r in reader if r["name"] in prev_names)
+    return out
+
+
 def alt(names):
     """A qsv regex alternation matching any of `names` exactly (dots escaped)."""
     return "^(" + "|".join(re.escape(x) for x in names) + ")$"
@@ -479,13 +498,14 @@ def prep_treemap():
 
 
 def prep_gainers():
-    f = qsv(["search", "-s", "delta (%)", r"^\d", LATEST], tmp("g0.csv"))  # positive deltas only
+    f = qsv(["search", "-s", "delta (%)", r"^\d", latest_with_prev_baseline()], tmp("g0.csv"))  # positive deltas only
     f = qsv(["sort", "-s", "delta (%)", "-N", "-R", f], tmp("g1.csv"))
     return qsv(["slice", "--len", "15", f], tmp("gainers.csv"))
 
 
 def prep_delta_box():
-    f1 = qsv(["luau", "map", "family", 'name:match("^[^_]+")', LATEST], tmp("db0.csv"))
+    f1 = qsv(["luau", "map", "family", 'name:match("^[^_]+")', latest_with_prev_baseline()],
+             tmp("db0.csv"))
     f2 = qsv(["search", "-s", "family", alt(FAMILY_BOX), f1], tmp("db1.csv"))
     # the *_vs_duckdb rows time DuckDB, not qsv: their delta is DuckDB's run-to-run noise
     f2 = qsv(["search", "-v", "-s", "name", "_vs_duckdb$", f2], tmp("db1b.csv"))
@@ -907,11 +927,11 @@ def main():
                     "for kurtosis, Gini/Atkinson and entropy under --advanced. The bivariate computation, "
                     "by contrast, is recomputed on every run, so it carries a real throughput-over-time "
                     "story. Each charted variant is indexed to its own launch speed. moarstats does real "
-                    "pairwise work — the default bivariate pass runs at hundreds of thousands of "
-                    "records/sec and the full --bivariate-stats all battery at a few thousand — so unlike "
-                    f"stats or frequency there is genuine per-row cost to hold down. It held: the default "
-                    f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0, "
-                    f"again at 20.0.0, and sharply in {latest_release}. The full all battery is heavier and "
+                    "pairwise work — through 21.x the default bivariate pass ran at hundreds of thousands "
+                    "of records/sec and the full --bivariate-stats all battery at a few thousand — so "
+                    "unlike stats or frequency there is genuine per-row cost to hold down. It held: the "
+                    f"default bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up "
+                    "at 17.0.0, again at 20.0.0, and sharply at 22.0.1 and 23.0.1. The full all battery is heavier and "
                     "choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, then dipped through "
                     f"21.0.0-21.1.0, before leaping to {m_all:.1f}x launch once dictionary-encoding of "
                     "the joint keys cut the per-pair cost of the --bivariate-stats all battery by well "
@@ -941,7 +961,8 @@ def main():
                     "gainers", "Biggest speedups this release",
                     "The 15 benchmarks that improved most over the previous release. Bigger, brighter "
                     "bubbles are larger wins — the percentage cut in mean run time from one version "
-                    "to the next."))
+                    "to the next. Benchmarks with no run in the previous release (new, or back after "
+                    "a gap) are left out, since their change would span several releases."))
     delta_box_src = prep_delta_box()
     # Fit the axis to the charted data rather than a fixed window. DELTA_CLAMP has already dropped
     # the measurement artifacts, so everything left is a real result and none of it should be
@@ -958,7 +979,8 @@ def main():
                     "family (above zero = faster). Most families cluster just north of zero — steady, "
                     f"unglamorous progress. Extreme outliers (|Δ| > {int(DELTA_CLAMP)}%, usually "
                     "measurement noise) are omitted, as are the sqlp_*_vs_duckdb reference runs, "
-                    "which time DuckDB rather than qsv. The y-axis follows the remaining data, so "
+                    "which time DuckDB rather than qsv, and benchmarks with no run in the previous "
+                    "release. The y-axis follows the remaining data, so "
                     "every point charted here is visible."))
 
     build_index(figs, info)

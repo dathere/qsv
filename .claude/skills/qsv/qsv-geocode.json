@@ -1,6 +1,6 @@
 {
   "name": "qsv-geocode",
-  "version": "25.0.0",
+  "version": "26.0.0",
   "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage geocoder, geocode New York City addresses, BBLs and BINs via NYC's Geoclient API, which also returns NYC attributes such as council districts and census tracts, and geocode US addresses & coordinates via the free US Census Geocoder - single or batch - returning Census state, county, tract, block group & block GEOIDs for Census data enrichment.",
   "category": "utility",
   "command": {

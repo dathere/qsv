@@ -904,6 +904,9 @@ _qsv() {
             qsv__subcmd__help__subcmd__viz,bar)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__bar"
                 ;;
+            qsv__subcmd__help__subcmd__viz,barpolar)
+                cmd="qsv__subcmd__help__subcmd__viz__subcmd__barpolar"
+                ;;
             qsv__subcmd__help__subcmd__viz,box)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__box"
                 ;;
@@ -943,6 +946,9 @@ _qsv() {
             qsv__subcmd__help__subcmd__viz,parcats)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__parcats"
                 ;;
+            qsv__subcmd__help__subcmd__viz,parcoords)
+                cmd="qsv__subcmd__help__subcmd__viz__subcmd__parcoords"
+                ;;
             qsv__subcmd__help__subcmd__viz,pie)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__pie"
                 ;;
@@ -966,6 +972,9 @@ _qsv() {
                 ;;
             qsv__subcmd__help__subcmd__viz,sunburst)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__sunburst"
+                ;;
+            qsv__subcmd__help__subcmd__viz,ternary)
+                cmd="qsv__subcmd__help__subcmd__viz__subcmd__ternary"
                 ;;
             qsv__subcmd__help__subcmd__viz,treemap)
                 cmd="qsv__subcmd__help__subcmd__viz__subcmd__treemap"
@@ -1114,6 +1123,9 @@ _qsv() {
             qsv__subcmd__viz,bar)
                 cmd="qsv__subcmd__viz__subcmd__bar"
                 ;;
+            qsv__subcmd__viz,barpolar)
+                cmd="qsv__subcmd__viz__subcmd__barpolar"
+                ;;
             qsv__subcmd__viz,box)
                 cmd="qsv__subcmd__viz__subcmd__box"
                 ;;
@@ -1156,6 +1168,9 @@ _qsv() {
             qsv__subcmd__viz,parcats)
                 cmd="qsv__subcmd__viz__subcmd__parcats"
                 ;;
+            qsv__subcmd__viz,parcoords)
+                cmd="qsv__subcmd__viz__subcmd__parcoords"
+                ;;
             qsv__subcmd__viz,pie)
                 cmd="qsv__subcmd__viz__subcmd__pie"
                 ;;
@@ -1180,6 +1195,9 @@ _qsv() {
             qsv__subcmd__viz,sunburst)
                 cmd="qsv__subcmd__viz__subcmd__sunburst"
                 ;;
+            qsv__subcmd__viz,ternary)
+                cmd="qsv__subcmd__viz__subcmd__ternary"
+                ;;
             qsv__subcmd__viz,treemap)
                 cmd="qsv__subcmd__viz__subcmd__treemap"
                 ;;
@@ -1188,6 +1206,9 @@ _qsv() {
                 ;;
             qsv__subcmd__viz__subcmd__help,bar)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__bar"
+                ;;
+            qsv__subcmd__viz__subcmd__help,barpolar)
+                cmd="qsv__subcmd__viz__subcmd__help__subcmd__barpolar"
                 ;;
             qsv__subcmd__viz__subcmd__help,box)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__box"
@@ -1231,6 +1252,9 @@ _qsv() {
             qsv__subcmd__viz__subcmd__help,parcats)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__parcats"
                 ;;
+            qsv__subcmd__viz__subcmd__help,parcoords)
+                cmd="qsv__subcmd__viz__subcmd__help__subcmd__parcoords"
+                ;;
             qsv__subcmd__viz__subcmd__help,pie)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__pie"
                 ;;
@@ -1254,6 +1278,9 @@ _qsv() {
                 ;;
             qsv__subcmd__viz__subcmd__help,sunburst)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__sunburst"
+                ;;
+            qsv__subcmd__viz__subcmd__help,ternary)
+                cmd="qsv__subcmd__viz__subcmd__help__subcmd__ternary"
                 ;;
             qsv__subcmd__viz__subcmd__help,treemap)
                 cmd="qsv__subcmd__viz__subcmd__help__subcmd__treemap"
@@ -10362,7 +10389,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__viz)
-            opts="bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin"
+            opts="bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -10376,6 +10403,20 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__viz__subcmd__bar)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__viz__subcmd__barpolar)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -10571,6 +10612,20 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__help__subcmd__viz__subcmd__parcoords)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__help__subcmd__viz__subcmd__pie)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -10670,6 +10725,20 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__viz__subcmd__sunburst)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__viz__subcmd__ternary)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -14532,7 +14601,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -14818,7 +14887,293 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__bar)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --agg)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --annotation)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --bins)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --box-points)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --close)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cluster)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dataset-pid)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-unit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary-context)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-id-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-name-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geojson)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --grid-cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --heatmap-density)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --height)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --hierarchy-style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --high)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lat)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --location-mode)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --locations)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lon)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --low)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-charts)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ohlc-open)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --preview-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --projection)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --region-state)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --series)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider-speed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --snap-max-dist)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --source)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --target)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --theme)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-audience)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-steps)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --value)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --violin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --width)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-range)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__viz__subcmd__barpolar)
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -15104,7 +15459,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__box)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -15390,7 +15745,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__candlestick)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -15676,7 +16031,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__choropleth)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -15962,7 +16317,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__contour)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -16248,7 +16603,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__funnel)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -16534,7 +16889,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__geo)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -16820,7 +17175,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__heatmap)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -17106,7 +17461,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__help)
-            opts="bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help"
+            opts="bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -17120,6 +17475,20 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__help__subcmd__bar)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__viz__subcmd__help__subcmd__barpolar)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -17329,6 +17698,20 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__viz__subcmd__help__subcmd__parcoords)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__viz__subcmd__help__subcmd__pie)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -17441,6 +17824,20 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__viz__subcmd__help__subcmd__ternary)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__viz__subcmd__help__subcmd__treemap)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -17470,7 +17867,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__histogram)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -17756,7 +18153,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__icicle)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -18042,7 +18439,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__line)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -18328,7 +18725,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__map)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -18614,7 +19011,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__ohlc)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -18900,7 +19297,293 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__parcats)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --agg)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --annotation)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --bins)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --box-points)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --close)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cluster)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dataset-pid)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-unit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary-context)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-id-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-name-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geojson)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --grid-cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --heatmap-density)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --height)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --hierarchy-style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --high)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lat)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --location-mode)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --locations)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lon)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --low)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-charts)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ohlc-open)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --preview-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --projection)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --region-state)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --series)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider-speed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --snap-max-dist)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --source)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --target)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --theme)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-audience)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-steps)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --value)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --violin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --width)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-range)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__viz__subcmd__parcoords)
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -19186,7 +19869,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__pie)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -19472,7 +20155,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__radar)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -19758,7 +20441,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__sankey)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -20044,7 +20727,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__scatter)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -20330,7 +21013,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__scatter3d)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -20616,7 +21299,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__smart)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -20902,7 +21585,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__splom)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -21188,7 +21871,293 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__sunburst)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --agg)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --annotation)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --bins)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --box-points)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --close)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cluster)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --color-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dataset-pid)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --denominator-unit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary-context)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-id-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --feature-name-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geocode-country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --geojson)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --grid-cols)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --heatmap-density)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --height)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --hierarchy-style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --high)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lat)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --location-mode)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --locations)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --log-scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --lon)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --low)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-charts)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ohlc-open)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --preview-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --projection)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --region-state)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --scale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --series)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --size)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --slider-speed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --snap-max-dist)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --source)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --style)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --target)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --text)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --theme)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-audience)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tour-steps)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --value)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --violin)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --width)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -x)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --x-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -y)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-range)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --y-title)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -z)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__viz__subcmd__ternary)
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -21474,7 +22443,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__treemap)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -21760,7 +22729,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__viz__subcmd__violin)
-            opts="-d -n -o -x -y -z -h --agg --annotation --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
+            opts="-d -n -o -x -y -z -h --agg --annotation --area --bins --bivariate --box-points --check-geojson-key --close --cluster --color --color-scale --cols --dataset-pid --degrees --delimiter --denominator --denominator-key --denominator-unit --density --dict-info --dictionary --dictionary-context --donut --feature-id-key --feature-name-key --geocode --geocode-admin1 --geocode-country --geojson --grid-cols --heatmap-density --height --hierarchy-style --high --language --lat --limit --location-mode --locations --log-scale --lon --low --map --max-charts --no-headers --no-nulls --no-other --no-parcoords --no-snap --ohlc-open --open --output --photos --preview-threshold --projection --rangeslider --region-state --sankey-value-order --scale --series --size --slider --slider-cumulative --slider-speed --smarter --snap-max-dist --source --style --target --text --theme --title --tour-audience --tour-steps --value --violin --width --x --x-title --y --y-range --y-title --z --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

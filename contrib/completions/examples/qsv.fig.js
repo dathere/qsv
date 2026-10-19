@@ -15580,10 +15580,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -15608,6 +15614,582 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
+            },
+            {
+              name: "--no-snap",
+            },
+            {
+              name: "--open",
+            },
+            {
+              name: "--photos",
+            },
+            {
+              name: "--rangeslider",
+            },
+            {
+              name: "--sankey-value-order",
+            },
+            {
+              name: "--slider-cumulative",
+            },
+            {
+              name: "--smarter",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "barpolar",
+          options: [
+            {
+              name: "--agg",
+              isRepeatable: true,
+              args: {
+                name: "agg",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--annotation",
+              isRepeatable: true,
+              args: {
+                name: "annotation",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--bins",
+              isRepeatable: true,
+              args: {
+                name: "bins",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--box-points",
+              isRepeatable: true,
+              args: {
+                name: "box-points",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--close",
+              isRepeatable: true,
+              args: {
+                name: "close",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cluster",
+              isRepeatable: true,
+              args: {
+                name: "cluster",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color",
+              isRepeatable: true,
+              args: {
+                name: "color",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color-scale",
+              isRepeatable: true,
+              args: {
+                name: "color-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cols",
+              isRepeatable: true,
+              args: {
+                name: "cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dataset-pid",
+              isRepeatable: true,
+              args: {
+                name: "dataset-pid",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator",
+              isRepeatable: true,
+              args: {
+                name: "denominator",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-key",
+              isRepeatable: true,
+              args: {
+                name: "denominator-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-unit",
+              isRepeatable: true,
+              args: {
+                name: "denominator-unit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary",
+              isRepeatable: true,
+              args: {
+                name: "dictionary",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary-context",
+              isRepeatable: true,
+              args: {
+                name: "dictionary-context",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-id-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-id-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-name-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-name-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-admin1",
+              isRepeatable: true,
+              args: {
+                name: "geocode-admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-country",
+              isRepeatable: true,
+              args: {
+                name: "geocode-country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geojson",
+              isRepeatable: true,
+              args: {
+                name: "geojson",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--grid-cols",
+              isRepeatable: true,
+              args: {
+                name: "grid-cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--heatmap-density",
+              isRepeatable: true,
+              args: {
+                name: "heatmap-density",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--height",
+              isRepeatable: true,
+              args: {
+                name: "height",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--hierarchy-style",
+              isRepeatable: true,
+              args: {
+                name: "hierarchy-style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--high",
+              isRepeatable: true,
+              args: {
+                name: "high",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--language",
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lat",
+              isRepeatable: true,
+              args: {
+                name: "lat",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--limit",
+              isRepeatable: true,
+              args: {
+                name: "limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--location-mode",
+              isRepeatable: true,
+              args: {
+                name: "location-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--locations",
+              isRepeatable: true,
+              args: {
+                name: "locations",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--log-scale",
+              isRepeatable: true,
+              args: {
+                name: "log-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lon",
+              isRepeatable: true,
+              args: {
+                name: "lon",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--low",
+              isRepeatable: true,
+              args: {
+                name: "low",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--max-charts",
+              isRepeatable: true,
+              args: {
+                name: "max-charts",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ohlc-open",
+              isRepeatable: true,
+              args: {
+                name: "ohlc-open",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--preview-threshold",
+              isRepeatable: true,
+              args: {
+                name: "preview-threshold",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--projection",
+              isRepeatable: true,
+              args: {
+                name: "projection",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--region-state",
+              isRepeatable: true,
+              args: {
+                name: "region-state",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--scale",
+              isRepeatable: true,
+              args: {
+                name: "scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--series",
+              isRepeatable: true,
+              args: {
+                name: "series",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--size",
+              isRepeatable: true,
+              args: {
+                name: "size",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider",
+              isRepeatable: true,
+              args: {
+                name: "slider",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider-speed",
+              isRepeatable: true,
+              args: {
+                name: "slider-speed",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--snap-max-dist",
+              isRepeatable: true,
+              args: {
+                name: "snap-max-dist",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--source",
+              isRepeatable: true,
+              args: {
+                name: "source",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--style",
+              isRepeatable: true,
+              args: {
+                name: "style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--target",
+              isRepeatable: true,
+              args: {
+                name: "target",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--text",
+              isRepeatable: true,
+              args: {
+                name: "text",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--theme",
+              isRepeatable: true,
+              args: {
+                name: "theme",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--title",
+              isRepeatable: true,
+              args: {
+                name: "title",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-audience",
+              isRepeatable: true,
+              args: {
+                name: "tour-audience",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-steps",
+              isRepeatable: true,
+              args: {
+                name: "tour-steps",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--value",
+              isRepeatable: true,
+              args: {
+                name: "value",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--violin",
+              isRepeatable: true,
+              args: {
+                name: "violin",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--width",
+              isRepeatable: true,
+              args: {
+                name: "width",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-x", "--x"],
+              isRepeatable: true,
+              args: {
+                name: "x",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--x-title",
+              isRepeatable: true,
+              args: {
+                name: "x-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-y", "--y"],
+              isRepeatable: true,
+              args: {
+                name: "y",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-range",
+              isRepeatable: true,
+              args: {
+                name: "y-range",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-title",
+              isRepeatable: true,
+              args: {
+                name: "y-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-z", "--z"],
+              isRepeatable: true,
+              args: {
+                name: "z",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--area",
+            },
+            {
+              name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
+            },
+            {
+              name: "--density",
+            },
+            {
+              name: "--dict-info",
+            },
+            {
+              name: "--donut",
+            },
+            {
+              name: "--geocode",
+            },
+            {
+              name: "--map",
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: "--no-nulls",
+            },
+            {
+              name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -16144,10 +16726,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -16172,6 +16760,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -16708,10 +17299,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -16736,6 +17333,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -17272,10 +17872,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -17300,6 +17906,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -17836,10 +18445,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -17864,6 +18479,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -18400,10 +19018,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -18428,6 +19052,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -18964,10 +19591,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -18992,6 +19625,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -19528,10 +20164,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -19556,6 +20198,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -20092,10 +20737,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -20120,6 +20771,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -20656,10 +21310,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -20684,6 +21344,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -21220,10 +21883,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -21248,6 +21917,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -21784,10 +22456,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -21812,6 +22490,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -22348,10 +23029,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -22376,6 +23063,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -22912,10 +23602,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -22940,6 +23636,582 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
+            },
+            {
+              name: "--no-snap",
+            },
+            {
+              name: "--open",
+            },
+            {
+              name: "--photos",
+            },
+            {
+              name: "--rangeslider",
+            },
+            {
+              name: "--sankey-value-order",
+            },
+            {
+              name: "--slider-cumulative",
+            },
+            {
+              name: "--smarter",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "parcoords",
+          options: [
+            {
+              name: "--agg",
+              isRepeatable: true,
+              args: {
+                name: "agg",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--annotation",
+              isRepeatable: true,
+              args: {
+                name: "annotation",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--bins",
+              isRepeatable: true,
+              args: {
+                name: "bins",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--box-points",
+              isRepeatable: true,
+              args: {
+                name: "box-points",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--close",
+              isRepeatable: true,
+              args: {
+                name: "close",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cluster",
+              isRepeatable: true,
+              args: {
+                name: "cluster",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color",
+              isRepeatable: true,
+              args: {
+                name: "color",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color-scale",
+              isRepeatable: true,
+              args: {
+                name: "color-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cols",
+              isRepeatable: true,
+              args: {
+                name: "cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dataset-pid",
+              isRepeatable: true,
+              args: {
+                name: "dataset-pid",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator",
+              isRepeatable: true,
+              args: {
+                name: "denominator",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-key",
+              isRepeatable: true,
+              args: {
+                name: "denominator-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-unit",
+              isRepeatable: true,
+              args: {
+                name: "denominator-unit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary",
+              isRepeatable: true,
+              args: {
+                name: "dictionary",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary-context",
+              isRepeatable: true,
+              args: {
+                name: "dictionary-context",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-id-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-id-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-name-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-name-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-admin1",
+              isRepeatable: true,
+              args: {
+                name: "geocode-admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-country",
+              isRepeatable: true,
+              args: {
+                name: "geocode-country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geojson",
+              isRepeatable: true,
+              args: {
+                name: "geojson",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--grid-cols",
+              isRepeatable: true,
+              args: {
+                name: "grid-cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--heatmap-density",
+              isRepeatable: true,
+              args: {
+                name: "heatmap-density",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--height",
+              isRepeatable: true,
+              args: {
+                name: "height",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--hierarchy-style",
+              isRepeatable: true,
+              args: {
+                name: "hierarchy-style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--high",
+              isRepeatable: true,
+              args: {
+                name: "high",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--language",
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lat",
+              isRepeatable: true,
+              args: {
+                name: "lat",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--limit",
+              isRepeatable: true,
+              args: {
+                name: "limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--location-mode",
+              isRepeatable: true,
+              args: {
+                name: "location-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--locations",
+              isRepeatable: true,
+              args: {
+                name: "locations",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--log-scale",
+              isRepeatable: true,
+              args: {
+                name: "log-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lon",
+              isRepeatable: true,
+              args: {
+                name: "lon",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--low",
+              isRepeatable: true,
+              args: {
+                name: "low",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--max-charts",
+              isRepeatable: true,
+              args: {
+                name: "max-charts",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ohlc-open",
+              isRepeatable: true,
+              args: {
+                name: "ohlc-open",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--preview-threshold",
+              isRepeatable: true,
+              args: {
+                name: "preview-threshold",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--projection",
+              isRepeatable: true,
+              args: {
+                name: "projection",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--region-state",
+              isRepeatable: true,
+              args: {
+                name: "region-state",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--scale",
+              isRepeatable: true,
+              args: {
+                name: "scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--series",
+              isRepeatable: true,
+              args: {
+                name: "series",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--size",
+              isRepeatable: true,
+              args: {
+                name: "size",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider",
+              isRepeatable: true,
+              args: {
+                name: "slider",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider-speed",
+              isRepeatable: true,
+              args: {
+                name: "slider-speed",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--snap-max-dist",
+              isRepeatable: true,
+              args: {
+                name: "snap-max-dist",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--source",
+              isRepeatable: true,
+              args: {
+                name: "source",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--style",
+              isRepeatable: true,
+              args: {
+                name: "style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--target",
+              isRepeatable: true,
+              args: {
+                name: "target",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--text",
+              isRepeatable: true,
+              args: {
+                name: "text",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--theme",
+              isRepeatable: true,
+              args: {
+                name: "theme",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--title",
+              isRepeatable: true,
+              args: {
+                name: "title",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-audience",
+              isRepeatable: true,
+              args: {
+                name: "tour-audience",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-steps",
+              isRepeatable: true,
+              args: {
+                name: "tour-steps",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--value",
+              isRepeatable: true,
+              args: {
+                name: "value",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--violin",
+              isRepeatable: true,
+              args: {
+                name: "violin",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--width",
+              isRepeatable: true,
+              args: {
+                name: "width",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-x", "--x"],
+              isRepeatable: true,
+              args: {
+                name: "x",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--x-title",
+              isRepeatable: true,
+              args: {
+                name: "x-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-y", "--y"],
+              isRepeatable: true,
+              args: {
+                name: "y",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-range",
+              isRepeatable: true,
+              args: {
+                name: "y-range",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-title",
+              isRepeatable: true,
+              args: {
+                name: "y-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-z", "--z"],
+              isRepeatable: true,
+              args: {
+                name: "z",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--area",
+            },
+            {
+              name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
+            },
+            {
+              name: "--density",
+            },
+            {
+              name: "--dict-info",
+            },
+            {
+              name: "--donut",
+            },
+            {
+              name: "--geocode",
+            },
+            {
+              name: "--map",
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: "--no-nulls",
+            },
+            {
+              name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -23476,10 +24748,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -23504,6 +24782,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -24040,10 +25321,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -24068,6 +25355,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -24604,10 +25894,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -24632,6 +25928,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -25168,10 +26467,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -25196,6 +26501,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -25732,10 +27040,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -25760,6 +27074,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -26296,10 +27613,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -26324,6 +27647,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -26860,10 +28186,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -26888,6 +28220,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -27424,10 +28759,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -27452,6 +28793,582 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
+            },
+            {
+              name: "--no-snap",
+            },
+            {
+              name: "--open",
+            },
+            {
+              name: "--photos",
+            },
+            {
+              name: "--rangeslider",
+            },
+            {
+              name: "--sankey-value-order",
+            },
+            {
+              name: "--slider-cumulative",
+            },
+            {
+              name: "--smarter",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "ternary",
+          options: [
+            {
+              name: "--agg",
+              isRepeatable: true,
+              args: {
+                name: "agg",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--annotation",
+              isRepeatable: true,
+              args: {
+                name: "annotation",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--bins",
+              isRepeatable: true,
+              args: {
+                name: "bins",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--box-points",
+              isRepeatable: true,
+              args: {
+                name: "box-points",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--close",
+              isRepeatable: true,
+              args: {
+                name: "close",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cluster",
+              isRepeatable: true,
+              args: {
+                name: "cluster",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color",
+              isRepeatable: true,
+              args: {
+                name: "color",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--color-scale",
+              isRepeatable: true,
+              args: {
+                name: "color-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cols",
+              isRepeatable: true,
+              args: {
+                name: "cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dataset-pid",
+              isRepeatable: true,
+              args: {
+                name: "dataset-pid",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator",
+              isRepeatable: true,
+              args: {
+                name: "denominator",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-key",
+              isRepeatable: true,
+              args: {
+                name: "denominator-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--denominator-unit",
+              isRepeatable: true,
+              args: {
+                name: "denominator-unit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary",
+              isRepeatable: true,
+              args: {
+                name: "dictionary",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--dictionary-context",
+              isRepeatable: true,
+              args: {
+                name: "dictionary-context",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-id-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-id-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--feature-name-key",
+              isRepeatable: true,
+              args: {
+                name: "feature-name-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-admin1",
+              isRepeatable: true,
+              args: {
+                name: "geocode-admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geocode-country",
+              isRepeatable: true,
+              args: {
+                name: "geocode-country",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--geojson",
+              isRepeatable: true,
+              args: {
+                name: "geojson",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--grid-cols",
+              isRepeatable: true,
+              args: {
+                name: "grid-cols",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--heatmap-density",
+              isRepeatable: true,
+              args: {
+                name: "heatmap-density",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--height",
+              isRepeatable: true,
+              args: {
+                name: "height",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--hierarchy-style",
+              isRepeatable: true,
+              args: {
+                name: "hierarchy-style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--high",
+              isRepeatable: true,
+              args: {
+                name: "high",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--language",
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lat",
+              isRepeatable: true,
+              args: {
+                name: "lat",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--limit",
+              isRepeatable: true,
+              args: {
+                name: "limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--location-mode",
+              isRepeatable: true,
+              args: {
+                name: "location-mode",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--locations",
+              isRepeatable: true,
+              args: {
+                name: "locations",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--log-scale",
+              isRepeatable: true,
+              args: {
+                name: "log-scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--lon",
+              isRepeatable: true,
+              args: {
+                name: "lon",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--low",
+              isRepeatable: true,
+              args: {
+                name: "low",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--max-charts",
+              isRepeatable: true,
+              args: {
+                name: "max-charts",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ohlc-open",
+              isRepeatable: true,
+              args: {
+                name: "ohlc-open",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--preview-threshold",
+              isRepeatable: true,
+              args: {
+                name: "preview-threshold",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--projection",
+              isRepeatable: true,
+              args: {
+                name: "projection",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--region-state",
+              isRepeatable: true,
+              args: {
+                name: "region-state",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--scale",
+              isRepeatable: true,
+              args: {
+                name: "scale",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--series",
+              isRepeatable: true,
+              args: {
+                name: "series",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--size",
+              isRepeatable: true,
+              args: {
+                name: "size",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider",
+              isRepeatable: true,
+              args: {
+                name: "slider",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--slider-speed",
+              isRepeatable: true,
+              args: {
+                name: "slider-speed",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--snap-max-dist",
+              isRepeatable: true,
+              args: {
+                name: "snap-max-dist",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--source",
+              isRepeatable: true,
+              args: {
+                name: "source",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--style",
+              isRepeatable: true,
+              args: {
+                name: "style",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--target",
+              isRepeatable: true,
+              args: {
+                name: "target",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--text",
+              isRepeatable: true,
+              args: {
+                name: "text",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--theme",
+              isRepeatable: true,
+              args: {
+                name: "theme",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--title",
+              isRepeatable: true,
+              args: {
+                name: "title",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-audience",
+              isRepeatable: true,
+              args: {
+                name: "tour-audience",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--tour-steps",
+              isRepeatable: true,
+              args: {
+                name: "tour-steps",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--value",
+              isRepeatable: true,
+              args: {
+                name: "value",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--violin",
+              isRepeatable: true,
+              args: {
+                name: "violin",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--width",
+              isRepeatable: true,
+              args: {
+                name: "width",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-x", "--x"],
+              isRepeatable: true,
+              args: {
+                name: "x",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--x-title",
+              isRepeatable: true,
+              args: {
+                name: "x-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-y", "--y"],
+              isRepeatable: true,
+              args: {
+                name: "y",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-range",
+              isRepeatable: true,
+              args: {
+                name: "y-range",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--y-title",
+              isRepeatable: true,
+              args: {
+                name: "y-title",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-z", "--z"],
+              isRepeatable: true,
+              args: {
+                name: "z",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--area",
+            },
+            {
+              name: "--bivariate",
+            },
+            {
+              name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
+            },
+            {
+              name: "--density",
+            },
+            {
+              name: "--dict-info",
+            },
+            {
+              name: "--donut",
+            },
+            {
+              name: "--geocode",
+            },
+            {
+              name: "--map",
+            },
+            {
+              name: ["-n", "--no-headers"],
+            },
+            {
+              name: "--no-nulls",
+            },
+            {
+              name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -27988,10 +29905,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -28016,6 +29939,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -28552,10 +30478,16 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--area",
+            },
+            {
               name: "--bivariate",
             },
             {
               name: "--check-geojson-key",
+            },
+            {
+              name: "--degrees",
             },
             {
               name: "--density",
@@ -28580,6 +30512,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--no-other",
+            },
+            {
+              name: "--no-parcoords",
             },
             {
               name: "--no-snap",
@@ -28614,6 +30549,9 @@ const completion: Fig.Spec = {
           subcommands: [
             {
               name: "bar",
+            },
+            {
+              name: "barpolar",
             },
             {
               name: "box",
@@ -28655,6 +30593,9 @@ const completion: Fig.Spec = {
               name: "parcats",
             },
             {
+              name: "parcoords",
+            },
+            {
               name: "pie",
             },
             {
@@ -28677,6 +30618,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "sunburst",
+            },
+            {
+              name: "ternary",
             },
             {
               name: "treemap",
@@ -29197,10 +31141,16 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--area",
+        },
+        {
           name: "--bivariate",
         },
         {
           name: "--check-geojson-key",
+        },
+        {
+          name: "--degrees",
         },
         {
           name: "--density",
@@ -29225,6 +31175,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--no-other",
+        },
+        {
+          name: "--no-parcoords",
         },
         {
           name: "--no-snap",
@@ -29732,6 +31685,9 @@ const completion: Fig.Spec = {
               name: "bar",
             },
             {
+              name: "barpolar",
+            },
+            {
               name: "box",
             },
             {
@@ -29771,6 +31727,9 @@ const completion: Fig.Spec = {
               name: "parcats",
             },
             {
+              name: "parcoords",
+            },
+            {
               name: "pie",
             },
             {
@@ -29793,6 +31752,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "sunburst",
+            },
+            {
+              name: "ternary",
             },
             {
               name: "treemap",

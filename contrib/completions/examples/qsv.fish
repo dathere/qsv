@@ -2501,112 +2501,118 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcom
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from help" -f -a "schema"
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l agg -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l annotation -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l bins -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l box-points -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l close -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l cluster -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l color -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l color-scale -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l cols -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dataset-pid -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s d -l delimiter -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator-key -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l denominator-unit -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dictionary -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dictionary-context -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l feature-id-key -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l feature-name-key -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode-admin1 -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode-country -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geojson -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l grid-cols -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l heatmap-density -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l height -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l hierarchy-style -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l high -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l language -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l lat -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l limit -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l location-mode -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l locations -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l log-scale -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l lon -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l low -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l max-charts -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l ohlc-open -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s o -l output -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l preview-threshold -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l projection -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l region-state -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l scale -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l series -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l size -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider-speed -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l snap-max-dist -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l source -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l style -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l target -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l text -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l theme -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l title -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l tour-audience -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l tour-steps -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l value -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l violin -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l width -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s x -l x -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l x-title -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s y -l y -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l y-range -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l y-title -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s z -l z -r
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l bivariate
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l check-geojson-key
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l density
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l dict-info
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l donut
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l geocode
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l map
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s n -l no-headers
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-nulls
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-other
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l no-snap
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l open
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l photos
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l rangeslider
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l sankey-value-order
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l slider-cumulative
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -l smarter
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "bar"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "box"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "candlestick"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "choropleth"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "contour"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "funnel"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "geo"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "heatmap"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "histogram"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "icicle"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "line"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "map"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "ohlc"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "parcats"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "pie"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "radar"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "sankey"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "scatter"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "scatter3d"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "smart"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "splom"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "sunburst"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "treemap"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "violin"
-complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats pie radar sankey scatter scatter3d smart splom sunburst treemap violin help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l area
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l degrees
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-parcoords
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "barpolar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "box"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "candlestick"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "choropleth"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "contour"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "funnel"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "geo"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "heatmap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "histogram"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "icicle"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "line"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "map"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "ohlc"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "parcoords"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "pie"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "radar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "sankey"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "scatter"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "scatter3d"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "smart"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "splom"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "ternary"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "treemap"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "violin"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l agg -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l annotation -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l bins -r
@@ -2670,8 +2676,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l donut
@@ -2680,6 +2688,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l photos
@@ -2688,6 +2697,90 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l slider-cumulative
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l smarter
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l area
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l degrees
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-parcoords
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l agg -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l annotation -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l bins -r
@@ -2751,8 +2844,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l donut
@@ -2761,6 +2856,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l photos
@@ -2832,8 +2928,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l donut
@@ -2842,6 +2940,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l photos
@@ -2913,8 +3012,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l donut
@@ -2923,6 +3024,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l photos
@@ -2994,8 +3096,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l donut
@@ -3004,6 +3108,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l photos
@@ -3075,8 +3180,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l donut
@@ -3085,6 +3192,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l photos
@@ -3156,8 +3264,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l donut
@@ -3166,6 +3276,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l photos
@@ -3237,8 +3348,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l donut
@@ -3247,6 +3360,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l photos
@@ -3318,8 +3432,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l donut
@@ -3328,6 +3444,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l photos
@@ -3399,8 +3516,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l donut
@@ -3409,6 +3528,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l photos
@@ -3480,8 +3600,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l donut
@@ -3490,6 +3612,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l photos
@@ -3561,8 +3684,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l donut
@@ -3571,6 +3696,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l photos
@@ -3642,8 +3768,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l donut
@@ -3652,6 +3780,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l photos
@@ -3723,8 +3852,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l donut
@@ -3733,6 +3864,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l photos
@@ -3741,6 +3873,90 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l slider-cumulative
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l smarter
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l area
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l degrees
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-parcoords
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l agg -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l annotation -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l bins -r
@@ -3804,8 +4020,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l donut
@@ -3814,6 +4032,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l photos
@@ -3885,8 +4104,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l donut
@@ -3895,6 +4116,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l photos
@@ -3966,8 +4188,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l donut
@@ -3976,6 +4200,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l photos
@@ -4047,8 +4272,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l donut
@@ -4057,6 +4284,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l photos
@@ -4128,8 +4356,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l donut
@@ -4138,6 +4368,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l photos
@@ -4209,8 +4440,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l donut
@@ -4219,6 +4452,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l photos
@@ -4290,8 +4524,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l donut
@@ -4300,6 +4536,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l photos
@@ -4371,8 +4608,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l donut
@@ -4381,6 +4620,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l photos
@@ -4389,6 +4629,90 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l slider-cumulative
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l smarter
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l agg -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l annotation -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l bins -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l box-points -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l close -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l cluster -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l color -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l color-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l dataset-pid -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l denominator -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l denominator-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l denominator-unit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l dictionary -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l dictionary-context -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l feature-id-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l feature-name-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l geocode-admin1 -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l geocode-country -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l geojson -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l grid-cols -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l heatmap-density -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l height -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l hierarchy-style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l high -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l language -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l lat -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l location-mode -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l locations -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l log-scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l lon -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l low -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l max-charts -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l ohlc-open -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l preview-threshold -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l projection -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l region-state -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l scale -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l series -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l size -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l slider -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l slider-speed -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l snap-max-dist -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l source -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l style -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l target -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l text -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l theme -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l tour-audience -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l tour-steps -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l value -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l violin -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l width -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s x -l x -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l x-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s y -l y -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l y-range -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l y-title -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l area
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l bivariate
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l degrees
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l density
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l dict-info
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l donut
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l geocode
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-nulls
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-parcoords
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-snap
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l open
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l photos
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l rangeslider
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l sankey-value-order
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l slider-cumulative
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l smarter
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l agg -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l annotation -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l bins -r
@@ -4452,8 +4776,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l donut
@@ -4462,6 +4788,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l photos
@@ -4533,8 +4860,10 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l y-range -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l y-title -r
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s z -l z -r
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l area
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l bivariate
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l check-geojson-key
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l degrees
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l density
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l dict-info
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l donut
@@ -4543,6 +4872,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-other
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-parcoords
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-snap
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l open
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l photos
@@ -4552,6 +4882,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l smarter
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "barpolar"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "box"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "candlestick"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "choropleth"
@@ -4565,6 +4896,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "map"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "ohlc"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "parcoords"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "pie"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "radar"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "sankey"
@@ -4573,6 +4905,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "smart"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "splom"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "ternary"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "treemap"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "violin"
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
@@ -4719,6 +5052,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from to" -f -a "xlsx"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from validate" -f -a "schema"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "bar"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "barpolar"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "box"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "candlestick"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "choropleth"
@@ -4732,6 +5066,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "map"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "ohlc"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "parcats"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "parcoords"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "pie"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "radar"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "sankey"
@@ -4740,5 +5075,6 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "smart"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "splom"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "sunburst"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "ternary"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "treemap"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from viz" -f -a "violin"

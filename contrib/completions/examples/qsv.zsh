@@ -4422,8 +4422,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4433,6 +4435,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4522,8 +4525,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4533,6 +4538,102 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(barpolar)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--area[]' \
+'--bivariate[]' \
+'--check-geojson-key[]' \
+'--degrees[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4614,8 +4715,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4625,6 +4728,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4706,8 +4810,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4717,6 +4823,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4798,8 +4905,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4809,6 +4918,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4890,8 +5000,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4901,6 +5013,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -4982,8 +5095,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -4993,6 +5108,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5074,8 +5190,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5085,6 +5203,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5166,8 +5285,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5177,6 +5298,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5258,8 +5380,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5269,6 +5393,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5350,8 +5475,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5361,6 +5488,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5442,8 +5570,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5453,6 +5583,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5534,8 +5665,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5545,6 +5678,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5626,8 +5760,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5637,6 +5773,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5718,8 +5855,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5729,6 +5868,102 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(parcoords)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--area[]' \
+'--bivariate[]' \
+'--check-geojson-key[]' \
+'--degrees[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5810,8 +6045,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5821,6 +6058,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5902,8 +6140,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -5913,6 +6153,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -5994,8 +6235,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6005,6 +6248,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6086,8 +6330,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6097,6 +6343,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6178,8 +6425,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6189,6 +6438,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6270,8 +6520,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6281,6 +6533,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6362,8 +6615,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6373,6 +6628,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6454,8 +6710,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6465,6 +6723,102 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
+'--no-snap[]' \
+'--open[]' \
+'--photos[]' \
+'--rangeslider[]' \
+'--sankey-value-order[]' \
+'--slider-cumulative[]' \
+'--smarter[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(ternary)
+_arguments "${_arguments_options[@]}" : \
+'--agg=[]: :_default' \
+'--annotation=[]: :_default' \
+'--bins=[]: :_default' \
+'--box-points=[]: :_default' \
+'--close=[]: :_default' \
+'--cluster=[]: :_default' \
+'--color=[]: :_default' \
+'--color-scale=[]: :_default' \
+'--cols=[]: :_default' \
+'--dataset-pid=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--denominator=[]: :_default' \
+'--denominator-key=[]: :_default' \
+'--denominator-unit=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--dictionary-context=[]: :_default' \
+'--feature-id-key=[]: :_default' \
+'--feature-name-key=[]: :_default' \
+'--geocode-admin1=[]: :_default' \
+'--geocode-country=[]: :_default' \
+'--geojson=[]: :_default' \
+'--grid-cols=[]: :_default' \
+'--heatmap-density=[]: :_default' \
+'--height=[]: :_default' \
+'--hierarchy-style=[]: :_default' \
+'--high=[]: :_default' \
+'--language=[]: :_default' \
+'--lat=[]: :_default' \
+'--limit=[]: :_default' \
+'--location-mode=[]: :_default' \
+'--locations=[]: :_default' \
+'--log-scale=[]: :_default' \
+'--lon=[]: :_default' \
+'--low=[]: :_default' \
+'--max-charts=[]: :_default' \
+'--ohlc-open=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--preview-threshold=[]: :_default' \
+'--projection=[]: :_default' \
+'--region-state=[]: :_default' \
+'--scale=[]: :_default' \
+'--series=[]: :_default' \
+'--size=[]: :_default' \
+'--slider=[]: :_default' \
+'--slider-speed=[]: :_default' \
+'--snap-max-dist=[]: :_default' \
+'--source=[]: :_default' \
+'--style=[]: :_default' \
+'--target=[]: :_default' \
+'--text=[]: :_default' \
+'--theme=[]: :_default' \
+'--title=[]: :_default' \
+'--tour-audience=[]: :_default' \
+'--tour-steps=[]: :_default' \
+'--value=[]: :_default' \
+'--violin=[]: :_default' \
+'--width=[]: :_default' \
+'-x+[]: :_default' \
+'--x=[]: :_default' \
+'--x-title=[]: :_default' \
+'-y+[]: :_default' \
+'--y=[]: :_default' \
+'--y-range=[]: :_default' \
+'--y-title=[]: :_default' \
+'-z+[]: :_default' \
+'--z=[]: :_default' \
+'--area[]' \
+'--bivariate[]' \
+'--check-geojson-key[]' \
+'--degrees[]' \
+'--density[]' \
+'--dict-info[]' \
+'--donut[]' \
+'--geocode[]' \
+'--map[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-nulls[]' \
+'--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6546,8 +6900,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6557,6 +6913,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6638,8 +6995,10 @@ _arguments "${_arguments_options[@]}" : \
 '--y-title=[]: :_default' \
 '-z+[]: :_default' \
 '--z=[]: :_default' \
+'--area[]' \
 '--bivariate[]' \
 '--check-geojson-key[]' \
+'--degrees[]' \
 '--density[]' \
 '--dict-info[]' \
 '--donut[]' \
@@ -6649,6 +7008,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '--no-nulls[]' \
 '--no-other[]' \
+'--no-parcoords[]' \
 '--no-snap[]' \
 '--open[]' \
 '--photos[]' \
@@ -6673,6 +7033,10 @@ _arguments "${_arguments_options[@]}" : \
         curcontext="${curcontext%:*:*}:qsv-viz-help-command-$line[1]:"
         case $line[1] in
             (bar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(barpolar)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -6728,6 +7092,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(parcoords)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (pie)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -6757,6 +7125,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (sunburst)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(ternary)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -7467,6 +7839,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(barpolar)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (box)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -7519,6 +7895,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(parcoords)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (pie)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -7548,6 +7928,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (sunburst)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(ternary)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -9134,6 +9518,7 @@ _qsv__subcmd__help__subcmd__validate__subcmd__schema_commands() {
 _qsv__subcmd__help__subcmd__viz_commands() {
     local commands; commands=(
 'bar:' \
+'barpolar:' \
 'box:' \
 'candlestick:' \
 'choropleth:' \
@@ -9147,6 +9532,7 @@ _qsv__subcmd__help__subcmd__viz_commands() {
 'map:' \
 'ohlc:' \
 'parcats:' \
+'parcoords:' \
 'pie:' \
 'radar:' \
 'sankey:' \
@@ -9155,6 +9541,7 @@ _qsv__subcmd__help__subcmd__viz_commands() {
 'smart:' \
 'splom:' \
 'sunburst:' \
+'ternary:' \
 'treemap:' \
 'violin:' \
     )
@@ -9164,6 +9551,11 @@ _qsv__subcmd__help__subcmd__viz_commands() {
 _qsv__subcmd__help__subcmd__viz__subcmd__bar_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help viz bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__barpolar_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__barpolar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz barpolar commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__box_commands] )) ||
 _qsv__subcmd__help__subcmd__viz__subcmd__box_commands() {
@@ -9230,6 +9622,11 @@ _qsv__subcmd__help__subcmd__viz__subcmd__parcats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help viz parcats commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__parcoords_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__parcoords_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz parcoords commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__pie_commands] )) ||
 _qsv__subcmd__help__subcmd__viz__subcmd__pie_commands() {
     local commands; commands=()
@@ -9269,6 +9666,11 @@ _qsv__subcmd__help__subcmd__viz__subcmd__splom_commands() {
 _qsv__subcmd__help__subcmd__viz__subcmd__sunburst_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help viz sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__ternary_commands] )) ||
+_qsv__subcmd__help__subcmd__viz__subcmd__ternary_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help viz ternary commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__viz__subcmd__treemap_commands] )) ||
 _qsv__subcmd__help__subcmd__viz__subcmd__treemap_commands() {
@@ -9802,6 +10204,7 @@ _qsv__subcmd__validate__subcmd__schema_commands() {
 _qsv__subcmd__viz_commands() {
     local commands; commands=(
 'bar:' \
+'barpolar:' \
 'box:' \
 'candlestick:' \
 'choropleth:' \
@@ -9815,6 +10218,7 @@ _qsv__subcmd__viz_commands() {
 'map:' \
 'ohlc:' \
 'parcats:' \
+'parcoords:' \
 'pie:' \
 'radar:' \
 'sankey:' \
@@ -9823,6 +10227,7 @@ _qsv__subcmd__viz_commands() {
 'smart:' \
 'splom:' \
 'sunburst:' \
+'ternary:' \
 'treemap:' \
 'violin:' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -9833,6 +10238,11 @@ _qsv__subcmd__viz_commands() {
 _qsv__subcmd__viz__subcmd__bar_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__barpolar_commands] )) ||
+_qsv__subcmd__viz__subcmd__barpolar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz barpolar commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__viz__subcmd__box_commands] )) ||
 _qsv__subcmd__viz__subcmd__box_commands() {
@@ -9873,6 +10283,7 @@ _qsv__subcmd__viz__subcmd__heatmap_commands() {
 _qsv__subcmd__viz__subcmd__help_commands() {
     local commands; commands=(
 'bar:' \
+'barpolar:' \
 'box:' \
 'candlestick:' \
 'choropleth:' \
@@ -9886,6 +10297,7 @@ _qsv__subcmd__viz__subcmd__help_commands() {
 'map:' \
 'ohlc:' \
 'parcats:' \
+'parcoords:' \
 'pie:' \
 'radar:' \
 'sankey:' \
@@ -9894,6 +10306,7 @@ _qsv__subcmd__viz__subcmd__help_commands() {
 'smart:' \
 'splom:' \
 'sunburst:' \
+'ternary:' \
 'treemap:' \
 'violin:' \
 'help:Print this message or the help of the given subcommand(s)' \
@@ -9904,6 +10317,11 @@ _qsv__subcmd__viz__subcmd__help_commands() {
 _qsv__subcmd__viz__subcmd__help__subcmd__bar_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz help bar commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__barpolar_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__barpolar_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help barpolar commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__box_commands] )) ||
 _qsv__subcmd__viz__subcmd__help__subcmd__box_commands() {
@@ -9975,6 +10393,11 @@ _qsv__subcmd__viz__subcmd__help__subcmd__parcats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz help parcats commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__parcoords_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__parcoords_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help parcoords commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__pie_commands] )) ||
 _qsv__subcmd__viz__subcmd__help__subcmd__pie_commands() {
     local commands; commands=()
@@ -10014,6 +10437,11 @@ _qsv__subcmd__viz__subcmd__help__subcmd__splom_commands() {
 _qsv__subcmd__viz__subcmd__help__subcmd__sunburst_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz help sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__ternary_commands] )) ||
+_qsv__subcmd__viz__subcmd__help__subcmd__ternary_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz help ternary commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__viz__subcmd__help__subcmd__treemap_commands] )) ||
 _qsv__subcmd__viz__subcmd__help__subcmd__treemap_commands() {
@@ -10055,6 +10483,11 @@ _qsv__subcmd__viz__subcmd__parcats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz parcats commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__viz__subcmd__parcoords_commands] )) ||
+_qsv__subcmd__viz__subcmd__parcoords_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz parcoords commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__viz__subcmd__pie_commands] )) ||
 _qsv__subcmd__viz__subcmd__pie_commands() {
     local commands; commands=()
@@ -10094,6 +10527,11 @@ _qsv__subcmd__viz__subcmd__splom_commands() {
 _qsv__subcmd__viz__subcmd__sunburst_commands() {
     local commands; commands=()
     _describe -t commands 'qsv viz sunburst commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__viz__subcmd__ternary_commands] )) ||
+_qsv__subcmd__viz__subcmd__ternary_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv viz ternary commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__viz__subcmd__treemap_commands] )) ||
 _qsv__subcmd__viz__subcmd__treemap_commands() {

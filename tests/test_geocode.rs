@@ -727,7 +727,7 @@ fn geocode_suggest_pretty_json() {
              },\"population\": 25379\n},\n  \"countryrecord\":{\n  \"info\": {\n    \"iso\": \
              \"US\",\"iso3\": \"USA\",\"iso_numeric\": \"840\",\"fips\": \"US\",\"name\": \
              \"United States\",\"capital\": \"Washington\",\"area\": \"9629091\",\"population\": \
-             327167434,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
+             341784857,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
              \"USD\",\"currency_name\": \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
              \"en-US,es-US,haw,fr\",\"geonameid\": 6252001,\"neighbours\": \
@@ -749,7 +749,7 @@ fn geocode_suggest_pretty_json() {
              \"countryrecord\":{\n  \"info\": {\n    \"iso\": \"US\",\"iso3\": \
              \"USA\",\"iso_numeric\": \"840\",\"fips\": \"US\",\"name\": \"United \
              States\",\"capital\": \"Washington\",\"area\": \"9629091\",\"population\": \
-             327167434,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
+             341784857,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
              \"USD\",\"currency_name\": \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
              \"en-US,es-US,haw,fr\",\"geonameid\": 6252001,\"neighbours\": \
@@ -770,7 +770,7 @@ fn geocode_suggest_pretty_json() {
              \"countryrecord\":{\n  \"info\": {\n    \"iso\": \"US\",\"iso3\": \
              \"USA\",\"iso_numeric\": \"840\",\"fips\": \"US\",\"name\": \"United \
              States\",\"capital\": \"Washington\",\"area\": \"9629091\",\"population\": \
-             327167434,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
+             341784857,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
              \"USD\",\"currency_name\": \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
              \"en-US,es-US,haw,fr\",\"geonameid\": 6252001,\"neighbours\": \
@@ -793,7 +793,7 @@ fn geocode_suggest_pretty_json() {
              \"countryrecord\":{\n  \"info\": {\n    \"iso\": \"US\",\"iso3\": \
              \"USA\",\"iso_numeric\": \"840\",\"fips\": \"US\",\"name\": \"United \
              States\",\"capital\": \"Washington\",\"area\": \"9629091\",\"population\": \
-             327167434,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
+             341784857,\"continent\": \"NA\",\"tld\": \".us\",\"currency_code\": \
              \"USD\",\"currency_name\": \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
              \"en-US,es-US,haw,fr\",\"geonameid\": 6252001,\"neighbours\": \
@@ -818,7 +818,7 @@ fn geocode_suggest_pretty_json() {
              \"countryrecord\":{\n  \"info\": {\n    \"iso\": \"PH\",\"iso3\": \
              \"PHL\",\"iso_numeric\": \"608\",\"fips\": \"RP\",\"name\": \
              \"Philippines\",\"capital\": \"Manila\",\"area\": \"300000\",\"population\": \
-             106651922,\"continent\": \"AS\",\"tld\": \".ph\",\"currency_code\": \
+             116786962,\"continent\": \"AS\",\"tld\": \".ph\",\"currency_code\": \
              \"PHP\",\"currency_name\": \"Peso\",\"phone\": \"63\",\"postal_code_format\": \
              \"####\",\"postal_code_regex\": \"^(\\\\d{4})$\",\"languages\": \
              \"tl,en-PH,fil,ceb,ilo,hil,war,pam,bik,bcl,pag,mrw,tsg,mdh,cbk,krj,sgd,msb,akl,ibg,\
@@ -928,13 +928,13 @@ fn geocode_suggest_fmt_json() {
     let got: String = wrk.stdout_on_success(&mut cmd);
 
     let expected = r######"Location
-"{""cityrecord"":{""id"":4891010,""name"":""Elmhurst"",""latitude"":41.899471282958984,""longitude"":-87.94033813476562,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4896861,""code"":""US.IL"",""name"":""Illinois""},""admin2_division"":{""id"":4890213,""code"":""US.IL.043"",""name"":""DuPage County""},""timezone"":""America/Chicago"",""names"":{""en"":""Elmhurst""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Illinois""},""admin2_names"":{""en"":""DuPage County""},""population"":45957}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""IL"",""us_state_name"":""Illinois"",""us_state_fips_code"":""17"",""us_county"":""DuPage County"",""us_county_fips_code"":""043""}}"
-"{""cityrecord"":{""id"":4154008,""name"":""East Lake"",""latitude"":28.110849380493164,""longitude"":-82.69481658935547,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4155751,""code"":""US.FL"",""name"":""Florida""},""admin2_division"":{""id"":4168618,""code"":""US.FL.103"",""name"":""Pinellas County""},""timezone"":""America/New_York"",""names"":null,""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Florida""},""admin2_names"":{""en"":""Pinellas""},""population"":30962}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""FL"",""us_state_name"":""Florida"",""us_state_fips_code"":""12"",""us_county"":""Pinellas"",""us_county_fips_code"":""103""}}"
-"{""cityrecord"":{""id"":5128581,""name"":""New York City"",""latitude"":40.714271545410156,""longitude"":-74.00596618652344,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":5128638,""code"":""US.NY"",""name"":""New York""},""admin2_division"":null,""timezone"":""America/New_York"",""names"":{""en"":""New York""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""New York""},""admin2_names"":null,""population"":8804190}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""NY"",""us_state_name"":""New York"",""us_state_fips_code"":""36"",""us_county"":"""",""us_county_fips_code"":null}}"
-"{""cityrecord"":{""id"":4833425,""name"":""East Haven"",""latitude"":41.27621078491211,""longitude"":-72.8684310913086,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4831725,""code"":""US.CT"",""name"":""Connecticut""},""admin2_division"":{""id"":12809023,""code"":""US.CT.170"",""name"":""South Central Connecticut Planning Region""},""timezone"":""America/New_York"",""names"":{""en"":""East Haven""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Connecticut""},""admin2_names"":null,""population"":29257}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":327167434,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""CT"",""us_state_name"":""Connecticut"",""us_state_fips_code"":""09"",""us_county"":""South Central Connecticut Planning Region"",""us_county_fips_code"":""170""}}"
+"{""cityrecord"":{""id"":4891010,""name"":""Elmhurst"",""latitude"":41.899471282958984,""longitude"":-87.94033813476562,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4896861,""code"":""US.IL"",""name"":""Illinois""},""admin2_division"":{""id"":4890213,""code"":""US.IL.043"",""name"":""DuPage County""},""timezone"":""America/Chicago"",""names"":{""en"":""Elmhurst""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Illinois""},""admin2_names"":{""en"":""DuPage County""},""population"":45957}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":341784857,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""IL"",""us_state_name"":""Illinois"",""us_state_fips_code"":""17"",""us_county"":""DuPage County"",""us_county_fips_code"":""043""}}"
+"{""cityrecord"":{""id"":4154008,""name"":""East Lake"",""latitude"":28.110849380493164,""longitude"":-82.69481658935547,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4155751,""code"":""US.FL"",""name"":""Florida""},""admin2_division"":{""id"":4168618,""code"":""US.FL.103"",""name"":""Pinellas County""},""timezone"":""America/New_York"",""names"":null,""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Florida""},""admin2_names"":{""en"":""Pinellas""},""population"":30962}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":341784857,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""FL"",""us_state_name"":""Florida"",""us_state_fips_code"":""12"",""us_county"":""Pinellas"",""us_county_fips_code"":""103""}}"
+"{""cityrecord"":{""id"":5128581,""name"":""New York City"",""latitude"":40.714271545410156,""longitude"":-74.00596618652344,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":5128638,""code"":""US.NY"",""name"":""New York""},""admin2_division"":null,""timezone"":""America/New_York"",""names"":{""en"":""New York""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""New York""},""admin2_names"":null,""population"":8804190}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":341784857,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""NY"",""us_state_name"":""New York"",""us_state_fips_code"":""36"",""us_county"":"""",""us_county_fips_code"":null}}"
+"{""cityrecord"":{""id"":4833425,""name"":""East Haven"",""latitude"":41.27621078491211,""longitude"":-72.8684310913086,""country"":{""id"":6252001,""code"":""US"",""name"":""United States""},""admin_division"":{""id"":4831725,""code"":""US.CT"",""name"":""Connecticut""},""admin2_division"":{""id"":12809023,""code"":""US.CT.170"",""name"":""South Central Connecticut Planning Region""},""timezone"":""America/New_York"",""names"":{""en"":""East Haven""},""country_names"":{""en"":""United States""},""admin1_names"":{""en"":""Connecticut""},""admin2_names"":null,""population"":29257}, ""countryrecord"":{""info"":{""iso"":""US"",""iso3"":""USA"",""iso_numeric"":""840"",""fips"":""US"",""name"":""United States"",""capital"":""Washington"",""area"":""9629091"",""population"":341784857,""continent"":""NA"",""tld"":"".us"",""currency_code"":""USD"",""currency_name"":""Dollar"",""phone"":""1"",""postal_code_format"":""#####-####"",""postal_code_regex"":""^\\d{5}(-\\d{4})?$"",""languages"":""en-US,es-US,haw,fr"",""geonameid"":6252001,""neighbours"":""CA,MX,CU"",""equivalent_fips_code"":""""},""names"":{""en"":""United States""},""capital_names"":{""en"":""Washington D.C.""}}, ""us_fips_codes"":{""us_state_code"":""CT"",""us_state_name"":""Connecticut"",""us_state_fips_code"":""09"",""us_county"":""South Central Connecticut Planning Region"",""us_county_fips_code"":""170""}}"
 This is not a Location and it will not be geocoded
 "40.71427, -74.00597"
-"{""cityrecord"":{""id"":1703417,""name"":""Makati City"",""latitude"":14.550270080566406,""longitude"":121.0326919555664,""country"":{""id"":1694008,""code"":""PH"",""name"":""Philippines""},""admin_division"":{""id"":7521311,""code"":""PH.NCR"",""name"":""National Capital Region""},""admin2_division"":{""id"":11395838,""code"":""PH.NCR.137600000"",""name"":""Southern Manila District""},""timezone"":""Asia/Manila"",""names"":{""en"":""Makati City""},""country_names"":{""en"":""Philippines""},""admin1_names"":{""en"":""National Capital Region""},""admin2_names"":null,""population"":510383}, ""countryrecord"":{""info"":{""iso"":""PH"",""iso3"":""PHL"",""iso_numeric"":""608"",""fips"":""RP"",""name"":""Philippines"",""capital"":""Manila"",""area"":""300000"",""population"":106651922,""continent"":""AS"",""tld"":"".ph"",""currency_code"":""PHP"",""currency_name"":""Peso"",""phone"":""63"",""postal_code_format"":""####"",""postal_code_regex"":""^(\\d{4})$"",""languages"":""tl,en-PH,fil,ceb,ilo,hil,war,pam,bik,bcl,pag,mrw,tsg,mdh,cbk,krj,sgd,msb,akl,ibg,yka,mta,abx"",""geonameid"":1694008,""neighbours"":"""",""equivalent_fips_code"":""""},""names"":{""en"":""Philippines""},""capital_names"":{""en"":""Manila""}}, ""us_fips_codes"":{""us_state_code"":null,""us_state_name"":""National Capital Region"",""us_state_fips_code"":null,""us_county"":""Southern Manila District"",""us_county_fips_code"":null}}""######;
+"{""cityrecord"":{""id"":1703417,""name"":""Makati City"",""latitude"":14.550270080566406,""longitude"":121.0326919555664,""country"":{""id"":1694008,""code"":""PH"",""name"":""Philippines""},""admin_division"":{""id"":7521311,""code"":""PH.NCR"",""name"":""National Capital Region""},""admin2_division"":{""id"":11395838,""code"":""PH.NCR.137600000"",""name"":""Southern Manila District""},""timezone"":""Asia/Manila"",""names"":{""en"":""Makati City""},""country_names"":{""en"":""Philippines""},""admin1_names"":{""en"":""National Capital Region""},""admin2_names"":null,""population"":510383}, ""countryrecord"":{""info"":{""iso"":""PH"",""iso3"":""PHL"",""iso_numeric"":""608"",""fips"":""RP"",""name"":""Philippines"",""capital"":""Manila"",""area"":""300000"",""population"":116786962,""continent"":""AS"",""tld"":"".ph"",""currency_code"":""PHP"",""currency_name"":""Peso"",""phone"":""63"",""postal_code_format"":""####"",""postal_code_regex"":""^(\\d{4})$"",""languages"":""tl,en-PH,fil,ceb,ilo,hil,war,pam,bik,bcl,pag,mrw,tsg,mdh,cbk,krj,sgd,msb,akl,ibg,yka,mta,abx"",""geonameid"":1694008,""neighbours"":"""",""equivalent_fips_code"":""""},""names"":{""en"":""Philippines""},""capital_names"":{""en"":""Manila""}}, ""us_fips_codes"":{""us_state_code"":null,""us_state_name"":""National Capital Region"",""us_state_fips_code"":null,""us_county"":""Southern Manila District"",""us_county_fips_code"":null}}""######;
     assert_eq!(got, expected);
 }
 
@@ -1573,13 +1573,13 @@ fn geocode_countryinfo_formatstr() {
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Country"],
-        svec!["United States Pop: 327167434 in NA using Dollar all in 9629091 square kms."],
-        svec!["Canada Pop: 37058856 in NA using Dollar all in 9984670 square kms."],
-        svec!["Mexico Pop: 126190788 in NA using Peso all in 1972550 square kms."],
-        svec!["United States Pop: 327167434 in NA using Dollar all in 9629091 square kms."],
-        svec!["China Pop: 1411778724 in AS using Yuan Renminbi all in 9596960 square kms."],
+        svec!["United States Pop: 341784857 in NA using Dollar all in 9629091 square kms."],
+        svec!["Canada Pop: 41651653 in NA using Dollar all in 9984670 square kms."],
+        svec!["Mexico Pop: 131946900 in NA using Peso all in 1972550 square kms."],
+        svec!["United States Pop: 341784857 in NA using Dollar all in 9629091 square kms."],
+        svec!["China Pop: 1406585000 in AS using Yuan Renminbi all in 9596960 square kms."],
         svec!["This is not a country and it will not be geocoded"],
-        svec!["Philippines Pop: 106651922 in AS using Peso all in 300000 square kms."],
+        svec!["Philippines Pop: 116786962 in AS using Peso all in 300000 square kms."],
         svec!["95.213424, 190,1234565"],
         svec!["Germany"],
     ];
@@ -1618,7 +1618,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"US\",\"iso3\": \"USA\",\"iso_numeric\": \
              \"840\",\"fips\": \"US\",\"name\": \"United States\",\"capital\": \
-             \"Washington\",\"area\": \"9629091\",\"population\": 327167434,\"continent\": \
+             \"Washington\",\"area\": \"9629091\",\"population\": 341784857,\"continent\": \
              \"NA\",\"tld\": \".us\",\"currency_code\": \"USD\",\"currency_name\": \
              \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
@@ -1629,7 +1629,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"CA\",\"iso3\": \"CAN\",\"iso_numeric\": \
              \"124\",\"fips\": \"CA\",\"name\": \"Canada\",\"capital\": \"Ottawa\",\"area\": \
-             \"9984670\",\"population\": 37058856,\"continent\": \"NA\",\"tld\": \
+             \"9984670\",\"population\": 41651653,\"continent\": \"NA\",\"tld\": \
              \".ca\",\"currency_code\": \"CAD\",\"currency_name\": \"Dollar\",\"phone\": \
              \"1\",\"postal_code_format\": \"@#@ #@#\",\"postal_code_regex\": \
              \"^([ABCEGHJKLMNPRSTVXY]\\\\d[ABCEGHJKLMNPRSTVWXYZ]) \
@@ -1641,7 +1641,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"MX\",\"iso3\": \"MEX\",\"iso_numeric\": \
              \"484\",\"fips\": \"MX\",\"name\": \"Mexico\",\"capital\": \"Mexico City\",\"area\": \
-             \"1972550\",\"population\": 126190788,\"continent\": \"NA\",\"tld\": \
+             \"1972550\",\"population\": 131946900,\"continent\": \"NA\",\"tld\": \
              \".mx\",\"currency_code\": \"MXN\",\"currency_name\": \"Peso\",\"phone\": \
              \"52\",\"postal_code_format\": \"#####\",\"postal_code_regex\": \
              \"^(\\\\d{5})$\",\"languages\": \"es-MX\",\"geonameid\": 3996063,\"neighbours\": \
@@ -1651,7 +1651,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"US\",\"iso3\": \"USA\",\"iso_numeric\": \
              \"840\",\"fips\": \"US\",\"name\": \"United States\",\"capital\": \
-             \"Washington\",\"area\": \"9629091\",\"population\": 327167434,\"continent\": \
+             \"Washington\",\"area\": \"9629091\",\"population\": 341784857,\"continent\": \
              \"NA\",\"tld\": \".us\",\"currency_code\": \"USD\",\"currency_name\": \
              \"Dollar\",\"phone\": \"1\",\"postal_code_format\": \
              \"#####-####\",\"postal_code_regex\": \"^\\\\d{5}(-\\\\d{4})?$\",\"languages\": \
@@ -1662,7 +1662,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"CN\",\"iso3\": \"CHN\",\"iso_numeric\": \
              \"156\",\"fips\": \"CH\",\"name\": \"China\",\"capital\": \"Beijing\",\"area\": \
-             \"9596960\",\"population\": 1411778724,\"continent\": \"AS\",\"tld\": \
+             \"9596960\",\"population\": 1406585000,\"continent\": \"AS\",\"tld\": \
              \".cn\",\"currency_code\": \"CNY\",\"currency_name\": \"Yuan Renminbi\",\"phone\": \
              \"86\",\"postal_code_format\": \"######\",\"postal_code_regex\": \
              \"^(\\\\d{6})$\",\"languages\": \"zh-CN,yue,wuu,dta,ug,za\",\"geonameid\": \
@@ -1675,7 +1675,7 @@ fn geocode_countryinfo_formatstr_pretty_json() {
         svec![
             "{\n  \"info\": {\n    \"iso\": \"PH\",\"iso3\": \"PHL\",\"iso_numeric\": \
              \"608\",\"fips\": \"RP\",\"name\": \"Philippines\",\"capital\": \"Manila\",\"area\": \
-             \"300000\",\"population\": 106651922,\"continent\": \"AS\",\"tld\": \
+             \"300000\",\"population\": 116786962,\"continent\": \"AS\",\"tld\": \
              \".ph\",\"currency_code\": \"PHP\",\"currency_name\": \"Peso\",\"phone\": \
              \"63\",\"postal_code_format\": \"####\",\"postal_code_regex\": \
              \"^(\\\\d{4})$\",\"languages\": \
@@ -1717,7 +1717,7 @@ fn geocode_countryinfonow_formatstr() {
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["Location"],
-        svec!["Canada Pop: 37058856 in NA using Dollar all in 9984670 square kms."],
+        svec!["Canada Pop: 41651653 in NA using Dollar all in 9984670 square kms."],
     ];
     assert_eq!(got, expected);
 }
@@ -1734,7 +1734,7 @@ fn geocode_countryinfonow_formatstr_pretty_json() {
     let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = "{\n  \"info\": {\n    \"iso\": \"MX\",\"iso3\": \"MEX\",\"iso_numeric\": \
                     \"484\",\"fips\": \"MX\",\"name\": \"Mexico\",\"capital\": \"Mexico \
-                    City\",\"area\": \"1972550\",\"population\": 126190788,\"continent\": \
+                    City\",\"area\": \"1972550\",\"population\": 131946900,\"continent\": \
                     \"NA\",\"tld\": \".mx\",\"currency_code\": \"MXN\",\"currency_name\": \
                     \"Peso\",\"phone\": \"52\",\"postal_code_format\": \
                     \"#####\",\"postal_code_regex\": \"^(\\\\d{5})$\",\"languages\": \

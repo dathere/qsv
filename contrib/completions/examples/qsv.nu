@@ -2908,6 +2908,7 @@ module completions {
   export extern "qsv viz" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -2918,6 +2919,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -2951,6 +2953,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -2992,6 +2995,7 @@ module completions {
   export extern "qsv viz bar" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3002,6 +3006,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3035,6 +3040,94 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz barpolar" [
+    --agg: string
+    --annotation: string
+    --area
+    --bins: string
+    --bivariate
+    --box-points: string
+    --check-geojson-key
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --degrees
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3076,6 +3169,7 @@ module completions {
   export extern "qsv viz box" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3086,6 +3180,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3119,6 +3214,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3160,6 +3256,7 @@ module completions {
   export extern "qsv viz candlestick" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3170,6 +3267,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3203,6 +3301,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3244,6 +3343,7 @@ module completions {
   export extern "qsv viz choropleth" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3254,6 +3354,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3287,6 +3388,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3328,6 +3430,7 @@ module completions {
   export extern "qsv viz contour" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3338,6 +3441,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3371,6 +3475,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3412,6 +3517,7 @@ module completions {
   export extern "qsv viz funnel" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3422,6 +3528,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3455,6 +3562,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3496,6 +3604,7 @@ module completions {
   export extern "qsv viz geo" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3506,6 +3615,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3539,6 +3649,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3580,6 +3691,7 @@ module completions {
   export extern "qsv viz heatmap" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3590,6 +3702,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3623,6 +3736,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3664,6 +3778,7 @@ module completions {
   export extern "qsv viz histogram" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3674,6 +3789,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3707,6 +3823,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3748,6 +3865,7 @@ module completions {
   export extern "qsv viz icicle" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3758,6 +3876,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3791,6 +3910,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3832,6 +3952,7 @@ module completions {
   export extern "qsv viz line" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3842,6 +3963,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3875,6 +3997,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -3916,6 +4039,7 @@ module completions {
   export extern "qsv viz map" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -3926,6 +4050,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -3959,6 +4084,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4000,6 +4126,7 @@ module completions {
   export extern "qsv viz ohlc" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4010,6 +4137,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4043,6 +4171,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4084,6 +4213,7 @@ module completions {
   export extern "qsv viz parcats" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4094,6 +4224,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4127,6 +4258,94 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz parcoords" [
+    --agg: string
+    --annotation: string
+    --area
+    --bins: string
+    --bivariate
+    --box-points: string
+    --check-geojson-key
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --degrees
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4168,6 +4387,7 @@ module completions {
   export extern "qsv viz pie" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4178,6 +4398,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4211,6 +4432,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4252,6 +4474,7 @@ module completions {
   export extern "qsv viz radar" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4262,6 +4485,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4295,6 +4519,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4336,6 +4561,7 @@ module completions {
   export extern "qsv viz sankey" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4346,6 +4572,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4379,6 +4606,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4420,6 +4648,7 @@ module completions {
   export extern "qsv viz scatter" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4430,6 +4659,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4463,6 +4693,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4504,6 +4735,7 @@ module completions {
   export extern "qsv viz scatter3d" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4514,6 +4746,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4547,6 +4780,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4588,6 +4822,7 @@ module completions {
   export extern "qsv viz smart" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4598,6 +4833,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4631,6 +4867,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4672,6 +4909,7 @@ module completions {
   export extern "qsv viz splom" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4682,6 +4920,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4715,6 +4954,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4756,6 +4996,7 @@ module completions {
   export extern "qsv viz sunburst" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4766,6 +5007,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4799,6 +5041,94 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
+    --no-snap
+    --ohlc-open: string
+    --open
+    --output(-o): string
+    --photos
+    --preview-threshold: string
+    --projection: string
+    --rangeslider
+    --region-state: string
+    --sankey-value-order
+    --scale: string
+    --series: string
+    --size: string
+    --slider: string
+    --slider-cumulative
+    --slider-speed: string
+    --smarter
+    --snap-max-dist: string
+    --source: string
+    --style: string
+    --target: string
+    --text: string
+    --theme: string
+    --title: string
+    --tour-audience: string
+    --tour-steps: string
+    --value: string
+    --violin: string
+    --width: string
+    --x(-x): string
+    --x-title: string
+    --y(-y): string
+    --y-range: string
+    --y-title: string
+    --z(-z): string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv viz ternary" [
+    --agg: string
+    --annotation: string
+    --area
+    --bins: string
+    --bivariate
+    --box-points: string
+    --check-geojson-key
+    --close: string
+    --cluster: string
+    --color: string
+    --color-scale: string
+    --cols: string
+    --dataset-pid: string
+    --degrees
+    --delimiter(-d): string
+    --denominator: string
+    --denominator-key: string
+    --denominator-unit: string
+    --density
+    --dict-info
+    --dictionary: string
+    --dictionary-context: string
+    --donut
+    --feature-id-key: string
+    --feature-name-key: string
+    --geocode
+    --geocode-admin1: string
+    --geocode-country: string
+    --geojson: string
+    --grid-cols: string
+    --heatmap-density: string
+    --height: string
+    --hierarchy-style: string
+    --high: string
+    --language: string
+    --lat: string
+    --limit: string
+    --location-mode: string
+    --locations: string
+    --log-scale: string
+    --lon: string
+    --low: string
+    --map
+    --max-charts: string
+    --no-headers(-n)
+    --no-nulls
+    --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4840,6 +5170,7 @@ module completions {
   export extern "qsv viz treemap" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4850,6 +5181,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4883,6 +5215,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -4924,6 +5257,7 @@ module completions {
   export extern "qsv viz violin" [
     --agg: string
     --annotation: string
+    --area
     --bins: string
     --bivariate
     --box-points: string
@@ -4934,6 +5268,7 @@ module completions {
     --color-scale: string
     --cols: string
     --dataset-pid: string
+    --degrees
     --delimiter(-d): string
     --denominator: string
     --denominator-key: string
@@ -4967,6 +5302,7 @@ module completions {
     --no-headers(-n)
     --no-nulls
     --no-other
+    --no-parcoords
     --no-snap
     --ohlc-open: string
     --open
@@ -5012,6 +5348,9 @@ module completions {
   export extern "qsv viz help bar" [
   ]
 
+  export extern "qsv viz help barpolar" [
+  ]
+
   export extern "qsv viz help box" [
   ]
 
@@ -5051,6 +5390,9 @@ module completions {
   export extern "qsv viz help parcats" [
   ]
 
+  export extern "qsv viz help parcoords" [
+  ]
+
   export extern "qsv viz help pie" [
   ]
 
@@ -5073,6 +5415,9 @@ module completions {
   ]
 
   export extern "qsv viz help sunburst" [
+  ]
+
+  export extern "qsv viz help ternary" [
   ]
 
   export extern "qsv viz help treemap" [
@@ -5499,6 +5844,9 @@ module completions {
   export extern "qsv help viz bar" [
   ]
 
+  export extern "qsv help viz barpolar" [
+  ]
+
   export extern "qsv help viz box" [
   ]
 
@@ -5538,6 +5886,9 @@ module completions {
   export extern "qsv help viz parcats" [
   ]
 
+  export extern "qsv help viz parcoords" [
+  ]
+
   export extern "qsv help viz pie" [
   ]
 
@@ -5560,6 +5911,9 @@ module completions {
   ]
 
   export extern "qsv help viz sunburst" [
+  ]
+
+  export extern "qsv help viz ternary" [
   ]
 
   export extern "qsv help viz treemap" [

@@ -6578,6 +6578,67 @@ fn sqlp_read_ndjson_table_function() {
 }
 
 #[test]
+fn sqlp_read_ndjson_named_options() {
+    // pola-rs/polars#29954: read_ndjson() takes scan_ndjson's options as named
+    // arguments, as documented in sqlp's USAGE.
+    let wrk = Workdir::new("sqlp_read_ndjson_named_options");
+    wrk.create_from_string(
+        "ev.ndjson",
+        "{\"id\":1,\"date\":\"2024-01-15\",\"payload\":{\"k\":1}}\n{\"id\":2,\"date\":\"\
+         2024-02-15\",\"payload\":{\"k\":2},\"late\":\"x\"}\n",
+    );
+
+    // infer_schema_length => NULL scans the whole file, so `late` (absent from
+    // the first row) is kept.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT id, late FROM read_ndjson('ev.ndjson', infer_schema_length => NULL) ORDER BY id",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["id", "late"], svec!["1", ""], svec!["2", "x"]]
+    );
+
+    // schema_overrides types `date` and reads the nested `payload` as JSON text,
+    // which CSV output can hold; include_file_paths adds the source column.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT id, YEAR(date) AS y, payload, src FROM read_ndjson('ev.ndjson', schema_overrides \
+         => {'date': 'DATE', 'payload': 'VARCHAR'}, infer_schema_length => 1, include_file_paths \
+         => 'src') ORDER BY id",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "y", "payload", "src"],
+            svec!["1", "2024", r#"{"k": 1}"#, "ev.ndjson"],
+            svec!["2", "2024", r#"{"k": 2}"#, "ev.ndjson"],
+        ]
+    );
+
+    // schema + ignore_errors turns a value that doesn't fit the schema into a null.
+    wrk.create_from_string("bad.ndjson", "{\"id\":1}\n{\"id\":\"oops\"}\n{\"id\":3}\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT id, id IS NULL AS was_bad FROM read_ndjson('bad.ndjson', schema => {'id': 'INT'}, \
+         ignore_errors => true)",
+    );
+    // (a second column keeps the null row from being a blank line the CSV reader skips)
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "was_bad"],
+            svec!["1", "false"],
+            svec!["", "true"],
+            svec!["3", "false"]
+        ]
+    );
+}
+
+#[test]
 fn sqlp_group_by_computed_keys() {
     // pola-rs/polars#29965 fixed wrong results and name clashes for computed
     // GROUP BY keys. Before it, two keys over the same column (`ip % 3`, `ip % 2`)

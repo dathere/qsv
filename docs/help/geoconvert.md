@@ -66,6 +66,12 @@ output unchanged, so they are not the WGS-84 longitude/latitude that GeoJSON req
 Reprojection is not done by geoconvert; reproject the shapefile first, e.g. with
 ogr2ogr -t_srs EPSG:4326 out.shp in.shp
 
+Coordinates are converted as 64-bit floating point numbers, which hold 15-17 significant
+digits in all (whole and decimal digits together). A coordinate written with more digits
+than that is output shortened, and its last digit may change: 40.123456789012345 becomes
+40.123456789012344, and the longitude -122.123456789012345 becomes -122.12345678901235.
+The difference is far below what GPS can measure; 7 decimal places is already about 1 cm.
+
 See also <https://github.com/dathere/qsv/wiki/Geospatial#geoconvert>
 
 

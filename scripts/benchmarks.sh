@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.12.0
+bm_version=9.12.1
 
 # runs of a benchmark whose means are within this percentage of each other tie in the rank
 # column (see the delta & rank comments near the end)
@@ -62,7 +62,7 @@ qsv_bin=qsv
 # The python feature is NOT compiled into the regular prebuilt (PGO-optimized) qsv;
 # only the qsvpyNNN flavors have it. The py benchmarks are skipped if this binary is
 # missing or was built without the python feature (see has_python below).
-qsv_py_bin=qsvpy313
+qsv_py_bin=qsvpy314
 # the path to the qsv binary that we dogfood to run the benchmarks
 # we use several optional features when dogfooding qsv (apply, luau & to)
 # and the user may be benchmarking a qsv binary variant that doesn't have these features enabled
@@ -178,7 +178,7 @@ if command -v "$qsv_py_bin" &>/dev/null; then
 fi
 if [[ "$has_python" -eq 0 ]]; then
   echo "NOTE: $qsv_py_bin not found or lacks the python feature - skipping py benchmarks."
-  echo "      Install a python-enabled binary (e.g. qsvpy313) to benchmark the py command."
+  echo "      Install a python-enabled binary (e.g. qsvpy314) to benchmark the py command."
 else
   # The py_* results are recorded under $qsv_bin's version metadata, so the py binary's
   # base version must match $qsv_bin's or the Python rows would be misattributed to the

@@ -38517,13 +38517,22 @@ impl<'a> SmartCtx<'a> {
         } else {
             None
         };
-        // the raw column name behind each frequency-bar panel, for the qsv-clientd bridge's
-        // drill-down (`data-qsv-column`); `None` for every other panel kind
-        let drill_cols: Vec<Option<String>> = self
+        // the drill-down hook behind each frequency-bar panel, for the qsv-clientd bridge;
+        // `None` for every other panel kind
+        let drill_cols: Vec<Option<DrillHook>> = self
             .panels
             .iter()
             .map(|p| match p.kind {
-                PanelKind::FreqBar { idx } => self.stats.get(idx).map(|s| s.field.clone()),
+                PanelKind::FreqBar { idx } => self.stats.get(idx).map(|s| DrillHook {
+                    column:   s.field.clone(),
+                    agg_keys: freq
+                        .get(&idx)
+                        .into_iter()
+                        .flatten()
+                        .filter(|b| b.kind == FreqBarKind::Aggregate)
+                        .map(|b| b.x_key.clone())
+                        .collect(),
+                }),
                 _ => None,
             })
             .collect();
@@ -40452,7 +40461,7 @@ fn render_smart_grid(
     data_chrome: Option<String>,
     tour_chrome: Option<String>,
     daemon_chrome: Option<String>,
-    drill_cols: &[Option<String>],
+    drill_cols: &[Option<DrillHook>],
 ) -> CliResult<SmartRender> {
     let drill_attr = grid_drill_attr(panels, drill_cols);
     let SmartGridParts {
@@ -40492,31 +40501,54 @@ fn render_smart_grid(
     })
 }
 
+/// What the qsv-clientd bridge needs to drill down from one frequency-bar panel.
+struct DrillHook {
+    /// The raw column the panel charts.
+    column:   String,
+    /// The exact category-axis keys (`FreqBar::x_key`) of the panel's synthetic aggregate bars
+    /// (null / "Other"), which have no rows of their own to drill into. Listed explicitly because
+    /// a REAL category may legitimately contain `AGG_KEY_SENTINEL`, so the sentinel alone can't
+    /// tell them apart (and this plotly `Bar` has no per-point `customdata` to carry a marker).
+    agg_keys: Vec<String>,
+}
+
+impl DrillHook {
+    /// ` data-qsv-column="..." data-qsv-agg-keys="[...]"` for an inline-grid cell.
+    fn cell_attrs(&self) -> String {
+        format!(
+            " data-qsv-column=\"{}\" data-qsv-agg-keys=\"{}\"",
+            html_escape(&self.column),
+            html_escape(&serde_json::json!(self.agg_keys).to_string())
+        )
+    }
+}
+
 /// The typed grid draws every panel into ONE plotly div, so `data-qsv-column` cannot mark a
-/// single chart there. Instead the grid wrapper carries `data-qsv-axis-columns`: a JSON map from
+/// single chart there. Instead the grid wrapper carries `data-qsv-axis-columns`, a JSON map from
 /// each frequency-bar panel's x-axis id (`x`, `x2`, ...) to its raw column name, which the
-/// qsv-clientd bridge reads off a click's `xaxis`. "" when the grid has no frequency bar.
-fn grid_drill_attr(panels: &[Panel], drill_cols: &[Option<String>]) -> String {
+/// qsv-clientd bridge reads off a click's `xaxis`, plus `data-qsv-axis-agg-keys`, the same map
+/// to each panel's aggregate-bar keys (see `DrillHook`). "" when the grid has no frequency bar.
+fn grid_drill_attr(panels: &[Panel], drill_cols: &[Option<DrillHook>]) -> String {
     // mirror `smart_grid_parts`' axis numbering: a leading KPI row takes no cartesian axis
     let axis_offset = usize::from(matches!(
         panels.first().map(|p| &p.kind),
         Some(PanelKind::KpiRow { .. })
     ));
-    let map: serde_json::Map<String, serde_json::Value> = drill_cols
-        .iter()
-        .enumerate()
-        .filter_map(|(n, col)| {
-            let col = col.as_ref()?;
-            let pos = (n + 1).saturating_sub(axis_offset);
-            Some((axis_ref('x', pos), serde_json::Value::String(col.clone())))
-        })
-        .collect();
-    if map.is_empty() {
+    let mut columns = serde_json::Map::new();
+    let mut agg_keys = serde_json::Map::new();
+    for (n, hook) in drill_cols.iter().enumerate() {
+        let Some(hook) = hook else { continue };
+        let axis = axis_ref('x', (n + 1).saturating_sub(axis_offset));
+        columns.insert(axis.clone(), serde_json::json!(hook.column));
+        agg_keys.insert(axis, serde_json::json!(hook.agg_keys));
+    }
+    if columns.is_empty() {
         String::new()
     } else {
         format!(
-            " data-qsv-axis-columns=\"{}\"",
-            html_escape(&serde_json::Value::Object(map).to_string())
+            " data-qsv-axis-columns=\"{}\" data-qsv-axis-agg-keys=\"{}\"",
+            html_escape(&serde_json::Value::Object(columns).to_string()),
+            html_escape(&serde_json::Value::Object(agg_keys).to_string())
         )
     }
 }
@@ -42286,8 +42318,8 @@ fn render_smart_inline(
     map_cols: Option<(usize, usize)>,
     tour_chrome: Option<&str>,
     daemon_chrome: Option<&str>,
-    // per panel: the raw column a frequency-bar panel charts (see `drill_cols` in `render`)
-    drill_cols: &[Option<String>],
+    // per panel: the drill-down hook of a frequency-bar panel (see `drill_cols` in `render`)
+    drill_cols: &[Option<DrillHook>],
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -42308,12 +42340,13 @@ fn render_smart_inline(
         } else {
             ""
         };
-        // a frequency-bar cell names its raw column as `data-qsv-column`, the hook the
-        // qsv-clientd bridge drills down from (inert without the bridge)
+        // a frequency-bar cell names its raw column as `data-qsv-column` (and its aggregate bars
+        // as `data-qsv-agg-keys`), the hooks the qsv-clientd bridge drills down from (inert
+        // without the bridge)
         let drill = drill_cols
             .get(n)
-            .and_then(Option::as_deref)
-            .map(|col| format!(" data-qsv-column=\"{}\"", html_escape(col)))
+            .and_then(Option::as_ref)
+            .map(DrillHook::cell_attrs)
             .unwrap_or_default();
         match &panel.dict_info {
             Some((anchor, _)) => cells.push_str(&format!(

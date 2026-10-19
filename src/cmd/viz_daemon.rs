@@ -111,20 +111,36 @@ impl SourceArgs {
                 }
                 continue;
             }
-            // a short flag: `-o out.html`, `-oout.html`, `-d ';'`, `-n`
-            let short = arg.get(..2).unwrap_or(arg);
-            let attached = arg.len() > 2;
-            let value_follows = !attached && takes_value(short);
-            if short == "-o" {
-                if value_follows && i < argv.len() {
-                    i += 1;
+            // a short flag or a cluster of them (`-n`, `-d ';'`, `-d';'`, `-nd ';'`, `-oout.html`,
+            // `-no/x/out.html`), walked letter by letter as docopt does: the first letter that
+            // takes a value claims the rest of the cluster, or the next argument when nothing is
+            // left, as its value. Preceding switch letters are kept as flags of their own. No
+            // file-valued option has a short alias except `-o`, which is dropped with its value.
+            let letters = &arg[1..];
+            let mut valued: Option<(String, Option<String>)> = None;
+            for (pos, ch) in letters.char_indices() {
+                let flag = format!("-{ch}");
+                if takes_value(&flag) {
+                    let rest = &letters[pos + ch.len_utf8()..];
+                    let value = if rest.is_empty() {
+                        let next = argv.get(i).map(|v| (*v).to_string());
+                        if next.is_some() {
+                            i += 1;
+                        }
+                        next
+                    } else {
+                        Some(rest.to_string())
+                    };
+                    valued = Some((flag, value));
+                    break;
                 }
-                continue;
+                out.viz_args.push(flag);
             }
-            out.viz_args.push(arg.to_string());
-            if value_follows && let Some(v) = argv.get(i) {
-                out.viz_args.push((*v).to_string());
-                i += 1;
+            if let Some((flag, value)) = valued
+                && flag != "-o"
+            {
+                out.viz_args.push(flag);
+                out.viz_args.extend(value);
             }
         }
         out
@@ -288,8 +304,6 @@ const BRIDGE_JS: &str = r#"
   if (!(location.protocol === "file:" || LOOPBACK_HOSTS.indexOf(location.hostname) !== -1)) return;
   var BASE = "http://127.0.0.1:" + __QSV_CLIENTD_PORT__;
   var KEY_PREFIX = "qsv-live-ds-";
-  // the synthetic null and "Other" aggregate bars carry this suffix on their category key
-  var AGG_SENTINEL = "\u200B";
   var COMMANDS = ["count", "headers", "stats", "frequency", "slice", "search", "select", "sort",
     "dedup", "sample", "table"];
   var SRC = {};
@@ -408,7 +422,14 @@ const BRIDGE_JS: &str = r#"
     toast("The qsv-clientd connection expired or was revoked. Connect again to continue.");
     showChip();
   }
+  // Resume only a stored token whose dataset is THIS page's data (its sha256 equals the page's
+  // fingerprint). Tabs on one loopback origin share sessionStorage, so a token paired by another
+  // schematic must not silently connect this page to that dataset; non-matching entries are left
+  // alone (they may belong to another page). A page without a fingerprint never auto-resumes.
+  // After a Re-render the daemon records the fingerprint of the data it rendered from, which is
+  // the new page's own fingerprint, so a re-rendered page still reconnects.
   function resume() {
+    if (!DIGEST) return Promise.resolve(false);
     var cands = storedTokens();
     var found = [];
     return cands.reduce(function (p, c) {
@@ -420,13 +441,13 @@ const BRIDGE_JS: &str = r#"
             });
       });
     }, Promise.resolve()).then(function () {
-      if (!found.length) return false;
-      var pick = found[0];
       for (var i = 0; i < found.length; i++) {
-        if (DIGEST && found[i].dataset.sha256 === DIGEST) { pick = found[i]; break; }
+        if (found[i].dataset.sha256 === DIGEST) {
+          connected(found[i].token, found[i].dataset);
+          return true;
+        }
       }
-      connected(pick.token, pick.dataset);
-      return true;
+      return false;
     });
   }
 
@@ -660,17 +681,26 @@ const BRIDGE_JS: &str = r#"
   }
 
   // ---- drill-down: frequency charts are marked with data-qsv-column (one chart per element) or,
-  // on the single-plot grid, data-qsv-axis-columns (x-axis id -> column). Plotly renders lazily,
-  // so retry until each graph div has grown its event API.
-  function barValue(ev) {
+  // on the single-plot grid, data-qsv-axis-columns (x-axis id -> column). Each also lists the
+  // exact category keys of its synthetic null/"Other" bars (data-qsv-agg-keys, or
+  // data-qsv-axis-agg-keys per axis), which have no rows to show; only those are skipped, since a
+  // real category may contain the same zero-width character those keys end in. Plotly renders
+  // lazily, so retry until each graph div has grown its event API.
+  function barValue(ev, aggKeys) {
     var pt = ev && ev.points && ev.points[0];
     if (!pt) return null;
     var o = (pt.data && pt.data.orientation) || "v";
     var v = pt.label !== undefined && pt.label !== null ? pt.label : (o === "h" ? pt.y : pt.x);
     if (v === undefined || v === null) return null;
     v = String(v);
-    if (v.indexOf(AGG_SENTINEL) !== -1) return null;
+    if (aggKeys && aggKeys.indexOf(v) !== -1) return null;
     return v;
+  }
+  function jsonAttr(node, name, fallback) {
+    try {
+      var v = JSON.parse(node.getAttribute(name));
+      return v === null || v === undefined ? fallback : v;
+    } catch (e) { return fallback; }
   }
   function graphOf(node) {
     if (typeof node.on === "function") return node;
@@ -690,19 +720,23 @@ const BRIDGE_JS: &str = r#"
         node.__qsvLiveBound = true;
         (function (node, gd) {
           var col = node.getAttribute("data-qsv-column");
-          var byAxis = null;
+          var aggKeys = col !== null ? jsonAttr(node, "data-qsv-agg-keys", []) : null;
+          var byAxis = null, aggByAxis = null;
           if (col === null) {
-            try { byAxis = JSON.parse(node.getAttribute("data-qsv-axis-columns")); } catch (e) { byAxis = {}; }
+            byAxis = jsonAttr(node, "data-qsv-axis-columns", {});
+            aggByAxis = jsonAttr(node, "data-qsv-axis-agg-keys", {});
           }
+          var own = Object.prototype.hasOwnProperty;
           gd.on("plotly_click", function (ev) {
             if (!live.token) return;
-            var c = col;
+            var c = col, keys = aggKeys;
             if (byAxis) {
               var pt = ev && ev.points && ev.points[0];
               var ax = pt && ((pt.fullData && pt.fullData.xaxis) || (pt.data && pt.data.xaxis) || "x");
-              c = Object.prototype.hasOwnProperty.call(byAxis, ax) ? byAxis[ax] : null;
+              c = own.call(byAxis, ax) ? byAxis[ax] : null;
+              keys = own.call(aggByAxis, ax) ? aggByAxis[ax] : [];
             }
-            var v = barValue(ev);
+            var v = barValue(ev, keys);
             if (c !== null && v !== null) drill(c, v);
           });
         })(node, gd);
@@ -778,6 +812,62 @@ mod tests {
             assert_eq!(s.viz_args, ["--limit", "5"], "{argv:?}");
             assert_eq!(s.input.as_deref(), Some("data.csv"), "{argv:?}");
             assert!(s.redacted.is_empty());
+        }
+    }
+
+    #[test]
+    fn short_option_clusters_are_walked_letter_by_letter() {
+        // `-n` is a switch, `-d` and `-o` take values (as in viz's USAGE)
+        let s = parse(&["qsv", "viz", "smart", "-nd", ";", "/data/in.csv"]);
+        assert_eq!(s.input.as_deref(), Some("/data/in.csv"));
+        assert_eq!(s.viz_args, ["-n", "-d", ";"]);
+
+        let s = parse(&["qsv", "viz", "smart", "-no/x/out.html", "/data/in.csv"]);
+        assert_eq!(s.input.as_deref(), Some("/data/in.csv"));
+        assert_eq!(s.viz_args, ["-n"]);
+
+        let s = parse(&["qsv", "viz", "smart", "-d;", "/data/in.csv"]);
+        assert_eq!(s.input.as_deref(), Some("/data/in.csv"));
+        assert_eq!(s.viz_args, ["-d", ";"]);
+
+        let s = parse(&[
+            "qsv",
+            "viz",
+            "smart",
+            "-n",
+            "-o",
+            "/x/out.html",
+            "/data/in.csv",
+        ]);
+        assert_eq!(s.input.as_deref(), Some("/data/in.csv"));
+        assert_eq!(s.viz_args, ["-n"]);
+
+        // a value-taking letter claims the REST of the cluster, even letters that look like flags
+        let s = parse(&["qsv", "viz", "smart", "-dn", "/data/in.csv"]);
+        assert_eq!(s.input.as_deref(), Some("/data/in.csv"));
+        assert_eq!(s.viz_args, ["-d", "n"]);
+
+        // no path ever reaches viz_args
+        for argv in [
+            &["qsv", "viz", "smart", "-nd", ";", "/data/in.csv"][..],
+            &["qsv", "viz", "smart", "-no/x/out.html", "/data/in.csv"],
+            &["qsv", "viz", "smart", "-d;", "/data/in.csv"],
+            &[
+                "qsv",
+                "viz",
+                "smart",
+                "-n",
+                "-o",
+                "/x/out.html",
+                "/data/in.csv",
+            ],
+        ] {
+            let s = parse(argv);
+            assert!(
+                s.viz_args.iter().all(|a| !a.contains('/')),
+                "{argv:?} -> {:?}",
+                s.viz_args
+            );
         }
     }
 

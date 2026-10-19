@@ -23592,12 +23592,84 @@ fn viz_smart_daemon_column_hook_inline_grid() {
 
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(
-        html.contains(r#"<div class="qsv-viz-cell" data-qsv-column="case_status">"#),
+        html.contains(
+            r#"<div class="qsv-viz-cell" data-qsv-column="case_status" data-qsv-agg-keys="[]">"#
+        ),
         "no data-qsv-column hook on the case_status frequency chart"
     );
     // the input was copied into the workdir by absolute path: it must not be recorded
     let raw = daemon_source_raw(&html);
     assert!(!raw.contains("boston311"), "{raw}");
+    // each hooked cell lists its aggregate bars' exact keys; `reason` has an "Other (N)" bucket
+    let reason = html
+        .find(r#"data-qsv-column="reason" data-qsv-agg-keys=""#)
+        .expect("reason cell with aggregate keys");
+    let keys = daemon_attr_json(&html[reason..], "data-qsv-agg-keys");
+    let keys = keys.as_array().unwrap();
+    assert_eq!(keys.len(), 1, "{keys:?}");
+    assert!(keys[0].as_str().unwrap().starts_with("Other ("), "{keys:?}");
+}
+
+/// The JSON value of the first `name="..."` attribute in `html` (html-unescaped).
+fn daemon_attr_json(html: &str, name: &str) -> serde_json::Value {
+    let open = format!("{name}=\"");
+    let start = html.find(&open).expect("attribute") + open.len();
+    let end = start + html[start..].find('"').unwrap();
+    let raw = html[start..end]
+        .replace("&quot;", "\"")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&");
+    serde_json::from_str(&raw).expect("attribute JSON")
+}
+
+#[test]
+fn viz_smart_daemon_zero_width_category_stays_clickable() {
+    // finalize_freq_bars keeps a real category containing U+200B (the aggregate-key sentinel)
+    // as-is, so the bridge must not skip it by substring: the page lists the aggregate bars'
+    // EXACT keys, and only the synthetic null bar is among them
+    let wrk = Workdir::new("viz_smart_daemon_zero_width_category_stays_clickable");
+    let real = "zw\u{200B}x";
+    wrk.create_from_string(
+        "data.csv",
+        &format!("cat,n\n{real},1\n{real},2\nplain,3\n,4\nplain,5\n{real},6\n"),
+    );
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    let (columns, agg) = if html.contains("data-qsv-axis-columns=") {
+        (
+            daemon_attr_json(&html, "data-qsv-axis-columns"),
+            daemon_attr_json(&html, "data-qsv-axis-agg-keys"),
+        )
+    } else {
+        let at = html.find(r#"data-qsv-column="cat""#).expect("cat hook");
+        (
+            serde_json::json!({"cell": "cat"}),
+            serde_json::json!({"cell": daemon_attr_json(&html[at..], "data-qsv-agg-keys")}),
+        )
+    };
+    let axis = columns
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(_, c)| *c == "cat")
+        .map(|(a, _)| a.clone())
+        .expect("cat is hooked");
+    let keys: Vec<&str> = agg[&axis]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k.as_str().unwrap())
+        .collect();
+    // exactly one aggregate (the empty cell's null bar), sentinel-suffixed...
+    assert_eq!(keys.len(), 1, "{keys:?}");
+    assert!(keys[0].ends_with('\u{200B}'), "{keys:?}");
+    // ...and the real zero-width category is not among them, so it stays clickable
+    assert!(!keys.contains(&real), "{keys:?}");
 }
 
 #[test]
@@ -23617,7 +23689,7 @@ fn viz_smart_daemon_column_hook_typed_grid() {
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(
         html.contains(
-            r#"<div class="qsv-viz-plot" data-qsv-axis-columns="{&quot;x&quot;:&quot;color&quot;,&quot;x2&quot;:&quot;size&quot;}">"#
+            r#"<div class="qsv-viz-plot" data-qsv-axis-columns="{&quot;x&quot;:&quot;color&quot;,&quot;x2&quot;:&quot;size&quot;}" data-qsv-axis-agg-keys="{&quot;x&quot;:[],&quot;x2&quot;:[]}">"#
         ),
         "no data-qsv-axis-columns map on the typed grid"
     );

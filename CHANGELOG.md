@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Benchmark archive: 247 more invalid historical runs removed** ([#4851](https://github.com/dathere/qsv/pull/4851)). 237 runs timed a command that errored out at startup. 10 more were found by rerunning suspect windows with the original release binaries: `joinp`/`joinp_streaming` 14.0.0–15.0.1 fail with a Polars dtype error on `Incident Zip`, and `count`/`count_polars_lowmem` 2.0.0–2.1.0 print `0` instead of `1000000`. The other fast windows (`count` 0.125.0–1.0.0, the `sqlp` family 0.126.0–0.135.0, and the suite-wide 2.0.0–3.0.0 dip) reproduced and were kept.
+- **Benchmark archive: 28 `sqlp_tryparsedates` runs that timed a cached schema removed** ([#4853](https://github.com/dathere/qsv/pull/4853)). From 5.0.3 to 15.0.1, `sqlp_tryparsedates` and `sqlp_tryparsedates_inferlen` loaded the schema cache that `sqlp_aggregations_use_schema_cache` left behind and skipped the date inference they are meant to time, so 26.0.0's 10.3 s looked like a 10x regression. Without the cache, 15.0.1 takes 18.8 s and 26.0.0 7.7 s on the same machine.
 
 ## [26.0.0] - 2026-10-19 🧭 The "New Angles" Release 📐
 

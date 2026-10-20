@@ -16,6 +16,9 @@ network to be VIEWED). Set QSV_VIZ_NO_COMPRESS for plain-text HTML that works on
 browsers and strict-CSP embeds. Progress is shown on stderr, auto-hidden when stderr is not a
 terminal, and disabled by setting QSV_PROGRESSBAR to a falsy value. For all of the above, see
 https://github.com/dathere/qsv/wiki/Visualization#output-and-file-size
+A `smart` HTML Data Schematic embeds a small qsv-clientd bridge (see --no-daemon-bridge):
+QSV_CLIENTD_PORT sets the daemon port it probes (default 14470), and QSV_VIZ_NO_DAEMON
+leaves it, and the input fingerprint, out.
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always
@@ -693,7 +696,18 @@ smart options:
                            top of the Data Schematic. http(s) and mailto values become a
                            clickable link; any other scheme is shown as plain text. HTML
                            output only. Only affects `smart`.
-    --bivariate            Add two pairwise-association overview panels driven by
+    --no-daemon-bridge     Leave out the qsv-clientd bridge script. By default a `smart`
+                           HTML Data Schematic sends one "hello" request to 127.0.0.1 when
+                           opened (port 14470, or QSV_CLIENTD_PORT at render time) and,
+                           only if a qsv-clientd daemon answers, offers a "Live data" chip to
+                           pair with it (approved in a shell) for drill-down, refresh,
+                           re-render and read-only queries. With no daemon it does nothing,
+                           so the page stays self-contained. Setting QSV_VIZ_NO_DAEMON=1 has
+                           the same effect. The page's qsv-schematic-source provenance JSON
+                           is kept either way, but without the input fingerprint (which
+                           costs an extra read of the input). HTML output only. Only affects `smart`. See
+                           https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md
+    --bivariate           Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (numeric AND categorical, unlike
                            the Pearson-only correlation heatmap), plus a ranked "top
@@ -1757,6 +1771,7 @@ struct Args {
     flag_tour_audience:      Option<String>,
     flag_dict_info:          bool,
     flag_dataset_pid:        Option<String>,
+    flag_no_daemon_bridge:   bool,
     flag_log_scale:          String,
     flag_violin:             String,
     flag_title:              Option<String>,
@@ -1784,6 +1799,11 @@ struct Args {
     flag_output:             Option<String>,
     flag_delimiter:          Option<Delimiter>,
     flag_no_headers:         bool,
+    /// The raw `viz smart` invocation recorded in the Data Schematic's `qsv-schematic-source`
+    /// block. Captured from argv in `run`, before any flag is rewritten (a deferred `--geojson
+    /// auto` becomes a cache path; stdin becomes a temp file).
+    #[serde(skip)]
+    source_args:             crate::cmd::viz_daemon::SourceArgs,
 }
 
 /// The chart image format, derived from the --output extension.
@@ -1822,6 +1842,10 @@ impl OutFormat {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+    if args.cmd_smart {
+        args.source_args =
+            crate::cmd::viz_daemon::SourceArgs::from_argv(argv, usage_option_takes_value);
+    }
 
     // Repair a stale compiled-in webdriver path before ANY other work (#4620). Deliberately the
     // first statement after arg parsing, because it mutates process env: main.rs spawns no
@@ -2203,6 +2227,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 data_chrome,
                 tour_chrome,
                 title_fit,
+                daemon_chrome,
+                drill_attr,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
@@ -2217,6 +2243,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         data_chrome.as_deref(),
                         tour_chrome.as_deref(),
                         &title_fit,
+                        daemon_chrome.as_deref(),
+                        &drill_attr,
                     );
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
@@ -2265,22 +2293,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 enum SmartRender {
     // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
     Grid {
-        plot:        Box<Plot>,
-        dims:        (usize, usize),
+        plot:          Box<Plot>,
+        dims:          (usize, usize),
         // carried out so the HTML path can wrap the plot in qsv's own toggle-enabled page
         // (`render_smart_grid_page`); the image-export path ignores all three.
-        title:       String,
-        theme:       Option<BuiltinTheme>,
+        title:         String,
+        theme:         Option<BuiltinTheme>,
         /// The embedded `--dict-info` Data Dictionary document (HTML output only).
-        dict_page:   Option<String>,
+        dict_page:     Option<String>,
         /// The top-of-Data Schematic metadata table (HTML output only).
-        metadata:    Option<String>,
+        metadata:      Option<String>,
         /// The data viewer drawer chrome (issue #4283; HTML output only).
-        data_chrome: Option<String>,
+        data_chrome:   Option<String>,
         /// The guided-tour chrome (issue #4389; HTML output only, `None` under `--tour-steps 0`).
-        tour_chrome: Option<String>,
+        tour_chrome:   Option<String>,
         /// The panel-title fitter (`title_fit_chrome`); "" when no title can shorten.
-        title_fit:   String,
+        title_fit:     String,
+        /// The qsv-clientd provenance + bridge chrome (HTML output only).
+        daemon_chrome: Option<String>,
+        /// The grid wrapper's `data-qsv-axis-columns` attribute (see `grid_drill_attr`).
+        drill_attr:    String,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -8560,6 +8592,34 @@ fn geojson_declared_unit(geojson: &serde_json::Value, key: &str) -> Option<Denom
         .and_then(parse_denominator_unit)
 }
 
+/// Whether `flag` (`--title`, `-o`, ...) takes a value, per the docopt USAGE text that parsed
+/// `Args`. Shared by every raw-argv scanner so they agree with docopt on option arity.
+fn usage_option_takes_value(flag: &str) -> bool {
+    USAGE.lines().any(|line| {
+        let line = line.trim_start();
+        if !line.starts_with('-') {
+            return false;
+        }
+        let spec = line.split("  ").next().unwrap_or(line);
+        let tokens: Vec<&str> = spec.split_whitespace().collect();
+        // Every alias on one usage line shares that option's arity, so read arity from the
+        // whole spec rather than from the token following `flag`. `-o, --output <file>`
+        // puts `--output`, not `<file>`, after the short alias, so a per-token lookahead
+        // would call `-o` valueless and then misread its value as a flag of its own.
+        let declares_value = tokens
+            .iter()
+            .any(|token| token.starts_with('<') || token.contains("=<"));
+        declares_value
+            && tokens.iter().any(|token| {
+                let token = token.trim_end_matches(',');
+                token == flag
+                    || token
+                        .strip_prefix(flag)
+                        .is_some_and(|rest| rest.starts_with("=<"))
+            })
+    })
+}
+
 /// Things parsed from `argv` that the docopt `Args` cannot express, threaded to the paths that
 /// need them.
 ///
@@ -8582,31 +8642,7 @@ impl ArgvExtras {
         // Derive option arity from the same docopt usage text that parsed `Args`. This scanner only
         // recovers distinctions docopt's target types erase, but it must still skip values of
         // preceding options: `--title --denominator` names a title, not a denominator flag.
-        let option_takes_value = |flag: &str| {
-            USAGE.lines().any(|line| {
-                let line = line.trim_start();
-                if !line.starts_with('-') {
-                    return false;
-                }
-                let spec = line.split("  ").next().unwrap_or(line);
-                let tokens: Vec<&str> = spec.split_whitespace().collect();
-                // Every alias on one usage line shares that option's arity, so read arity from the
-                // whole spec rather than from the token following `flag`. `-o, --output <file>`
-                // puts `--output`, not `<file>`, after the short alias, so a per-token lookahead
-                // would call `-o` valueless and then misread its value as a flag of its own.
-                let declares_value = tokens
-                    .iter()
-                    .any(|token| token.starts_with('<') || token.contains("=<"));
-                declares_value
-                    && tokens.iter().any(|token| {
-                        let token = token.trim_end_matches(',');
-                        token == flag
-                            || token
-                                .strip_prefix(flag)
-                                .is_some_and(|rest| rest.starts_with("=<"))
-                    })
-            })
-        };
+        let option_takes_value = usage_option_takes_value;
 
         let mut extras = Self::default();
         let mut i = 0_usize;
@@ -16524,7 +16560,11 @@ fn smart_html_page(
     // + engine script. `None` under `--tour-steps 0` (and on non-HTML paths), keeping those pages
     // byte-identical.
     tour_chrome: Option<&str>,
+    // The `qsv-schematic-source` provenance block plus the optional qsv-clientd bridge (see
+    // `SmartCtx::daemon_chrome`).
+    daemon_chrome: Option<&str>,
 ) -> String {
+    let daemon_chrome = daemon_chrome.unwrap_or("");
     let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
     // data viewer drawer chrome (issue #4283): empty unless the metadata Rows link is rendered,
@@ -16692,6 +16732,7 @@ fn smart_html_page(
 {choro_filter_chrome}
 {tour_chrome}
 {script}
+{daemon_chrome}
 <div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
 </body>
 </html>
@@ -35446,6 +35487,9 @@ struct SmartPanelData {
     /// the data viewer drawer chrome (issue #4283): library + payloads + drawer script.
     /// HTML-only, `None` when disabled via `--preview-threshold 0`.
     data_chrome:   Option<String>,
+    /// the `qsv-schematic-source` provenance block plus (unless opted out) the qsv-clientd
+    /// bridge. HTML-only.
+    daemon_chrome: Option<String>,
 }
 
 /// Shared working set threaded through `build_smart`'s phases.
@@ -38334,6 +38378,8 @@ impl<'a> SmartCtx<'a> {
         } else {
             None
         };
+        let daemon_chrome =
+            matches!(self.out_format, OutFormat::Html).then(|| self.daemon_chrome());
 
         Ok(SmartPanelData {
             freq,
@@ -38343,7 +38389,52 @@ impl<'a> SmartCtx<'a> {
             dict_page,
             metadata_html,
             data_chrome: data_viewer.map(|(chrome, _)| chrome),
+            daemon_chrome,
         })
+    }
+
+    /// The qsv-clientd "live mode" chrome (see `viz_daemon`): the `qsv-schematic-source`
+    /// provenance JSON, always, then the bridge script unless `--no-daemon-bridge` or
+    /// `QSV_VIZ_NO_DAEMON` opts out. Opting out also skips the input fingerprint, which costs a
+    /// full extra read of the input and is only needed to match the page to a daemon dataset.
+    /// Without a running daemon the bridge stays inert, so the page remains self-contained
+    /// either way.
+    fn daemon_chrome(&mut self) -> String {
+        use crate::cmd::viz_daemon as vd;
+
+        let rows = self.row_count();
+        let src = &self.args.source_args;
+        let bridge =
+            !self.args.flag_no_daemon_bridge && !util::get_envvar_flag("QSV_VIZ_NO_DAEMON");
+        // only a plain local file is fingerprinted: the daemon matches it against the registered
+        // file's bytes, which stdin, URLs and `dc:` handles have no stable equivalent of
+        let input = if bridge {
+            vd::local_input_file(src.input.as_deref())
+        } else {
+            None
+        };
+        let fingerprint = input.and_then(|path| {
+            vd::blake3_file(path)
+                .map_err(|e| {
+                    viz_note(&format!(
+                        "viz smart: could not fingerprint the input ({e}); the Data Schematic's \
+                         qsv-schematic-source block omits it."
+                    ));
+                })
+                .ok()
+        });
+        let json = vd::source_json(
+            src,
+            fingerprint,
+            rows,
+            self.args.flag_dataset_pid.as_deref(),
+        );
+        let mut out = inline_json_script(vd::SOURCE_SCRIPT_ID, &json.to_string());
+        if bridge {
+            out.push('\n');
+            out.push_str(&vd::bridge_chrome(vd::clientd_port()));
+        }
+        out
     }
 
     /// Prepend the KPI overview row and dispatch to the render path chosen by `finalize_panels`.
@@ -38356,6 +38447,7 @@ impl<'a> SmartCtx<'a> {
             dict_page,
             metadata_html,
             data_chrome,
+            daemon_chrome,
         } = data;
 
         // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned
@@ -38435,6 +38527,25 @@ impl<'a> SmartCtx<'a> {
         } else {
             None
         };
+        // the drill-down hook behind each frequency-bar panel, for the qsv-clientd bridge;
+        // `None` for every other panel kind
+        let drill_cols: Vec<Option<DrillHook>> = self
+            .panels
+            .iter()
+            .map(|p| match p.kind {
+                PanelKind::FreqBar { idx } => self.stats.get(idx).map(|s| DrillHook {
+                    column:   s.field.clone(),
+                    agg_keys: freq
+                        .get(&idx)
+                        .into_iter()
+                        .flatten()
+                        .filter(|b| b.kind == FreqBarKind::Aggregate)
+                        .map(|b| b.x_key.clone())
+                        .collect(),
+                }),
+                _ => None,
+            })
+            .collect();
         if self.inline {
             Ok(SmartRender::Inline(render_smart_inline(
                 &self.args,
@@ -38449,6 +38560,8 @@ impl<'a> SmartCtx<'a> {
                 data_chrome.as_deref(),
                 self.map_cols,
                 tour_chrome.as_deref(),
+                daemon_chrome.as_deref(),
+                &drill_cols,
             )))
         } else if self
             .panels
@@ -38484,6 +38597,8 @@ impl<'a> SmartCtx<'a> {
                 metadata_html,
                 data_chrome,
                 tour_chrome,
+                daemon_chrome,
+                &drill_cols,
             )
         }
     }
@@ -40341,6 +40456,8 @@ fn smart_grid_parts(
     }
 }
 
+// each param is one render input or optional chrome slot (see `smart_html_page`)
+#[allow(clippy::too_many_arguments)]
 fn render_smart_grid(
     args: &Args,
     panels: &[Panel],
@@ -40353,7 +40470,10 @@ fn render_smart_grid(
     metadata: Option<String>,
     data_chrome: Option<String>,
     tour_chrome: Option<String>,
+    daemon_chrome: Option<String>,
+    drill_cols: &[Option<DrillHook>],
 ) -> CliResult<SmartRender> {
+    let drill_attr = grid_drill_attr(panels, drill_cols);
     let SmartGridParts {
         traces,
         axes,
@@ -40385,8 +40505,62 @@ fn render_smart_grid(
         metadata,
         data_chrome,
         tour_chrome,
+        daemon_chrome,
+        drill_attr,
         title_fit: title_fit_chrome(panels),
     })
+}
+
+/// What the qsv-clientd bridge needs to drill down from one frequency-bar panel.
+struct DrillHook {
+    /// The raw column the panel charts.
+    column:   String,
+    /// The exact category-axis keys (`FreqBar::x_key`) of the panel's synthetic aggregate bars
+    /// (null / "Other"), which have no rows of their own to drill into. Listed explicitly because
+    /// a REAL category may legitimately contain `AGG_KEY_SENTINEL`, so the sentinel alone can't
+    /// tell them apart (and this plotly `Bar` has no per-point `customdata` to carry a marker).
+    agg_keys: Vec<String>,
+}
+
+impl DrillHook {
+    /// ` data-qsv-column="..." data-qsv-agg-keys="[...]"` for an inline-grid cell.
+    fn cell_attrs(&self) -> String {
+        format!(
+            " data-qsv-column=\"{}\" data-qsv-agg-keys=\"{}\"",
+            html_escape(&self.column),
+            html_escape(&serde_json::json!(self.agg_keys).to_string())
+        )
+    }
+}
+
+/// The typed grid draws every panel into ONE plotly div, so `data-qsv-column` cannot mark a
+/// single chart there. Instead the grid wrapper carries `data-qsv-axis-columns`, a JSON map from
+/// each frequency-bar panel's x-axis id (`x`, `x2`, ...) to its raw column name, which the
+/// qsv-clientd bridge reads off a click's `xaxis`, plus `data-qsv-axis-agg-keys`, the same map
+/// to each panel's aggregate-bar keys (see `DrillHook`). "" when the grid has no frequency bar.
+fn grid_drill_attr(panels: &[Panel], drill_cols: &[Option<DrillHook>]) -> String {
+    // mirror `smart_grid_parts`' axis numbering: a leading KPI row takes no cartesian axis
+    let axis_offset = usize::from(matches!(
+        panels.first().map(|p| &p.kind),
+        Some(PanelKind::KpiRow { .. })
+    ));
+    let mut columns = serde_json::Map::new();
+    let mut agg_keys = serde_json::Map::new();
+    for (n, hook) in drill_cols.iter().enumerate() {
+        let Some(hook) = hook else { continue };
+        let axis = axis_ref('x', (n + 1).saturating_sub(axis_offset));
+        columns.insert(axis.clone(), serde_json::json!(hook.column));
+        agg_keys.insert(axis, serde_json::json!(hook.agg_keys));
+    }
+    if columns.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " data-qsv-axis-columns=\"{}\" data-qsv-axis-agg-keys=\"{}\"",
+            html_escape(&serde_json::Value::Object(columns).to_string()),
+            html_escape(&serde_json::Value::Object(agg_keys).to_string())
+        )
+    }
 }
 
 fn render_smart_grid_page(
@@ -40398,6 +40572,8 @@ fn render_smart_grid_page(
     data_chrome: Option<&str>,
     tour_chrome: Option<&str>,
     title_fit: &str,
+    daemon_chrome: Option<&str>,
+    drill_attr: &str,
 ) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
@@ -40408,7 +40584,7 @@ fn render_smart_grid_page(
     let inner = plot.to_inline_html(Some("qsv-viz-smart-grid"));
     let body = format!(
         r#"<div class="qsv-viz-grid">
-      <div class="qsv-viz-plot">
+      <div class="qsv-viz-plot"{drill_attr}>
 {inner}
       </div>
 </div>{title_fit}"#
@@ -40434,6 +40610,7 @@ fn render_smart_grid_page(
         // ...and no choropleth either (they force the inline path), so no region-click filter.
         None,
         tour_chrome,
+        daemon_chrome,
     )
 }
 
@@ -42131,6 +42308,8 @@ fn figure_inline_html(json_plain: &str, div_id: &str) -> String {
     )
 }
 
+// each param is one render input or optional chrome slot (see `smart_html_page`)
+#[allow(clippy::too_many_arguments)]
 fn render_smart_inline(
     args: &Args,
     panels: &[Panel],
@@ -42148,6 +42327,9 @@ fn render_smart_inline(
     // own (downsampled away) in order to pin it.
     map_cols: Option<(usize, usize)>,
     tour_chrome: Option<&str>,
+    daemon_chrome: Option<&str>,
+    // per panel: the drill-down hook of a frequency-bar panel (see `drill_cols` in `render`)
+    drill_cols: &[Option<DrillHook>],
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -42168,11 +42350,19 @@ fn render_smart_inline(
         } else {
             ""
         };
+        // a frequency-bar cell names its raw column as `data-qsv-column` (and its aggregate bars
+        // as `data-qsv-agg-keys`), the hooks the qsv-clientd bridge drills down from (inert
+        // without the bridge)
+        let drill = drill_cols
+            .get(n)
+            .and_then(Option::as_ref)
+            .map(DrillHook::cell_attrs)
+            .unwrap_or_default();
         match &panel.dict_info {
             Some((anchor, _)) => cells.push_str(&format!(
-                "    <div class=\"qsv-viz-cell{fw}\" data-qsv-dict=\"{anchor}\">\n"
+                "    <div class=\"qsv-viz-cell{fw}\" data-qsv-dict=\"{anchor}\"{drill}>\n"
             )),
-            None => cells.push_str(&format!("    <div class=\"qsv-viz-cell{fw}\">\n")),
+            None => cells.push_str(&format!("    <div class=\"qsv-viz-cell{fw}\"{drill}>\n")),
         }
         // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
         // a concrete height instead of expanding to fill the whole cell (which would otherwise
@@ -42277,6 +42467,7 @@ fn render_smart_inline(
         map_select,
         choro_filter,
         tour_chrome,
+        daemon_chrome,
     )
 }
 

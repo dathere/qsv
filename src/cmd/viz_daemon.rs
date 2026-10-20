@@ -293,7 +293,7 @@ const BRIDGE_JS: &str = r#"
   } catch (e) { SRC = {}; }
   var DIGEST = (SRC.fingerprint && SRC.fingerprint.digest) || null;
   var live = { token: null, dataset: null, chip: null, panel: null, out: null, status: null,
-    rerender: null, dialog: null, pollTimer: null, title: null, table: null };
+    rerender: null, dialog: null, pollTimer: null, title: null, table: null, gen: 0 };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -502,6 +502,7 @@ const BRIDGE_JS: &str = r#"
   // DataTables keeps every instance, with its rows and a ResizeObserver, in global settings
   // until it is destroyed, whatever happens to its DOM
   function dropTable() {
+    live.gen++;  // answers still on their way for the old table are dropped
     if (!live.table) return;
     try { live.table.destroy(); } catch (e) {}
     live.table = null;
@@ -521,6 +522,7 @@ const BRIDGE_JS: &str = r#"
   // and column sort is asked of the daemon, which runs qsv on the stored file.
   function showTable(headers, rows, note, result) {
     dropTable();
+    var gen = live.gen;
     live.out.textContent = "";
     var wrap = el("div", "qsv-live-out qsv-live-grid");
     var table = el("table");
@@ -558,6 +560,7 @@ const BRIDGE_JS: &str = r#"
       if (result) {
         opts.serverSide = true;
         opts.processing = true;
+        opts.orderMulti = false;  // qsv-clientd sorts by one column
         opts.searchDelay = 400;  // one qsv search per pause in typing, not per keystroke
         opts.ajax = function (data, callback) {
           var o = data.order && data.order[0];
@@ -565,10 +568,12 @@ const BRIDGE_JS: &str = r#"
             search: (data.search && data.search.value) || "" };
           if (o) body.order = { column: o.column, desc: o.dir === "desc" };
           call("POST", dsPath("/page"), body).then(function (j) {
+            if (gen !== live.gen) return;  // a newer result replaced this table
             j = j || {};
             callback({ draw: data.draw, recordsTotal: j.total || 0,
               recordsFiltered: j.filtered || 0, data: j.rows || [] });
           }, function (e) {
+            if (gen !== live.gen) return;
             callback({ draw: data.draw, recordsTotal: result.total, recordsFiltered: 0, data: [] });
             // replaced by a newer result, or the data changed since: the query must run again
             if (e && (e.status === 409 || e.status === 410)) setStatus(e.message);

@@ -23591,6 +23591,11 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     // a stored result is paged, searched and sorted by qsv-clientd, page by page
     assert!(bridge.contains("opts.serverSide = true;"));
     assert!(bridge.contains(r#"call("POST", dsPath("/page"), body)"#));
+    // the daemon sorts by one column, so no shift-click multi-column sort
+    assert!(bridge.contains("opts.orderMulti = false;"));
+    // a page answer for a table since replaced is dropped, status untouched
+    assert!(bridge.contains("live.gen++;"));
+    assert_eq!(bridge.matches("if (gen !== live.gen) return;").count(), 2);
     // Disconnect withdraws the token on the daemon, not only in the page
     assert!(bridge.contains(r#"call("POST", dsPath("/disconnect"), {}).catch(function () {});"#));
     assert!(bridge.contains("if (o) body.order = { column: o.column, desc: o.dir === \"desc\" };"));

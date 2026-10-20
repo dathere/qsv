@@ -688,6 +688,9 @@ const BRIDGE_JS: &str = r#"
       }));
     }
     actions.appendChild(button("Disconnect", function () {
+      // withdraw the token on the daemon too, which also deletes this page's stored result
+      // (an older qsv-clientd without the route answers 404: nothing to do then)
+      call("POST", dsPath("/disconnect"), {}).catch(function () {});
       var s = store();
       if (s) { try { s.removeItem(KEY_PREFIX + live.dataset.id); } catch (e) {} }
       live.token = null;

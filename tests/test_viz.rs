@@ -23591,6 +23591,8 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     // a stored result is paged, searched and sorted by qsv-clientd, page by page
     assert!(bridge.contains("opts.serverSide = true;"));
     assert!(bridge.contains(r#"call("POST", dsPath("/page"), body)"#));
+    // Disconnect withdraws the token on the daemon, not only in the page
+    assert!(bridge.contains(r#"call("POST", dsPath("/disconnect"), {}).catch(function () {});"#));
     assert!(bridge.contains("if (o) body.order = { column: o.column, desc: o.dir === \"desc\" };"));
     // Re-render's document.write keeps window.DataTable, so every instance goes first
     let rerender = &bridge[bridge.find(r#"dsPath("/render")"#).unwrap()..];

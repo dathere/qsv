@@ -261,6 +261,8 @@ const BRIDGE_CSS: &str = r"
 .qsv-live-out { margin: 0; max-height: 40vh; overflow: auto; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; white-space: pre; }
 .qsv-live-out table { border-collapse: collapse; }
 .qsv-live-out th, .qsv-live-out td { border: 1px solid rgba(127,127,127,.35); padding: 1px 6px; text-align: left; vertical-align: top; }
+.qsv-live-grid { white-space: normal; font: 12px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.qsv-live-grid td { white-space: pre; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .qsv-live-dialog { left: 50%; top: 20%; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); padding: 14px 16px; }
 .qsv-live-code { font: 600 22px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; text-align: center; margin: 6px 0; }
 .qsv-live-cmd { display: block; user-select: all; -webkit-user-select: all; font: 13px ui-monospace, Menlo, Consolas, monospace; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.15); margin: 6px 0; }
@@ -291,7 +293,7 @@ const BRIDGE_JS: &str = r#"
   } catch (e) { SRC = {}; }
   var DIGEST = (SRC.fingerprint && SRC.fingerprint.digest) || null;
   var live = { token: null, dataset: null, chip: null, panel: null, out: null, status: null,
-    rerender: null, dialog: null, pollTimer: null };
+    rerender: null, dialog: null, pollTimer: null, title: null, table: null };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -497,31 +499,65 @@ const BRIDGE_JS: &str = r#"
 
   // ---- the connected panel
   function setStatus(msg) { if (live.status) live.status.textContent = msg; }
+  // DataTables keeps every instance, with its rows and a ResizeObserver, in global settings
+  // until it is destroyed, whatever happens to its DOM
+  function dropTable() {
+    if (!live.table) return;
+    try { live.table.destroy(); } catch (e) {}
+    live.table = null;
+  }
   function showText(text, note) {
+    dropTable();
     live.out.textContent = "";
     var pre = el("pre", "qsv-live-out", text);
     live.out.appendChild(pre);
     if (note) setStatus(note);
   }
-  function showRows(j, label) {
+  // Paged, sortable and searchable by the page's own DataTables, the one the data viewer
+  // embeds, when it has one (not with --preview-threshold 0); else a plain table.
+  var PLAIN_MAX = 500;
+  var DRILL_LIMIT = 500;  // qsv-clientd's /rows maximum
+  function showTable(headers, rows, note) {
+    dropTable();
     live.out.textContent = "";
-    var wrap = el("div", "qsv-live-out");
+    var wrap = el("div", "qsv-live-out qsv-live-grid");
     var table = el("table");
     var thead = el("thead"), tr = el("tr");
-    (j.headers || []).forEach(function (h) { tr.appendChild(el("th", null, h)); });
+    headers.forEach(function (h) { tr.appendChild(el("th", null, h)); });
     thead.appendChild(tr);
     table.appendChild(thead);
-    var tbody = el("tbody");
-    (j.rows || []).forEach(function (r) {
-      var row = el("tr");
-      (r || []).forEach(function (v) { row.appendChild(el("td", null, v)); });
-      tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
     wrap.appendChild(table);
     live.out.appendChild(wrap);
-    setStatus(label + ": " + (j.rows || []).length + " row(s)" +
-      ((j.rows || []).length >= 100 ? " (first 100)" : ""));
+    setStatus(note);
+    function plain() {
+      if (!table.isConnected) return;
+      var tbody = el("tbody");
+      rows.slice(0, PLAIN_MAX).forEach(function (r) {
+        var row = el("tr");
+        (r || []).forEach(function (v) { row.appendChild(el("td", null, v)); });
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      if (rows.length > PLAIN_MAX) setStatus(note + " \u2014 showing the first " + PLAIN_MAX);
+    }
+    var ensure = window.qsvEnsureDataTables;
+    if (typeof ensure !== "function") return plain();
+    ensure().then(function () {
+      if (!table.isConnected) return;  // another result replaced this one meanwhile
+      var DT = window.DataTable;
+      if (typeof DT !== "function") return plain();
+      live.table = new DT(table, {
+        data: rows,
+        // render.text(): cells are data, never markup
+        columns: headers.map(function () { return { render: DT.render.text(), defaultContent: "" }; }),
+        order: [], pageLength: 10, lengthChange: false, deferRender: true, scrollX: true
+      });
+    }, plain);
+  }
+  function showRows(j, label) {
+    var rows = j.rows || [];
+    showTable(j.headers || [], rows, label + ": " + rows.length + " row(s)" +
+      (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""));
   }
   function splitArgs(s) {
     var out = [], cur = "", quoted = false, has = false;
@@ -542,22 +578,34 @@ const BRIDGE_JS: &str = r#"
     live.colInput.value = column;
     live.valInput.value = value;
     setStatus("Fetching rows where " + column + " = " + value + "\u2026");
-    call("POST", dsPath("/rows"), { column: column, value: value, limit: 100 })
+    call("POST", dsPath("/rows"), { column: column, value: value, limit: DRILL_LIMIT })
       .then(function (j) { showRows(j || {}, column + " = " + value); }).catch(fail);
   }
 
+  function showSource() {
+    var d = live.dataset;
+    if (!live.title || !d) return;
+    live.title.textContent = "Live: " + (d.title || d.id) + (d.fetched ? " (fetched copy)" : "");
+    live.title.title = d.fetched
+      ? "qsv-clientd is reading the data it last fetched from the source, not the registered " +
+        "file. Run qsv-clientd register <file> to switch back to the file."
+      : "";
+  }
   function connected(token, dataset) {
     live.token = token;
     live.dataset = dataset;
     saveToken();
     if (live.chip) live.chip.hidden = true;
+    dropTable();
     if (live.panel) live.panel.remove();
     var p = el("div", "qsv-live-panel");
     p.id = "qsv-live-panel";
     p.setAttribute("role", "region");
     p.setAttribute("aria-label", "qsv-clientd live data");
     var head = el("div", "qsv-live-head");
-    head.appendChild(el("strong", null, "Live: " + (dataset.title || dataset.id)));
+    live.title = el("strong");
+    head.appendChild(live.title);
+    showSource();
     head.appendChild(button("\u2013", function () {
       p.classList.toggle("qsv-live-collapsed");
       this.textContent = p.classList.contains("qsv-live-collapsed") ? "+" : "\u2013";
@@ -580,6 +628,10 @@ const BRIDGE_JS: &str = r#"
         setStatus("Re-rendering (this can take a while)\u2026");
         call("POST", dsPath("/render"), {}, { raw: true }).then(function (html) {
           saveToken();
+          // document.write keeps this window, and with it window.DataTable and every instance
+          // (ours and the data viewer's) with its rows, which the new page can't reach
+          dropTable();
+          try { if (window.DataTable) window.DataTable.tables({ api: true }).destroy(); } catch (e) {}
           document.open();
           document.write(html);
           document.close();
@@ -594,6 +646,10 @@ const BRIDGE_JS: &str = r#"
           j = j || {};
           setStatus(j.changed ? "Fetched new data" + (j.via ? " via " + j.via : "") + ". Re-render to update the charts."
             : "The source has not changed.");
+          // a fetch may have switched the daemon to the fetched copy
+          call("GET", dsPath(""), undefined).then(function (d) {
+            if (d) { live.dataset = d; showSource(); }
+          }, function () {});
           if (j.changed && live.rerender) live.rerender.classList.add("qsv-live-hot");
         }).catch(fail);
       }));
@@ -603,6 +659,7 @@ const BRIDGE_JS: &str = r#"
       if (s) { try { s.removeItem(KEY_PREFIX + live.dataset.id); } catch (e) {} }
       live.token = null;
       live.dataset = null;
+      dropTable();
       p.remove();
       live.panel = null;
       showChip();
@@ -627,7 +684,12 @@ const BRIDGE_JS: &str = r#"
       setStatus("Running qsv " + sel.value + "\u2026");
       call("POST", dsPath("/query"), { command: sel.value, args: splitArgs(argIn.value) }).then(function (j) {
         j = j || {};
-        showText(j.stdout || "", "qsv " + sel.value + (j.truncated ? " \u2014 output truncated" : ""));
+        var cut = j.truncated ? " \u2014 output truncated at qsv-clientd's size limit" : "";
+        if (j.headers && j.rows) {
+          showTable(j.headers, j.rows, "qsv " + sel.value + ": " + j.rows.length + " row(s)" + cut);
+        } else {
+          showText(j.stdout || "", "qsv " + sel.value + cut);
+        }
       }).catch(fail);
     });
     body.appendChild(q);

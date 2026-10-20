@@ -23588,6 +23588,12 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     // one live table at a time, destroyed before the next (DataTables keeps every instance)
     assert!(bridge.contains("live.table = new DT(table, {"));
     assert!(bridge.contains("try { live.table.destroy(); } catch (e) {}"));
+    // Re-render's document.write keeps window.DataTable, so every instance goes first
+    let rerender = &bridge[bridge.find(r#"dsPath("/render")"#).unwrap()..];
+    let destroy_all = rerender
+        .find("window.DataTable.tables({ api: true }).destroy()")
+        .expect("Re-render destroys every DataTables instance");
+    assert!(destroy_all < rerender.find("document.open();").unwrap());
     // the drawer and the bridge share one install of the library
     assert!(html.contains("libReady = installLib().catch("));
     // Re-render's document.write keeps window.driver, so the tour also checks that its gz

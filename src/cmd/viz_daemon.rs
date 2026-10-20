@@ -628,6 +628,10 @@ const BRIDGE_JS: &str = r#"
         setStatus("Re-rendering (this can take a while)\u2026");
         call("POST", dsPath("/render"), {}, { raw: true }).then(function (html) {
           saveToken();
+          // document.write keeps this window, and with it window.DataTable and every instance
+          // (ours and the data viewer's) with its rows, which the new page can't reach
+          dropTable();
+          try { if (window.DataTable) window.DataTable.tables({ api: true }).destroy(); } catch (e) {}
           document.open();
           document.write(html);
           document.close();

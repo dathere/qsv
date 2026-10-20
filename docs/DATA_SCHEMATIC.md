@@ -293,8 +293,11 @@ When the daemon answers, a small "Live data" chip appears. The page never pairs 
    chart shows the matching rows (the null and "Other" aggregate bars are skipped). Rows and
    query results that are CSV appear as tables, paged, sorted and searched with the DataTables
    copy the data viewer embeds (a plain table when the page has no data viewer,
-   `--preview-threshold 0`). After Fetch latest, the panel title says "(fetched copy)" while
-   qsv-clientd reads the downloaded data instead of the registered file.
+   `--preview-threshold 0`). A result too big to send whole, and the rows behind a bar, are
+   kept by qsv-clientd and read a page at a time: each page, search and column sort is run by
+   qsv on the daemon, so every row is reachable however large the result. After Fetch latest,
+   the panel title says "(fetched copy)" while qsv-clientd reads the downloaded data instead
+   of the registered file.
 
 The stored token is keyed by the daemon's **dataset id**, not by the page's `schematic_uuid` or
 fingerprint. Re-render replaces the page with a new schematic that carries a new

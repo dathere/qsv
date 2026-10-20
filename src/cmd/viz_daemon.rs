@@ -517,7 +517,9 @@ const BRIDGE_JS: &str = r#"
   // embeds, when it has one (not with --preview-threshold 0); else a plain table.
   var PLAIN_MAX = 500;
   var DRILL_LIMIT = 500;  // qsv-clientd's /rows maximum
-  function showTable(headers, rows, note) {
+  // With a stored result (qsv-clientd kept output too big to send whole), every page, search
+  // and column sort is asked of the daemon, which runs qsv on the stored file.
+  function showTable(headers, rows, note, result) {
     dropTable();
     live.out.textContent = "";
     var wrap = el("div", "qsv-live-out qsv-live-grid");
@@ -538,7 +540,9 @@ const BRIDGE_JS: &str = r#"
         tbody.appendChild(row);
       });
       table.appendChild(tbody);
-      if (rows.length > PLAIN_MAX) setStatus(note + " \u2014 showing the first " + PLAIN_MAX);
+      var total = result ? result.total : rows.length;
+      var shown = Math.min(rows.length, PLAIN_MAX);
+      if (total > shown) setStatus(note + " \u2014 showing the first " + shown);
     }
     var ensure = window.qsvEnsureDataTables;
     if (typeof ensure !== "function") return plain();
@@ -546,16 +550,45 @@ const BRIDGE_JS: &str = r#"
       if (!table.isConnected) return;  // another result replaced this one meanwhile
       var DT = window.DataTable;
       if (typeof DT !== "function") return plain();
-      live.table = new DT(table, {
-        data: rows,
+      var opts = {
         // render.text(): cells are data, never markup
         columns: headers.map(function () { return { render: DT.render.text(), defaultContent: "" }; }),
-        order: [], pageLength: 10, lengthChange: false, deferRender: true, scrollX: true
-      });
+        order: [], pageLength: 10, lengthChange: false, scrollX: true
+      };
+      if (result) {
+        opts.serverSide = true;
+        opts.processing = true;
+        opts.searchDelay = 400;  // one qsv search per pause in typing, not per keystroke
+        opts.ajax = function (data, callback) {
+          var o = data.order && data.order[0];
+          var body = { result: result.id, start: data.start, length: data.length,
+            search: (data.search && data.search.value) || "" };
+          if (o) body.order = { column: o.column, desc: o.dir === "desc" };
+          call("POST", dsPath("/page"), body).then(function (j) {
+            j = j || {};
+            callback({ draw: data.draw, recordsTotal: j.total || 0,
+              recordsFiltered: j.filtered || 0, data: j.rows || [] });
+          }, function (e) {
+            callback({ draw: data.draw, recordsTotal: result.total, recordsFiltered: 0, data: [] });
+            // replaced by a newer result, or the data changed since: the query must run again
+            if (e && (e.status === 409 || e.status === 410)) setStatus(e.message);
+            else fail(e);
+          });
+        };
+      } else {
+        opts.data = rows;
+        opts.deferRender = true;
+      }
+      live.table = new DT(table, opts);
     }, plain);
   }
   function showRows(j, label) {
     var rows = j.rows || [];
+    if (j.result) {
+      showTable(j.result.headers || j.headers || [], rows,
+        label + ": " + j.result.total + " row(s)", j.result);
+      return;
+    }
     showTable(j.headers || [], rows, label + ": " + rows.length + " row(s)" +
       (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""));
   }
@@ -685,7 +718,10 @@ const BRIDGE_JS: &str = r#"
       call("POST", dsPath("/query"), { command: sel.value, args: splitArgs(argIn.value) }).then(function (j) {
         j = j || {};
         var cut = j.truncated ? " \u2014 output truncated at qsv-clientd's size limit" : "";
-        if (j.headers && j.rows) {
+        if (j.result) {
+          showTable(j.result.headers || j.headers || [], j.rows || [],
+            "qsv " + sel.value + ": " + j.result.total + " row(s)", j.result);
+        } else if (j.headers && j.rows) {
           showTable(j.headers, j.rows, "qsv " + sel.value + ": " + j.rows.length + " row(s)" + cut);
         } else {
           showText(j.stdout || "", "qsv " + sel.value + cut);

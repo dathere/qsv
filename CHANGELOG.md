@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Opt-out and port.** `--no-daemon-bridge` (or `QSV_VIZ_NO_DAEMON=1`) leaves the script out. `QSV_CLIENTD_PORT` sets the port it probes (default 14470).
 
 ### Changed
-- **Internal: `src/util.rs` split into 15 submodules under `src/util/`.** The 7,800-line file is now a facade that keeps the shared statics, `SchemaArgs` and `get_args`, and re-exports `stats_cache`, `input`, `special_format`, `http` and the other submodules, so every `util::…` path is unchanged. Pure code motion with no behavior change.
+- **Internal: `src/util.rs` split into 15 submodules under `src/util/`.** The 7,800-line file is now a facade that keeps the shared statics, `SchemaArgs` and `get_args`, and re-exports `stats_cache`, `input`, `special_format`, `http` and the other submodules, so every `util::…` path is unchanged. Pure code motion with no behavior change ([#4855](https://github.com/dathere/qsv/pull/4855)).
 
 ### Fixed
 - **`schema`: the 26.0.0 Unicode length pass made indexed runs 7× slower.** The character-length pass added in [#4827](https://github.com/dathere/qsv/pull/4827) read the whole file on one thread, decoding every field, whenever a String column had non-ASCII text. It now decodes only the columns it measures and, when the file is indexed, splits the rows across threads like `frequency`. On the 1M-row benchmark file, indexed `schema` drops from 442 ms to 93 ms (25.0.0, before the pass existed: 55 ms); the schema it writes is unchanged ([#4852](https://github.com/dathere/qsv/pull/4852)).

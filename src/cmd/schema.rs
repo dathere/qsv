@@ -138,7 +138,10 @@ use foldhash::{HashMap, HashMapExt, HashSet};
 use grex::RegExpBuilder;
 use itertools::Itertools;
 use log::{debug, info};
-use rayon::slice::ParallelSliceMut;
+use rayon::{
+    iter::{IntoParallelIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use regex::Regex;
 use serde_json::{Map, Value, json, value::Number};
 use stats::Frequencies;
@@ -374,26 +377,7 @@ pub fn infer_schema_from_stats(
     } else {
         Vec::new()
     };
-    let mut unicode_lengths: HashMap<usize, (usize, usize)> = HashMap::new();
-    if !unicode_columns.is_empty() {
-        let mut rdr = Config::new(args.arg_input.as_ref())
-            .delimiter(args.flag_delimiter)
-            .no_headers_flag(args.flag_no_headers)
-            .reader()?;
-        let mut record = csv::StringRecord::new();
-        while rdr.read_record(&mut record)? {
-            for &i in &unicode_columns {
-                let len = record[i].chars().count();
-                unicode_lengths
-                    .entry(i)
-                    .and_modify(|(min, max)| {
-                        *min = (*min).min(len);
-                        *max = (*max).max(len);
-                    })
-                    .or_insert((len, len));
-            }
-        }
-    }
+    let unicode_lengths = unicode_length_bounds(args, &unicode_columns)?;
 
     // map holds "properties" object of json schema
     let mut properties_map: Map<String, Value> = Map::with_capacity(csv_fields.len());
@@ -643,6 +627,92 @@ pub fn infer_schema_from_stats(
     }
 
     Ok(properties_map)
+}
+
+/// (min, max) length in characters of each column in `columns`, keyed by column index.
+/// Columns that have no records are left out, so their callers fall back to stats.
+fn unicode_length_bounds(
+    args: &util::SchemaArgs,
+    columns: &[usize],
+) -> CliResult<HashMap<usize, (usize, usize)>> {
+    if columns.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let njobs = util::njobs(args.flag_jobs);
+
+    let bounds = match rconfig.indexed()? {
+        Some(idx) if njobs > 1 && idx.count() > 1 => {
+            let idx_count = idx.count() as usize;
+            let chunk_size = util::chunk_size(idx_count, njobs);
+            let nchunks = util::num_of_chunks(idx_count, chunk_size);
+            (0..nchunks)
+                .into_par_iter()
+                .map_with(rconfig, |rconf, i| -> CliResult<CharLengthBounds> {
+                    let Some(mut idx) = rconf.indexed()? else {
+                        return fail_clierror!("Index is no longer available for schema.");
+                    };
+                    idx.seek((i * chunk_size) as u64)?;
+                    let mut bounds = vec![None; columns.len()];
+                    for record in idx.byte_records().take(chunk_size) {
+                        fold_char_lengths(&mut bounds, columns, &record?)?;
+                    }
+                    Ok(bounds)
+                })
+                .try_reduce(
+                    || vec![None; columns.len()],
+                    |a, b| Ok(merge_char_lengths(a, &b)),
+                )?
+        },
+        _ => {
+            let mut rdr = rconfig.reader()?;
+            let mut record = ByteRecord::new();
+            let mut bounds = vec![None; columns.len()];
+            while rdr.read_byte_record(&mut record)? {
+                fold_char_lengths(&mut bounds, columns, &record)?;
+            }
+            bounds
+        },
+    };
+
+    Ok(columns
+        .iter()
+        .zip(bounds)
+        .filter_map(|(&col, b)| b.map(|b| (col, b)))
+        .collect())
+}
+
+/// Per measured column, the (min, max) character length seen so far.
+type CharLengthBounds = Vec<Option<(usize, usize)>>;
+
+#[inline]
+fn fold_char_lengths(
+    bounds: &mut [Option<(usize, usize)>],
+    columns: &[usize],
+    record: &ByteRecord,
+) -> CliResult<()> {
+    for (bound, &col) in bounds.iter_mut().zip(columns) {
+        let field = record.get(col).unwrap_or_default();
+        let Ok(s) = simdutf8::basic::from_utf8(field) else {
+            let line = record.position().map_or(0, csv::Position::line);
+            return fail_clierror!("Invalid UTF-8 in column {} on line {line}.", col + 1);
+        };
+        let len = s.chars().count();
+        *bound = Some(bound.map_or((len, len), |(min, max)| (min.min(len), max.max(len))));
+    }
+    Ok(())
+}
+
+fn merge_char_lengths(mut a: CharLengthBounds, b: &[Option<(usize, usize)>]) -> CharLengthBounds {
+    for (x, y) in a.iter_mut().zip(b) {
+        *x = match (*x, *y) {
+            (Some((amin, amax)), Some((bmin, bmax))) => Some((amin.min(bmin), amax.max(bmax))),
+            (x, y) => x.or(y),
+        };
+    }
+    a
 }
 
 /// get column selector argument string for the columns whose unique values are needed

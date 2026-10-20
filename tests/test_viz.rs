@@ -23585,6 +23585,11 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     let bridge = &html[html.find(r#"<script id="qsv-daemon-bridge">"#).unwrap()..];
     assert!(bridge.contains("var ensure = window.qsvEnsureDataTables;"));
     assert!(bridge.contains("render: DT.render.text()"));
+    // one live table at a time, destroyed before the next (DataTables keeps every instance)
+    assert!(bridge.contains("live.table = new DT(table, {"));
+    assert!(bridge.contains("try { live.table.destroy(); } catch (e) {}"));
+    // the drawer and the bridge share one install of the library
+    assert!(html.contains("libReady = installLib().catch("));
     // Re-render's document.write keeps window.driver, so the tour also checks that its gz
     // stylesheets were inflated into the current document
     assert!(html.contains(r#"window.driver.js && inflated("qsv-tour-css")"#));

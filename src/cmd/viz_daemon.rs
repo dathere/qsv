@@ -293,7 +293,7 @@ const BRIDGE_JS: &str = r#"
   } catch (e) { SRC = {}; }
   var DIGEST = (SRC.fingerprint && SRC.fingerprint.digest) || null;
   var live = { token: null, dataset: null, chip: null, panel: null, out: null, status: null,
-    rerender: null, dialog: null, pollTimer: null, title: null };
+    rerender: null, dialog: null, pollTimer: null, title: null, table: null };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -499,7 +499,15 @@ const BRIDGE_JS: &str = r#"
 
   // ---- the connected panel
   function setStatus(msg) { if (live.status) live.status.textContent = msg; }
+  // DataTables keeps every instance, with its rows and a ResizeObserver, in global settings
+  // until it is destroyed, whatever happens to its DOM
+  function dropTable() {
+    if (!live.table) return;
+    try { live.table.destroy(); } catch (e) {}
+    live.table = null;
+  }
   function showText(text, note) {
+    dropTable();
     live.out.textContent = "";
     var pre = el("pre", "qsv-live-out", text);
     live.out.appendChild(pre);
@@ -510,6 +518,7 @@ const BRIDGE_JS: &str = r#"
   var PLAIN_MAX = 500;
   var DRILL_LIMIT = 500;  // qsv-clientd's /rows maximum
   function showTable(headers, rows, note) {
+    dropTable();
     live.out.textContent = "";
     var wrap = el("div", "qsv-live-out qsv-live-grid");
     var table = el("table");
@@ -537,7 +546,7 @@ const BRIDGE_JS: &str = r#"
       if (!table.isConnected) return;  // another result replaced this one meanwhile
       var DT = window.DataTable;
       if (typeof DT !== "function") return plain();
-      new DT(table, {
+      live.table = new DT(table, {
         data: rows,
         // render.text(): cells are data, never markup
         columns: headers.map(function () { return { render: DT.render.text(), defaultContent: "" }; }),
@@ -587,6 +596,7 @@ const BRIDGE_JS: &str = r#"
     live.dataset = dataset;
     saveToken();
     if (live.chip) live.chip.hidden = true;
+    dropTable();
     if (live.panel) live.panel.remove();
     var p = el("div", "qsv-live-panel");
     p.id = "qsv-live-panel";
@@ -645,6 +655,7 @@ const BRIDGE_JS: &str = r#"
       if (s) { try { s.removeItem(KEY_PREFIX + live.dataset.id); } catch (e) {} }
       live.token = null;
       live.dataset = null;
+      dropTable();
       p.remove();
       live.panel = null;
       showChip();

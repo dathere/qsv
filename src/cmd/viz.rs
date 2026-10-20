@@ -24852,7 +24852,16 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   // shapes (see `datatables_lib_block`): CDN tags (nothing to do — `window.DataTable` exists),
   // plain inline (`<script>` already executed / real `<style>` already applied), or gzip-b64
   // payloads that must be inflated here on first use.
+  // one install shared by every caller (the drawer and qsv-clientd's live bridge): two
+  // concurrent installs would both replace the same CSS payload and evaluate the bundle twice
+  var libReady = null;
   function ensureLib() {
+    if (!libReady) {
+      libReady = installLib().catch(function (e) { libReady = null; throw e; });
+    }
+    return libReady;
+  }
+  function installLib() {
     var jobs = [];
     var cssEl = document.getElementById("qsv-data-css");
     if (cssEl && cssEl.tagName === "SCRIPT") {

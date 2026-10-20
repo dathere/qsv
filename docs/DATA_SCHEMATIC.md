@@ -290,7 +290,11 @@ When the daemon answers, a small "Live data" chip appears. The page never pairs 
 3. The page receives a token scoped to that one dataset, kept in the tab's `sessionStorage`
    only, and opens a compact panel with Refresh, Re-render, Fetch latest (when the dataset
    has a source URL or PID), a query console, and a rows view. Clicking a bar in a frequency
-   chart shows the matching rows (the null and "Other" aggregate bars are skipped).
+   chart shows the matching rows (the null and "Other" aggregate bars are skipped). Rows and
+   query results that are CSV appear as tables, paged, sorted and searched with the DataTables
+   copy the data viewer embeds (a plain table when the page has no data viewer,
+   `--preview-threshold 0`). After Fetch latest, the panel title says "(fetched copy)" while
+   qsv-clientd reads the downloaded data instead of the registered file.
 
 The stored token is keyed by the daemon's **dataset id**, not by the page's `schematic_uuid` or
 fingerprint. Re-render replaces the page with a new schematic that carries a new

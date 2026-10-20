@@ -174,24 +174,22 @@ pub fn write_json_record<W: std::io::Write>(
             json_string_val = serde_json::Value::String(temp_val);
             temp_val = json_string_val.to_string();
         }
+        // a flexible reader can yield a row with more fields than headers; there is no key
+        // for the extra fields, so refuse rather than emit malformed JSON
+        let Some(key) = header_vec.get(idx) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "record has more fields ({}) than headers ({})",
+                    record.len(),
+                    header_vec.len()
+                ),
+            ));
+        };
         if idx < rec_len {
-            unsafe {
-                write!(
-                    json_wtr,
-                    r#"{key}:{value},"#,
-                    key = header_vec.get_unchecked(idx),
-                    value = temp_val
-                )?;
-            }
+            write!(json_wtr, r#"{key}:{temp_val},"#)?;
         } else {
-            unsafe {
-                write!(
-                    json_wtr,
-                    r#"{key}:{value}"#,
-                    key = header_vec.get_unchecked(idx),
-                    value = temp_val
-                )?;
-            }
+            write!(json_wtr, r#"{key}:{temp_val}"#)?;
         }
     }
     Ok(write!(json_wtr, "}}")?)

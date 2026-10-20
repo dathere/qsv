@@ -4,6 +4,33 @@ use std::io::Write;
 
 use super::{fmt_duration_compact, is_io_print_panic};
 
+#[test]
+fn write_json_record_matching_widths() {
+    let headers = csv::ByteRecord::from(vec!["a", "b"]);
+    let record = csv::ByteRecord::from(vec!["1", ""]);
+    let mut out = Vec::new();
+    let mut is_first = true;
+    super::write_json_record(&mut out, false, &headers, &record, &mut is_first).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), r#"{"a":"1","b":null}"#);
+}
+
+// the caller's reader decides whether rows can be ragged; a row wider than the headers
+// used to index past the end of the header list
+#[test]
+fn write_json_record_rejects_more_fields_than_headers() {
+    let headers = csv::ByteRecord::from(vec!["a"]);
+    let record = csv::ByteRecord::from(vec!["1", "2", "3"]);
+    let mut out = Vec::new();
+    let mut is_first = true;
+    let err =
+        super::write_json_record(&mut out, false, &headers, &record, &mut is_first).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(
+        err.to_string().contains("more fields (3) than headers (1)"),
+        "{err}"
+    );
+}
+
 #[cfg(any(feature = "geocode", all(feature = "viz", feature = "feature_capable")))]
 #[test]
 fn api_key_is_redacted_from_anything_quoting_a_url() {

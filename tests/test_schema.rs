@@ -1196,3 +1196,33 @@ fn schema_unicode_lengths_with_ignore_case() {
     validate.args(["c.csv", "c.csv.schema.json"]);
     wrk.assert_success(&mut validate);
 }
+
+// With an index, the character-length pass splits the rows into chunks across threads. The
+// shortest value is in the first chunk and the longest in the last, so every chunk's bounds
+// must be merged; byte lengths (é = 2, 上海 = 6, 😀😀😀 = 12) would give different bounds.
+#[test]
+#[file_serial]
+fn schema_unicode_lengths_indexed_parallel() {
+    let wrk = Workdir::new("schema_unicode_lengths_indexed_parallel");
+    wrk.create_from_string(
+        "u.csv",
+        "id,name\n1,é\n2,上海\n3,上海\n4,上海\n5,上海\n6,上海\n7,上海\n8,😀😀😀\n",
+    );
+    let mut index = wrk.command("index");
+    index.arg("u.csv");
+    wrk.assert_success(&mut index);
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("u.csv")
+        .args(["--enum-threshold", "2"])
+        .args(["--jobs", "4"]);
+    wrk.assert_success(&mut cmd);
+
+    let props = schema_properties(&wrk, "u.csv.schema.json");
+    assert_eq!(props["name"]["minLength"], 1);
+    assert_eq!(props["name"]["maxLength"], 3);
+
+    let mut validate = wrk.command("validate");
+    validate.args(["u.csv", "u.csv.schema.json"]);
+    wrk.assert_success(&mut validate);
+}

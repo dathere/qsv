@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Benchmark archive: 247 more invalid historical runs removed** ([#4851](https://github.com/dathere/qsv/pull/4851)). 237 runs timed a command that errored out at startup. 10 more were found by rerunning suspect windows with the original release binaries: `joinp`/`joinp_streaming` 14.0.0–15.0.1 fail with a Polars dtype error on `Incident Zip`, and `count`/`count_polars_lowmem` 2.0.0–2.1.0 print `0` instead of `1000000`. The other fast windows (`count` 0.125.0–1.0.0, the `sqlp` family 0.126.0–0.135.0, and the suite-wide 2.0.0–3.0.0 dip) reproduced and were kept.
+
 ## [26.0.0] - 2026-10-19 🧭 The "New Angles" Release 📐
 
 ~57 commits since 25.0.0, and the theme is **NEW ANGLES**: four new ways to look at your data in `viz`, three of them off the usual x/y grid. Some data doesn't fit a scatter plot. Wind directions, hours of the day and months go around a circle, soil textures and vote shares are parts of a whole, and a table with six correlated measures has more dimensions than two axes can show.

@@ -23570,6 +23570,44 @@ fn viz_smart_daemon_bridge_opt_out() {
 }
 
 #[test]
+fn viz_smart_daemon_bridge_tables_and_rerender() {
+    let wrk = Workdir::new("viz_smart_daemon_bridge_tables_and_rerender");
+    wrk.create_from_string("data.csv", DAEMON_CSV);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html])
+        .env_remove("QSV_VIZ_NO_DAEMON");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the bridge pages query and drill-down results with the data viewer's DataTables
+    assert!(html.contains("window.qsvEnsureDataTables = ensureLib;"));
+    let bridge = &html[html.find(r#"<script id="qsv-daemon-bridge">"#).unwrap()..];
+    assert!(bridge.contains("var ensure = window.qsvEnsureDataTables;"));
+    assert!(bridge.contains("render: DT.render.text()"));
+    // Re-render's document.write keeps window.driver, so the tour also checks that its gz
+    // stylesheets were inflated into the current document
+    assert!(html.contains(r#"window.driver.js && inflated("qsv-tour-css")"#));
+    assert!(html.contains(r#"window.driverHints.hints && inflated("qsv-tour-hints-css")"#));
+
+    // without the data viewer there is no DataTables to borrow: the bridge falls back
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "--preview-threshold",
+        "0",
+        "-o",
+        &out_html,
+    ])
+    .env_remove("QSV_VIZ_NO_DAEMON");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(!html.contains("window.qsvEnsureDataTables = "));
+    assert!(html.contains(r#"if (typeof ensure !== "function") return plain();"#));
+}
+
+#[test]
 fn viz_smart_daemon_stdin_input_rejected() {
     // `viz smart` refuses stdin outright, so a page with an unfingerprintable stdin input can't
     // exist; the fingerprint gate for stdin/URL/`dc:` inputs is unit-tested in cmd::viz_daemon.

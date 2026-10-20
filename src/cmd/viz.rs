@@ -18169,8 +18169,15 @@ const TOUR_SCRIPT: &str = r##"<style>
   // lazily install the vendored driver.js payloads: CDN mode has window.driver already, plain
   // mode executed at load, and in gz mode `tour_script()` substitutes the inflate routine below
   // (so CDN/plain pages carry no gz machinery — pinned by viz_cdn_uncompressed_has_no_gz_machinery).
+  // A page replaced by document.write (qsv-clientd's Re-render) keeps this window, and so
+  // window.driver, but its gz stylesheet is a payload again: inflate whatever is missing.
+  function inflated(payloadId) {
+    var el = document.getElementById(payloadId);
+    return !el || el.getAttribute("type") !== "application/gzip-b64" ||
+      !!document.getElementById(payloadId + "-inflated");
+  }
   function ensureLib() {
-    if (window.driver && window.driver.js) return Promise.resolve();
+    if (window.driver && window.driver.js && inflated("qsv-tour-css")) return Promise.resolve();
     return __QSVTOURGZLOADER__;
   }
 
@@ -18249,7 +18256,9 @@ const TOUR_SCRIPT: &str = r##"<style>
   }
 
   function ensureHintsLib() {
-    if (window.driverHints && window.driverHints.hints) return Promise.resolve();
+    if (window.driverHints && window.driverHints.hints && inflated("qsv-tour-hints-css")) {
+      return Promise.resolve();
+    }
     return __QSVTOURHINTSGZLOADER__;
   }
 
@@ -24864,6 +24873,8 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
     }
     return Promise.all(jobs);
   }
+  // for qsv-clientd's live bridge, which shows query results with the same library
+  window.qsvEnsureDataTables = ensureLib;
   function payloadText(el) {
     return el.getAttribute("type") === "application/gzip-b64"
       ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })

@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.12.1
+bm_version=9.13.0
 
 # runs of a benchmark whose means are within this percentage of each other tie in the rank
 # column (see the delta & rank comments near the end)
@@ -763,10 +763,12 @@ dynenum_schema=benchmark_data-dynenum.csv.schema.json
 commands_without_index=()
 commands_without_index_name=()
 commands_without_index_conclude=()
+commands_without_index_prepare=()
 commands_without_index_cleanup=()
 commands_with_index=()
 commands_with_index_name=()
 commands_with_index_conclude=()
+commands_with_index_prepare=()
 commands_with_index_cleanup=()
 commands_without_index_expect=()
 commands_with_index_expect=()
@@ -841,12 +843,17 @@ function run {
   # runs (e.g. sqlp --cache-schema: the warmup writes the .pschema.json and the timed runs
   # measure loading it, but every later sqlp on $data would silently load it too).
   # Both traps above apply to --cleanup as well (verified against hyperfine 1.20).
+  # --prepare CMD is handed to hyperfine's --prepare, which runs CMD before each warmup and
+  # timing run WITHOUT timing it. Use it to start every run from the same state, e.g. `sync`
+  # before the extsort benchmarks, so a run doesn't pay for flushing the previous run's
+  # ~520 MB of output to disk. The same two traps apply.
   # --expect-exit N is the exit code the command must return on every timed run (default 0).
   # A benchmark whose command exits with anything else is flagged and kept out of the results
   # (see exit_codes_ok). Only use it for commands that exit non-zero BY DESIGN while still
   # doing the work being measured, e.g. `sortcheck` on unsorted data, or `validate
   # --valid-output` when every row is valid - never to silence a real failure.
   local conclude=
+  local prepare=
   local cleanup=
   local expect=0
   while true; do
@@ -857,6 +864,10 @@ function run {
       ;;
     --conclude)
       conclude="$2"
+      shift 2
+      ;;
+    --prepare)
+      prepare="$2"
       shift 2
       ;;
     --cleanup)
@@ -885,18 +896,21 @@ function run {
     if [ -n "$subset_rowcount" ]; then
       bench_rowcounts="${bench_rowcounts}${name}=${subset_rowcount};"
     fi
-    # the _conclude, _cleanup and _expect arrays are index-aligned with the _name arrays, so
-    # every benchmark appends an entry - an empty one when it has no --conclude/--cleanup
+    # the _conclude, _prepare, _cleanup and _expect arrays are index-aligned with the _name
+    # arrays, so every benchmark appends an entry - an empty one when it has no
+    # --conclude/--prepare/--cleanup
     # command, and 0 when it has no --expect-exit.
     if [ -z "$index" ]; then
       commands_without_index_name+=("$name")
       commands_without_index_conclude+=("$conclude")
+      commands_without_index_prepare+=("$prepare")
       commands_without_index_cleanup+=("$cleanup")
       commands_without_index_expect+=("$expect")
       add_command "without_index" "$@"
     else
       commands_with_index_name+=("$name")
       commands_with_index_conclude+=("$conclude")
+      commands_with_index_prepare+=("$prepare")
       commands_with_index_cleanup+=("$cleanup")
       commands_with_index_expect+=("$expect")
       add_command "with_index" "$@"
@@ -972,9 +986,12 @@ run --index exclude_multi_casei_index "$qsv_bin" exclude --ignore-case \'Inciden
 run explode "$qsv_bin" explode City "-" "$data"
 run extdedup "$qsv_bin" extdedup "$data"
 run extdedup_csv "$qsv_bin" extdedup "$data" --select 1-5
-run extsort "$qsv_bin" extsort data_unsorted.csv extsort_sorted.csv
-run extsort_spill "$qsv_bin" extsort --memory-limit 100 data_unsorted.csv extsort_sorted.csv
-run extsort_csv env QSV_AUTOINDEX_SIZE=1 bash -c \'"$qsv_bin" extsort data_unsorted.csv --select 1-5 extsort_sorted.csv\'
+# extsort writes the whole ~520 MB file each run (and spills temp files into ./), so its wall
+# time swung 0.8-2.1 s between releases with unchanged code and CPU time, depending on how
+# much of the previous run's output was still being written back. sync first.
+run --prepare sync extsort "$qsv_bin" extsort data_unsorted.csv extsort_sorted.csv
+run --prepare sync extsort_spill "$qsv_bin" extsort --memory-limit 100 data_unsorted.csv extsort_sorted.csv
+run --prepare sync extsort_csv env QSV_AUTOINDEX_SIZE=1 bash -c \'"$qsv_bin" extsort data_unsorted.csv --select 1-5 extsort_sorted.csv\'
 run fixedwidth_100k "$qsv_bin" fixedwidth fwf_100kdata.txt
 run fill "$qsv_bin" fill -v Unspecified \'Address Type\' "$data"
 run fixlengths "$qsv_bin" fixlengths "$data"
@@ -1328,6 +1345,10 @@ for command_no_index in "${commands_without_index[@]}"; do
   if [ -n "${commands_without_index_conclude[$idx]}" ]; then
     conclude_args=(--conclude "${commands_without_index_conclude[$idx]}")
   fi
+  prepare_args=()
+  if [ -n "${commands_without_index_prepare[$idx]}" ]; then
+    prepare_args=(--prepare "${commands_without_index_prepare[$idx]}")
+  fi
   cleanup_args=()
   if [ -n "${commands_without_index_cleanup[$idx]}" ]; then
     cleanup_args=(--cleanup "${commands_without_index_cleanup[$idx]}")
@@ -1335,7 +1356,7 @@ for command_no_index in "${commands_without_index[@]}"; do
   rm -f results/hf_result.json
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
     --export-json results/hf_result.json \
-    "${conclude_args[@]}" "${cleanup_args[@]}" "$command_no_index"
+    "${prepare_args[@]}" "${conclude_args[@]}" "${cleanup_args[@]}" "$command_no_index"
 
   # a command that did not exit as expected is flagged, and its "timing" is not recorded
   if ! exit_codes_ok "${commands_without_index_expect[$idx]}"; then
@@ -1394,6 +1415,10 @@ for command_with_index in "${commands_with_index[@]}"; do
   if [ -n "${commands_with_index_conclude[$idx]}" ]; then
     conclude_args=(--conclude "${commands_with_index_conclude[$idx]}")
   fi
+  prepare_args=()
+  if [ -n "${commands_with_index_prepare[$idx]}" ]; then
+    prepare_args=(--prepare "${commands_with_index_prepare[$idx]}")
+  fi
   cleanup_args=()
   if [ -n "${commands_with_index_cleanup[$idx]}" ]; then
     cleanup_args=(--cleanup "${commands_with_index_cleanup[$idx]}")
@@ -1401,7 +1426,7 @@ for command_with_index in "${commands_with_index[@]}"; do
   rm -f results/hf_result.json
   hyperfine -N --warmup "$warmup_runs" -i --runs "$benchmark_runs" --export-csv results/hf_result.csv \
     --export-json results/hf_result.json \
-    "${conclude_args[@]}" "${cleanup_args[@]}" "$command_with_index"
+    "${prepare_args[@]}" "${conclude_args[@]}" "${cleanup_args[@]}" "$command_with_index"
   if ! exit_codes_ok "${commands_with_index_expect[$idx]}"; then
     flag_failed_benchmark "${commands_with_index_name[$idx]}" "${commands_with_index_expect[$idx]}"
     ((idx++))

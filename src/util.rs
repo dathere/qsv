@@ -6400,7 +6400,7 @@ fn polars_temporal_dtype(
 
 /// BLAKE3 hash of a file optimized for maximum performance
 /// Uses memory mapping and multithreading for fast hashing of files of any size
-// only consumed by describegpt, which is excluded from qsvlite
+// consumed by describegpt and viz, both excluded from qsvlite
 #[cfg(not(feature = "lite"))]
 pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
     let mut hasher = blake3::Hasher::new();

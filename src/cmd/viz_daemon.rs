@@ -180,33 +180,11 @@ pub(crate) fn local_input_file(input: Option<&str>) -> Option<&Path> {
         .then_some(path)
 }
 
-/// Streaming SHA-256 of a file's raw bytes: `(lowercase hex digest, byte count)`.
-pub(crate) fn sha256_file(path: &Path) -> std::io::Result<(String, u64)> {
-    use std::{fmt::Write as _, io::Read};
-
-    use sha2::{Digest, Sha256};
-
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0_u8; 1 << 20];
-    let mut bytes = 0_u64;
-    loop {
-        match file.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                hasher.update(&buf[..n]);
-                bytes += n as u64;
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {},
-            Err(e) => return Err(e),
-        }
-    }
-    // sha2 0.11's digest is a `hybrid_array::Array`, which has no `LowerHex`
-    let mut hex = String::with_capacity(64);
-    for b in hasher.finalize() {
-        let _ = write!(hex, "{b:02x}");
-    }
-    Ok((hex, bytes))
+/// BLAKE3 of a file's raw bytes: `(lowercase hex digest, byte count)`. Memory-mapped and hashed
+/// on all cores (`util::hash_blake3_file`), so the extra pass over the input stays cheap.
+pub(crate) fn blake3_file(path: &Path) -> crate::CliResult<(String, u64)> {
+    let bytes = std::fs::metadata(path)?.len();
+    Ok((crate::util::hash_blake3_file(path)?, bytes))
 }
 
 /// The `qsv-schematic-source` provenance object.
@@ -229,7 +207,7 @@ pub(crate) fn source_json(
     if let Some((digest, bytes)) = fingerprint {
         obj.insert(
             "fingerprint".into(),
-            json!({"algo": "sha256", "digest": digest, "bytes": bytes}),
+            json!({"algo": "blake3", "digest": digest, "bytes": bytes}),
         );
     }
     obj.insert("rows".into(), json!(rows));
@@ -422,7 +400,7 @@ const BRIDGE_JS: &str = r#"
     toast("The qsv-clientd connection expired or was revoked. Connect again to continue.");
     showChip();
   }
-  // Resume only a stored token whose dataset is THIS page's data (its sha256 equals the page's
+  // Resume only a stored token whose dataset is THIS page's data (its digest equals the page's
   // fingerprint). Tabs on one loopback origin share sessionStorage, so a token paired by another
   // schematic must not silently connect this page to that dataset; non-matching entries are left
   // alone (they may belong to another page). A page without a fingerprint never auto-resumes.
@@ -442,7 +420,8 @@ const BRIDGE_JS: &str = r#"
       });
     }, Promise.resolve()).then(function () {
       for (var i = 0; i < found.length; i++) {
-        if (found[i].dataset.sha256 === DIGEST) {
+        var fp = found[i].dataset.fingerprint;
+        if (fp && fp.digest === DIGEST) {
           connected(found[i].token, found[i].dataset);
           return true;
         }
@@ -469,7 +448,7 @@ const BRIDGE_JS: &str = r#"
     if (live.dialog) return;
     var body = {};
     if (SRC.schematic_uuid) body.schematic_uuid = SRC.schematic_uuid;
-    if (DIGEST) body.sha256 = DIGEST;
+    if (DIGEST) body.digest = DIGEST;
     call("POST", "/v1/pair", body, { anon: true }).then(function (j) {
       if (!j || !j.request_id || !j.code) throw new Error("qsv-clientd sent an unexpected pairing reply");
       var d = el("div", "qsv-live-dialog");

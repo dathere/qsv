@@ -248,7 +248,7 @@ embeds, and it does not change the conformance level.
 
 ```html
 <script id="qsv-schematic-source" type="application/json">{"schema":1,"qsv_version":"26.0.0",
-  "schematic_uuid":"…","fingerprint":{"algo":"sha256","digest":"…","bytes":47702},
+  "schematic_uuid":"…","fingerprint":{"algo":"blake3","digest":"…","bytes":47702},
   "rows":100,"viz_args":["--limit","5"],"redacted":[],"pid":null}</script>
 ```
 
@@ -257,7 +257,7 @@ embeds, and it does not change the conformance level.
 | `schema` | Version of this block's layout (`1`). |
 | `qsv_version` | The qsv that drew the page. |
 | `schematic_uuid` | A fresh random id per render; the daemon pairs a page with its dataset by it. |
-| `fingerprint` | SHA-256 (`digest`, lowercase hex) and size (`bytes`) of the raw input file. Present only when the input is a plain local file — omitted for URLs, `dc:` handles and anything else. |
+| `fingerprint` | BLAKE3 (`digest`, lowercase hex) and size (`bytes`) of the raw input file, hashed memory-mapped on all cores. Present only when the input is a plain local file and the bridge is included — omitted for URLs, `dc:` handles, and with `--no-daemon-bridge` or `QSV_VIZ_NO_DAEMON`, which skip the extra read of the input. |
 | `rows` | The row count shown in the metadata table. |
 | `viz_args` | The arguments after `viz smart`, without the input and `-o`/`--output`. |
 | `redacted` | Flags in `viz_args` whose file value was cut down to its basename: `--dictionary` and `--geojson` when the value is a path (not `infer`, `auto`, `census:…`, a shortcut or a URL), and `--dictionary-context` always. Always present, possibly empty. |

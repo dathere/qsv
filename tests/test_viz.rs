@@ -23355,12 +23355,8 @@ fn daemon_source_raw(html: &str) -> &str {
     &html[start..start + html[start..].find("</script>").expect("closing tag")]
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+fn blake3_hex(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
 }
 
 const DAEMON_CSV: &str = "region,revenue,quarter\neast,1000,Q1\neast,1200,Q2\nwest,5000,Q1\nwest,\
@@ -23372,7 +23368,8 @@ fn viz_smart_daemon_source_json() {
     wrk.create_from_string("data.csv", DAEMON_CSV);
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "data.csv", "--limit", "5", "-o", &out_html]);
+    cmd.args(["smart", "data.csv", "--limit", "5", "-o", &out_html])
+        .env_remove("QSV_VIZ_NO_DAEMON");
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
@@ -23385,10 +23382,10 @@ fn viz_smart_daemon_source_json() {
             .is_some_and(|u| u.len() == 36),
         "{src}"
     );
-    assert_eq!(src["fingerprint"]["algo"], "sha256");
+    assert_eq!(src["fingerprint"]["algo"], "blake3");
     assert_eq!(
         src["fingerprint"]["digest"],
-        sha256_hex(DAEMON_CSV.as_bytes())
+        blake3_hex(DAEMON_CSV.as_bytes())
     );
     assert_eq!(src["fingerprint"]["bytes"], DAEMON_CSV.len());
     assert_eq!(src["rows"], 5);
@@ -23555,9 +23552,12 @@ fn viz_smart_daemon_bridge_opt_out() {
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(!html.contains("qsv-daemon-bridge"));
     assert!(!html.contains("127.0.0.1"));
-    // the provenance block stays, and records the opt-out flag like any other argument
+    // the provenance block stays, and records the opt-out flag like any other argument, but
+    // without the fingerprint: hashing costs a full extra read and only the daemon needs it
     let src = daemon_source_json(&html);
     assert_eq!(src["viz_args"], serde_json::json!(["--no-daemon-bridge"]));
+    assert!(src.get("fingerprint").is_none(), "{src}");
+    assert_eq!(src["rows"], 5);
 
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "data.csv", "-o", &out_html])
@@ -23566,7 +23566,7 @@ fn viz_smart_daemon_bridge_opt_out() {
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(!html.contains("qsv-daemon-bridge"));
     assert!(!html.contains("127.0.0.1"));
-    daemon_source_json(&html);
+    assert!(daemon_source_json(&html).get("fingerprint").is_none());
 }
 
 #[test]

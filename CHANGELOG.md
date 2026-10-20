@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **`viz smart`: optional live mode for Data Schematics with [qsv-clientd](https://github.com/dathere/qsv-client)** ([#4848](https://github.com/dathere/qsv/pull/4848)).
-  - **Embedded source block.** Smart HTML now embeds a `qsv-schematic-source` JSON block. It contains the qsv version, a per-render `schematic_uuid`, a SHA-256 fingerprint of the input (local files only, about 0.4s per GB), the row count, the PID and the smart arguments.
+  - **Embedded source block.** Smart HTML now embeds a `qsv-schematic-source` JSON block. It contains the qsv version, a per-render `schematic_uuid`, a BLAKE3 fingerprint of the input (local files only; memory-mapped and multithreaded, about 0.05s per GB from the OS cache, skipped with `--no-daemon-bridge`), the row count, the PID and the smart arguments.
   - **Arguments are redacted.** The input path and `-o/--output` are stripped from the recorded arguments, and file-valued flags keep only a basename and are listed in `redacted`.
   - **Bridge script.** A small bridge script also lets an open schematic use qsv-clientd, an optional per-user daemon from qsv-client. After you approve a pairing code with `qsv-clientd approve`, the schematic can drill into the rows behind a frequency bar, refresh its stats, re-render itself, fetch the latest data, and run read-only queries.
   - **Inert by default.** The bridge does nothing unless the schematic was opened from disk or is served from loopback, so published schematics never contact the viewer's machine or trigger local-network permission prompts. Without the daemon, schematics are unchanged.

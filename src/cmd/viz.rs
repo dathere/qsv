@@ -18,7 +18,7 @@ terminal, and disabled by setting QSV_PROGRESSBAR to a falsy value. For all of t
 https://github.com/dathere/qsv/wiki/Visualization#output-and-file-size
 A `smart` HTML Data Schematic embeds a small qsv-clientd bridge (see --no-daemon-bridge):
 QSV_CLIENTD_PORT sets the daemon port it probes (default 14470), and QSV_VIZ_NO_DAEMON
-leaves it out.
+leaves it, and the input fingerprint, out.
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always
@@ -704,7 +704,8 @@ smart options:
                            re-render and read-only queries. With no daemon it does nothing,
                            so the page stays self-contained. Setting QSV_VIZ_NO_DAEMON=1 has
                            the same effect. The page's qsv-schematic-source provenance JSON
-                           is kept either way. HTML output only. Only affects `smart`. See
+                           is kept either way, but without the input fingerprint (which
+                           costs an extra read of the input). HTML output only. Only affects `smart`. See
                            https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md
     --bivariate           Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
@@ -38394,17 +38395,26 @@ impl<'a> SmartCtx<'a> {
 
     /// The qsv-clientd "live mode" chrome (see `viz_daemon`): the `qsv-schematic-source`
     /// provenance JSON, always, then the bridge script unless `--no-daemon-bridge` or
-    /// `QSV_VIZ_NO_DAEMON` opts out. Without a running daemon the bridge stays inert, so the page
-    /// remains self-contained either way.
+    /// `QSV_VIZ_NO_DAEMON` opts out. Opting out also skips the input fingerprint, which costs a
+    /// full extra read of the input and is only needed to match the page to a daemon dataset.
+    /// Without a running daemon the bridge stays inert, so the page remains self-contained
+    /// either way.
     fn daemon_chrome(&mut self) -> String {
         use crate::cmd::viz_daemon as vd;
 
         let rows = self.row_count();
         let src = &self.args.source_args;
+        let bridge =
+            !self.args.flag_no_daemon_bridge && !util::get_envvar_flag("QSV_VIZ_NO_DAEMON");
         // only a plain local file is fingerprinted: the daemon matches it against the registered
         // file's bytes, which stdin, URLs and `dc:` handles have no stable equivalent of
-        let fingerprint = vd::local_input_file(src.input.as_deref()).and_then(|path| {
-            vd::sha256_file(path)
+        let input = if bridge {
+            vd::local_input_file(src.input.as_deref())
+        } else {
+            None
+        };
+        let fingerprint = input.and_then(|path| {
+            vd::blake3_file(path)
                 .map_err(|e| {
                     viz_note(&format!(
                         "viz smart: could not fingerprint the input ({e}); the Data Schematic's \
@@ -38420,7 +38430,7 @@ impl<'a> SmartCtx<'a> {
             self.args.flag_dataset_pid.as_deref(),
         );
         let mut out = inline_json_script(vd::SOURCE_SCRIPT_ID, &json.to_string());
-        if !self.args.flag_no_daemon_bridge && !util::get_envvar_flag("QSV_VIZ_NO_DAEMON") {
+        if bridge {
             out.push('\n');
             out.push_str(&vd::bridge_chrome(vd::clientd_port()));
         }

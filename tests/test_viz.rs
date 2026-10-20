@@ -23586,8 +23586,19 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains("var ensure = window.qsvEnsureDataTables;"));
     assert!(bridge.contains("render: DT.render.text()"));
     // one live table at a time, destroyed before the next (DataTables keeps every instance)
-    assert!(bridge.contains("live.table = new DT(table, {"));
+    assert!(bridge.contains("live.table = new DT(table, opts);"));
     assert!(bridge.contains("try { live.table.destroy(); } catch (e) {}"));
+    // a stored result is paged, searched and sorted by qsv-clientd, page by page
+    assert!(bridge.contains("opts.serverSide = true;"));
+    assert!(bridge.contains(r#"call("POST", dsPath("/page"), body)"#));
+    // the daemon sorts by one column, so no shift-click multi-column sort
+    assert!(bridge.contains("opts.orderMulti = false;"));
+    // a page answer for a table since replaced is dropped, status untouched
+    assert!(bridge.contains("live.gen++;"));
+    assert_eq!(bridge.matches("if (gen !== live.gen) return;").count(), 2);
+    // Disconnect withdraws the token on the daemon, not only in the page
+    assert!(bridge.contains(r#"call("POST", dsPath("/disconnect"), {}).catch(function () {});"#));
+    assert!(bridge.contains("if (o) body.order = { column: o.column, desc: o.dir === \"desc\" };"));
     // Re-render's document.write keeps window.DataTable, so every instance goes first
     let rerender = &bridge[bridge.find(r#"dsPath("/render")"#).unwrap()..];
     let destroy_all = rerender

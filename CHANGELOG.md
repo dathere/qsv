@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Opt-out and port.** `--no-daemon-bridge` (or `QSV_VIZ_NO_DAEMON=1`) leaves the script out. `QSV_CLIENTD_PORT` sets the port it probes (default 14470).
   - **Results as tables.** Query and drill-down results are paged, sorted and searched with the DataTables copy the data viewer embeds, or shown as a plain table without one. After Fetch latest, the panel says when it is reading the fetched copy rather than the registered file ([#4857](https://github.com/dathere/qsv/pull/4857)).
   - **Re-render keeps the guided tour styled.** Re-render replaces the page in the same window, so the tour skipped loading its compressed stylesheet into the new page, and a tour that started afterwards showed an empty popover behind a backdrop ([#4857](https://github.com/dathere/qsv/pull/4857)).
+  - **Large results are paged from qsv-clientd.** A query or drill-down result too big to send whole is kept by qsv-clientd, and each page, search and column sort runs qsv on the daemon, so every row is reachable however large the result ([#4858](https://github.com/dathere/qsv/pull/4858)).
 
 ### Changed
 - **Internal: `src/util.rs` split into 15 submodules under `src/util/`.** The 7,800-line file is now a facade that keeps the shared statics, `SchemaArgs` and `get_args`, and re-exports `stats_cache`, `input`, `special_format`, `http` and the other submodules, so every `util::…` path is unchanged. Pure code motion with no behavior change ([#4855](https://github.com/dathere/qsv/pull/4855)).

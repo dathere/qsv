@@ -30,7 +30,11 @@ pivotp arguments:
                   If the file has a pschema.json file, it will be used to
                   inform the pivot operation unless --infer-len is explicitly
                   set to a value other than the default of 10,000 rows.
-                  Stdin is not supported.
+                  Stdin is not supported. A snappy-compressed (.sz) input is
+                  decompressed first, and an --output ending in .sz is
+                  snappy-compressed. Lines starting with QSV_COMMENT_CHAR are
+                  skipped. QSV_POLARS_FLOAT_PRECISION and QSV_OUTPUT_BOM apply
+                  to the output, as in sqlp and joinp.
 
 pivotp options:
     -i, --index <cols>      The column(s) to use as the index (row labels).
@@ -88,8 +92,9 @@ pivotp options:
                                       it falls back to `first`
                             [default: smart]
     --sort-columns          Sort the transposed columns by name. (pivot mode only)
-    --maintain-order        Maintain output order: preserve input column order in pivot mode,
-                            and preserve group/row order in group-by mode.
+    --maintain-order        Accepted for compatibility. Output is always in first-appearance
+                            order: rows follow their index values' first appearance and
+                            pivoted columns their <on-cols> values' first appearance.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
                             (pivot mode only; ignored in group-by mode) [default: _]
     --validate              Report the pivot column(s)' cardinality before pivoting. Informational
@@ -130,7 +135,7 @@ Common options:
 use std::{
     fs::File,
     io,
-    io::{BufReader, Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
@@ -145,6 +150,7 @@ use crate::{
     CliResult,
     cmd::{
         joinp::{path_delim, tsvssv_delim},
+        sqlp::compress_output_if_needed,
         stats::StatsData,
     },
     config::Delimiter,
@@ -271,6 +277,8 @@ struct Args {
     flag_values:         Option<String>,
     flag_agg:            Option<String>,
     flag_sort_columns:   bool,
+    // Accepted for compatibility: output is always in first-appearance order.
+    #[allow(dead_code)]
     flag_maintain_order: bool,
     flag_col_separator:  String,
     flag_validate:       bool,
@@ -1198,33 +1206,42 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // Create CSV reader config
+    // A snappy-compressed input is decompressed to a temp file first, as joinp does. The
+    // delimiter above was already resolved from the original name (`.tsv.sz` -> tab).
+    let snappy_tmpdir;
+    let input_path_str = if Path::new(&input_path_str)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+    {
+        snappy_tmpdir = tempfile::tempdir()?;
+        util::decompress_snappy_file(&PathBuf::from(&input_path_str), &snappy_tmpdir)?
+    } else {
+        input_path_str
+    };
+
+    // Create CSV reader config. Like sqlp/joinp: honor QSV_COMMENT_CHAR (Config, which builds the
+    // stats cache smart-agg reads, does too) and read empty fields as nulls.
+    let comment_prefix = std::env::var("QSV_COMMENT_CHAR")
+        .ok()
+        .map(PlSmallStr::from_string);
     let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&input_path_str))
         .with_has_header(true)
+        .with_missing_is_null(true)
+        .with_comment_prefix(comment_prefix)
         .with_try_parse_dates(args.flag_try_parsedates)
         .with_decimal_comma(args.flag_decimal_comma)
         .with_separator(delim)
         .with_ignore_errors(args.flag_ignore_errors);
 
-    // check if the pschema.json file exists and is newer or created at the same time
-    // as the table file
-    let input_path = Path::new(&input_path_str);
-    let schema_file = PathBuf::from(format!(
-        "{}.pschema.json",
-        input_path.canonicalize()?.display()
-    ));
-    let valid_schema_exists = schema_file.exists()
-        && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
-
-    if valid_schema_exists && args.flag_infer_len == DEFAULT_INFER_LEN {
-        // Use schema from pschema.json file if it exists and is valid
-        // and the user did not specify a custom inference length
-        let file = File::open(&schema_file)?;
-        let mut buf_reader = BufReader::new(file);
-        let mut schema_json = String::with_capacity(100);
-        buf_reader.read_to_string(&mut schema_json)?;
-        let schema: Schema = serde_json::from_str(&schema_json)?;
-        csv_reader = csv_reader.with_schema(Some(Arc::new(schema)));
+    // Use a pschema.json (from `schema --polars`) that is at least as new as the input, unless
+    // the user asked for a custom inference length.
+    let pschema = if args.flag_infer_len == DEFAULT_INFER_LEN {
+        util::load_valid_pschema(Path::new(&input_path_str))?
+    } else {
+        None
+    };
+    if let Some(schema) = pschema {
+        csv_reader = csv_reader.with_schema(Some(schema));
     } else {
         // Otherwise we infer the schema using inference length (default or user-specified).
         // --infer-len 0 means "scan the entire file" (None); Polars reads Some(0) as
@@ -1239,15 +1256,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Read the CSV into a LazyFrame
     let mut lf = csv_reader.finish()?;
 
-    // Add a row index to track discovery order
-    let row_order_col = "__qsv_row_order__";
-    lf = lf.with_row_index(PlSmallStr::from_str(row_order_col), None);
-
     // Get all column names from the schema to compute index/values if not specified
     let schema = lf.collect_schema()?;
     let all_cols: Vec<String> = schema
         .iter_names()
-        .filter(|name| *name != row_order_col)
         .map(polars::prelude::PlSmallStr::to_string)
         .collect();
 
@@ -1343,38 +1355,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let group_by_exprs: Vec<Expr> = actual_index_cols.iter().map(col).collect();
 
-        if args.flag_maintain_order {
-            // group_by_stable preserves input order — no extra join/sort needed
-            lf.group_by_stable(group_by_exprs)
-                .agg(agg_exprs)
-                .collect()?
-        } else {
-            // Compute discovery order and group-by in a single lazy pipeline
-            // to avoid materializing data multiple times
-            let index_order_lf = lf
-                .clone()
-                .select(
-                    actual_index_cols
-                        .iter()
-                        .map(col)
-                        .chain(std::iter::once(col(row_order_col)))
-                        .collect::<Vec<_>>(),
-                )
-                .group_by(group_by_exprs.clone())
-                .agg([col(row_order_col).min().alias(row_order_col)]);
-
-            lf.group_by(group_by_exprs)
-                .agg(agg_exprs)
-                .join(
-                    index_order_lf,
-                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                    actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                    JoinArgs::new(JoinType::Left),
-                )?
-                .sort([row_order_col], SortMultipleOptions::default())
-                .drop(cols([row_order_col]))
-                .collect()?
-        }
+        // group_by_stable keeps groups in first-appearance order in a single pass. (This used to
+        // be a group_by plus a second scan for each group's first row index, joined and sorted.)
+        lf.group_by_stable(group_by_exprs)
+            .agg(agg_exprs)
+            .collect()?
     } else {
         // === PIVOT MODE ===
         // Safety: on_cols is always Some in pivot mode (is_groupby_mode is false iff on_cols is
@@ -1396,20 +1381,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // This is required by the new LazyFrame pivot API
         // We need to maintain discovery order, so we add row numbers and sort by them
         let on_columns = {
-            let on_exprs_with_order: Vec<Expr> = cols_to_exprs(&on_cols)
-                .into_iter()
-                .chain(std::iter::once(col(row_order_col)))
-                .collect();
-
             let unique_df = lf
                 .clone()
-                .select(on_exprs_with_order)
-                .unique(
+                .select(cols_to_exprs(&on_cols))
+                .unique_stable(
                     Some(cols(on_cols.iter().map(std::string::String::as_str))),
                     UniqueKeepStrategy::First,
                 )
-                .sort([row_order_col], SortMultipleOptions::default())
-                .drop(cols([row_order_col]))
                 .collect()?;
 
             // Hard cap on output width (#4589). This is the earliest point where the EXACT
@@ -1432,27 +1410,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Convert separator to PlSmallStr
         let separator = PlSmallStr::from_str(&args.flag_col_separator);
 
-        // Compute the minimum row order for each unique index combination
-        // This will be used to restore discovery order after pivoting
-        // for deterministic output
-        let index_order = if actual_index_cols.is_empty() {
-            None
-        } else {
-            let order_df = lf
-                .clone()
-                .select(
-                    actual_index_cols
-                        .iter()
-                        .map(col)
-                        .chain(std::iter::once(col(row_order_col)))
-                        .collect::<Vec<_>>(),
-                )
-                .group_by(actual_index_cols.iter().map(col).collect::<Vec<_>>())
-                .agg([col(row_order_col).min().alias(row_order_col)])
-                .collect()?;
-            Some(order_df)
-        };
-
         // Perform pivot operation using the new LazyFrame.pivot API
         let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
         let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
@@ -1466,26 +1423,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 index_selector,
                 values_selector,
                 agg,
-                args.flag_maintain_order,
+                // Rows in first-appearance order of their index values. Polars lowers this to an
+                // order-preserving group-by within the same scan; it replaces a hand-built
+                // row-index -> min -> join -> sort that cost two extra scans of the input.
+                true,
                 separator,
                 column_naming,
             )
             .collect()?;
-
-        // Restore discovery order by joining with index_order and sorting
-        if let Some(index_order_df) = index_order {
-            pivot_result = pivot_result
-                .lazy()
-                .join(
-                    index_order_df.lazy(),
-                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                    &actual_index_cols.iter().map(col).collect::<Vec<_>>(),
-                    JoinArgs::new(JoinType::Left),
-                )?
-                .sort([row_order_col], SortMultipleOptions::default())
-                .drop(cols([row_order_col]))
-                .collect()?;
-        }
 
         // Sort columns if requested
         if args.flag_sort_columns {
@@ -1573,11 +1518,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => Box::new(io::stdout()) as Box<dyn Write>,
     };
     let datetime_fmt: PlSmallStr = PlSmallStr::from_str("%Y-%m-%d %H:%M:%S");
+    // same env knobs as sqlp/joinp
+    let float_precision = std::env::var("QSV_POLARS_FLOAT_PRECISION")
+        .ok()
+        .and_then(|s| s.parse().ok());
     CsvWriter::new(&mut writer)
         .include_header(true)
+        .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
+        .with_float_precision(float_precision)
         .with_datetime_format(Some(datetime_fmt))
         .with_separator(output_delim)
         .finish(&mut pivot_result)?;
+    drop(writer);
+
+    // an --output ending in .sz is snappy-compressed in place, as in sqlp/joinp
+    compress_output_if_needed(args.flag_output.clone())?;
 
     // Print shape to stderr
     if !args.flag_quiet {

@@ -16,7 +16,7 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": "The input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported."
+        "description": "The input CSV file. The file must have headers. If the file has a pschema.json file, it will be used to inform the pivot operation unless --infer-len is explicitly set to a value other than the default of 10,000 rows. Stdin is not supported. A snappy-compressed (.sz) input is decompressed first, and an --output ending in .sz is snappy-compressed. Lines starting with QSV_COMMENT_CHAR are skipped. QSV_POLARS_FLOAT_PRECISION and QSV_OUTPUT_BOM apply to the output, as in sqlp and joinp."
       }
     ],
     "options": [
@@ -66,7 +66,7 @@
       {
         "flag": "--maintain-order",
         "type": "flag",
-        "description": "Maintain output order: preserve input column order in pivot mode, and preserve group/row order in group-by mode."
+        "description": "Accepted for compatibility. Output is always in first-appearance order: rows follow their index values' first appearance and pivoted columns their <on-cols> values' first appearance."
       },
       {
         "flag": "--max-columns",

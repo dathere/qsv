@@ -574,7 +574,6 @@ _arguments "${_arguments_options[@]}" : \
 '-H[]' \
 '--human-readable[]' \
 '--json[]' \
-'--low-memory[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-polars[]' \
@@ -2689,7 +2688,6 @@ _arguments "${_arguments_options[@]}" : \
 '--left[]' \
 '--left-anti[]' \
 '--left-semi[]' \
-'--low-memory[]' \
 '--no-optimizations[]' \
 '--no-sort[]' \
 '--nulls[]' \
@@ -3756,7 +3754,6 @@ _arguments "${_arguments_options[@]}" : \
 '--cache-schema[]' \
 '--decimal-comma[]' \
 '--ignore-errors[]' \
-'--low-memory[]' \
 '--no-optimizations[]' \
 '-q[]' \
 '--quiet[]' \
@@ -4431,6 +4428,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -4534,6 +4532,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -4629,6 +4628,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -4724,6 +4724,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -4819,6 +4820,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -4914,6 +4916,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5009,6 +5012,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5104,6 +5108,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5199,6 +5204,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5294,6 +5300,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5389,6 +5396,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5484,6 +5492,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5579,6 +5588,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5674,6 +5684,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5769,6 +5780,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5864,6 +5876,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -5959,6 +5972,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6054,6 +6068,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6149,6 +6164,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6244,6 +6260,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6339,6 +6356,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6434,6 +6452,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6529,6 +6548,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6624,6 +6644,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6719,6 +6740,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6814,6 +6836,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -6909,6 +6932,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \
@@ -7004,6 +7028,7 @@ _arguments "${_arguments_options[@]}" : \
 '--donut[]' \
 '--geocode[]' \
 '--map[]' \
+'--no-daemon-bridge[]' \
 '-n[]' \
 '--no-headers[]' \
 '--no-nulls[]' \

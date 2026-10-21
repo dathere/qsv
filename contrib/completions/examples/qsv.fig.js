@@ -1604,9 +1604,6 @@ const completion: Fig.Spec = {
           name: "--json",
         },
         {
-          name: "--low-memory",
-        },
-        {
           name: ["-n", "--no-headers"],
         },
         {
@@ -10365,9 +10362,6 @@ const completion: Fig.Spec = {
           name: "--left-semi",
         },
         {
-          name: "--low-memory",
-        },
-        {
           name: "--no-optimizations",
         },
         {
@@ -13350,9 +13344,6 @@ const completion: Fig.Spec = {
           name: "--ignore-errors",
         },
         {
-          name: "--low-memory",
-        },
-        {
           name: "--no-optimizations",
         },
         {
@@ -15607,6 +15598,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -16178,6 +16172,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -16753,6 +16750,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -17324,6 +17324,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -17899,6 +17902,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -18470,6 +18476,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -19045,6 +19054,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -19616,6 +19628,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -20191,6 +20206,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -20762,6 +20780,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -21337,6 +21358,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -21908,6 +21932,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -22483,6 +22510,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -23054,6 +23084,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -23629,6 +23662,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -24200,6 +24236,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -24775,6 +24814,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -25346,6 +25388,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -25921,6 +25966,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -26492,6 +26540,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -27067,6 +27118,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -27638,6 +27692,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -28213,6 +28270,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -28784,6 +28844,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -29359,6 +29422,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -29932,6 +29998,9 @@ const completion: Fig.Spec = {
               name: "--map",
             },
             {
+              name: "--no-daemon-bridge",
+            },
+            {
               name: ["-n", "--no-headers"],
             },
             {
@@ -30503,6 +30572,9 @@ const completion: Fig.Spec = {
             },
             {
               name: "--map",
+            },
+            {
+              name: "--no-daemon-bridge",
             },
             {
               name: ["-n", "--no-headers"],
@@ -31166,6 +31238,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--map",
+        },
+        {
+          name: "--no-daemon-bridge",
         },
         {
           name: ["-n", "--no-headers"],

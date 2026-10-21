@@ -330,7 +330,6 @@ module completions {
     --flexible(-f)
     --human-readable(-H)
     --json
-    --low-memory
     --no-headers(-n)
     --no-polars
     --width
@@ -1858,7 +1857,6 @@ module completions {
     --left-anti
     --left-semi
     --left_by: string
-    --low-memory
     --maintain-order: string
     --no-optimizations
     --no-sort
@@ -2528,7 +2526,6 @@ module completions {
     --format: string
     --ignore-errors
     --infer-len: string
-    --low-memory
     --no-optimizations
     --output(-o): string
     --quiet(-q)
@@ -2950,6 +2947,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3037,6 +3035,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3124,6 +3123,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3211,6 +3211,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3298,6 +3299,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3385,6 +3387,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3472,6 +3475,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3559,6 +3563,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3646,6 +3651,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3733,6 +3739,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3820,6 +3827,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3907,6 +3915,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -3994,6 +4003,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4081,6 +4091,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4168,6 +4179,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4255,6 +4267,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4342,6 +4355,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4429,6 +4443,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4516,6 +4531,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4603,6 +4619,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4690,6 +4707,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4777,6 +4795,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4864,6 +4883,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -4951,6 +4971,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -5038,6 +5059,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -5125,6 +5147,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -5212,6 +5235,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other
@@ -5299,6 +5323,7 @@ module completions {
     --low: string
     --map
     --max-charts: string
+    --no-daemon-bridge
     --no-headers(-n)
     --no-nulls
     --no-other

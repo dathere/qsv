@@ -366,7 +366,6 @@ complete -c qsv -n "__fish_qsv_using_subcommand count" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand count" -s f -l flexible
 complete -c qsv -n "__fish_qsv_using_subcommand count" -s H -l human-readable
 complete -c qsv -n "__fish_qsv_using_subcommand count" -l json
-complete -c qsv -n "__fish_qsv_using_subcommand count" -l low-memory
 complete -c qsv -n "__fish_qsv_using_subcommand count" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand count" -l no-polars
 complete -c qsv -n "__fish_qsv_using_subcommand count" -l width
@@ -1691,7 +1690,6 @@ complete -c qsv -n "__fish_qsv_using_subcommand joinp" -s z -l ignore-leading-ze
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l left
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l left-anti
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l left-semi
-complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l low-memory
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l no-optimizations
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l no-sort
 complete -c qsv -n "__fish_qsv_using_subcommand joinp" -l nulls
@@ -2194,7 +2192,6 @@ complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l wnull-value -r
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l cache-schema
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l decimal-comma
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l ignore-errors
-complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l low-memory
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l no-optimizations
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -s q -l quiet
 complete -c qsv -n "__fish_qsv_using_subcommand sqlp" -l statistics
@@ -2573,6 +2570,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and not __fish_seen_subcommand_from bar barpolar box candlestick choropleth contour funnel geo heatmap histogram icicle line map ohlc parcats parcoords pie radar sankey scatter scatter3d smart splom sunburst ternary treemap violin help" -l no-other
@@ -2685,6 +2683,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from bar" -l no-other
@@ -2769,6 +2768,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from barpolar" -l no-other
@@ -2853,6 +2853,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from box" -l no-other
@@ -2937,6 +2938,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from candlestick" -l no-other
@@ -3021,6 +3023,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from choropleth" -l no-other
@@ -3105,6 +3108,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from contour" -l no-other
@@ -3189,6 +3193,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from funnel" -l no-other
@@ -3273,6 +3278,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from geo" -l no-other
@@ -3357,6 +3363,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from heatmap" -l no-other
@@ -3441,6 +3448,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from histogram" -l no-other
@@ -3525,6 +3533,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from icicle" -l no-other
@@ -3609,6 +3618,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from line" -l no-other
@@ -3693,6 +3703,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from map" -l no-other
@@ -3777,6 +3788,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ohlc" -l no-other
@@ -3861,6 +3873,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcats" -l no-other
@@ -3945,6 +3958,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from parcoords" -l no-other
@@ -4029,6 +4043,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from pie" -l no-other
@@ -4113,6 +4128,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from radar" -l no-other
@@ -4197,6 +4213,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sankey" -l no-other
@@ -4281,6 +4298,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter" -l no-other
@@ -4365,6 +4383,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from scatter3d" -l no-other
@@ -4449,6 +4468,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from smart" -l no-other
@@ -4533,6 +4553,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from splom" -l no-other
@@ -4617,6 +4638,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from sunburst" -l no-other
@@ -4701,6 +4723,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from ternary" -l no-other
@@ -4785,6 +4808,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from treemap" -l no-other
@@ -4869,6 +4893,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l donut
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l geocode
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l map
+complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-daemon-bridge
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-nulls
 complete -c qsv -n "__fish_qsv_using_subcommand viz; and __fish_seen_subcommand_from violin" -l no-other

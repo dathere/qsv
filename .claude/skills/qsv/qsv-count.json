@@ -35,11 +35,6 @@
         "description": "Output the width stats in JSON format."
       },
       {
-        "flag": "--low-memory",
-        "type": "flag",
-        "description": "Use the Polars CSV Reader's low-memory mode. This mode is slower but uses less memory. If counting still fails, use --no-polars instead to use the streaming CSV reader."
-      },
-      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will be included in the count."

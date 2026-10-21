@@ -143,9 +143,6 @@ joinp options:
                            at the same time as the input files, they will be used to inform the join
                            operation regardless of the value of --cache-schema unless --infer-len is 0.
                            [default: 0]
-    --low-memory           Use low memory mode when parsing CSVs. This will use less memory
-                           but will be slower. It will also process the join in streaming mode.
-                           Only use this when you get out of memory errors.
     --no-optimizations     Disable non-default join optimizations. This will make joins slower.
                            Only use this when you get join errors.                           
     --ignore-errors        Ignore errors when parsing CSVs. If set, rows with errors
@@ -312,7 +309,6 @@ struct Args {
     flag_decimal_comma:        bool,
     flag_infer_len:            usize,
     flag_cache_schema:         i8,
-    flag_low_memory:           bool,
     flag_no_optimizations:     bool,
     flag_ignore_errors:        bool,
     flag_asof:                 bool,
@@ -706,21 +702,13 @@ impl JoinStruct {
             None => Box::new(io::stdout()),
         };
 
-        let mut optflags = OptFlags::from_bits_truncate(0);
-        if self.no_optimizations {
-            optflags |= OptFlags::TYPE_COERCION;
+        // Start from Polars' defaults, the same flags sqlp's queries run with; the old
+        // hand-built list predated JOIN_ORDER, SORT_COLLAPSE, CHECK_ORDER_OBSERVE etc.
+        let mut optflags = if self.no_optimizations {
+            OptFlags::TYPE_COERCION | OptFlags::TYPE_CHECK
         } else {
-            optflags |= OptFlags::PROJECTION_PUSHDOWN
-                | OptFlags::PREDICATE_PUSHDOWN
-                | OptFlags::CLUSTER_WITH_COLUMNS
-                | OptFlags::TYPE_COERCION
-                | OptFlags::SIMPLIFY_EXPR
-                | OptFlags::SLICE_PUSHDOWN
-                | OptFlags::COMM_SUBPLAN_ELIM
-                | OptFlags::COMM_SUBEXPR_ELIM
-                | OptFlags::ROW_ESTIMATE
-                | OptFlags::FAST_PROJECTION;
-        }
+            OptFlags::default()
+        };
 
         optflags.set(OptFlags::STREAMING, self.streaming);
 
@@ -894,7 +882,6 @@ impl Args {
                 .with_separator(tsvssv_delim(file_path, delim))
                 .with_try_parse_dates(args.flag_try_parsedates)
                 .with_decimal_comma(args.flag_decimal_comma)
-                .with_low_memory(args.flag_low_memory)
                 .with_ignore_errors(args.flag_ignore_errors)
         }
 

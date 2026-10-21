@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`qsv-joinp` and `qsv-count` drop `--low-memory`** ([#4866](https://github.com/dathere/qsv/pull/4866)), which had no effect; a client that still sends it gets an unknown-flag error.
 - **`qsv-sqlp` drops `--low-memory` and redescribes `--streaming`** ([#4865](https://github.com/dathere/qsv/pull/4865)), following the `sqlp` change. `--low-memory` had no effect on Polars' streaming engine and was removed from `sqlp`, so a client that still sends it gets an unknown-flag error. `--streaming` now writes `csv`, `jsonl`, `parquet` and `arrow` results batch by batch instead of collecting them first; an `--output` file appears only once the query succeeds.
 
 ## [26.0.0] - 2026-10-19

@@ -72,9 +72,6 @@ WHEN THE POLARS FEATURE IS ENABLED:
                            Use this when you encounter memory issues when counting with the
                            Polars CSV reader. The streaming reader is slower but can read
                            any valid CSV file of any size.
-    --low-memory           Use the Polars CSV Reader's low-memory mode. This mode
-                           is slower but uses less memory. If counting still fails,
-                           use --no-polars instead to use the streaming CSV reader.
 
 
 Common options:
@@ -106,7 +103,6 @@ struct Args {
     flag_width_no_delims: bool,
     flag_json:            bool,
     flag_no_polars:       bool,
-    flag_low_memory:      bool,
     flag_flexible:        bool,
     flag_no_headers:      bool,
     flag_delimiter:       Option<Delimiter>,
@@ -172,7 +168,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     if args.flag_no_polars || conf.is_snappy() {
                         count_input(&conf, count_delims_mode)?
                     } else {
-                        let count = polars_count_input(&conf, args.flag_low_memory)?;
+                        let count = polars_count_input(&conf)?;
                         // if polars count returns a zero, do a regular CSV reader count
                         // to be doubly sure as it will be cheap to do so with the regular count
                         if count == 0 {
@@ -459,7 +455,6 @@ fn may_contain_blank_lines(path: &std::path::Path) -> std::io::Result<bool> {
 ///
 /// # Arguments
 /// * `conf` - Configuration for reading the CSV file
-/// * `low_memory` - Whether to use low memory mode when reading the file
 ///
 /// # Returns
 /// * Total number of records in the file
@@ -481,7 +476,7 @@ fn may_contain_blank_lines(path: &std::path::Path) -> std::io::Result<bool> {
 /// - Unable to create/write temporary file for stdin
 /// - Cannot read the CSV file
 #[cfg(feature = "polars")]
-pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
+pub fn polars_count_input(conf: &Config) -> CliResult<u64> {
     use polars::{lazy::frame::OptFlags, prelude::*};
 
     // info!("using polars");
@@ -556,21 +551,14 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
             // do it in a block so schema_df is dropped early
             // Use ignore_errors to handle schema inference issues (e.g., columns that start
             // with boolean values but contain integers later)
-            let schema_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
+            // finish() only builds the plan; read errors surface from collect(), below
+            let schema_df = LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
                 .with_separator(delimiter)
                 .with_comment_prefix(comment_prefix.clone())
                 .with_n_rows(Some(1))
                 .with_ignore_errors(true)
-                .finish()
-            {
-                Ok(df) => df.collect(),
-                Err(e) => {
-                    log::warn!("polars error loading CSV: {e}");
-                    let (count_regular, _) =
-                        count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
-                    return Ok(count_regular);
-                },
-            };
+                .finish()?
+                .collect();
 
             match schema_df {
                 Err(e) => {
@@ -592,32 +580,15 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         // lowering for SQL `COUNT(*)` — both the `read_csv()` table function and a
         // registered LazyFrame count single-threaded, while `select(len())` still
         // parallelizes. See pola-rs/polars#29393 and qsv #4603.
-        let lazy_df = match LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
+        // finish() only builds the plan; read errors surface from collect(), below
+        let lazy_df = LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
             .with_separator(delimiter)
             .with_comment_prefix(comment_prefix)
-            .with_low_memory(low_memory)
             .with_ignore_errors(true)
-            .finish()
-        {
-            Ok(lazy_df) => lazy_df,
-            Err(e) => {
-                log::warn!("polars error loading CSV: {e}");
-                let (count_regular, _) = count_input(&fallback_conf, CountDelimsMode::NotRequired)?;
-                return Ok(count_regular);
-            },
-        };
+            .finish()?;
 
-        let optflags = OptFlags::from_bits_truncate(0)
-            | OptFlags::PROJECTION_PUSHDOWN
-            | OptFlags::PREDICATE_PUSHDOWN
-            | OptFlags::CLUSTER_WITH_COLUMNS
-            | OptFlags::TYPE_COERCION
-            | OptFlags::SIMPLIFY_EXPR
-            | OptFlags::SLICE_PUSHDOWN
-            | OptFlags::COMM_SUBPLAN_ELIM
-            | OptFlags::COMM_SUBEXPR_ELIM
-            | OptFlags::FAST_PROJECTION
-            | OptFlags::STREAMING;
+        // Polars' defaults; collect() runs the streaming engine either way
+        let optflags = OptFlags::default();
 
         let count_df = match lazy_df
             .with_optimizations(optflags)

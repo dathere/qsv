@@ -852,3 +852,15 @@ fn count_width_no_delims_default_delimiter_env() {
         "2;4-3.5-3-3-0.25-0.5-0.5"
     );
 }
+
+#[cfg(feature = "polars")]
+#[test]
+fn count_low_memory_flag_removed() {
+    // --low-memory had no effect on Polars' streaming engine, so it was removed.
+    let wrk = Workdir::new("count_low_memory_flag_removed");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("t.csv").arg("--low-memory");
+    wrk.assert_err(&mut cmd);
+}

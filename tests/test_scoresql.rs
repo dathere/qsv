@@ -658,3 +658,20 @@ fn scoresql_stdin_default_delimiter_env() {
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "{output:?}");
 }
+
+#[test]
+fn scoresql_plan_uses_polars_default_optimizations() {
+    // The plan scoresql shows uses Polars' default OptFlags, the ones sqlp runs queries with,
+    // so the inner ORDER BY a (overridden by the outer ORDER BY b) is collapsed away.
+    let wrk = Workdir::new("scoresql_plan_uses_polars_default_optimizations");
+    wrk.create(
+        "o.csv",
+        vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]],
+    );
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("o.csv")
+        .arg("SELECT a, b FROM (SELECT * FROM o ORDER BY a) AS s ORDER BY b");
+    let out: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(out.matches("SORT BY").count(), 1, "{out}");
+}

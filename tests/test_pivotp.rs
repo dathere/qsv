@@ -1708,6 +1708,45 @@ fn pivotp_many_pivot_columns_first_appearance_order() {
     assert_eq!(header, format!("region,{}", products.join(",")));
 }
 
+// An EMPTY pivot cell (no rows for that index/column pair) is 0 for sum and len and empty for
+// every other aggregation - Polars' pivot semantics, kept when pivotp aggregates the
+// (index, column) groups before pivoting (#4874).
+#[test]
+fn pivotp_empty_cells_zero_for_len_null_for_mean() {
+    let wrk = Workdir::new("pivotp_empty_cells_zero_for_len_null_for_mean");
+    wrk.create_from_string("order.csv", UNSORTED_ORDER_CSV);
+
+    let run = |agg: &str| {
+        let mut cmd = wrk.command("pivotp");
+        cmd.args([
+            "product",
+            "--index",
+            "region",
+            "--values",
+            "sales",
+            "--agg",
+            agg,
+            "order.csv",
+        ]);
+        let out = cmd.output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    // (North, A) and (<null>, A) have no rows
+    assert_eq!(
+        run("len"),
+        "region,Z,A\nWest,1,1\nEast,1,1\n,1,0\nNorth,1,0\n"
+    );
+    assert_eq!(
+        run("mean"),
+        "region,Z,A\nWest,1.0,3.0\nEast,6.0,2.0\n,4.0,\nNorth,5.0,\n"
+    );
+}
+
 fn sum_sales_pivot(wrk: &Workdir, input: &str, extra: &[&str]) -> std::process::Output {
     let mut cmd = wrk.command("pivotp");
     cmd.args([

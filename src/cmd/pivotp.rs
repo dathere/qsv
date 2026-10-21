@@ -1209,14 +1209,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // A snappy-compressed input is decompressed to a temp file first, as joinp does. The
     // delimiter above was already resolved from the original name (`.tsv.sz` -> tab).
     let snappy_tmpdir;
-    let input_path_str = if Path::new(&input_path_str)
+    let reader_path = if Path::new(&input_path_str)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
     {
         snappy_tmpdir = tempfile::tempdir()?;
         util::decompress_snappy_file(&PathBuf::from(&input_path_str), &snappy_tmpdir)?
     } else {
-        input_path_str
+        input_path_str.clone()
     };
 
     // Create CSV reader config. Like sqlp/joinp: honor QSV_COMMENT_CHAR (Config, which builds the
@@ -1224,7 +1224,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let comment_prefix = std::env::var("QSV_COMMENT_CHAR")
         .ok()
         .map(PlSmallStr::from_string);
-    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&input_path_str))
+    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&reader_path))
         .with_has_header(true)
         .with_missing_is_null(true)
         .with_comment_prefix(comment_prefix)
@@ -1234,7 +1234,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .with_ignore_errors(args.flag_ignore_errors);
 
     // Use a pschema.json (from `schema --polars`) that is at least as new as the input, unless
-    // the user asked for a custom inference length.
+    // the user asked for a custom inference length. Looked up beside the ORIGINAL input - for a
+    // .sz input that is `<input>.sz.pschema.json`, not the decompressed temp file's.
     let pschema = if args.flag_infer_len == DEFAULT_INFER_LEN {
         util::load_valid_pschema(Path::new(&input_path_str))?
     } else {

@@ -1813,6 +1813,33 @@ fn pivotp_ignores_stale_pschema() {
     assert_eq!(String::from_utf8_lossy(&out.stdout), SALES_SUM_CSV);
 }
 
+// For a .sz input the schema lives beside the ORIGINAL file (`schema --polars` writes
+// `<input>.sz.pschema.json`), not beside the decompressed temp file pivotp reads.
+#[test]
+fn pivotp_snappy_input_uses_its_pschema() {
+    let wrk = setup("pivotp_snappy_input_uses_its_pschema");
+    let mut sz = wrk.command("snappy");
+    sz.args(["compress", "sales.csv", "--output", "sales.csv.sz"]);
+    wrk.assert_success(&mut sz);
+    let canonical = wrk.path("sales.csv.sz").canonicalize().unwrap();
+    std::fs::write(
+        format!("{}.pschema.json", canonical.display()),
+        SALES_FLOAT_PSCHEMA,
+    )
+    .unwrap();
+
+    let out = sum_sales_pivot(&wrk, "sales.csv.sz", &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "date,A,B\n2023-01-01,300.0,150.0\n2023-01-02,300.0,600.0\n"
+    );
+}
+
 #[test]
 fn pivotp_smart_no_moarstats_flag_skips_enrichment() {
     let wrk = setup("pivotp_smart_no_moarstats_flag_skips_enrichment");

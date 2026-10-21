@@ -46,7 +46,7 @@ pub fn csv_to_delimited_writer<W: Write>(
 /// Returns `None` if no probe could be created; the caller then assumes owner-only, and the real
 /// temp's own creation produces the actionable error.
 #[cfg(unix)]
-fn new_file_mode_in(dir: &Path) -> Option<u32> {
+pub fn new_file_mode_in(dir: &Path) -> Option<u32> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
     static PROBE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);

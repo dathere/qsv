@@ -241,10 +241,15 @@ sqlp options:
                               `Int16`, `Int32`, `Int64`, `Float32`, `Float64`, `String`, `Date`, `Datetime`,
                               `Duration`, `Time`, `Null`, `Categorical`, `Decimal` and `Enum`.
 
-    --streaming               Use streaming mode when parsing CSVs. This will use less memory
-                              but will be slower. Only use this when you get out of memory errors.
-    --low-memory              Use low memory mode when parsing CSVs. This will use less memory
-                              but will be slower. Only use this when you get out of memory errors.
+    --streaming               Write the query result as it is computed, batch by batch, instead
+                              of collecting the whole result in memory first. Use this when the
+                              result is too big for memory. Works with the csv, jsonl, parquet
+                              and arrow formats; json and avro output still collect the whole
+                              result. Queries already run on Polars' streaming engine either way.
+                              An --output file is written beside its target and renamed into
+                              place only if the query succeeds. On stdout, rows are sent as
+                              they are computed, so a query that fails part-way leaves its
+                              output cut short; check sqlp's exit code before using it.
     --no-optimizations        Disable non-default query optimizations. This will make queries slower.
                               Use this when you get query errors or to force CSV parsing when there
                               is only one input file, no CSV parsing options are used and its not
@@ -311,8 +316,10 @@ use std::{
     fs::File,
     io,
     io::{BufReader, BufWriter, Read, Write},
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Mutex,
     time::Instant,
 };
 
@@ -323,6 +330,7 @@ use polars::{
     prelude::*,
     sql::SQLContext,
 };
+use polars_arrow::io::ipc::write::default_ipc_fields;
 use regex::Regex;
 use serde::Deserialize;
 
@@ -335,6 +343,9 @@ use crate::{
 
 static DEFAULT_GZIP_COMPRESSION_LEVEL: u8 = 6;
 static DEFAULT_ZSTD_COMPRESSION_LEVEL: i32 = 3;
+const PARQUET_ROW_GROUP_SIZE: usize = 768 * 768;
+/// rows per batch `sqlp --streaming` writes for csv, jsonl and arrow output
+const STREAM_BATCH_ROWS: usize = 100_000;
 
 #[derive(Deserialize, Clone)]
 struct Args {
@@ -345,7 +356,6 @@ struct Args {
     flag_infer_len:             usize,
     flag_cache_schema:          bool,
     flag_streaming:             bool,
-    flag_low_memory:            bool,
     flag_no_optimizations:      bool,
     flag_ignore_errors:         bool,
     flag_truncate_ragged_lines: bool,
@@ -385,121 +395,44 @@ impl OutputMode {
         query: &str,
         ctx: &mut SQLContext,
         mut delim: u8,
+        optflags: OptFlags,
         args: &Args,
     ) -> CliResult<(usize, usize)> {
-        let mut df = DataFrame::default();
+        let mut shape = (0, 0);
         let mut execute_inner = || -> CliResult<()> {
-            df = ctx
-                .execute(query)
-                .and_then(polars::prelude::LazyFrame::collect)?;
+            // SQLContext defers a read-only query into a fresh LazyFrame with default OptFlags,
+            // dropping the flags set on the registered tables, so set them on the result too.
+            let lf = ctx.execute(query)?.with_optimizations(optflags);
+
+            if args.flag_streaming && self.is_streamable() {
+                shape = self.stream_query(lf, delim, args)?;
+                return Ok(());
+            }
+
+            let mut df = lf.collect()?;
+            shape = df.shape();
 
             // we don't want to write anything if the output mode is None
             if matches!(self, OutputMode::None) {
                 return Ok(());
             }
 
-            let float_precision = std::env::var("QSV_POLARS_FLOAT_PRECISION")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .or(args.flag_float_precision);
+            // The streaming engine can return the result as many tiny chunks, and the writers
+            // pay per chunk (Arrow writes one record batch each), so write one chunk.
+            df.rechunk_mut_par();
 
-            let w = match args.flag_output.as_ref() {
-                Some(path) => {
-                    delim = path_delim(path, args.flag_delimiter, delim);
-                    Box::new(File::create(path)?) as Box<dyn Write>
-                },
-                None => Box::new(io::stdout()) as Box<dyn Write>,
-            };
-            let mut w = io::BufWriter::with_capacity(256_000, w);
+            let mut w = open_output(args, &mut delim)?;
 
             let out_result = match self {
-                OutputMode::Csv => CsvWriter::new(&mut w)
-                    .with_separator(delim)
-                    .with_datetime_format(
-                        args.flag_datetime_format
-                            .clone()
-                            .map(std::convert::Into::into),
-                    )
-                    .with_date_format(args.flag_date_format.clone().map(std::convert::Into::into))
-                    .with_time_format(args.flag_time_format.clone().map(std::convert::Into::into))
-                    .with_float_precision(float_precision)
-                    .with_null_value(args.flag_wnull_value.clone().into())
-                    .with_decimal_comma(args.flag_decimal_comma)
-                    .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
-                    .finish(&mut df),
+                OutputMode::Csv => csv_writer(&mut w, delim, args).finish(&mut df),
                 OutputMode::Json => JsonWriter::new(&mut w)
                     .with_json_format(JsonFormat::Json)
                     .finish(&mut df),
                 OutputMode::Jsonl => JsonWriter::new(&mut w)
                     .with_json_format(JsonFormat::JsonLines)
                     .finish(&mut df),
-                OutputMode::Parquet => {
-                    let compression: PqtCompression = args
-                        .flag_compression
-                        .parse()
-                        .unwrap_or(PqtCompression::Uncompressed);
-
-                    let parquet_compression = match compression {
-                        PqtCompression::Uncompressed => ParquetCompression::Uncompressed,
-                        PqtCompression::Snappy => ParquetCompression::Snappy,
-                        PqtCompression::Lz4Raw => ParquetCompression::Lz4Raw,
-                        PqtCompression::Gzip => {
-                            let gzip_level = args
-                                .flag_compress_level
-                                .unwrap_or_else(|| DEFAULT_GZIP_COMPRESSION_LEVEL.into())
-                                as u8;
-                            ParquetCompression::Gzip(Some(GzipLevel::try_new(gzip_level)?))
-                        },
-                        PqtCompression::Zstd => {
-                            let zstd_level = args
-                                .flag_compress_level
-                                .unwrap_or(DEFAULT_ZSTD_COMPRESSION_LEVEL);
-                            ParquetCompression::Zstd(Some(ZstdLevel::try_new(zstd_level)?))
-                        },
-                    };
-
-                    let statistics_options = if args.flag_statistics {
-                        StatisticsOptions {
-                            min_value: true,
-                            max_value: true,
-                            distinct_count: true,
-                            null_count: true,
-                            binary_statistics_truncate_length: Some(64),
-                        }
-                    } else {
-                        StatisticsOptions {
-                            min_value: false,
-                            max_value: false,
-                            distinct_count: false,
-                            null_count: false,
-                            binary_statistics_truncate_length: None,
-                        }
-                    };
-
-                    ParquetWriter::new(&mut w)
-                        .with_row_group_size(Some(768 * 768))
-                        .with_statistics(statistics_options)
-                        .with_compression(parquet_compression)
-                        .finish(&mut df)
-                        .map(|_| ())
-                },
-                OutputMode::Arrow => {
-                    let compression: ArrowCompression = args
-                        .flag_compression
-                        .parse()
-                        .unwrap_or(ArrowCompression::Uncompressed);
-
-                    #[allow(clippy::default_trait_access)]
-                    let ipc_compression: Option<IpcCompression> = match compression {
-                        ArrowCompression::Uncompressed => None,
-                        ArrowCompression::Lz4 => Some(IpcCompression::LZ4),
-                        ArrowCompression::Zstd => Some(IpcCompression::ZSTD(Default::default())),
-                    };
-
-                    IpcWriter::new(&mut w)
-                        .with_compression(ipc_compression)
-                        .finish(&mut df)
-                },
+                OutputMode::Parquet => parquet_writer(&mut w, args)?.finish(&mut df).map(|_| ()),
+                OutputMode::Arrow => ipc_writer(&mut w, args).finish(&mut df),
                 OutputMode::Avro => {
                     let compression: QsvAvroCompression = args
                         .flag_compression
@@ -527,12 +460,354 @@ impl OutputMode {
         };
 
         match execute_inner() {
-            Ok(()) => Ok(df.shape()),
+            Ok(()) => Ok(shape),
             Err(e) => {
                 fail_clierror!("Failed to execute query:\n{query}\n\nERROR: {e}")
             },
         }
     }
+
+    /// Formats `--streaming` can write batch by batch. JSON is a single array and Avro has no
+    /// batched writer, so those still collect the whole result first.
+    const fn is_streamable(&self) -> bool {
+        matches!(
+            self,
+            OutputMode::Csv | OutputMode::Jsonl | OutputMode::Parquet | OutputMode::Arrow
+        )
+    }
+
+    /// Run `lf` through a streaming sink, writing each batch as it arrives instead of
+    /// collecting the whole result in memory. Returns the result's shape.
+    fn stream_query(
+        &self,
+        mut lf: LazyFrame,
+        mut delim: u8,
+        args: &Args,
+    ) -> CliResult<(usize, usize)> {
+        let schema = lf.collect_schema()?;
+        let (w, staged) = open_streaming_output(args, &mut delim)?;
+        let out = SharedOutput(Arc::new(Mutex::new(w)));
+
+        let writer = match self {
+            OutputMode::Csv => StreamWriter::Csv(Box::new(
+                csv_writer(out.clone(), delim, args).batched(&schema)?,
+            )),
+            OutputMode::Jsonl => StreamWriter::Jsonl(out.clone()),
+            OutputMode::Parquet => StreamWriter::Parquet(Box::new(
+                parquet_writer(out.clone(), args)?.batched(&schema)?,
+            )),
+            OutputMode::Arrow => {
+                // IpcWriter defaults to CompatLevel::newest(), so build its fields at that level
+                let arrow_schema = schema.to_arrow(CompatLevel::newest());
+                let ipc_fields = default_ipc_fields(arrow_schema.iter_values());
+                StreamWriter::Arrow(Box::new(
+                    ipc_writer(out.clone(), args).batched(&schema, ipc_fields)?,
+                ))
+            },
+            OutputMode::Json | OutputMode::Avro | OutputMode::None => {
+                unreachable!("is_streamable() excludes non-batched output modes")
+            },
+        };
+
+        let state = Arc::new(Mutex::new(StreamState {
+            writer,
+            rows: 0,
+            batches: 0,
+        }));
+        let callback_state = Arc::clone(&state);
+        let callback: Arc<dyn Fn(DataFrame) -> PolarsResult<bool> + Send + Sync> =
+            Arc::new(move |df: DataFrame| {
+                let mut state = callback_state.lock().map_err(|_| {
+                    PolarsError::ComputeError("sqlp output writer lock poisoned".into())
+                })?;
+                state.rows += df.height();
+                state.batches += 1;
+                state.writer.write_batch(df)?;
+                // false = keep streaming
+                Ok(false)
+            });
+
+        // Without a chunk size the sink calls back once per morsel, which for a plain scan can
+        // be ~2 rows (277,604 calls for 600k rows), and per-call writer overhead then
+        // dominates. Parquet batches become row groups, so keep them the size the collect
+        // path writes.
+        let chunk_size = NonZeroUsize::new(if matches!(self, OutputMode::Parquet) {
+            PARQUET_ROW_GROUP_SIZE
+        } else {
+            STREAM_BATCH_ROWS
+        });
+
+        // maintain_order keeps ORDER BY results in order
+        lf.sink_batches(
+            PlanCallback::Rust(SpecialEq::new(callback)),
+            true,
+            chunk_size,
+        )?
+        .collect()?;
+
+        let mut state = state
+            .lock()
+            .map_err(|_| PolarsError::ComputeError("sqlp output writer lock poisoned".into()))?;
+        // writes the CSV header (and BOM) even when no batch arrived
+        state.writer.finish()?;
+        log::debug!("streamed {} rows in {} batches", state.rows, state.batches);
+        let rows = state.rows;
+        drop(state);
+        out.close()?;
+        // only now, with the whole result written, does --output appear (or get replaced)
+        if let Some(staged) = staged {
+            staged.install()?;
+        }
+
+        Ok((rows, schema.len()))
+    }
+}
+
+/// Open `--output` (or stdout). Writing to a file can change `delim` (e.g. a .tsv output).
+fn open_output(args: &Args, delim: &mut u8) -> io::Result<BufWriter<Box<dyn Write + Send>>> {
+    let w: Box<dyn Write + Send> = match args.flag_output.as_ref() {
+        Some(path) => {
+            *delim = path_delim(path, args.flag_delimiter, *delim);
+            Box::new(File::create(path)?)
+        },
+        None => Box::new(io::stdout()),
+    };
+    Ok(BufWriter::with_capacity(256_000, w))
+}
+
+/// A `--streaming` output file is written to a sibling temp and renamed over `--output` only
+/// once the query succeeds. Streaming writes rows before the query has finished, so without
+/// this a query failing part-way would leave a truncated file that looks complete; the
+/// collect path never opens the output until the result is in hand.
+struct StagedOutput {
+    tmp:  tempfile::NamedTempFile,
+    dest: PathBuf,
+}
+
+impl StagedOutput {
+    /// Gives the temp the mode `File::create(dest)` would have: the existing file's mode,
+    /// else this directory's default for a new file. The temp is created owner-only and only
+    /// ever widened, never narrowed, so it is never more open than the result.
+    fn install(self) -> CliResult<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let dir = self.tmp.path().parent().unwrap_or_else(|| Path::new("."));
+            let mode = match std::fs::metadata(&self.dest) {
+                Ok(existing) => existing.permissions().mode() & 0o777,
+                Err(_) => util::new_file_mode_in(dir).unwrap_or(0o600),
+            };
+            self.tmp
+                .as_file()
+                .set_permissions(std::fs::Permissions::from_mode(mode))?;
+        }
+        #[cfg(not(unix))]
+        if let Ok(existing) = std::fs::metadata(&self.dest) {
+            self.tmp.as_file().set_permissions(existing.permissions())?;
+        }
+
+        self.tmp
+            .persist(&self.dest)
+            .map_err(|e| io::Error::other(format!("{}: {}", self.dest.display(), e.error)))?;
+        Ok(())
+    }
+}
+
+/// Like `open_output`, but stages a regular-file `--output` in a temp beside it. Special
+/// files (e.g. /dev/stdout, a FIFO) can't be renamed over, so they are written directly.
+fn open_streaming_output(
+    args: &Args,
+    delim: &mut u8,
+) -> io::Result<(BufWriter<Box<dyn Write + Send>>, Option<StagedOutput>)> {
+    let Some(path) = args.flag_output.as_ref() else {
+        return Ok((open_output(args, delim)?, None));
+    };
+    let dest = PathBuf::from(path);
+    let is_regular_or_new = std::fs::metadata(&dest).map_or(true, |m| m.is_file());
+    if !is_regular_or_new {
+        return Ok((open_output(args, delim)?, None));
+    }
+
+    *delim = path_delim(path, args.flag_delimiter, *delim);
+    let dir = dest
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let tmp = tempfile::Builder::new()
+        .prefix(".qsv-sqlp-")
+        .suffix(".tmp")
+        .tempfile_in(dir)?;
+    let file = tmp.reopen()?;
+    Ok((
+        BufWriter::with_capacity(256_000, Box::new(file)),
+        Some(StagedOutput { tmp, dest }),
+    ))
+}
+
+fn csv_writer<W: Write>(w: W, delim: u8, args: &Args) -> CsvWriter<W> {
+    let float_precision = std::env::var("QSV_POLARS_FLOAT_PRECISION")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .or(args.flag_float_precision);
+
+    CsvWriter::new(w)
+        .with_separator(delim)
+        .with_datetime_format(
+            args.flag_datetime_format
+                .clone()
+                .map(std::convert::Into::into),
+        )
+        .with_date_format(args.flag_date_format.clone().map(std::convert::Into::into))
+        .with_time_format(args.flag_time_format.clone().map(std::convert::Into::into))
+        .with_float_precision(float_precision)
+        .with_null_value(args.flag_wnull_value.clone().into())
+        .with_decimal_comma(args.flag_decimal_comma)
+        .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
+}
+
+fn parquet_writer<W: Write>(w: W, args: &Args) -> CliResult<ParquetWriter<W>> {
+    let compression: PqtCompression = args
+        .flag_compression
+        .parse()
+        .unwrap_or(PqtCompression::Uncompressed);
+
+    let parquet_compression = match compression {
+        PqtCompression::Uncompressed => ParquetCompression::Uncompressed,
+        PqtCompression::Snappy => ParquetCompression::Snappy,
+        PqtCompression::Lz4Raw => ParquetCompression::Lz4Raw,
+        PqtCompression::Gzip => {
+            let gzip_level =
+                args.flag_compress_level
+                    .unwrap_or_else(|| DEFAULT_GZIP_COMPRESSION_LEVEL.into()) as u8;
+            ParquetCompression::Gzip(Some(GzipLevel::try_new(gzip_level)?))
+        },
+        PqtCompression::Zstd => {
+            let zstd_level = args
+                .flag_compress_level
+                .unwrap_or(DEFAULT_ZSTD_COMPRESSION_LEVEL);
+            ParquetCompression::Zstd(Some(ZstdLevel::try_new(zstd_level)?))
+        },
+    };
+
+    let statistics_options = if args.flag_statistics {
+        StatisticsOptions {
+            min_value: true,
+            max_value: true,
+            distinct_count: true,
+            null_count: true,
+            binary_statistics_truncate_length: Some(64),
+        }
+    } else {
+        StatisticsOptions {
+            min_value: false,
+            max_value: false,
+            distinct_count: false,
+            null_count: false,
+            binary_statistics_truncate_length: None,
+        }
+    };
+
+    Ok(ParquetWriter::new(w)
+        .with_row_group_size(Some(PARQUET_ROW_GROUP_SIZE))
+        .with_statistics(statistics_options)
+        .with_compression(parquet_compression))
+}
+
+fn ipc_writer<W: Write>(w: W, args: &Args) -> IpcWriter<W> {
+    let compression: ArrowCompression = args
+        .flag_compression
+        .parse()
+        .unwrap_or(ArrowCompression::Uncompressed);
+
+    #[allow(clippy::default_trait_access)]
+    let ipc_compression: Option<IpcCompression> = match compression {
+        ArrowCompression::Uncompressed => None,
+        ArrowCompression::Lz4 => Some(IpcCompression::LZ4),
+        ArrowCompression::Zstd => Some(IpcCompression::ZSTD(Default::default())),
+    };
+
+    IpcWriter::new(w).with_compression(ipc_compression)
+}
+
+/// The output, shared by the streaming sink's callback and `stream_query`: the batched
+/// writers take their writer by value, and this lets `stream_query` flush it afterwards
+/// and report a flush error.
+#[derive(Clone)]
+struct SharedOutput(Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>);
+
+impl SharedOutput {
+    /// Flushes, then swaps the output for a sink so its file handle is closed now, even while
+    /// clones of this `SharedOutput` are still alive. Windows can't rename a file with an open
+    /// handle, and the staged output is renamed right after this.
+    fn close(&self) -> io::Result<()> {
+        let mut guard = self.lock()?;
+        guard.flush()?;
+        drop(std::mem::replace(
+            &mut *guard,
+            BufWriter::new(Box::new(io::sink())),
+        ));
+        Ok(())
+    }
+
+    fn lock(&self) -> io::Result<std::sync::MutexGuard<'_, BufWriter<Box<dyn Write + Send>>>> {
+        self.0
+            .lock()
+            .map_err(|_| io::Error::other("sqlp output lock poisoned"))
+    }
+}
+
+impl Write for SharedOutput {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.lock()?.write(buf)
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.lock()?.write_all(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.lock()?.flush()
+    }
+}
+
+enum StreamWriter {
+    Csv(Box<polars::io::csv::write::BatchedWriter<SharedOutput>>),
+    Jsonl(SharedOutput),
+    Parquet(Box<polars::io::parquet::write::BatchedWriter<SharedOutput>>),
+    Arrow(Box<polars::io::ipc::BatchedWriter<SharedOutput>>),
+}
+
+impl StreamWriter {
+    fn write_batch(&mut self, mut df: DataFrame) -> PolarsResult<()> {
+        // A batch is stitched from the sink's morsels, which can be a few rows each, so it
+        // arrives as thousands of tiny chunks. Writing it as-is costs per-chunk overhead (one
+        // Parquet page per chunk), so make it one contiguous chunk first.
+        df.rechunk_mut_par();
+        match self {
+            StreamWriter::Csv(w) => w.write_batch(&df),
+            StreamWriter::Jsonl(w) => JsonWriter::new(w)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&mut df),
+            StreamWriter::Parquet(w) => w.write_batch(&df),
+            StreamWriter::Arrow(w) => w.write_batch(&df),
+        }
+    }
+
+    fn finish(&mut self) -> PolarsResult<()> {
+        match self {
+            StreamWriter::Csv(w) => w.finish(),
+            StreamWriter::Jsonl(_) => Ok(()),
+            StreamWriter::Parquet(w) => w.finish().map(|_| ()),
+            StreamWriter::Arrow(w) => w.finish(),
+        }
+    }
+}
+
+struct StreamState {
+    writer:  StreamWriter,
+    rows:    usize,
+    batches: usize,
 }
 
 impl FromStr for OutputMode {
@@ -686,23 +961,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None
     };
 
-    let mut optflags = OptFlags::from_bits_truncate(0);
-    if args.flag_no_optimizations {
-        optflags |= OptFlags::TYPE_COERCION;
+    // Polars applies OptFlags::default() to every deferred SQL query anyway, so start from it.
+    // Polars picks the streaming engine itself, so STREAMING is left to it.
+    let optflags = if args.flag_no_optimizations {
+        OptFlags::TYPE_COERCION | OptFlags::TYPE_CHECK
     } else {
-        optflags |= OptFlags::PROJECTION_PUSHDOWN
-            | OptFlags::PREDICATE_PUSHDOWN
-            | OptFlags::CLUSTER_WITH_COLUMNS
-            | OptFlags::TYPE_COERCION
-            | OptFlags::SIMPLIFY_EXPR
-            | OptFlags::SLICE_PUSHDOWN
-            | OptFlags::COMM_SUBPLAN_ELIM
-            | OptFlags::COMM_SUBEXPR_ELIM
-            | OptFlags::ROW_ESTIMATE
-            | OptFlags::FAST_PROJECTION;
-    }
-
-    optflags.set(OptFlags::STREAMING, args.flag_streaming);
+        OptFlags::default()
+    };
 
     // check if the input is a SQL script (ends with .sql)
     let is_sql_script = std::path::Path::new(&args.arg_sql)
@@ -731,12 +996,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         log::debug!("Optimization flags: {optflags:?}");
         log::debug!(
             "Delimiter: {delim} Infer_schema_len: {infer_len} try_parse_dates: {parse_dates} \
-             ignore_errors: {ignore_errors}, low_memory: {low_memory}, float_precision: \
+             ignore_errors: {ignore_errors}, streaming: {streaming}, float_precision: \
              {float_precision:?}, skip_input: {skip_input}, is_sql_script: {is_sql_script}",
             infer_len = args.flag_infer_len,
             parse_dates = args.flag_try_parsedates,
             ignore_errors = args.flag_ignore_errors,
-            low_memory = args.flag_low_memory,
+            streaming = args.flag_streaming,
             float_precision = args.flag_float_precision,
         );
     }
@@ -801,125 +1066,50 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 );
             }
 
-            let table_plpath = PlRefPath::new(&*table.to_string_lossy());
+            // finish() only builds the scan plan; the file is read (and any CSV error
+            // raised) when the query is collected.
+            let reader = LazyCsvReader::new(PlRefPath::new(&*table.to_string_lossy()))
+                .with_has_header(true)
+                .with_missing_is_null(true)
+                .with_comment_prefix(comment_char.clone())
+                .with_null_values(Some(NullValues::AllColumns(rnull_values.clone())))
+                .with_separator(separator)
+                .with_try_parse_dates(args.flag_try_parsedates)
+                .with_ignore_errors(args.flag_ignore_errors)
+                .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
+                .with_decimal_comma(args.flag_decimal_comma);
 
-            let mut lf = if cache_schemas || valid_schema_exists {
-                let mut work_lf = LazyCsvReader::new(table_plpath)
-                    .with_has_header(true)
-                    .with_missing_is_null(true)
-                    .with_comment_prefix(comment_char.clone())
-                    .with_null_values(Some(NullValues::AllColumns(rnull_values.clone())))
-                    .with_separator(separator)
-                    .with_try_parse_dates(args.flag_try_parsedates)
-                    .with_ignore_errors(args.flag_ignore_errors)
-                    .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
-                    .with_decimal_comma(args.flag_decimal_comma)
-                    .with_low_memory(args.flag_low_memory);
+            if cache_schemas && !valid_schema_exists {
+                // we don't have a valid pschema.json file,
+                // check if we have stats, as we can derive pschema.json file from it
+                valid_schema_exists = util::infer_polars_schema(
+                    Some(Delimiter(separator)),
+                    debuglog_flag,
+                    table,
+                    &schema_file,
+                    false,
+                )?;
+            }
 
-                if !valid_schema_exists {
-                    // we don't have a valid pschema.json file,
-                    // check if we have stats, as we can derive pschema.json file from it
-                    valid_schema_exists = util::infer_polars_schema(
-                        Some(Delimiter(separator)),
-                        debuglog_flag,
-                        table,
-                        &schema_file,
-                        false,
-                    )?;
+            let mut lf = if valid_schema_exists {
+                // We have a valid pschema.json file!
+                // load the schema and deserialize it and use it with the lazy frame
+                let file = File::open(&schema_file)?;
+                let mut buf_reader = BufReader::new(file);
+                let mut schema_json = String::with_capacity(100);
+                buf_reader.read_to_string(&mut schema_json)?;
+                let schema: Schema = serde_json::from_str(&schema_json)?;
+                if debuglog_flag {
+                    log::debug!("Loaded schema from file: {}", schema_file.display());
                 }
-
-                if valid_schema_exists {
-                    // We have a valid pschema.json file!
-                    // load the schema and deserialize it and use it with the lazy frame
-                    let file = File::open(&schema_file)?;
-                    let mut buf_reader = BufReader::new(file);
-                    let mut schema_json = String::with_capacity(100);
-                    buf_reader.read_to_string(&mut schema_json)?;
-                    let schema: Schema = serde_json::from_str(&schema_json)?;
-                    if debuglog_flag {
-                        log::debug!("Loaded schema from file: {}", schema_file.display());
-                    }
-                    work_lf = work_lf.with_schema(Some(Arc::new(schema)));
-                    create_schema = false;
-                } else {
-                    // there is no valid pschema.json file, infer the schema using --infer-len
-                    work_lf = work_lf.with_infer_schema_length(Some(args.flag_infer_len));
-                    create_schema = true;
-                }
-                work_lf.finish()?
+                create_schema = false;
+                reader.with_schema(Some(Arc::new(schema))).finish()?
             } else {
-                // Read input file robustly
-                // First try, as --cache-schema is not enabled, try using the --infer-len length
-                let reader = LazyCsvReader::new(table_plpath.clone())
-                    .with_has_header(true)
-                    .with_missing_is_null(true)
-                    .with_comment_prefix(comment_char.clone())
-                    .with_null_values(Some(NullValues::AllColumns(rnull_values.clone())))
-                    .with_separator(separator)
+                // there is no valid pschema.json file, infer the schema using --infer-len
+                // (and save it if --cache-schema is set)
+                reader
                     .with_infer_schema_length(Some(args.flag_infer_len))
-                    .with_try_parse_dates(args.flag_try_parsedates)
-                    .with_ignore_errors(args.flag_ignore_errors)
-                    .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
-                    .with_decimal_comma(args.flag_decimal_comma)
-                    .with_low_memory(args.flag_low_memory);
-
-                if let Ok(lf) = reader.finish() {
-                    lf
-                } else {
-                    // First try didn't work.
-                    // Second try, infer a schema and try again
-                    valid_schema_exists = util::infer_polars_schema(
-                        Some(Delimiter(separator)),
-                        debuglog_flag,
-                        table,
-                        &schema_file,
-                        false,
-                    )?;
-
-                    if valid_schema_exists {
-                        let file = File::open(&schema_file)?;
-                        let mut buf_reader = BufReader::new(file);
-                        let mut schema_json = String::with_capacity(100);
-                        buf_reader.read_to_string(&mut schema_json)?;
-                        let schema: Schema = serde_json::from_str(&schema_json)?;
-
-                        // Second try, using the inferred schema
-                        let reader_2ndtry = LazyCsvReader::new(table_plpath.clone())
-                            .with_schema(Some(Arc::new(schema)))
-                            .with_try_parse_dates(args.flag_try_parsedates)
-                            .with_ignore_errors(args.flag_ignore_errors)
-                            .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
-                            .with_decimal_comma(args.flag_decimal_comma)
-                            .with_low_memory(args.flag_low_memory);
-
-                        if let Ok(lf) = reader_2ndtry.finish() {
-                            lf
-                        } else {
-                            // Second try didn't work.
-                            // Try one last time without an infer schema length, scanning the whole
-                            // file
-                            LazyCsvReader::new(table_plpath)
-                                .with_infer_schema_length(None)
-                                .with_try_parse_dates(args.flag_try_parsedates)
-                                .with_ignore_errors(args.flag_ignore_errors)
-                                .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
-                                .with_decimal_comma(args.flag_decimal_comma)
-                                .with_low_memory(args.flag_low_memory)
-                                .finish()?
-                        }
-                    } else {
-                        // Ok, we failed to infer a schema, try without an infer schema length
-                        // and scan the whole file to get the schema
-                        LazyCsvReader::new(table_plpath)
-                            .with_infer_schema_length(None)
-                            .with_try_parse_dates(args.flag_try_parsedates)
-                            .with_ignore_errors(args.flag_ignore_errors)
-                            .with_truncate_ragged_lines(args.flag_truncate_ragged_lines)
-                            .with_decimal_comma(args.flag_decimal_comma)
-                            .with_low_memory(args.flag_low_memory)
-                            .finish()?
-                    }
-                }
+                    .finish()?
             };
             ctx.register(table_name, lf.clone().with_optimizations(optflags));
 
@@ -1008,10 +1198,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         query_result_shape = if is_last_query {
             // if this is the last query, we use the output mode specified by the user
-            output_mode.execute_query(&current_query, &mut ctx, delim, &args)?
+            output_mode.execute_query(&current_query, &mut ctx, delim, optflags, &args)?
         } else {
             // this is not the last query, we only execute the query, but don't write the output
-            no_output.execute_query(&current_query, &mut ctx, delim, &args)?
+            no_output.execute_query(&current_query, &mut ctx, delim, optflags, &args)?
         };
         if debuglog_flag {
             log::debug!(

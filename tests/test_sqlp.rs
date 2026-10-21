@@ -6865,3 +6865,216 @@ fn sqlp_stdin_default_delimiter_env() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "b\n2");
 }
+
+// ---------------------------------------------------------------------------
+// sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
+// ---------------------------------------------------------------------------
+
+/// 250,000 rows, so `--streaming` writes several 100,000-row batches. `d` is null on every
+/// 5th row; with `bad_last_row`, a final row whose `a` isn't an integer makes the query fail
+/// after most of the result has been streamed (with `--infer-len 1000`).
+fn streaming_fixture(wrk: &Workdir, bad_last_row: bool) {
+    let mut data = String::with_capacity(6_000_000);
+    data.push_str("a,b,d\n");
+    for i in 0..250_000_u32 {
+        let d = if i % 5 == 0 {
+            String::new()
+        } else {
+            i.to_string()
+        };
+        data.push_str(&format!("{i},{}.5,{d}\n", i % 7));
+    }
+    if bad_last_row {
+        data.push_str("oops,1.5,1\n");
+    }
+    wrk.create_from_string("t.csv", &data);
+}
+
+const STREAMING_QUERY: &str = "SELECT a, b * 1.1 AS b, d FROM t ORDER BY b DESC, a";
+
+#[test]
+fn sqlp_streaming_csv_matches_collect() {
+    let wrk = Workdir::new("sqlp_streaming_csv_matches_collect");
+    streaming_fixture(&wrk, false);
+
+    let run = |streaming: bool| {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv")
+            .args(["--float-precision", "3", "--wnull-value", "NULL"])
+            .arg(STREAMING_QUERY);
+        if streaming {
+            cmd.arg("--streaming");
+        }
+        wrk.stdout_and_stderr_on_success::<String>(&mut cmd)
+    };
+    let (collected, collected_shape) = run(false);
+    let (streamed, streamed_shape) = run(true);
+
+    // ORDER BY holds across batches, and the header is written once
+    assert_eq!(streamed, collected);
+    assert_eq!(streamed.matches("a,b,d").count(), 1);
+    assert!(streamed.contains("NULL"));
+    assert_eq!(streamed_shape.trim(), "(250000, 3)");
+    assert_eq!(streamed_shape, collected_shape);
+}
+
+#[test]
+fn sqlp_streaming_jsonl_matches_collect() {
+    let wrk = Workdir::new("sqlp_streaming_jsonl_matches_collect");
+    streaming_fixture(&wrk, false);
+
+    let run = |streaming: bool| {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv")
+            .args(["--format", "jsonl"])
+            .arg(STREAMING_QUERY);
+        if streaming {
+            cmd.arg("--streaming");
+        }
+        wrk.stdout_on_success::<String>(&mut cmd)
+    };
+    assert_eq!(run(true), run(false));
+}
+
+#[test]
+fn sqlp_streaming_parquet_and_arrow_round_trip() {
+    let wrk = Workdir::new("sqlp_streaming_parquet_and_arrow_round_trip");
+    streaming_fixture(&wrk, false);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(STREAMING_QUERY);
+    let expected: String = wrk.stdout_on_success(&mut cmd);
+
+    for (format, read_fn) in [("parquet", "read_parquet"), ("arrow", "read_ipc")] {
+        let out = format!("out.{format}");
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv")
+            .args(["--streaming", "--format", format, "-o", &out])
+            .arg(STREAMING_QUERY);
+        let shape = wrk.stderr_on_success(&mut cmd);
+        assert_eq!(shape.trim(), "(250000, 3)", "{format}");
+
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("SKIP_INPUT")
+            .arg(format!("SELECT * FROM {read_fn}('{out}')"));
+        let got: String = wrk.stdout_on_success(&mut cmd);
+        assert_eq!(got, expected, "{format}");
+    }
+}
+
+#[test]
+fn sqlp_streaming_json_and_avro_still_collect() {
+    // JSON (a single array) and Avro have no batched writer, so --streaming collects first.
+    let wrk = Workdir::new("sqlp_streaming_json_and_avro_still_collect");
+    wrk.create(
+        "t.csv",
+        vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "--format", "json"])
+        .arg("SELECT * FROM t ORDER BY a");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(got, r#"[{"a":1,"b":"x"},{"a":2,"b":"y"}]"#);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "--format", "avro", "-o", "out.avro"])
+        .arg("SELECT * FROM t");
+    let shape = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(shape.trim(), "(2, 2)");
+    assert!(wrk.path("out.avro").metadata().unwrap().len() > 0);
+}
+
+#[test]
+fn sqlp_streaming_empty_result_writes_header() {
+    let wrk = Workdir::new("sqlp_streaming_empty_result_writes_header");
+    wrk.create("t.csv", vec![svec!["a", "b"], svec!["1", "x"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("--streaming")
+        .arg("SELECT a, b FROM t WHERE a > 99");
+    let (got, shape) = wrk.stdout_and_stderr_on_success::<String>(&mut cmd);
+    assert_eq!(got, "a,b");
+    assert_eq!(shape.trim(), "(0, 2)");
+}
+
+#[test]
+fn sqlp_streaming_bom_written_once() {
+    let wrk = Workdir::new("sqlp_streaming_bom_written_once");
+    streaming_fixture(&wrk, false);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_OUTPUT_BOM", "1")
+        .arg("t.csv")
+        .args(["--streaming", "-o", "out.csv"])
+        .arg("SELECT a FROM t");
+    wrk.assert_success(&mut cmd);
+
+    let bytes = std::fs::read(wrk.path("out.csv")).unwrap();
+    let bom = [0xEF_u8, 0xBB, 0xBF];
+    assert!(bytes.starts_with(&bom));
+    assert_eq!(bytes.windows(3).filter(|w| *w == bom).count(), 1);
+}
+
+#[test]
+fn sqlp_streaming_failure_keeps_existing_output() {
+    // Streaming writes rows before the query finishes. A query that fails part-way must not
+    // leave a truncated --output that looks complete: the old file stays, and no temp is left.
+    let wrk = Workdir::new("sqlp_streaming_failure_keeps_existing_output");
+    streaming_fixture(&wrk, true);
+    wrk.create_from_string("out.csv", "ORIGINAL\n");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "--infer-len", "1000", "-o", "out.csv"])
+        .arg("SELECT a, d FROM t");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("could not parse `oops`"), "{stderr}");
+
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "ORIGINAL\n");
+    let leftovers: Vec<_> = std::fs::read_dir(wrk.path(""))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name.starts_with(".qsv-sqlp-"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "temp files left behind: {leftovers:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn sqlp_streaming_output_keeps_existing_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("sqlp_streaming_output_keeps_existing_mode");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+    wrk.create_from_string("out.csv", "ORIGINAL\n");
+    std::fs::set_permissions(wrk.path("out.csv"), std::fs::Permissions::from_mode(0o640)).unwrap();
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "-o", "out.csv"])
+        .arg("SELECT a FROM t");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "a\n1\n");
+    let mode = wrk.path("out.csv").metadata().unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o640);
+}
+
+#[test]
+fn sqlp_low_memory_flag_removed() {
+    // --low-memory had no effect on Polars' streaming engine, so it was removed.
+    let wrk = Workdir::new("sqlp_low_memory_flag_removed");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("--low-memory").arg("SELECT a FROM t");
+    wrk.assert_err(&mut cmd);
+}

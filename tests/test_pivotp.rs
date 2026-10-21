@@ -978,6 +978,8 @@ fn pivotp_max_columns_uses_exact_count_not_estimate() {
     );
 }
 
+// Test smart aggregation without moarstats — CV above 100% picks Median
+#[test]
 fn pivotp_smart_no_moarstats() {
     let wrk = Workdir::new("pivotp_smart_no_moarstats");
     // Without moarstats, smart aggregation uses only base stats.

@@ -333,6 +333,9 @@ plotly = { version = "0.15", default-features = false, optional = true }
 rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
 polars-readstat-rs = { version = "0.24.2", optional = true }
+# only for `default_ipc_fields`, which `sqlp --streaming --format arrow` needs to build a
+# batched IPC writer; it resolves to the same patched git rev as polars itself.
+polars-arrow = { version = "0.55", optional = true }
 polars = { version = "0.55", features = [
     # "approx_quantile" powers the APPROX_QUANTILE SQL aggregate in sqlp. It is
     # NOT in any umbrella qsv enables (upstream keeps it in docs-selection/full
@@ -726,7 +729,7 @@ geocode = [
 luau     = ["mlua", "sanitize-filename", "flate2", "zstd"]
 magika   = ["dep:magika", "dep:ort"]
 mcp      = []
-polars   = ["dep:polars", "bytemuck"]
+polars   = ["dep:polars", "dep:polars-arrow", "bytemuck"]
 readstat = ["dep:polars-readstat-rs", "polars"]
 
 prompt = ["rfd"]

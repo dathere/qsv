@@ -7093,6 +7093,7 @@ dependencies = [
  "phf 0.14.0",
  "plotly",
  "polars",
+ "polars-arrow",
  "polars-readstat-rs",
  "pragmastat",
  "pyo3",

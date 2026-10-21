@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`qsv-pivotp` gains `--no-moarstats`** ([#PR](https://github.com/dathere/qsv/pull/PR)): with a single `--values` column, `--agg smart` now enriches the input's stats cache with `moarstats --advanced` (one extra pass over the file, reused afterwards); `--no-moarstats` skips it. The `--agg smart` description covers the new bimodality cut (0.60) and the positive-data-only ratios.
 - **`qsv-pivotp` redescribes `--agg smart` and `--delimiter`** ([#4869](https://github.com/dathere/qsv/pull/4869)): high variability now means CV above 100%, skewness comes from moment skewness (G1) with Pearson as the fallback, and a single-value column gets `first` instead of `item`; the description recommends an explicit `--agg` to pin results. `--delimiter` documents `QSV_DEFAULT_DELIMITER` and the `.tsv`/`.tab`/`.ssv` extensions.
 - **`qsv-joinp` redescribes `--streaming`** ([#4867](https://github.com/dathere/qsv/pull/4867)): it now writes the join result batch by batch, using less memory but more time; an `--output` file appears only once the join succeeds.
 - **`qsv-joinp` and `qsv-count` drop `--low-memory`** ([#4866](https://github.com/dathere/qsv/pull/4866)), which had no effect; a client that still sends it gets an unknown-flag error.

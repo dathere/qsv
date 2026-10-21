@@ -66,13 +66,20 @@ pivotp options:
                                       When the stats cache includes non-streaming stats (from a
                                       prior `stats --everything` or `stats --mode`), also uses
                                       mode_count.
-                                      When moarstats has been run, also leverages outlier profile,
-                                      Pearson skewness, MAD/stddev ratio, median/mean ratio, and
-                                      quartile coefficient of dispersion for smarter selection.
-                                      With moarstats --advanced, also uses moment skewness (|G1|
-                                      >= 1 picks median; Pearson skewness is the fallback),
-                                      kurtosis, bimodality (bimodality coefficient >= 0.555 with
-                                      negative excess kurtosis), entropy and Gini coefficient.
+                                      With a single --values column, smart first runs
+                                      moarstats --advanced to enrich the input's stats cache
+                                      (writing <stem>.stats.csv, .stats.csv.json and
+                                      .stats.csv.data.jsonl beside it) unless the cache already
+                                      has those stats. This one-time pass reads the whole file;
+                                      skip it with --no-moarstats. It is also skipped with an
+                                      explicit --delimiter, stdin and special formats.
+                                      The moarstats stats used are outlier profile, Pearson
+                                      skewness, MAD/stddev ratio, median/mean ratio and quartile
+                                      coefficient of dispersion (the two ratios only for
+                                      positive data), moment skewness (|G1| >= 1 picks median;
+                                      Pearson skewness is the fallback), kurtosis, bimodality
+                                      (bimodality coefficient >= 0.60 with negative excess
+                                      kurtosis), entropy and Gini coefficient.
                                       A single-value column uses first.
                                       The choice depends on the data, so pass an explicit --agg
                                       to pin a result across qsv versions.
@@ -105,6 +112,9 @@ pivotp options:
                             The second index column will contain the total label.
                             Requires 2+ index columns. (pivot mode only)
     --total-label <arg>     Custom label for total rows. [default: Total]
+    --no-moarstats          For smart aggregation, do not run moarstats --advanced to
+                            enrich the stats cache. Smart aggregation then uses whatever
+                            stats are already cached (or basic `stats --cardinality` stats).
 
 Common options:
     -h, --help              Display this message
@@ -186,9 +196,26 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
     }
 }
 
-/// Populate `STATS_RECORDS` on first use. On error, logs once and caches an empty
-/// result so the command can still run (smart-agg and validation just become
-/// no-ops without stats).
+/// Does this run's smart aggregation benefit from a `moarstats --advanced` stats cache?
+///
+/// Only pivot mode with `--agg smart` and exactly one `--values` column consults the value
+/// column's distribution (multiple value columns use `first`; group-by mode uses `len`).
+/// An explicit --delimiter opts out: moarstats has no --delimiter and resolves it from the
+/// file extension, so it could parse the file differently than pivotp does.
+fn wants_moarstats_enrichment(args: &Args) -> bool {
+    !args.flag_no_moarstats
+        && args.flag_delimiter.is_none()
+        && args.arg_on_cols.is_some()
+        && args
+            .flag_agg
+            .as_deref()
+            .is_none_or(|a| a.eq_ignore_ascii_case("smart"))
+        && args
+            .flag_values
+            .as_deref()
+            .is_some_and(|v| !v.contains(','))
+}
+
 fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
     // `quiet` is latched on the first call because STATS_RECORDS is a
     // process-global OnceLock. In practice `Args` is constructed once per
@@ -196,6 +223,30 @@ fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
     // reused across multiple Args, only the first call's --quiet takes effect.
     let quiet = args.flag_quiet;
     STATS_RECORDS.get_or_init(|| {
+        // Enrich BEFORE loading: a FrequencyForceStats load regenerates a stale cache as a lean
+        // `stats --cardinality` one, which would throw away moarstats statistics.
+        if wants_moarstats_enrichment(args)
+            && let Some(input) = args.arg_input.as_deref()
+        {
+            match util::ensure_advanced_stats_cache(input) {
+                Ok(true) if !quiet => {
+                    eprintln!(
+                        "Info: enriched the stats cache with moarstats --advanced for smart \
+                         aggregation"
+                    );
+                },
+                Ok(_) => {},
+                Err(e) => {
+                    if !quiet {
+                        eprintln!(
+                            "Warning: unable to enrich the stats cache with moarstats --advanced \
+                             (smart-agg will use basic stats): {e}"
+                        );
+                    }
+                },
+            }
+        }
+
         let schema_args = build_schema_args(args);
         match get_stats_records(&schema_args, StatsMode::FrequencyForceStats) {
             Ok(pair) => pair,
@@ -231,6 +282,7 @@ struct Args {
     flag_grand_total:    bool,
     flag_subtotal:       bool,
     flag_total_label:    String,
+    flag_no_moarstats:   bool,
     flag_output:         Option<String>,
     flag_delimiter:      Option<Delimiter>,
     flag_quiet:          bool,
@@ -248,6 +300,10 @@ const HIGH_CV_PERCENT: f64 = 100.0;
 const HIGH_MOMENT_SKEWNESS: f64 = 1.0;
 /// Fallback when G1 is unavailable: Pearson's second skewness coefficient.
 const HIGH_PEARSON_SKEWNESS: f64 = 1.0;
+/// Bimodality coefficient cut (paired with negative excess kurtosis). Same as viz's
+/// `BIMODALITY_COEFFICIENT_THRESHOLD`: a margin above Sarle's 0.555 (the uniform distribution's
+/// value), so flat-ish columns are not flagged as two-peaked.
+const BIMODALITY_COEFFICIENT_MIN: f64 = 0.60;
 
 /// Structure to hold pivot operation metadata
 struct PivotMetadata {
@@ -575,9 +631,11 @@ fn suggest_agg_function(
                     Expr::Element.len()
                 } else if let Some(mc) = stats.mode_count
                     && mc > 10
+                    && mc < stats.cardinality
                 {
                     // Complex multimodal — more than 10 tied modes means
-                    // central tendency is especially misleading
+                    // central tendency is especially misleading. When EVERY distinct value
+                    // ties (mode_count == cardinality) the data is flat, not multimodal.
                     if !quiet {
                         eprintln!(
                             "Info: Complex multimodal distribution ({mc} modes > 10), using Len"
@@ -587,16 +645,16 @@ fn suggest_agg_function(
                 } else if let Some(bc) = stats.bimodality_coefficient {
                     // Bimodal distribution — central tendency is misleading. Require negative
                     // excess kurtosis too: heavily skewed UNIMODAL data (amounts, counts,
-                    // durations) also inflates BC past 0.555, but is leptokurtic, whereas a
+                    // durations) also inflates BC past the cut, but is leptokurtic, whereas a
                     // genuinely two-peaked distribution is flat-topped.
-                    if bc >= 0.555
+                    if bc >= BIMODALITY_COEFFICIENT_MIN
                         && let Some(kurt) = stats.kurtosis
                         && kurt < 0.0
                     {
                         if !quiet {
                             eprintln!(
                                 "Info: Bimodal distribution detected (bimodality coefficient \
-                                 {bc:.3} >= 0.555, excess kurtosis {kurt:.3} < 0), using Len"
+                                 {bc:.3} >= 0.60, excess kurtosis {kurt:.3} < 0), using Len"
                             );
                         }
                         Expr::Element.len()
@@ -740,12 +798,16 @@ fn suggest_numeric_after_bimodality(
     ordered_pivot: bool,
     ordered_index: bool,
 ) -> Expr {
-    // moarstats: outlier impact ratio — mean shifted >20% by outliers
+    // moarstats: outlier impact ratio — mean shifted >20% by outliers. The ratio is signed
+    // (negative when the outliers sit on the low side), so compare its magnitude.
     if let Some(oir) = stats.outlier_impact_ratio
-        && oir > 0.2
+        && oir.abs() > 0.2
     {
         if !quiet {
-            eprintln!("Info: High outlier impact (ratio {oir:.3} > 0.2) shifts mean, using Median");
+            eprintln!(
+                "Info: High outlier impact (ratio {oir:.3}, |value| > 0.2) shifts mean, using \
+                 Median"
+            );
         }
         return Expr::Element.median();
     }
@@ -793,8 +855,19 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
+    // median/mean and (q3-q1)/(q3+q1) are scale ratios: with negative values or a mean near zero
+    // their denominators cross zero and the ratios blow up or flip sign, so only trust them on
+    // positive-valued data.
+    let positive_scale = stats.n_negative == Some(0)
+        && stats
+            .mean
+            .as_deref()
+            .and_then(|m| m.parse::<f64>().ok())
+            .is_some_and(|m| m > 0.0);
+
     // moarstats: direct mean/median divergence
-    if let Some(mmr) = stats.median_mean_ratio
+    if positive_scale
+        && let Some(mmr) = stats.median_mean_ratio
         && !(0.7..=1.3).contains(&mmr)
     {
         if !quiet {
@@ -807,25 +880,14 @@ fn suggest_numeric_after_bimodality(
     }
 
     // moarstats: robust quartile-based variability
-    if let Some(qcd) = stats.quartile_coefficient_dispersion
+    if positive_scale
+        && let Some(qcd) = stats.quartile_coefficient_dispersion
         && qcd > 0.5
     {
         if !quiet {
             eprintln!(
                 "Info: High robust variability (quartile coefficient of dispersion {qcd:.3} > \
                  0.5), using Median"
-            );
-        }
-        return Expr::Element.median();
-    }
-
-    // High CV. `stats` reports cv as a PERCENTAGE ((stddev / mean) * 100), so the cut is 100,
-    // i.e. stddev larger than the mean.
-    if stats.cv > Some(HIGH_CV_PERCENT) {
-        if !quiet {
-            eprintln!(
-                "Info: High variability in values (CV > 100%), using Median for more robust \
-                 central tendency"
             );
         }
         return Expr::Element.median();
@@ -841,6 +903,20 @@ fn suggest_numeric_after_bimodality(
     } else {
         false
     };
+
+    // High CV. `stats` reports cv as a PERCENTAGE ((stddev / mean) * 100), so the cut is 100,
+    // i.e. stddev larger than the mean.
+    // CV is a scale ratio too: substantial negatives drag the mean toward zero and inflate it, so
+    // mixed-sign data skips it and reaches the mixed-sign guard below instead.
+    if !is_mixed_sign && stats.cv > Some(HIGH_CV_PERCENT) {
+        if !quiet {
+            eprintln!(
+                "Info: High variability in values (CV > 100%), using Median for more robust \
+                 central tendency"
+            );
+        }
+        return Expr::Element.median();
+    }
 
     // Original: high cardinality pivot + index
     if high_cardinality_pivot && high_cardinality_index {
@@ -1509,4 +1585,58 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The aggregation `suggest_numeric_after_bimodality` picks, as its Debug rendering.
+    fn pick(stats: &StatsData) -> String {
+        format!(
+            "{:?}",
+            suggest_numeric_after_bimodality(stats, true, "v", false, false, false, false)
+        )
+    }
+
+    // median/mean and QCD are ratios of a positive scale; with negatives in the column they say
+    // nothing about skew, so they must not pick Median on their own.
+    #[test]
+    fn scale_ratios_ignored_on_signed_data() {
+        let median = pick(&StatsData {
+            median_mean_ratio: Some(0.3),
+            n_negative: Some(0),
+            n_zero: Some(0),
+            n_positive: Some(100),
+            mean: Some("5".to_string()),
+            ..Default::default()
+        });
+        let signed = |field: fn(&mut StatsData)| {
+            let mut s = StatsData {
+                n_negative: Some(10),
+                n_zero: Some(0),
+                n_positive: Some(90),
+                mean: Some("5".to_string()),
+                ..Default::default()
+            };
+            field(&mut s);
+            pick(&s)
+        };
+        let sum = pick(&StatsData::default());
+        assert_eq!(
+            median,
+            pick(&StatsData {
+                quartile_coefficient_dispersion: Some(0.9),
+                n_negative: Some(0),
+                mean: Some("5".to_string()),
+                ..Default::default()
+            })
+        );
+        assert_ne!(median, sum);
+        assert_eq!(signed(|s| s.median_mean_ratio = Some(0.3)), sum);
+        assert_eq!(
+            signed(|s| s.quartile_coefficient_dispersion = Some(0.9)),
+            sum
+        );
+    }
 }

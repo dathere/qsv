@@ -834,6 +834,7 @@ pivotp_test!(
             "--values",
             "sales",
             "--validate",
+            "--no-moarstats",
             "sales.csv",
         ]);
 
@@ -1009,6 +1010,7 @@ fn pivotp_smart_no_moarstats() {
         "value",
         "--agg",
         "smart",
+        "--no-moarstats",
         "spread.csv",
     ]);
 
@@ -1165,6 +1167,8 @@ fn pivotp_smart_single_value_approx_cardinality_uses_first() {
         "value",
         "--agg",
         "smart",
+        // the moarstats enrichment would rebuild the cache with EXACT cardinality
+        "--no-moarstats",
         "constant.csv",
     ]);
     let stderr = wrk.stderr_on_success(&mut cmd);
@@ -1401,6 +1405,219 @@ fn pivotp_output_tsv_extension() {
     assert_eq!(
         got,
         "date\tA\tB\n2023-01-01\t300\t150\n2023-01-02\t300\t600\n"
+    );
+}
+
+/// category/group/value CSV from `values` (cycled A/B, X/Y).
+fn smart_values_csv(values: &[f64]) -> String {
+    std::iter::once("category,group,value".to_string())
+        .chain(values.iter().enumerate().map(|(i, v)| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if (i / 2) % 2 == 0 { "X" } else { "Y" };
+            format!("{cat},{grp},{v}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn smart_group_pivot_stderr(wrk: &Workdir, file: &str) -> String {
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart", file,
+    ]);
+    wrk.stderr_on_success(&mut cmd)
+}
+
+/// Two uniform blocks of 50 values (width 10, offset 1000) separated by `gap`: flat-topped
+/// (negative excess kurtosis), with a bimodality coefficient that grows with the gap.
+fn two_blocks(gap: f64) -> Vec<f64> {
+    (0..100)
+        .map(|i| {
+            let block = if i < 50 { 0.0 } else { 10.0 + gap };
+            1000.0 + block + (f64::from(i % 50) + 0.5) / 50.0 * 10.0
+        })
+        .collect()
+}
+
+// BC ~ 0.58 with negative kurtosis: above Sarle's 0.555 but below the 0.60 margin -> not bimodal.
+#[test]
+fn pivotp_smart_bimodality_below_cut_not_bimodal() {
+    let wrk = Workdir::new("pivotp_smart_bimodality_below_cut_not_bimodal");
+    wrk.create_from_string("blocks.csv", &smart_values_csv(&two_blocks(2.0)));
+    let stderr = smart_group_pivot_stderr(&wrk, "blocks.csv");
+    assert!(
+        stderr.contains("Using Sum for \"value\"") && !stderr.contains("Bimodal"),
+        "BC ~0.58 must not count as bimodal, got: {stderr}"
+    );
+}
+
+// BC ~ 0.63 with negative kurtosis -> bimodal -> Len.
+#[test]
+fn pivotp_smart_bimodality_above_cut_is_bimodal() {
+    let wrk = Workdir::new("pivotp_smart_bimodality_above_cut_is_bimodal");
+    wrk.create_from_string("blocks.csv", &smart_values_csv(&two_blocks(4.0)));
+    let stderr = smart_group_pivot_stderr(&wrk, "blocks.csv");
+    assert!(
+        stderr.contains("Bimodal distribution detected"),
+        "BC ~0.63 with negative kurtosis must count as bimodal, got: {stderr}"
+    );
+}
+
+// The outlier impact ratio is SIGNED: low-side outliers pull the mean down, giving a negative
+// ratio that must count just like a positive one.
+#[test]
+fn pivotp_smart_negative_outlier_impact() {
+    let wrk = Workdir::new("pivotp_smart_negative_outlier_impact");
+    let values: Vec<f64> = (0..85)
+        .map(|i| 100.0 + (f64::from(i) + 0.5) / 85.0 * 10.0)
+        .chain(std::iter::repeat_n(-50.0, 15))
+        .collect();
+    wrk.create_from_string("lowout.csv", &smart_values_csv(&values));
+    let stderr = smart_group_pivot_stderr(&wrk, "lowout.csv");
+    assert!(
+        stderr.contains("High outlier impact (ratio -0.2"),
+        "a negative outlier impact ratio must pick Median, got: {stderr}"
+    );
+}
+
+const ENRICHED_MSG: &str = "enriched the stats cache with moarstats --advanced";
+
+fn stats_csv_header(wrk: &Workdir, stats_csv: &str) -> Vec<String> {
+    wrk.read_to_string(stats_csv)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .split(',')
+        .map(str::to_string)
+        .collect()
+}
+
+fn smart_sales_pivot(wrk: &Workdir, extra: &[&str]) -> std::process::Output {
+    let mut cmd = wrk.command("pivotp");
+    cmd.args(["product", "--index", "date", "--values", "sales"])
+        .args(extra)
+        .arg("sales.csv");
+    cmd.output().unwrap()
+}
+
+// smart-agg with one --values column enriches the stats cache with moarstats --advanced, and a
+// second run reuses it instead of recomputing.
+#[test]
+fn pivotp_smart_enriches_stats_cache_once() {
+    let wrk = setup("pivotp_smart_enriches_stats_cache_once");
+
+    let first = smart_sales_pivot(&wrk, &[]);
+    assert!(first.status.success());
+    let stderr = String::from_utf8_lossy(&first.stderr);
+    assert!(
+        stderr.contains(ENRICHED_MSG),
+        "expected enrichment, got: {stderr}"
+    );
+    let header = stats_csv_header(&wrk, "sales.stats.csv");
+    for col in ["q1", "mode_count", "mad", "moment_skewness", "kurtosis"] {
+        assert!(
+            header.iter().any(|h| h == col),
+            "missing {col} in {header:?}"
+        );
+    }
+    let mtime = std::fs::metadata(wrk.path("sales.stats.csv"))
+        .unwrap()
+        .modified()
+        .unwrap();
+
+    let second = smart_sales_pivot(&wrk, &[]);
+    assert!(second.status.success());
+    let stderr = String::from_utf8_lossy(&second.stderr);
+    assert!(
+        !stderr.contains(ENRICHED_MSG),
+        "second run must reuse the enriched cache, got: {stderr}"
+    );
+    assert_eq!(
+        std::fs::metadata(wrk.path("sales.stats.csv"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        mtime,
+        "stats cache was rewritten on the second run"
+    );
+    // both runs agree
+    assert_eq!(first.stdout, second.stdout);
+}
+
+// A lean cache (what an earlier `stats --cardinality` or --validate run leaves) has no quartiles,
+// modes or MAD. moarstats only appends to a current cache, so enrichment must --force a rebuild.
+#[test]
+fn pivotp_smart_rebuilds_lean_stats_cache() {
+    let wrk = setup("pivotp_smart_rebuilds_lean_stats_cache");
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--cardinality", "--stats-jsonl", "sales.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+    assert!(!stats_csv_header(&wrk, "sales.stats.csv").contains(&"q1".to_string()));
+
+    let out = smart_sales_pivot(&wrk, &[]);
+    assert!(out.status.success());
+    let header = stats_csv_header(&wrk, "sales.stats.csv");
+    for col in ["q1", "mode_count", "mad", "moment_skewness"] {
+        assert!(
+            header.iter().any(|h| h == col),
+            "missing {col} in {header:?}"
+        );
+    }
+}
+
+#[test]
+fn pivotp_smart_no_moarstats_flag_skips_enrichment() {
+    let wrk = setup("pivotp_smart_no_moarstats_flag_skips_enrichment");
+    let out = smart_sales_pivot(&wrk, &["--no-moarstats"]);
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(ENRICHED_MSG));
+    assert!(
+        !stats_csv_header(&wrk, "sales.stats.csv").contains(&"moment_skewness".to_string()),
+        "--no-moarstats must leave the cache lean"
+    );
+}
+
+#[test]
+fn pivotp_smart_explicit_delimiter_skips_enrichment() {
+    let wrk = setup("pivotp_smart_explicit_delimiter_skips_enrichment");
+    let out = smart_sales_pivot(&wrk, &["--delimiter", ","]);
+    assert!(out.status.success());
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains(ENRICHED_MSG),
+        "moarstats has no --delimiter, so an explicit one must skip enrichment"
+    );
+}
+
+#[test]
+fn pivotp_smart_statscache_none_skips_enrichment() {
+    let wrk = setup("pivotp_smart_statscache_none_skips_enrichment");
+    let mut cmd = wrk.command("pivotp");
+    cmd.env("QSV_STATSCACHE_MODE", "none").args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "sales.csv",
+    ]);
+    let out = cmd.output().unwrap();
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(ENRICHED_MSG));
+    assert!(!wrk.path("sales.stats.csv").exists());
+}
+
+// Only single-value-column smart pivots consult the distribution, so nothing else pays for it.
+// --validate still loads (basic) stats for the cardinality report, but must not enrich.
+#[test]
+fn pivotp_explicit_agg_skips_enrichment() {
+    let wrk = setup("pivotp_explicit_agg_skips_enrichment");
+    let out = smart_sales_pivot(&wrk, &["--agg", "sum", "--validate"]);
+    assert!(out.status.success());
+    assert!(!String::from_utf8_lossy(&out.stderr).contains(ENRICHED_MSG));
+    assert!(
+        !stats_csv_header(&wrk, "sales.stats.csv").contains(&"moment_skewness".to_string()),
+        "an explicit --agg must not trigger moarstats"
     );
 }
 
@@ -1765,32 +1982,23 @@ fn pivotp_smart_moarstats_quartile_dispersion() {
     );
 }
 
-// Test smart aggregation — mixed-sign data should pick Mean (avoid Sum cancellation)
+// Test smart aggregation — mixed-sign data should pick Mean
 #[test]
 fn pivotp_smart_mixed_sign() {
     let wrk = Workdir::new("pivotp_smart_mixed_sign");
-    // Data with substantial negative and positive values (both >20%).
-    // Sum would cancel out and be misleading.
+    // Evenly spread from -50 to 150: 25% negative, 75% positive, so Sum partly cancels out.
+    // Single-peaked (no bimodality), but the negatives pull the mean toward zero and inflate CV
+    // past 100%, so this also pins that mixed-sign data skips the CV check.
     let csv_content = std::iter::once("category,group,value".to_string())
-        .chain((0..40).map(|i| {
+        .chain((0..100).map(|i| {
             let cat = if i % 2 == 0 { "A" } else { "B" };
-            let grp = if i % 2 == 0 { "X" } else { "Y" };
-            // ~50% negative, ~50% positive; mean ≈ 0 so CV is NaN,
-            // which won't preempt the mixed-sign check
-            let val = if i < 20 {
-                -(10 + (i % 5))
-            } else {
-                10 + (i % 5)
-            };
+            let grp = if (i / 2) % 2 == 0 { "X" } else { "Y" };
+            let val = -50.0 + 200.0 * (f64::from(i) + 0.5) / 100.0;
             format!("{cat},{grp},{val}")
         }))
         .collect::<Vec<_>>()
         .join("\n");
     wrk.create_from_string("mixed_sign.csv", &csv_content);
-
-    let mut stats_cmd = wrk.command("stats");
-    stats_cmd.args(["--everything", "mixed_sign.csv"]);
-    wrk.assert_success(&mut stats_cmd);
 
     let mut cmd = wrk.command("pivotp");
     cmd.args([
@@ -1805,45 +2013,34 @@ fn pivotp_smart_mixed_sign() {
     ]);
 
     let stderr = wrk.stderr_on_success(&mut cmd);
-    // Should use Mean — mixed-sign data makes Sum cancel out
     assert!(
-        stderr.contains("Mean") || stderr.contains("Mixed-sign"),
+        stderr.contains("Mixed-sign data (25% negative, 75% positive)"),
         "Expected Mean for mixed-sign data, got: {stderr}"
     );
 }
 
 // Test smart aggregation — complex multimodal (>10 modes) should pick Len
-// mode_count comes from `stats --everything` (or `--mode`). We also run
-// moarstats so that pivotp reads the existing cache rather than re-running
-// stats with FrequencyForceStats (which only produces streaming stats and
-// would not include mode_count).
 #[test]
 fn pivotp_smart_multimodal() {
     let wrk = Workdir::new("pivotp_smart_multimodal");
-    // Data where many values appear with equal frequency, creating >10 modes.
-    // Each value appears exactly twice so all are tied as modes (mode_count = 20).
+    // 12 values that each appear 3 times (12 tied modes) plus 4 values that appear once, so
+    // mode_count (12) > 10 and is below the cardinality (16).
     let csv_content = std::iter::once("category,group,value".to_string())
         .chain((0..40).map(|i| {
             let cat = if i % 2 == 0 { "A" } else { "B" };
-            let grp = if i % 2 == 0 { "X" } else { "Y" };
-            // 20 distinct values, each appearing twice -> mode_count = 20
-            let val = (i % 20) * 100;
+            let grp = if (i / 2) % 2 == 0 { "X" } else { "Y" };
+            let val = if i < 36 {
+                (i % 12) * 100 + 100
+            } else {
+                5000 + i
+            };
             format!("{cat},{grp},{val}")
         }))
         .collect::<Vec<_>>()
         .join("\n");
     wrk.create_from_string("multimodal.csv", &csv_content);
 
-    // stats --everything produces mode_count; moarstats prevents pivotp
-    // from overwriting the cache with a streaming-only re-run
-    let mut stats_cmd = wrk.command("stats");
-    stats_cmd.args(["--everything", "multimodal.csv"]);
-    wrk.assert_success(&mut stats_cmd);
-
-    let mut moar_cmd = wrk.command("moarstats");
-    moar_cmd.args(["multimodal.csv"]);
-    wrk.assert_success(&mut moar_cmd);
-
+    // the automatic moarstats --advanced enrichment supplies mode_count
     let mut cmd = wrk.command("pivotp");
     cmd.args([
         "group",
@@ -1857,10 +2054,37 @@ fn pivotp_smart_multimodal() {
     ]);
 
     let stderr = wrk.stderr_on_success(&mut cmd);
-    // Should use Len — too many modes means central tendency is misleading
     assert!(
-        stderr.contains("Len") || stderr.contains("modes"),
+        stderr.contains("Complex multimodal distribution (12 modes > 10)"),
         "Expected Len for complex multimodal data, got: {stderr}"
+    );
+}
+
+// When EVERY distinct value ties (mode_count == cardinality) the data is flat, not multimodal.
+#[test]
+fn pivotp_smart_all_values_tied_not_multimodal() {
+    let wrk = Workdir::new("pivotp_smart_all_values_tied_not_multimodal");
+    // 20 distinct values, each appearing twice -> mode_count = cardinality = 20
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain((0..40).map(|i| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if (i / 2) % 2 == 0 { "X" } else { "Y" };
+            let val = (i % 20) * 100 + 1000;
+            format!("{cat},{grp},{val}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("tied.csv", &csv_content);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart", "tied.csv",
+    ]);
+
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        !stderr.contains("multimodal"),
+        "all-tied data must not be treated as multimodal, got: {stderr}"
     );
 }
 

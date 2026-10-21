@@ -6675,6 +6675,103 @@ fn sqlp_group_by_computed_keys() {
     assert_eq!(got, expected);
 }
 
+// ---------------------------------------------------------------------------
+// Polars SQL behavior changed between rev b951cd7 and c7da28c (both after
+// py-2.0.0). One test per upstream change, as above.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sqlp_current_date_time_timestamp() {
+    // pola-rs/polars#30144 added CURRENT_DATE, CURRENT_TIME and CURRENT_TIMESTAMP.
+    // Their values move, so assert types and plausibility, not exact values.
+    let wrk = Workdir::new("sqlp_current_date_time_timestamp");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t1.csv").arg(
+        "SELECT CURRENT_DATE > DATE '2020-01-01' AS d, LENGTH(CAST(CURRENT_DATE AS VARCHAR)) AS \
+         dl, CURRENT_TIMESTAMP > TIMESTAMP '2020-01-01 00:00:00' AS ts, CURRENT_TIME IS NOT NULL \
+         AS t FROM t1 LIMIT 1",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "dl", "ts", "t"],
+            svec!["true", "10", "true", "true"]
+        ]
+    );
+}
+
+#[test]
+fn sqlp_join_on_uncorrelated_subquery() {
+    // pola-rs/polars#30141: an uncorrelated scalar subquery is allowed in JOIN ... ON.
+    let wrk = Workdir::new("sqlp_join_on_uncorrelated_subquery");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t1.csv", "t2.csv"]).arg(
+        "SELECT t1.a, t2.a AS x FROM t1 JOIN t2 ON t1.a = t2.b AND t2.a = (SELECT MAX(a) FROM t2) \
+         ORDER BY t1.a",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["a", "x"], svec!["2", "200"]]);
+}
+
+#[test]
+fn sqlp_join_on_correlated_subquery() {
+    // pola-rs/polars#30131: a correlated subquery is allowed in JOIN ... ON.
+    let wrk = Workdir::new("sqlp_join_on_correlated_subquery");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t1.csv", "t2.csv"]).arg(
+        "SELECT t1.a, t2.a AS x FROM t1 JOIN t2 ON t2.b = t1.a AND t2.a = (SELECT MAX(y.a) FROM \
+         t2 y WHERE y.b = t1.a) ORDER BY t1.a",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["a", "x"], svec!["1", "100"], svec!["2", "200"]]
+    );
+}
+
+#[test]
+fn sqlp_correlated_scalar_subquery_without_aggregate() {
+    // pola-rs/polars#30131: a correlated scalar subquery no longer needs an
+    // aggregate. A row with no match yields null.
+    let wrk = Workdir::new("sqlp_correlated_scalar_subquery_without_aggregate");
+    subquery_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t1.csv", "t2.csv"])
+        .arg("SELECT a, (SELECT x.a FROM t2 x WHERE x.b = t1.a) AS s FROM t1 ORDER BY a");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "s"],
+            svec!["1", "100"],
+            svec!["2", "200"],
+            svec!["3", ""],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_read_csv_list_of_paths() {
+    // pola-rs/polars#30047: the read_* table functions accept a list of paths.
+    let wrk = Workdir::new("sqlp_read_csv_list_of_paths");
+    wrk.create("p1.csv", vec![svec!["a", "b"], svec!["1", "x"]]);
+    wrk.create("p2.csv", vec![svec!["a", "b"], svec!["2", "y"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT a, b FROM read_csv(['p1.csv', 'p2.csv']) ORDER BY a");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]]);
+}
+
 // --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
 #[test]
 fn sqlp_default_delimiter_env() {

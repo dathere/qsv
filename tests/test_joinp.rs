@@ -3486,3 +3486,72 @@ fn joinp_failure_keeps_existing_output() {
 
     assert_eq!(wrk.read_to_string("out.csv").unwrap(), "ORIGINAL\n");
 }
+
+/// Enrich `file`'s stats cache the way `viz smart --smarter` (and `pivotp --agg smart`) do, so
+/// its date columns are typed Date/DateTime by qsv's date parser, then cache a joinp schema.
+fn joinp_cache_schema_after_enrichment(wrk: &Workdir, file: &str) -> std::process::Output {
+    wrk.create_from_string("right.csv", "id,name\n1,a\n2,b\n3,c\n");
+    let mut moar = wrk.command("moarstats");
+    moar.args([
+        file,
+        "--advanced",
+        "--force",
+        "--stats-options",
+        "--infer-dates --cardinality --mode --mad --quartiles --percentiles --zero-padded-numeric \
+         --force --stats-jsonl --dates-whitelist sniff",
+    ]);
+    wrk.assert_success(&mut moar);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["--cache-schema", "1", "id", file, "id", "right.csv"]);
+    cmd.output().unwrap()
+}
+
+fn cached_pschema(wrk: &Workdir, file: &str) -> String {
+    let canonical = wrk.path(file).canonicalize().unwrap();
+    std::fs::read_to_string(format!("{}.pschema.json", canonical.display())).unwrap()
+}
+
+// A reused stats cache can type a column DateTime in a format qsv parses but Polars can't. The
+// cached schema typed it Datetime anyway, so the join (and every later sqlp/joinp read of that
+// .pschema.json) failed. Like util::infer_polars_schema (#4751), it must fall back to String.
+#[test]
+fn joinp_cache_schema_unparseable_dates_typed_string() {
+    let wrk = Workdir::new("joinp_cache_schema_unparseable_dates_typed_string");
+    wrk.create_from_string(
+        "left.csv",
+        "id,created\n1,04/18/2019 09:55:45 PM\n2,04/19/2019 10:01:02 AM\n3,05/01/2019 01:00:00 \
+         PM\n",
+    );
+    let out = joinp_cache_schema_after_enrichment(&wrk, "left.csv");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let schema = cached_pschema(&wrk, "left.csv");
+    assert!(
+        schema.contains("\"created\": \"String\""),
+        "unparseable dates must be String: {schema}"
+    );
+}
+
+#[test]
+fn joinp_cache_schema_iso_dates_keep_datetime() {
+    let wrk = Workdir::new("joinp_cache_schema_iso_dates_keep_datetime");
+    wrk.create_from_string(
+        "left.csv",
+        "id,created\n1,2019-04-18 21:55:45\n2,2019-04-19 10:01:02\n3,2019-05-01 13:00:00\n",
+    );
+    let out = joinp_cache_schema_after_enrichment(&wrk, "left.csv");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let schema = cached_pschema(&wrk, "left.csv");
+    assert!(
+        schema.contains("Datetime"),
+        "dates Polars can parse keep a temporal type: {schema}"
+    );
+}

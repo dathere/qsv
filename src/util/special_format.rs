@@ -696,7 +696,7 @@ pub fn infer_polars_schema(
 /// schema stats already took a pass over. A later row in a format polars can't
 /// read still fails the read.
 #[cfg(feature = "polars")]
-fn raw_temporal_samples(
+pub(crate) fn raw_temporal_samples(
     table: &String,
     delimiter: Option<crate::config::Delimiter>,
     stats: &[StatsData],
@@ -744,7 +744,7 @@ fn raw_temporal_samples(
 /// value must then parse with it. Day-first patterns are only accepted with
 /// `prefer_dmy`, as Polars reads `04/05/2019` as 4 May while qsv reads 5 April.
 #[cfg(feature = "polars")]
-fn polars_temporal_dtype(
+pub(crate) fn polars_temporal_dtype(
     samples: &[String],
     prefer_dmy: bool,
 ) -> Option<polars::prelude::DataType> {

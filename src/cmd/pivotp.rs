@@ -62,15 +62,20 @@ pivotp options:
                                       Always uses type, cardinality, sparsity, CV, sign
                                       distribution (n_negative/n_positive), and sort_order
                                       from streaming stats.
+                                      High variability means a CV above 100% (stddev > mean).
                                       When the stats cache includes non-streaming stats (from a
-                                      prior `stats --everything` or `stats --mode --quartiles`),
-                                      also uses skewness and mode_count.
+                                      prior `stats --everything` or `stats --mode`), also uses
+                                      mode_count.
                                       When moarstats has been run, also leverages outlier profile,
                                       Pearson skewness, MAD/stddev ratio, median/mean ratio, and
                                       quartile coefficient of dispersion for smarter selection.
-                                      With moarstats --advanced, also uses kurtosis, bimodality
-                                      (bimodality coefficient >= 0.555 with negative excess
-                                      kurtosis), entropy and Gini coefficient.
+                                      With moarstats --advanced, also uses moment skewness (|G1|
+                                      >= 1 picks median; Pearson skewness is the fallback),
+                                      kurtosis, bimodality (bimodality coefficient >= 0.555 with
+                                      negative excess kurtosis), entropy and Gini coefficient.
+                                      A single-value column uses first.
+                                      The choice depends on the data, so pass an explicit --agg
+                                      to pin a result across qsv versions.
                                       For Date/DateTime values, checks sparsity and sort order.
                                       Will only work if there is one value column, otherwise
                                       it falls back to `first`
@@ -105,7 +110,10 @@ Common options:
     -h, --help              Display this message
     -o, --output <file>     Write output to <file> instead of stdout.
     -d, --delimiter <arg>   The field delimiter for reading/writing CSV data.
-                            Must be a single character. (default: ,)
+                            Must be a single character. If not set, QSV_DEFAULT_DELIMITER
+                            is used, else ','. A .tsv/.tab (tab) or .ssv (semicolon)
+                            extension on the input or --output file sets that file's
+                            delimiter. (default: ,)
     -q, --quiet             Do not return smart aggregation chosen nor pivot result shape to stderr.
 "#;
 
@@ -125,7 +133,10 @@ use serde::Deserialize;
 
 use crate::{
     CliResult,
-    cmd::stats::StatsData,
+    cmd::{
+        joinp::{path_delim, tsvssv_delim},
+        stats::StatsData,
+    },
     config::Delimiter,
     util,
     util::{StatsMode, get_stats_records},
@@ -163,7 +174,12 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
         flag_jobs:            None,
         flag_polars:          false,
         flag_no_headers:      false,
-        flag_delimiter:       args.flag_delimiter,
+        // match the Polars reader: a .tsv/.tab/.ssv extension beats an explicit --delimiter
+        // (see `path_delim`), while Config would let the flag win
+        flag_delimiter:       match (args.flag_delimiter, args.arg_input.as_deref()) {
+            (Some(d), Some(input)) => Some(Delimiter(tsvssv_delim(input, d.as_byte()))),
+            (d, _) => d,
+        },
         arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
         flag_output:          None,
@@ -223,6 +239,15 @@ struct Args {
 // IMPORTANT: This must be kept in sync with the default value
 // of the --infer-len option in the USAGE string above.
 const DEFAULT_INFER_LEN: usize = 10000;
+
+// smart-agg thresholds
+/// `stats` reports `cv` as a percentage.
+const HIGH_CV_PERCENT: f64 = 100.0;
+/// |G1| at or above this is "highly skewed" (conventional bound; viz's 0.5 cut only labels
+/// moderate skew and deliberately does not gate robust-statistic choices).
+const HIGH_MOMENT_SKEWNESS: f64 = 1.0;
+/// Fallback when G1 is unavailable: Pearson's second skewness coefficient.
+const HIGH_PEARSON_SKEWNESS: f64 = 1.0;
 
 /// Structure to hold pivot operation metadata
 struct PivotMetadata {
@@ -437,6 +462,19 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
     Ok(result)
 }
 
+/// Aggregation for a value column the stats say holds a single distinct value.
+///
+/// Not `item`: one distinct value does not mean one ROW per pivot cell, and `item` errors on a
+/// cell with two rows (even identical ones). Every row holds the same value, so `first` returns
+/// exactly what `item` would - and it is also safe when the cardinality is a `HyperLogLog`
+/// estimate (`stats --cardinality-method approx`).
+fn single_value_agg(args: &Args, value_col: &str) -> Expr {
+    if !args.flag_quiet {
+        eprintln!("Info: \"{value_col}\" contains only one value, using First");
+    }
+    Expr::Element.first()
+}
+
 /// Suggest an appropriate aggregation function based on column statistics
 #[allow(clippy::cast_precision_loss)]
 fn suggest_agg_function(
@@ -529,10 +567,7 @@ fn suggest_agg_function(
             },
             "Integer" | "Float" => {
                 if stats.cardinality == 1 {
-                    if !quiet {
-                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
-                    }
-                    Expr::Element.item(true)
+                    single_value_agg(args, value_col)
                 } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
@@ -590,10 +625,7 @@ fn suggest_agg_function(
             },
             "Date" | "DateTime" => {
                 if stats.cardinality == 1 {
-                    if !quiet {
-                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
-                    }
-                    Expr::Element.item(true)
+                    single_value_agg(args, value_col)
                 } else if stats.sparsity.unwrap_or(0.0) > 0.5 {
                     if !quiet {
                         eprintln!(
@@ -641,10 +673,7 @@ fn suggest_agg_function(
             _ => {
                 let uniqueness_ratio = stats.uniqueness_ratio.unwrap_or(0.0);
                 if stats.cardinality == 1 {
-                    if !quiet {
-                        eprintln!("Info: \"{value_col}\" contains only one value, using Item");
-                    }
-                    Expr::Element.item(true)
+                    single_value_agg(args, value_col)
                 } else if (uniqueness_ratio - 1.0).abs() < 0.0001 {
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
@@ -790,12 +819,13 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.median();
     }
 
-    // Original: high CV
-    if stats.cv > Some(1.0) {
+    // High CV. `stats` reports cv as a PERCENTAGE ((stddev / mean) * 100), so the cut is 100,
+    // i.e. stddev larger than the mean.
+    if stats.cv > Some(HIGH_CV_PERCENT) {
         if !quiet {
             eprintln!(
-                "Info: High variability in values (CV > 1), using Median for more robust central \
-                 tendency"
+                "Info: High variability in values (CV > 100%), using Median for more robust \
+                 central tendency"
             );
         }
         return Expr::Element.median();
@@ -846,19 +876,22 @@ fn suggest_numeric_after_bimodality(
         return Expr::Element.sum();
     }
 
-    // Original: skewness check
-    if let Some(skewness) = stats.skewness
-        && skewness.abs() > 2.0
-    {
-        if !quiet {
-            eprintln!("Info: Highly skewed numeric data detected, using Median");
+    // Skewness. `stats.skewness` is Bowley's quartile skewness, bounded to [-1, 1], so it cannot
+    // express "highly skewed" on the usual moment scale and is not used here. Prefer moarstats
+    // --advanced moment skewness (G1); fall back to Pearson's second coefficient only when G1 is
+    // unavailable.
+    if let Some(g1) = stats.moment_skewness {
+        if g1.abs() >= HIGH_MOMENT_SKEWNESS {
+            if !quiet {
+                eprintln!(
+                    "Info: Highly skewed numeric data (moment skewness {g1:.3}, |value| >= 1.0), \
+                     using Median"
+                );
+            }
+            return Expr::Element.median();
         }
-        return Expr::Element.median();
-    }
-
-    // moarstats: Pearson skewness as complementary measure
-    if let Some(ps) = stats.pearson_skewness
-        && ps.abs() > 1.0
+    } else if let Some(ps) = stats.pearson_skewness
+        && ps.abs() > HIGH_PEARSON_SKEWNESS
     {
         if !quiet {
             eprintln!(
@@ -1067,12 +1100,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         })
     };
 
-    // Set delimiter if specified
-    let delim = if let Some(delimiter) = args.flag_delimiter {
+    // Resolve delimiters the same way sqlp/joinp do: --delimiter, else QSV_DEFAULT_DELIMITER,
+    // else ','; then a .tsv/.tab/.ssv extension on the file decides. The stats cache that
+    // smart-agg reads is built through Config, which applies the same rules, so the Polars
+    // reader and the stats see the same columns.
+    let fallback_delim = if let Some(delimiter) = args.flag_delimiter {
         delimiter.as_byte()
+    } else if let Ok(delim) = std::env::var("QSV_DEFAULT_DELIMITER") {
+        Delimiter::decode_delimiter(&delim)?.as_byte()
     } else {
         b','
     };
+    let delim = path_delim(&input_path_str, args.flag_delimiter, fallback_delim);
+    let output_delim = args.flag_output.as_ref().map_or(fallback_delim, |out| {
+        path_delim(out, args.flag_delimiter, fallback_delim)
+    });
 
     if args.flag_decimal_comma && delim == b',' {
         return fail_incorrectusage_clierror!(
@@ -1108,8 +1150,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let schema: Schema = serde_json::from_str(&schema_json)?;
         csv_reader = csv_reader.with_schema(Some(Arc::new(schema)));
     } else {
-        // Otherwise we infer the schema using inference length (default or user-specified)
-        csv_reader = csv_reader.with_infer_schema_length(Some(args.flag_infer_len));
+        // Otherwise we infer the schema using inference length (default or user-specified).
+        // --infer-len 0 means "scan the entire file" (None); Polars reads Some(0) as
+        // "infer nothing", which types every column as String.
+        csv_reader = csv_reader.with_infer_schema_length(if args.flag_infer_len == 0 {
+            None
+        } else {
+            Some(args.flag_infer_len)
+        });
     }
 
     // Read the CSV into a LazyFrame
@@ -1452,7 +1500,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     CsvWriter::new(&mut writer)
         .include_header(true)
         .with_datetime_format(Some(datetime_fmt))
-        .with_separator(delim)
+        .with_separator(output_delim)
         .finish(&mut pivot_result)?;
 
     // Print shape to stderr

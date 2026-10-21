@@ -347,7 +347,7 @@ static DEFAULT_GZIP_COMPRESSION_LEVEL: u8 = 6;
 static DEFAULT_ZSTD_COMPRESSION_LEVEL: i32 = 3;
 const PARQUET_ROW_GROUP_SIZE: usize = 768 * 768;
 /// rows per batch `sqlp --streaming` writes for csv, jsonl and arrow output
-const STREAM_BATCH_ROWS: usize = 100_000;
+pub(crate) const STREAM_BATCH_ROWS: usize = 100_000;
 
 #[derive(Deserialize, Clone)]
 struct Args {
@@ -484,7 +484,7 @@ impl OutputMode {
     ) -> CliResult<(usize, usize)> {
         let schema = lf.collect_schema()?;
         let (w, staged) = open_streaming_output(args, &mut delim)?;
-        let out = SharedOutput(Arc::new(Mutex::new(w)));
+        let out = SharedOutput::new(w);
 
         let writer = match self {
             OutputMode::Csv => StreamWriter::Csv(Box::new(
@@ -507,24 +507,6 @@ impl OutputMode {
             },
         };
 
-        let state = Arc::new(Mutex::new(StreamState {
-            writer,
-            rows: 0,
-            batches: 0,
-        }));
-        let callback_state = Arc::clone(&state);
-        let callback: Arc<dyn Fn(DataFrame) -> PolarsResult<bool> + Send + Sync> =
-            Arc::new(move |df: DataFrame| {
-                let mut state = callback_state.lock().map_err(|_| {
-                    PolarsError::ComputeError("sqlp output writer lock poisoned".into())
-                })?;
-                state.rows += df.height();
-                state.batches += 1;
-                state.writer.write_batch(df)?;
-                // false = keep streaming
-                Ok(false)
-            });
-
         // Without a chunk size the sink calls back once per morsel, which can be a handful of
         // rows (a debug build saw 277,604 calls for 600k rows), and per-call writer overhead
         // then dominates. Parquet batches become row groups, so keep them the size the
@@ -535,28 +517,7 @@ impl OutputMode {
             STREAM_BATCH_ROWS
         });
 
-        // maintain_order keeps ORDER BY results in order
-        lf.sink_batches(
-            PlanCallback::Rust(SpecialEq::new(callback)),
-            true,
-            chunk_size,
-        )?
-        .collect()?;
-
-        let mut state = state
-            .lock()
-            .map_err(|_| PolarsError::ComputeError("sqlp output writer lock poisoned".into()))?;
-        // writes the CSV header (and BOM) even when no batch arrived
-        state.writer.finish()?;
-        log::debug!("streamed {} rows in {} batches", state.rows, state.batches);
-        let rows = state.rows;
-        drop(state);
-        out.close()?;
-        // only now, with the whole result written, does --output appear (or get replaced)
-        if let Some(staged) = staged {
-            staged.install()?;
-        }
-
+        let rows = sink_to(lf, writer, &out, chunk_size, staged)?;
         Ok((rows, schema.len()))
     }
 }
@@ -577,7 +538,7 @@ fn open_output(args: &Args, delim: &mut u8) -> io::Result<BufWriter<Box<dyn Writ
 /// once the query succeeds (see `install`). Streaming writes rows before the query has finished, so
 /// without this a query failing part-way would leave a truncated file that looks complete; the
 /// collect path never opens the output until the result is in hand.
-struct StagedOutput {
+pub(crate) struct StagedOutput {
     tmp:  tempfile::NamedTempFile,
     dest: PathBuf,
 }
@@ -621,15 +582,30 @@ impl StagedOutput {
     }
 }
 
-/// Like `open_output`, but stages a regular-file `--output` (or one a symlink points to) in a
-/// temp beside it. Special files (e.g. /dev/stdout, a FIFO) and dangling symlinks are written
-/// directly, as `File::create` would.
+/// Like `open_output`, but stages a regular-file `--output` in a temp beside it (see
+/// `open_staged_output`).
 fn open_streaming_output(
     args: &Args,
     delim: &mut u8,
 ) -> io::Result<(BufWriter<Box<dyn Write + Send>>, Option<StagedOutput>)> {
-    let Some(path) = args.flag_output.as_ref() else {
-        return Ok((open_output(args, delim)?, None));
+    if let Some(path) = args.flag_output.as_ref() {
+        *delim = path_delim(path, args.flag_delimiter, *delim);
+    }
+    open_staged_output(args.flag_output.as_deref())
+}
+
+/// Opens the output of a streamed result: stdout, or a regular-file `output` (or one a
+/// symlink points to) staged in a temp beside it, which `StagedOutput::install` moves into
+/// place once the whole result is written. Special files (e.g. /dev/stdout, a FIFO) and
+/// dangling symlinks are written directly, as `File::create` would.
+pub(crate) fn open_staged_output(
+    output: Option<&str>,
+) -> io::Result<(BufWriter<Box<dyn Write + Send>>, Option<StagedOutput>)> {
+    let Some(path) = output else {
+        return Ok((
+            BufWriter::with_capacity(256_000, Box::new(io::stdout())),
+            None,
+        ));
     };
     let dest = PathBuf::from(path);
     let stage = match std::fs::metadata(&dest) {
@@ -638,16 +614,18 @@ fn open_streaming_output(
         Err(_) => std::fs::symlink_metadata(&dest).is_err(),
     };
     if !stage {
-        return Ok((open_output(args, delim)?, None));
+        return Ok((
+            BufWriter::with_capacity(256_000, Box::new(File::create(&dest)?)),
+            None,
+        ));
     }
 
-    *delim = path_delim(path, args.flag_delimiter, *delim);
     let dir = dest
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let tmp = tempfile::Builder::new()
-        .prefix(".qsv-sqlp-")
+        .prefix(".qsv-stream-")
         .suffix(".tmp")
         .tempfile_in(dir)?;
     let file = tmp.reopen()?;
@@ -655,6 +633,59 @@ fn open_streaming_output(
         BufWriter::with_capacity(256_000, Box::new(file)),
         Some(StagedOutput { tmp, dest }),
     ))
+}
+
+/// Runs `lf` through a streaming sink that hands each batch of `chunk_size` rows to
+/// `writer`, then finishes the writer, closes `out` and installs a staged output. The
+/// result is never collected whole. Returns the number of rows written.
+pub(crate) fn sink_to(
+    lf: LazyFrame,
+    writer: StreamWriter,
+    out: &SharedOutput,
+    chunk_size: Option<NonZeroUsize>,
+    staged: Option<StagedOutput>,
+) -> CliResult<usize> {
+    let state = Arc::new(Mutex::new(StreamState {
+        writer,
+        rows: 0,
+        batches: 0,
+    }));
+    let callback_state = Arc::clone(&state);
+    let callback: Arc<dyn Fn(DataFrame) -> PolarsResult<bool> + Send + Sync> =
+        Arc::new(move |df: DataFrame| {
+            let mut state = callback_state
+                .lock()
+                .map_err(|_| PolarsError::ComputeError("output writer lock poisoned".into()))?;
+            state.rows += df.height();
+            state.batches += 1;
+            state.writer.write_batch(df)?;
+            // false = keep streaming
+            Ok(false)
+        });
+
+    // maintain_order keeps ORDER BY results in order. Not keeping it was measured no faster
+    // for an unordered joinp result, so the output stays deterministic.
+    lf.sink_batches(
+        PlanCallback::Rust(SpecialEq::new(callback)),
+        true,
+        chunk_size,
+    )?
+    .collect()?;
+
+    let mut state = state
+        .lock()
+        .map_err(|_| PolarsError::ComputeError("output writer lock poisoned".into()))?;
+    // writes the CSV header (and BOM) even when no batch arrived
+    state.writer.finish()?;
+    log::debug!("streamed {} rows in {} batches", state.rows, state.batches);
+    let rows = state.rows;
+    drop(state);
+    out.close()?;
+    // only now, with the whole result written, does the output appear (or get replaced)
+    if let Some(staged) = staged {
+        staged.install()?;
+    }
+    Ok(rows)
 }
 
 fn csv_writer<W: Write>(w: W, delim: u8, args: &Args) -> CsvWriter<W> {
@@ -746,13 +777,17 @@ fn ipc_writer<W: Write>(w: W, args: &Args) -> IpcWriter<W> {
 /// writers take their writer by value, and this lets `stream_query` flush it afterwards
 /// and report a flush error.
 #[derive(Clone)]
-struct SharedOutput(Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>);
+pub(crate) struct SharedOutput(Arc<Mutex<BufWriter<Box<dyn Write + Send>>>>);
 
 impl SharedOutput {
+    pub(crate) fn new(w: BufWriter<Box<dyn Write + Send>>) -> Self {
+        Self(Arc::new(Mutex::new(w)))
+    }
+
     /// Flushes, then swaps the output for a sink so its file handle is closed now, even while
     /// clones of this `SharedOutput` are still alive. Windows can't rename a file with an open
     /// handle, and the staged output is renamed right after this.
-    fn close(&self) -> io::Result<()> {
+    pub(crate) fn close(&self) -> io::Result<()> {
         let mut guard = self.lock()?;
         guard.flush()?;
         drop(std::mem::replace(
@@ -783,7 +818,7 @@ impl Write for SharedOutput {
     }
 }
 
-enum StreamWriter {
+pub(crate) enum StreamWriter {
     Csv(Box<polars::io::csv::write::BatchedWriter<SharedOutput>>),
     Jsonl(SharedOutput),
     Parquet(Box<polars::io::parquet::write::BatchedWriter<SharedOutput>>),

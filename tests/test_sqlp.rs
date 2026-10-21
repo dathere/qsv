@@ -7066,7 +7066,7 @@ fn sqlp_streaming_failure_keeps_existing_output() {
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().to_string())
-        .filter(|name| name.starts_with(".qsv-sqlp-"))
+        .filter(|name| name.starts_with(".qsv-stream-"))
         .collect();
     assert!(
         leftovers.is_empty(),

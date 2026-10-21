@@ -17281,11 +17281,11 @@ fn datatables_lib_block() -> String {
 /// `driverjs_cdn_sri_matches_the_vendored_bundle`).
 const DRIVERJS_JS: &str = include_str!("assets/driverjs.min.js");
 const DRIVERJS_CSS: &str = include_str!("assets/driverjs.min.css");
-const DRIVERJS_CDN_VERSION: &str = "1.8.0";
+const DRIVERJS_CDN_VERSION: &str = "1.10.2";
 const DRIVERJS_CDN_JS_SRI: &str =
-    "sha384-ZD4UAn12lO2plEJ4lonOHO0fRSCgq0VAuoDx6/rglijDjzDYIXgCexIVu3PFJpJf";
+    "sha384-5g481DgM/VdK19dNiL3kmTG/tz1fQriwUvSide6vc77uYGaXh0s5GLQCUN6dgI8n";
 const DRIVERJS_CDN_CSS_SRI: &str =
-    "sha384-XUGWln86d3kDvw/W1Qbii8QQyeWs2LcFYfGhYrmSZ0ZiXxowttKpfdhPdLE+WMFx";
+    "sha384-q84NOjxOvSzdVT3EjRGos6w4J4t7ysF+ueMkf5CCMevHRH2IkF+sEvNvofEU67dW";
 
 /// The driver.js bundle gzipped at max compression + base64 (~25 KB -> ~9 KB b64), computed
 /// once per process like `DATATABLES_GZ_B64`. Empty on (never-expected) gzip failure — callers
@@ -17324,9 +17324,9 @@ static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
 const DRIVERJS_HINTS_JS: &str = include_str!("assets/driverjs-hints.min.js");
 const DRIVERJS_HINTS_CSS: &str = include_str!("assets/driverjs-hints.min.css");
 const DRIVERJS_HINTS_CDN_JS_SRI: &str =
-    "sha384-V6Z/uLTd410gfsytiH4lPk3vuHhB+37yhJ4lxOapeDC+qK2EbyJ2tdFlCFxlmNFl";
+    "sha384-AbaQVT/io7rTQxGfXPHFMep4Omjv0lZLl2SEXmaZwTTUy1NPXqO6XhMleUYGdeAZ";
 const DRIVERJS_HINTS_CDN_CSS_SRI: &str =
-    "sha384-yeSemBGXuXICwjenwGUdbspDzk2rXGW5DlysCWH568VN3z5vEJ+b4Wue27IK64kJ";
+    "sha384-E0PcnW6wtGAssOxWd7JDpsYR8eKlinn6frHOAW2KS8pwV0kXreVNT1weNM8rMHQP";
 
 /// Like `DRIVERJS_GZ_B64` but for the hints bundle (~15 KB -> ~6.3 KB b64).
 static DRIVERJS_HINTS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {

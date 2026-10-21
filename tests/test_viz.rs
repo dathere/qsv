@@ -14091,7 +14091,7 @@ fn viz_smart_has_tour_by_default() {
         "tour relaunch pill chrome missing"
     );
     // attribution: machine-readable comment + human credits footer
-    assert!(html.contains("driver.js 1.8.0 - (c) Kamran Ahmed - MIT"));
+    assert!(html.contains("driver.js 1.10.2 - (c) Kamran Ahmed - MIT"));
     assert!(html.contains(
         r#"<a href="https://driverjs.com/" target="_blank" rel="noopener">driver.js</a> (MIT)"#
     ));

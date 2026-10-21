@@ -1651,7 +1651,7 @@ fn pivotp_first_appearance_order_with_and_without_maintain_order() {
 
     let plain = order_pivot_stdout(&wrk, &[]);
     let maintained = order_pivot_stdout(&wrk, &["--maintain-order"]);
-    // (Polars sums an empty cell to 0.) Before #PR3 the null-key row came FIRST: the order was
+    // (Polars sums an empty cell to 0.) Before #4871 the null-key row came FIRST: the order was
     // restored by a left join on the index, where a null key never matches.
     assert_eq!(plain, "region,Z,A\nWest,1,3\nEast,6,2\n,4,0\nNorth,5,0\n");
     assert_eq!(plain, maintained);

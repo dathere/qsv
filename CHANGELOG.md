@@ -20,12 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`viz smart`: a "Skip to panels" button in the guided Tour** ([#4859](https://github.com/dathere/qsv/pull/4859)). Every Data Schematic's tour opens with the same general steps: the welcome step, the Data Dictionary drawer chapter and the data viewer chapter. A reader who has seen them before had to click through up to eleven steps to reach the part that is specific to this dataset. Those opening steps now show a **Skip to panels →** link on the progress row, apart from Back/Next. It jumps straight to the first chart-panel spotlight, closing whichever drawer the tour had opened. The full tour still runs by default and nothing is remembered. The link is left out when a page has neither chapter, because skipping would just be Next. It is localized in all eight UI languages and follows the Theme toggle.
 
 ### Changed
-- **`pivotp` reads its input fewer times** ([#PR](https://github.com/dathere/qsv/pull/PR)). A pivot scanned the CSV four times and a group-by twice, so a second pass could restore first-appearance order. Polars' order-preserving pivot and group-by now do that in the same pass. On a 2-million-row, 65 MB CSV (release build, `--no-moarstats`):
+- **`pivotp` reads its input fewer times** ([#4871](https://github.com/dathere/qsv/pull/4871)). A pivot scanned the CSV four times and a group-by twice, so a second pass could restore first-appearance order. Polars' order-preserving pivot and group-by now do that in the same pass. On a 2-million-row, 65 MB CSV (release build, `--no-moarstats`):
   - A pivot takes 75 ms instead of 94 ms with `sum` and 78 ms instead of 99 ms with `median`, and peaks at 232 MB instead of 257 MB.
   - A 2,000-column pivot is 3% faster.
   - A group-by with 80,000 groups takes 56 ms instead of 81 ms but peaks at about 375 MB instead of 280 MB. That is what `--maintain-order` already cost.
   - **Output order:** `--maintain-order` is now accepted only for compatibility, because output is always in first-appearance order. One visible change: a row whose index value is empty used to come first and now keeps its first-appearance position.
-- **`pivotp` now handles input and output like `sqlp` and `joinp`** ([#PR](https://github.com/dathere/qsv/pull/PR)):
+- **`pivotp` now handles input and output like `sqlp` and `joinp`** ([#4871](https://github.com/dathere/qsv/pull/4871)):
   - It reads snappy-compressed (`.sz`) input and snappy-compresses an `--output` ending in `.sz`.
   - It skips `QSV_COMMENT_CHAR` lines, which the stats cache behind `--agg smart` already skipped.
   - It honors `QSV_POLARS_FLOAT_PRECISION` and `QSV_OUTPUT_BOM`.

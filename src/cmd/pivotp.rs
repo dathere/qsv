@@ -73,8 +73,7 @@ pivotp options:
                                       >= 1 picks median; Pearson skewness is the fallback),
                                       kurtosis, bimodality (bimodality coefficient >= 0.555 with
                                       negative excess kurtosis), entropy and Gini coefficient.
-                                      A single-value column uses item, or first when the stats
-                                      cache's cardinality is approximate.
+                                      A single-value column uses first.
                                       The choice depends on the data, so pass an explicit --agg
                                       to pin a result across qsv versions.
                                       For Date/DateTime values, checks sparsity and sort order.
@@ -134,7 +133,10 @@ use serde::Deserialize;
 
 use crate::{
     CliResult,
-    cmd::{joinp::path_delim, stats::StatsData},
+    cmd::{
+        joinp::{path_delim, tsvssv_delim},
+        stats::StatsData,
+    },
     config::Delimiter,
     util,
     util::{StatsMode, get_stats_records},
@@ -172,7 +174,12 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
         flag_jobs:            None,
         flag_polars:          false,
         flag_no_headers:      false,
-        flag_delimiter:       args.flag_delimiter,
+        // match the Polars reader: a .tsv/.tab/.ssv extension beats an explicit --delimiter
+        // (see `path_delim`), while Config would let the flag win
+        flag_delimiter:       match (args.flag_delimiter, args.arg_input.as_deref()) {
+            (Some(d), Some(input)) => Some(Delimiter(tsvssv_delim(input, d.as_byte()))),
+            (d, _) => d,
+        },
         arg_input:            args.arg_input.clone(),
         flag_memcheck:        false,
         flag_output:          None,
@@ -457,24 +464,15 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
 
 /// Aggregation for a value column the stats say holds a single distinct value.
 ///
-/// `item` errors at runtime if a group turns out to hold more than one value, so it is only safe
-/// when the cardinality is EXACT. A cache built with `stats --cardinality-method approx` (or an
-/// OOM fallback to it) carries a `HyperLogLog` estimate, so `first` is used instead.
+/// Not `item`: one distinct value does not mean one ROW per pivot cell, and `item` errors on a
+/// cell with two rows (even identical ones). Every row holds the same value, so `first` returns
+/// exactly what `item` would - and it is also safe when the cardinality is a `HyperLogLog`
+/// estimate (`stats --cardinality-method approx`).
 fn single_value_agg(args: &Args, value_col: &str) -> Expr {
-    if util::stats_cache_cardinality_is_approx(args.arg_input.as_deref()) {
-        if !args.flag_quiet {
-            eprintln!(
-                "Info: \"{value_col}\" appears to contain only one value (approximate \
-                 cardinality), using First"
-            );
-        }
-        Expr::Element.first()
-    } else {
-        if !args.flag_quiet {
-            eprintln!("Info: \"{value_col}\" contains only one value, using Item");
-        }
-        Expr::Element.item(true)
+    if !args.flag_quiet {
+        eprintln!("Info: \"{value_col}\" contains only one value, using First");
     }
+    Expr::Element.first()
 }
 
 /// Suggest an appropriate aggregation function based on column statistics

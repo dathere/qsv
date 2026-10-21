@@ -1132,8 +1132,8 @@ fn pivotp_smart_moarstats_moderate_skew_uses_sum() {
     );
 }
 
-// A value column that holds one distinct value goes to Item - but only when the cardinality is
-// exact. Item errors if a group holds two values, so a HyperLogLog estimate must use First.
+// A value column holding one distinct value gets First - never Item, which fails on a pivot
+// cell with two rows. That also covers a HyperLogLog (approximate) cardinality of 1.
 #[test]
 fn pivotp_smart_single_value_approx_cardinality_uses_first() {
     let wrk = Workdir::new("pivotp_smart_single_value_approx_cardinality");
@@ -1169,20 +1169,22 @@ fn pivotp_smart_single_value_approx_cardinality_uses_first() {
     ]);
     let stderr = wrk.stderr_on_success(&mut cmd);
     assert!(
-        stderr.contains("approximate cardinality") && stderr.contains("using First"),
-        "Expected First for an approx single-value column, got: {stderr}"
+        stderr.contains("contains only one value, using First"),
+        "Expected First for a single-value column, got: {stderr}"
     );
 }
 
+// One distinct value does not mean one row per pivot cell: (A, X) has two identical rows, which
+// `item` rejected.
 #[test]
-fn pivotp_smart_single_value_exact_cardinality_uses_item() {
-    let wrk = Workdir::new("pivotp_smart_single_value_exact_cardinality");
+fn pivotp_smart_single_value_duplicate_rows() {
+    let wrk = Workdir::new("pivotp_smart_single_value_duplicate_rows");
     let data = vec![
         svec!["category", "group", "value"],
         svec!["A", "X", "7"],
+        svec!["A", "X", "7"],
         svec!["A", "Y", "7"],
         svec!["B", "X", "7"],
-        svec!["B", "Y", "7"],
     ];
     wrk.create("constant.csv", data);
 
@@ -1197,10 +1199,44 @@ fn pivotp_smart_single_value_exact_cardinality_uses_item() {
         "smart",
         "constant.csv",
     ]);
-    let stderr = wrk.stderr_on_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["category", "X", "Y"],
+        svec!["A", "7", "7"],
+        svec!["B", "7", ""],
+    ];
+    assert_eq!(got, expected);
+}
+
+// An explicit --delimiter on a .tsv: the extension wins for the Polars reader (as in sqlp and
+// joinp), so the stats lookup must use the same tab - otherwise smart-agg finds no stats for the
+// value column and silently falls back to First, dropping the repeated cell values.
+#[test]
+fn pivotp_tsv_explicit_comma_delimiter_smart_agg() {
+    let wrk = Workdir::new("pivotp_tsv_explicit_comma_delimiter_smart_agg");
+    wrk.create_from_string("sales.tsv", &sales_with_delim("\t"));
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "--delimiter",
+        ",",
+        "sales.tsv",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("contains only one value, using Item"),
-        "Expected Item for an exact single-value column, got: {stderr}"
+        stderr.contains("Using Sum for \"sales\""),
+        "smart-agg must see the value column's stats, got: {stderr}"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "date,A,B\n2023-01-01,300,150\n2023-01-02,300,600\n"
     );
 }
 

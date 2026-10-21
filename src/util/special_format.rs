@@ -453,6 +453,24 @@ pub fn convert_special_format(
     )
 }
 
+/// Load `<canonical input>.pschema.json` (written by `schema --polars` / `sqlp --cache-schema`)
+/// when it is at least as new as `input`. `Ok(None)` when there is no such file or it is older
+/// than the input. A present but unreadable schema is an error, not a silent fallback.
+#[cfg(feature = "polars")]
+pub fn load_valid_pschema(input: &Path) -> CliResult<Option<Arc<Schema>>> {
+    let schema_file = PathBuf::from(format!("{}.pschema.json", input.canonicalize()?.display()));
+    let Ok(schema_meta) = schema_file.metadata() else {
+        return Ok(None);
+    };
+    if schema_meta.modified()? < input.metadata()?.modified()? {
+        return Ok(None);
+    }
+    let mut schema_json = String::with_capacity(256);
+    BufReader::new(File::open(&schema_file)?).read_to_string(&mut schema_json)?;
+    let schema: Schema = serde_json::from_str(&schema_json)?;
+    Ok(Some(Arc::new(schema)))
+}
+
 #[cfg(feature = "polars")]
 pub fn infer_polars_schema(
     delimiter: Option<crate::config::Delimiter>,

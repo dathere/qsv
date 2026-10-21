@@ -1622,6 +1622,224 @@ fn pivotp_smart_repairs_missing_jsonl() {
     );
 }
 
+/// Index values out of sorted order, a null index key, and pivot values first seen as "Z".
+const UNSORTED_ORDER_CSV: &str =
+    "region,product,sales\nWest,Z,1\nEast,A,2\nWest,A,3\n,Z,4\nNorth,Z,5\nEast,Z,6\n";
+
+fn order_pivot_stdout(wrk: &Workdir, extra: &[&str]) -> String {
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product", "--index", "region", "--values", "sales", "--agg", "sum",
+    ])
+    .args(extra)
+    .arg("order.csv");
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+// Rows and pivot columns come out in first-appearance order, with or without --maintain-order
+// (which is accepted for compatibility). The null index key keeps its place too.
+#[test]
+fn pivotp_first_appearance_order_with_and_without_maintain_order() {
+    let wrk = Workdir::new("pivotp_first_appearance_order");
+    wrk.create_from_string("order.csv", UNSORTED_ORDER_CSV);
+
+    let plain = order_pivot_stdout(&wrk, &[]);
+    let maintained = order_pivot_stdout(&wrk, &["--maintain-order"]);
+    // (Polars sums an empty cell to 0.) Before #4871 the null-key row came FIRST: the order was
+    // restored by a left join on the index, where a null key never matches.
+    assert_eq!(plain, "region,Z,A\nWest,1,3\nEast,6,2\n,4,0\nNorth,5,0\n");
+    assert_eq!(plain, maintained);
+}
+
+#[test]
+fn pivotp_groupby_first_appearance_order() {
+    let wrk = Workdir::new("pivotp_groupby_first_appearance_order");
+    wrk.create_from_string("order.csv", UNSORTED_ORDER_CSV);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "--index",
+        "region",
+        "--values",
+        "sales",
+        "--agg",
+        "sum",
+        "order.csv",
+    ]);
+    let out = cmd.output().unwrap();
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "region,sales\nWest,4\nEast,8\n,4\nNorth,5\n"
+    );
+}
+
+// Enough distinct pivot values that a hash-ordered unique would shuffle the generated columns.
+#[test]
+fn pivotp_many_pivot_columns_first_appearance_order() {
+    let wrk = Workdir::new("pivotp_many_pivot_columns_first_appearance_order");
+    // 37 and 40 are coprime, so P(37*i mod 40) visits all 40 products in a scrambled order
+    let products: Vec<String> = (0..40).map(|i| format!("P{:02}", (37 * i) % 40)).collect();
+    let csv = std::iter::once("region,product,sales".to_string())
+        .chain(
+            products
+                .iter()
+                .enumerate()
+                .map(|(i, p)| format!("R{},{p},{i}", i % 3)),
+        )
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string("many.csv", &csv);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product", "--index", "region", "--values", "sales", "--agg", "sum", "many.csv",
+    ]);
+    let out = cmd.output().unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let header = stdout.lines().next().unwrap();
+    assert_eq!(header, format!("region,{}", products.join(",")));
+}
+
+fn sum_sales_pivot(wrk: &Workdir, input: &str, extra: &[&str]) -> std::process::Output {
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product", "--index", "date", "--values", "sales", "--agg", "sum",
+    ])
+    .args(extra)
+    .arg(input);
+    cmd.output().unwrap()
+}
+
+const SALES_SUM_CSV: &str = "date,A,B\n2023-01-01,300,150\n2023-01-02,300,600\n";
+
+// A snappy-compressed input is decompressed first; an --output ending in .sz is compressed.
+#[test]
+fn pivotp_snappy_input_and_output() {
+    let wrk = setup("pivotp_snappy_input_and_output");
+    let mut sz = wrk.command("snappy");
+    sz.args(["compress", "sales.csv", "--output", "sales.csv.sz"]);
+    wrk.assert_success(&mut sz);
+
+    let out = sum_sales_pivot(&wrk, "sales.csv.sz", &["--output", "out.csv.sz"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let mut unsz = wrk.command("snappy");
+    unsz.args(["decompress", "out.csv.sz"]);
+    let got = unsz.output().unwrap();
+    assert!(got.status.success());
+    assert_eq!(String::from_utf8_lossy(&got.stdout), SALES_SUM_CSV);
+}
+
+// QSV_COMMENT_CHAR lines are skipped, as in sqlp/joinp and the stats cache.
+#[test]
+fn pivotp_comment_char_env() {
+    let wrk = Workdir::new("pivotp_comment_char_env");
+    wrk.create_from_string(
+        "sales.csv",
+        &format!("# exported 2023-02-01\n{}", sales_with_delim(",")),
+    );
+    let mut cmd = wrk.command("pivotp");
+    cmd.env("QSV_COMMENT_CHAR", "#").args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "--agg",
+        "sum",
+        "sales.csv",
+    ]);
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), SALES_SUM_CSV);
+}
+
+const SALES_FLOAT_PSCHEMA: &str = r#"{"fields":{"date":"String","product":"String","region":"String","sales":"Float64"},"metadata":null}"#;
+
+// A current pschema.json types the columns (sales as Float64 -> "300.0")...
+#[test]
+fn pivotp_uses_current_pschema() {
+    let wrk = setup("pivotp_uses_current_pschema");
+    let canonical = wrk.path("sales.csv").canonicalize().unwrap();
+    std::fs::write(
+        format!("{}.pschema.json", canonical.display()),
+        SALES_FLOAT_PSCHEMA,
+    )
+    .unwrap();
+    let out = sum_sales_pivot(&wrk, "sales.csv", &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "date,A,B\n2023-01-01,300.0,150.0\n2023-01-02,300.0,600.0\n"
+    );
+}
+
+// ...but one older than the input is ignored.
+#[test]
+fn pivotp_ignores_stale_pschema() {
+    let wrk = setup("pivotp_ignores_stale_pschema");
+    let canonical = wrk.path("sales.csv").canonicalize().unwrap();
+    let pschema = format!("{}.pschema.json", canonical.display());
+    std::fs::write(&pschema, SALES_FLOAT_PSCHEMA).unwrap();
+    let old = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+    filetime::set_file_mtime(&pschema, old).unwrap();
+
+    let out = sum_sales_pivot(&wrk, "sales.csv", &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), SALES_SUM_CSV);
+}
+
+// For a .sz input the schema lives beside the ORIGINAL file (`schema --polars` writes
+// `<input>.sz.pschema.json`), not beside the decompressed temp file pivotp reads.
+#[test]
+fn pivotp_snappy_input_uses_its_pschema() {
+    let wrk = setup("pivotp_snappy_input_uses_its_pschema");
+    let mut sz = wrk.command("snappy");
+    sz.args(["compress", "sales.csv", "--output", "sales.csv.sz"]);
+    wrk.assert_success(&mut sz);
+    let canonical = wrk.path("sales.csv.sz").canonicalize().unwrap();
+    std::fs::write(
+        format!("{}.pschema.json", canonical.display()),
+        SALES_FLOAT_PSCHEMA,
+    )
+    .unwrap();
+
+    let out = sum_sales_pivot(&wrk, "sales.csv.sz", &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "date,A,B\n2023-01-01,300.0,150.0\n2023-01-02,300.0,600.0\n"
+    );
+}
+
 #[test]
 fn pivotp_smart_no_moarstats_flag_skips_enrichment() {
     let wrk = setup("pivotp_smart_no_moarstats_flag_skips_enrichment");

@@ -7077,12 +7077,16 @@ fn sqlp_streaming_failure_keeps_existing_output() {
 #[cfg(unix)]
 #[test]
 fn sqlp_streaming_output_keeps_existing_mode() {
-    use std::os::unix::fs::PermissionsExt;
+    // An existing --output is overwritten in place, as File::create does: same inode, so the
+    // same owner, group and mode. Renaming a staged temp over it would hand it the temp's
+    // group (on macOS, the directory's), exposing a 0640 file to a different group.
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let wrk = Workdir::new("sqlp_streaming_output_keeps_existing_mode");
     wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
     wrk.create_from_string("out.csv", "ORIGINAL\n");
     std::fs::set_permissions(wrk.path("out.csv"), std::fs::Permissions::from_mode(0o640)).unwrap();
+    let before = wrk.path("out.csv").metadata().unwrap();
 
     let mut cmd = wrk.command("sqlp");
     cmd.arg("t.csv")
@@ -7091,8 +7095,62 @@ fn sqlp_streaming_output_keeps_existing_mode() {
     wrk.assert_success(&mut cmd);
 
     assert_eq!(wrk.read_to_string("out.csv").unwrap(), "a\n1\n");
-    let mode = wrk.path("out.csv").metadata().unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o640);
+    let after = wrk.path("out.csv").metadata().unwrap();
+    assert_eq!(after.permissions().mode() & 0o777, 0o640);
+    assert_eq!(
+        after.ino(),
+        before.ino(),
+        "output was replaced, not overwritten"
+    );
+    assert_eq!(after.gid(), before.gid());
+}
+
+#[cfg(unix)]
+#[test]
+fn sqlp_streaming_output_through_symlink() {
+    // -o pointing at a symlink writes the link's target and leaves the link in place.
+    let wrk = Workdir::new("sqlp_streaming_output_through_symlink");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+    wrk.create_from_string("target.csv", "ORIGINAL\n");
+    std::os::unix::fs::symlink("target.csv", wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "-o", "link.csv"])
+        .arg("SELECT a FROM t");
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        wrk.path("link.csv")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(wrk.read_to_string("target.csv").unwrap(), "a\n1\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn sqlp_streaming_new_output_gets_default_mode() {
+    // A new --output gets the mode a newly created file gets in its directory, not the
+    // owner-only mode of the staged temp.
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("sqlp_streaming_new_output_gets_default_mode");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+    let reference = std::fs::File::create(wrk.path("reference.txt")).unwrap();
+    let default_mode = reference.metadata().unwrap().permissions().mode() & 0o777;
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .args(["--streaming", "-o", "new.csv"])
+        .arg("SELECT a FROM t");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(wrk.read_to_string("new.csv").unwrap(), "a\n1\n");
+    let mode = wrk.path("new.csv").metadata().unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, default_mode);
 }
 
 #[test]

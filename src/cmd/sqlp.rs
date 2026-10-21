@@ -246,8 +246,10 @@ sqlp options:
                               result is too big for memory. Works with the csv, jsonl, parquet
                               and arrow formats; json and avro output still collect the whole
                               result. Queries already run on Polars' streaming engine either way.
-                              An --output file is written beside its target and renamed into
-                              place only if the query succeeds. On stdout, rows are sent as
+                              An --output file is written beside its target and only moved
+                              into place if the query succeeds. Overwriting an existing file
+                              copies the result into it, so it keeps its owner, group, mode
+                              and links; that briefly needs disk space for two copies. On stdout, rows are sent as
                               they are computed, so a query that fails part-way leaves its
                               output cut short; check sqlp's exit code before using it.
     --no-optimizations        Disable non-default query optimizations. This will make queries slower.
@@ -571,9 +573,9 @@ fn open_output(args: &Args, delim: &mut u8) -> io::Result<BufWriter<Box<dyn Writ
     Ok(BufWriter::with_capacity(256_000, w))
 }
 
-/// A `--streaming` output file is written to a sibling temp and renamed over `--output` only
-/// once the query succeeds. Streaming writes rows before the query has finished, so without
-/// this a query failing part-way would leave a truncated file that looks complete; the
+/// A `--streaming` output file is written to a sibling temp and moved to `--output` only
+/// once the query succeeds (see `install`). Streaming writes rows before the query has finished, so
+/// without this a query failing part-way would leave a truncated file that looks complete; the
 /// collect path never opens the output until the result is in hand.
 struct StagedOutput {
     tmp:  tempfile::NamedTempFile,
@@ -581,26 +583,35 @@ struct StagedOutput {
 }
 
 impl StagedOutput {
-    /// Gives the temp the mode `File::create(dest)` would have: the existing file's mode,
-    /// else this directory's default for a new file. The temp is created owner-only and only
-    /// ever widened, never narrowed, so it is never more open than the result.
+    /// Moves the finished result to `dest`, with the effect `File::create(dest)` would have.
+    ///
+    /// An EXISTING `dest` (or the file a symlink at `dest` points to) is truncated in place
+    /// and the result copied into it, so it keeps its inode - owner, group, mode, ACLs, hard
+    /// links and the symlink itself. Renaming over it would replace all of those: on macOS a
+    /// new file takes the directory's group, so a 0640 output owned by a restricted group
+    /// would come back readable by another one.
+    ///
+    /// A NEW `dest` has nothing to preserve, so the temp is renamed into place, at the mode a
+    /// new file gets in that directory. It was created owner-only and is only ever widened.
     fn install(self) -> CliResult<()> {
+        if std::fs::metadata(&self.dest).is_ok() {
+            let mut staged = File::open(self.tmp.path())?;
+            let mut dest = File::create(&self.dest)?;
+            io::copy(&mut staged, &mut dest)?;
+            dest.flush()?;
+            // dropping self.tmp removes the staged copy
+            return Ok(());
+        }
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
 
             let dir = self.tmp.path().parent().unwrap_or_else(|| Path::new("."));
-            let mode = match std::fs::metadata(&self.dest) {
-                Ok(existing) => existing.permissions().mode() & 0o777,
-                Err(_) => util::new_file_mode_in(dir).unwrap_or(0o600),
-            };
+            let mode = util::new_file_mode_in(dir).unwrap_or(0o600);
             self.tmp
                 .as_file()
                 .set_permissions(std::fs::Permissions::from_mode(mode))?;
-        }
-        #[cfg(not(unix))]
-        if let Ok(existing) = std::fs::metadata(&self.dest) {
-            self.tmp.as_file().set_permissions(existing.permissions())?;
         }
 
         self.tmp
@@ -610,8 +621,9 @@ impl StagedOutput {
     }
 }
 
-/// Like `open_output`, but stages a regular-file `--output` in a temp beside it. Special
-/// files (e.g. /dev/stdout, a FIFO) can't be renamed over, so they are written directly.
+/// Like `open_output`, but stages a regular-file `--output` (or one a symlink points to) in a
+/// temp beside it. Special files (e.g. /dev/stdout, a FIFO) and dangling symlinks are written
+/// directly, as `File::create` would.
 fn open_streaming_output(
     args: &Args,
     delim: &mut u8,
@@ -620,8 +632,12 @@ fn open_streaming_output(
         return Ok((open_output(args, delim)?, None));
     };
     let dest = PathBuf::from(path);
-    let is_regular_or_new = std::fs::metadata(&dest).map_or(true, |m| m.is_file());
-    if !is_regular_or_new {
+    let stage = match std::fs::metadata(&dest) {
+        Ok(meta) => meta.is_file(),
+        // nothing there at all - a dangling symlink still has its own metadata
+        Err(_) => std::fs::symlink_metadata(&dest).is_err(),
+    };
+    if !stage {
         return Ok((open_output(args, delim)?, None));
     }
 

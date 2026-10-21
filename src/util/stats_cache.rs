@@ -1254,9 +1254,10 @@ const ADVANCED_MARKER_COLUMN: &str = "moment_skewness";
 /// The decision is made from the cache's HEADER, not its values: a column can be legitimately
 /// empty (e.g. no kurtosis for n < 4), and that must not trigger a rerun on every call.
 /// moarstats appends to a current `<stem>.stats.csv` without recomputing it, so when the baseline
-/// is lean - e.g. the `stats --cardinality` cache a `FrequencyForceStats` load leaves behind - or
-/// stale, from another qsv version, or built with approximate cardinality, it runs with `--force`
-/// so the baseline is rebuilt with `ADVANCED_STATS_OPTIONS`.
+/// is lean - e.g. the `stats --cardinality` cache a `FrequencyForceStats` load leaves behind -,
+/// stale, from another qsv version, built with approximate cardinality or non-default parsing
+/// options, or its JSONL is missing or outdated, it runs with `--force` so the cache is rebuilt
+/// with `ADVANCED_STATS_OPTIONS`.
 pub fn ensure_advanced_stats_cache(input: &str) -> CliResult<bool> {
     let env_mode = env::var("QSV_STATSCACHE_MODE")
         .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
@@ -1273,9 +1274,16 @@ pub fn ensure_advanced_stats_cache(input: &str) -> CliResult<bool> {
     }
 
     let stats_csv = get_stats_csv_path(input_path)?;
+    // A baseline parsed with non-default options (--no-headers, another delimiter) describes a
+    // different logical CSV; moarstats would extend it and republish it under default-parsing
+    // metadata, slipping past the loader's own parsing guard.
+    let canonical = input_path
+        .canonicalize()
+        .unwrap_or_else(|_| input_path.to_path_buf());
     let current = stats_csv_is_current(&stats_csv, input_path)
         && !stats_csv_version_mismatch(&stats_csv)
-        && !stats_cache_cardinality_is_approx(Some(input));
+        && !stats_cache_cardinality_is_approx(Some(input))
+        && !stats_cache_parsing_opts_conflict(input_path, &canonical, false, None, None, false);
     let header: Vec<String> = File::open(&stats_csv)
         .ok()
         .and_then(|f| BufReader::new(f).lines().next())
@@ -1308,7 +1316,9 @@ pub fn ensure_advanced_stats_cache(input: &str) -> CliResult<bool> {
         "--stats-options",
         ADVANCED_STATS_OPTIONS,
     ]);
-    if !(current && baseline_ok) {
+    // moarstats only rewrites the JSONL when it adds columns, so an enriched CSV with a missing or
+    // outdated JSONL needs --force too.
+    if !(current && baseline_ok && jsonl_ok) {
         cmd.arg("--force");
     }
     let output = cmd.stdin(std::process::Stdio::null()).output()?;

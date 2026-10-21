@@ -1566,6 +1566,62 @@ fn pivotp_smart_rebuilds_lean_stats_cache() {
     }
 }
 
+// A baseline parsed with --no-headers describes a different logical CSV (columns "1".."4", the
+// header row counted as data). It must be rebuilt, not extended.
+#[test]
+fn pivotp_smart_rebuilds_no_headers_stats_cache() {
+    let wrk = setup("pivotp_smart_rebuilds_no_headers_stats_cache");
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "--no-headers", "--stats-jsonl", "sales.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+    assert!(
+        !wrk.read_to_string("sales.stats.csv")
+            .unwrap()
+            .contains("\nsales,")
+    );
+
+    let out = smart_sales_pivot(&wrk, &[]);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(ENRICHED_MSG),
+        "expected enrichment, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("Using Sum for \"sales\""),
+        "smart-agg must see a correctly parsed cache, got: {stderr}"
+    );
+    assert!(
+        wrk.read_to_string("sales.stats.csv")
+            .unwrap()
+            .contains("\nsales,"),
+        "the --no-headers baseline was not rebuilt"
+    );
+}
+
+// An enriched stats CSV whose JSONL is missing: moarstats only rewrites the JSONL when it adds
+// columns, so without --force the JSONL stayed missing and the stats load rebuilt a lean cache.
+#[test]
+fn pivotp_smart_repairs_missing_jsonl() {
+    let wrk = setup("pivotp_smart_repairs_missing_jsonl");
+    let first = smart_sales_pivot(&wrk, &[]);
+    assert!(first.status.success());
+    std::fs::remove_file(wrk.path("sales.stats.csv.data.jsonl")).unwrap();
+
+    let second = smart_sales_pivot(&wrk, &[]);
+    assert!(second.status.success());
+    assert!(
+        wrk.read_to_string("sales.stats.csv.data.jsonl")
+            .unwrap()
+            .contains("moment_skewness"),
+        "the JSONL must be rebuilt from an enriched cache"
+    );
+    assert!(
+        stats_csv_header(&wrk, "sales.stats.csv").contains(&"moment_skewness".to_string()),
+        "the enriched stats CSV must survive"
+    );
+}
+
 #[test]
 fn pivotp_smart_no_moarstats_flag_skips_enrichment() {
     let wrk = setup("pivotp_smart_no_moarstats_flag_skips_enrichment");

@@ -1008,16 +1008,8 @@ fn get_polars_plan(
 ) -> CliResult<String> {
     let mut ctx = SQLContext::new();
 
-    let optflags = OptFlags::PROJECTION_PUSHDOWN
-        | OptFlags::PREDICATE_PUSHDOWN
-        | OptFlags::CLUSTER_WITH_COLUMNS
-        | OptFlags::TYPE_COERCION
-        | OptFlags::SIMPLIFY_EXPR
-        | OptFlags::SLICE_PUSHDOWN
-        | OptFlags::COMM_SUBPLAN_ELIM
-        | OptFlags::COMM_SUBEXPR_ELIM
-        | OptFlags::ROW_ESTIMATE
-        | OptFlags::FAST_PROJECTION;
+    // The flags sqlp runs its queries with, so the plan shown is the plan sqlp would run.
+    let optflags = OptFlags::default();
 
     let mut lossy_table_name = Cow::default();
     let mut table_name_str;

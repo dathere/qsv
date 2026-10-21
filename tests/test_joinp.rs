@@ -3344,3 +3344,15 @@ fn joinp_same_named_sz_inputs() {
         assert_eq!(got, expected, "right input: {right}");
     }
 }
+
+#[test]
+fn joinp_low_memory_flag_removed() {
+    // --low-memory had no effect on Polars' streaming engine, so it was removed.
+    let wrk = Workdir::new("joinp_low_memory_flag_removed");
+    wrk.create("a.csv", vec![svec!["k", "x"], svec!["1", "a"]]);
+    wrk.create("b.csv", vec![svec!["k", "y"], svec!["1", "b"]]);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "a.csv", "k", "b.csv", "--low-memory"]);
+    wrk.assert_err(&mut cmd);
+}

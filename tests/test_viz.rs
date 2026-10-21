@@ -23641,6 +23641,9 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains("live.pairGen++;"));
     assert_eq!(bridge.matches("if (g !== live.pairGen) return;").count(), 2);
     assert!(bridge.contains("poll(j.request_id, Date.now(), st, live.pairGen);"));
+    // a second Connect click before the pairing reply lands starts no second pairing
+    assert!(bridge.contains("if (live.dialog || live.pairing) return;"));
+    assert!(bridge.contains("}).catch(function (e) { live.pairing = false; fail(e); });"));
     assert!(bridge.contains("if (o) body.order = { column: o.column, desc: o.dir === \"desc\" };"));
     // Re-render's document.write keeps window.DataTable, so every instance goes first
     let rerender = &bridge[bridge.find(r#"dsPath("/render")"#).unwrap()..];

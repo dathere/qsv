@@ -294,7 +294,7 @@ const BRIDGE_JS: &str = r#"
   var DIGEST = (SRC.fingerprint && SRC.fingerprint.digest) || null;
   var live = { token: null, dataset: null, chip: null, panel: null, out: null, status: null,
     rerender: null, dialog: null, pollTimer: null, title: null, table: null, gen: 0,
-    req: 0, pairGen: 0 };
+    req: 0, pairGen: 0, pairing: false };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -452,11 +452,15 @@ const BRIDGE_JS: &str = r#"
     if (live.dialog) { live.dialog.remove(); live.dialog = null; }
   }
   function startPair() {
-    if (live.dialog) return;
+    // the chip stays clickable until the dialog exists: a second click meanwhile would open a
+    // second dialog that no Cancel can close
+    if (live.dialog || live.pairing) return;
+    live.pairing = true;
     var body = {};
     if (SRC.schematic_uuid) body.schematic_uuid = SRC.schematic_uuid;
     if (DIGEST) body.digest = DIGEST;
     call("POST", "/v1/pair", body, { anon: true }).then(function (j) {
+      live.pairing = false;
       if (!j || !j.request_id || !j.code) throw new Error("qsv-clientd sent an unexpected pairing reply");
       var d = el("div", "qsv-live-dialog");
       d.id = "qsv-live-dialog";
@@ -477,7 +481,7 @@ const BRIDGE_JS: &str = r#"
       document.body.appendChild(d);
       live.dialog = d;
       poll(j.request_id, Date.now(), st, live.pairGen);
-    }).catch(fail);
+    }).catch(function (e) { live.pairing = false; fail(e); });
   }
   function poll(id, t0, st, g) {
     if (Date.now() - t0 > 300000) {

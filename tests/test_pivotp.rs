@@ -619,7 +619,7 @@ pivotp_test!(
         wrk.assert_success(&mut cmd);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-        let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100.0;150.0"]];
+        let expected = vec![svec!["date;A;B"], svec!["2023-01-01;100;150"]];
         assert_eq!(got, expected);
     }
 );
@@ -838,16 +838,15 @@ pivotp_test!(
         ]);
 
         let msg = wrk.stderr_on_success(&mut cmd);
-        let expected_msg = "Info: High variability in values (CV > 1), using Median for more \
-                            robust central tendency\nPivot on-column cardinality:\n  product: \
-                            2\n(2, 3)\n";
+        let expected_msg =
+            "Info: Using Sum for \"sales\"\nPivot on-column cardinality:\n  product: 2\n(2, 3)\n";
         assert_eq!(msg, expected_msg);
 
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         let expected = vec![
             svec!["date", "A", "B"],
-            svec!["2023-01-01", "150.0", "150.0"],
-            svec!["2023-01-02", "300.0", "300.0"],
+            svec!["2023-01-01", "300", "150"],
+            svec!["2023-01-02", "300", "600"],
         ];
         assert_eq!(got, expected);
     }
@@ -894,12 +893,12 @@ pivotp_test!(
         ]);
 
         let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-        // Values are smart-agg'd (--agg defaults to smart); what this test pins is that
+        // Values are smart-agg'd (--agg defaults to smart -> Sum here); what this test pins is that
         // --max-columns 0 leaves the result identical to an uncapped pivot.
         let expected = vec![
             svec!["date", "A", "B"],
-            svec!["2023-01-01", "150.0", "150.0"],
-            svec!["2023-01-02", "300.0", "300.0"],
+            svec!["2023-01-01", "300", "150"],
+            svec!["2023-01-02", "300", "600"],
         ];
         assert_eq!(got, expected);
     }
@@ -979,16 +978,51 @@ fn pivotp_max_columns_uses_exact_count_not_estimate() {
     );
 }
 
-// Test smart aggregation without moarstats — graceful degradation to existing behavior
-// Normal numeric data with CV > 1% should use Median (existing CV-based behavior)
-#[test]
 fn pivotp_smart_no_moarstats() {
     let wrk = Workdir::new("pivotp_smart_no_moarstats");
     // Without moarstats, smart aggregation uses only base stats.
-    // CV in qsv is stored as a percentage (stddev/mean * 100),
-    // so even tight values like 100-104 have CV > 1 (i.e., > 1%).
-    // This test verifies that the existing CV-based logic still works
-    // correctly without moarstats data, picking Median for CV > 1.
+    // `stats` reports CV as a PERCENTAGE ((stddev / mean) * 100), so "high variability" is
+    // CV > 100%, i.e. a stddev larger than the mean. These values have CV ~ 200%.
+    let data = vec![
+        svec!["category", "group", "value"],
+        svec!["A", "X", "1"],
+        svec!["A", "Y", "2"],
+        svec!["B", "X", "1"],
+        svec!["B", "Y", "3"],
+        svec!["C", "X", "2"],
+        svec!["C", "Y", "90"],
+    ];
+    wrk.create("spread.csv", data);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", "spread.csv"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "spread.csv",
+    ]);
+
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("CV > 100%") && stderr.contains("Median"),
+        "Expected CV-based Median without moarstats, got: {stderr}"
+    );
+}
+
+// Regression: CV is a percentage, so tightly clustered values (CV ~ 1.6%) are NOT "high
+// variability". The old `cv > 1.0` cut read that as CV > 1% and sent nearly every numeric
+// column to Median.
+#[test]
+fn pivotp_smart_low_cv_uses_sum() {
+    let wrk = Workdir::new("pivotp_smart_low_cv_uses_sum");
     let data = vec![
         svec!["category", "group", "value"],
         svec!["A", "X", "100"],
@@ -1000,12 +1034,10 @@ fn pivotp_smart_no_moarstats() {
     ];
     wrk.create("normal.csv", data);
 
-    // Run stats first so pivotp can use them
     let mut stats_cmd = wrk.command("stats");
     stats_cmd.args(["--everything", "normal.csv"]);
     wrk.assert_success(&mut stats_cmd);
 
-    // Run pivotp with smart agg — no moarstats, CV > 1% triggers Median
     let mut cmd = wrk.command("pivotp");
     cmd.args([
         "group",
@@ -1019,11 +1051,318 @@ fn pivotp_smart_no_moarstats() {
     ]);
 
     let stderr = wrk.stderr_on_success(&mut cmd);
-    // Existing behavior: CV > 1% triggers Median, and no moarstats checks fire
-    // (because moarstats hasn't been run, so all moarstats fields are None)
     assert!(
-        stderr.contains("CV > 1"),
-        "Expected CV-based Median without moarstats, got: {stderr}"
+        stderr.contains("Using Sum for \"value\"") && !stderr.contains("CV >"),
+        "Expected Sum for low-CV data, got: {stderr}"
+    );
+}
+
+// Gamma(k=2) quantiles: moment skewness G1 ~ 1.28, while every earlier moarstats check stays
+// quiet (excess kurtosis ~ 2.0, BC ~ 0.52, MAD/stddev ~ 0.59, CV ~ 12%) and Pearson skewness is
+// only ~ 0.69 - so only the G1 check can pick Median.
+const GAMMA2_VALUES: &str =
+    "101.0 101.8 102.4 102.9 103.3 103.8 104.1 104.5 104.8 105.2 105.5 105.8 106.1 106.4 106.7 \
+     107.0 107.3 107.5 107.8 108.1 108.4 108.7 108.9 109.2 109.5 109.7 110.0 110.3 110.6 110.8 \
+     111.1 111.4 111.7 111.9 112.2 112.5 112.8 113.1 113.3 113.6 113.9 114.2 114.5 114.8 115.1 \
+     115.4 115.7 116.0 116.3 116.6 116.9 117.3 117.6 117.9 118.3 118.6 119.0 119.3 119.7 120.0 \
+     120.4 120.8 121.2 121.6 122.0 122.4 122.8 123.3 123.7 124.2 124.6 125.1 125.6 126.1 126.7 \
+     127.2 127.8 128.4 129.0 129.6 130.3 131.0 131.7 132.5 133.3 134.2 135.1 136.1 137.1 138.3 \
+     139.5 140.9 142.5 144.2 146.3 148.7 151.7 155.7 161.7 174.3";
+
+// Gamma(k=9) quantiles: moderate skew, G1 ~ 0.61. Above viz's 0.5 "skewed" label, below the
+// 1.0 bound pivotp uses to switch Sum -> Median.
+const GAMMA9_VALUES: &str =
+    "131.3 137.6 141.2 143.8 146.0 147.9 149.5 151.0 152.4 153.7 154.9 156.1 157.2 158.2 159.2 \
+     160.2 161.2 162.1 163.0 163.9 164.7 165.5 166.4 167.2 168.0 168.8 169.5 170.3 171.1 171.8 \
+     172.6 173.3 174.0 174.8 175.5 176.2 177.0 177.7 178.4 179.1 179.8 180.5 181.3 182.0 182.7 \
+     183.4 184.1 184.9 185.6 186.3 187.1 187.8 188.5 189.3 190.0 190.8 191.6 192.4 193.1 193.9 \
+     194.7 195.6 196.4 197.2 198.1 198.9 199.8 200.7 201.6 202.5 203.5 204.4 205.4 206.5 207.5 \
+     208.6 209.7 210.8 212.0 213.2 214.4 215.7 217.1 218.5 220.0 221.6 223.2 225.0 226.9 228.9 \
+     231.1 233.4 236.1 239.1 242.4 246.4 251.3 257.6 266.9 285.8";
+
+/// Write `values` as a category/group/value CSV, run `stats --everything` +
+/// `moarstats --advanced`, then smart-pivot it and return pivotp's stderr.
+fn smart_pivot_with_advanced_stats(wrk: &Workdir, file: &str, values: &str) -> String {
+    let csv_content = std::iter::once("category,group,value".to_string())
+        .chain(values.split_whitespace().enumerate().map(|(i, v)| {
+            let cat = if i % 2 == 0 { "A" } else { "B" };
+            let grp = if (i / 2) % 2 == 0 { "X" } else { "Y" };
+            format!("{cat},{grp},{v}")
+        }))
+        .collect::<Vec<_>>()
+        .join("\n");
+    wrk.create_from_string(file, &csv_content);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args(["--everything", file]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut moar_cmd = wrk.command("moarstats");
+    moar_cmd.args(["--advanced", file]);
+    wrk.assert_success(&mut moar_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group", "--index", "category", "--values", "value", "--agg", "smart", file,
+    ]);
+    wrk.stderr_on_success(&mut cmd)
+}
+
+// The old check read `stats.skewness`, which is Bowley's quartile skewness (bounded to [-1, 1]),
+// against |skew| > 2 - so it could never fire. Moment skewness G1 replaces it.
+#[test]
+fn pivotp_smart_moarstats_moment_skewness() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_moment_skewness");
+    let stderr = smart_pivot_with_advanced_stats(&wrk, "skewed.csv", GAMMA2_VALUES);
+    assert!(
+        stderr.contains("moment skewness") && stderr.contains("Median"),
+        "Expected G1-based Median for highly skewed data, got: {stderr}"
+    );
+}
+
+#[test]
+fn pivotp_smart_moarstats_moderate_skew_uses_sum() {
+    let wrk = Workdir::new("pivotp_smart_moarstats_moderate_skew_uses_sum");
+    let stderr = smart_pivot_with_advanced_stats(&wrk, "moderate.csv", GAMMA9_VALUES);
+    assert!(
+        stderr.contains("Using Sum for \"value\""),
+        "Expected Sum for moderately skewed data (G1 ~ 0.61 < 1.0), got: {stderr}"
+    );
+}
+
+// A value column that holds one distinct value goes to Item - but only when the cardinality is
+// exact. Item errors if a group holds two values, so a HyperLogLog estimate must use First.
+#[test]
+fn pivotp_smart_single_value_approx_cardinality_uses_first() {
+    let wrk = Workdir::new("pivotp_smart_single_value_approx_cardinality");
+    let data = vec![
+        svec!["category", "group", "value"],
+        svec!["A", "X", "7"],
+        svec!["A", "Y", "7"],
+        svec!["B", "X", "7"],
+        svec!["B", "Y", "7"],
+    ];
+    wrk.create("constant.csv", data);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.args([
+        "--cardinality",
+        "--cardinality-method",
+        "approx",
+        "--stats-jsonl",
+        "constant.csv",
+    ]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "constant.csv",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("approximate cardinality") && stderr.contains("using First"),
+        "Expected First for an approx single-value column, got: {stderr}"
+    );
+}
+
+#[test]
+fn pivotp_smart_single_value_exact_cardinality_uses_item() {
+    let wrk = Workdir::new("pivotp_smart_single_value_exact_cardinality");
+    let data = vec![
+        svec!["category", "group", "value"],
+        svec!["A", "X", "7"],
+        svec!["A", "Y", "7"],
+        svec!["B", "X", "7"],
+        svec!["B", "Y", "7"],
+    ];
+    wrk.create("constant.csv", data);
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "group",
+        "--index",
+        "category",
+        "--values",
+        "value",
+        "--agg",
+        "smart",
+        "constant.csv",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains("contains only one value, using Item"),
+        "Expected Item for an exact single-value column, got: {stderr}"
+    );
+}
+
+// --infer-len 0 means "scan the whole file". Polars reads Some(0) as "infer nothing" and types
+// every column as String, so `--agg sum` used to fail with "sum not supported for dtype str".
+#[test]
+fn pivotp_infer_len_zero_keeps_numeric_types() {
+    let wrk = setup("pivotp_infer_len_zero_keeps_numeric_types");
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "--agg",
+        "sum",
+        "--infer-len",
+        "0",
+        "sales.csv",
+    ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["date", "A", "B"],
+        svec!["2023-01-01", "300", "150"],
+        svec!["2023-01-02", "300", "600"],
+    ];
+    assert_eq!(got, expected);
+}
+
+/// The `setup` sales data, joined with `delim`.
+fn sales_with_delim(delim: &str) -> String {
+    [
+        "date,product,region,sales",
+        "2023-01-01,A,North,100",
+        "2023-01-01,B,North,150",
+        "2023-01-01,A,South,200",
+        "2023-01-02,B,South,250",
+        "2023-01-02,A,North,300",
+        "2023-01-02,B,North,350",
+    ]
+    .iter()
+    .map(|l| l.replace(',', delim))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+// A .tsv input needs no --delimiter: the extension decides, as it does for the stats cache that
+// smart-agg reads. Previously the Polars reader used ',' and found one combined column.
+#[test]
+fn pivotp_tsv_input_without_delimiter() {
+    let wrk = Workdir::new("pivotp_tsv_input_without_delimiter");
+    wrk.create_from_string("sales.tsv", &sales_with_delim("\t"));
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "sales.tsv",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "pivotp on .tsv failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // stdout keeps the qsv default (','), as in sqlp/joinp: the output delimiter comes from
+    // --delimiter or the --output extension, never from the input's extension.
+    assert_eq!(stdout, "date,A,B\n2023-01-01,300,150\n2023-01-02,300,600\n");
+    assert!(
+        stderr.contains("Using Sum for \"sales\""),
+        "smart-agg should see the real columns, got: {stderr}"
+    );
+}
+
+#[test]
+fn pivotp_qsv_default_delimiter_env() {
+    let wrk = Workdir::new("pivotp_qsv_default_delimiter_env");
+    wrk.create_from_string("sales.txt", &sales_with_delim(";"));
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";").args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "--agg",
+        "sum",
+        "sales.txt",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "pivotp with QSV_DEFAULT_DELIMITER failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "date;A;B\n2023-01-01;300;150\n2023-01-02;300;600\n"
+    );
+}
+
+// --decimal-comma needs a non-comma delimiter. A .tsv already has one, so the check must look
+// at the RESOLVED delimiter; it used to see the ',' default and refuse.
+#[test]
+fn pivotp_decimal_comma_tsv_without_delimiter() {
+    let wrk = Workdir::new("pivotp_decimal_comma_tsv_without_delimiter");
+    wrk.create_from_string(
+        "prices.tsv",
+        "date\tproduct\tprice\n2023-01-01\tA\t1,50\n2023-01-01\tA\t2,25\n2023-01-01\tB\t3,00\n",
+    );
+
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "price",
+        "--agg",
+        "sum",
+        "--decimal-comma",
+        "prices.tsv",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "pivotp --decimal-comma on .tsv failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "date,A,B\n2023-01-01,3.75,3.0\n"
+    );
+}
+
+// The output delimiter follows the --output extension.
+#[test]
+fn pivotp_output_tsv_extension() {
+    let wrk = setup("pivotp_output_tsv_extension");
+    let mut cmd = wrk.command("pivotp");
+    cmd.args([
+        "product",
+        "--index",
+        "date",
+        "--values",
+        "sales",
+        "--agg",
+        "sum",
+        "--output",
+        "out.tsv",
+        "sales.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let got = wrk.read_to_string("out.tsv").unwrap();
+    assert_eq!(
+        got,
+        "date\tA\tB\n2023-01-01\t300\t150\n2023-01-02\t300\t600\n"
     );
 }
 
@@ -1609,8 +1948,8 @@ pivotp_test!(
         let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
         let expected = vec![
             svec!["date", "A", "B"],
-            svec!["2023-01-01", "150.0", "150.0"],
-            svec!["2023-01-02", "300.0", "300.0"],
+            svec!["2023-01-01", "300", "150"],
+            svec!["2023-01-02", "300", "600"],
         ];
         assert_eq!(got, expected);
     }

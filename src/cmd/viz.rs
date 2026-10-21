@@ -35301,9 +35301,8 @@ struct SmartPrep {
 
 /// Base stats options used by the `--smarter` moarstats pass. These must remain compatible with
 /// `StatsMode::ProfileSchema` because both paths write the same persistent cache.
-const SMARTER_STATS_OPTIONS: &str = "--infer-dates --cardinality --mode --mad --quartiles \
-                                     --percentiles --zero-padded-numeric --force --stats-jsonl \
-                                     --dates-whitelist sniff";
+/// Shared with `pivotp --agg smart`, so both build and reuse the same cache.
+const SMARTER_STATS_OPTIONS: &str = util::ADVANCED_STATS_OPTIONS;
 
 /// Validate `viz smart`'s input, apply `--bivariate`'s flag implications, and run the optional
 /// `--smarter` moarstats enrichment pass (which rewrites the stats sidecar `build_smart` reads).

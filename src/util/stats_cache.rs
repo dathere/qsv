@@ -1228,3 +1228,113 @@ pub fn get_stats_csv_path(input_path: &std::path::Path) -> crate::CliResult<std:
         Ok(std::env::current_dir()?.join(result))
     }
 }
+
+/// Base `stats` options for a `moarstats --advanced` enrichment pass (`viz smart --smarter`,
+/// `pivotp --agg smart`). Shared so both commands build - and reuse - the same persistent cache.
+/// Must stay compatible with `StatsMode::ProfileSchema`, which writes that cache too.
+/// `--infer-boolean` is deliberately absent: it would retype 0/1 measures as Boolean.
+pub const ADVANCED_STATS_OPTIONS: &str = "--infer-dates --cardinality --mode --mad --quartiles \
+                                          --percentiles --zero-padded-numeric --force \
+                                          --stats-jsonl --dates-whitelist sniff";
+
+/// `stats` columns an advanced-enriched cache must have (from `ADVANCED_STATS_OPTIONS`), and the
+/// column only `moarstats --advanced` adds.
+const ADVANCED_BASELINE_COLUMNS: [&str; 3] = ["q1", "mode_count", "mad"];
+const ADVANCED_MARKER_COLUMN: &str = "moment_skewness";
+
+/// Make sure `input`'s stats cache carries `moarstats --advanced` statistics, running moarstats
+/// as a subprocess only when it does not. Returns whether moarstats ran.
+///
+/// Callers must use default CSV parsing: moarstats has no `--delimiter`/`--no-headers`, so it
+/// resolves the delimiter from the file extension (as `Config` does).
+///
+/// Skipped (`Ok(false)`) for stdin, special formats (snappy, compressed, parquet, ...), and
+/// `QSV_STATSCACHE_MODE=none`.
+///
+/// The decision is made from the cache's HEADER, not its values: a column can be legitimately
+/// empty (e.g. no kurtosis for n < 4), and that must not trigger a rerun on every call.
+/// moarstats appends to a current `<stem>.stats.csv` without recomputing it, so when the baseline
+/// is lean - e.g. the `stats --cardinality` cache a `FrequencyForceStats` load leaves behind -,
+/// stale, from another qsv version, built with approximate cardinality or non-default parsing
+/// options, or its JSONL is missing or outdated, it runs with `--force` so the cache is rebuilt
+/// with `ADVANCED_STATS_OPTIONS`.
+pub fn ensure_advanced_stats_cache(input: &str) -> CliResult<bool> {
+    let env_mode = env::var("QSV_STATSCACHE_MODE")
+        .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
+        .to_ascii_lowercase();
+    if env_mode == "none" || input == "-" {
+        return Ok(false);
+    }
+    let input_path = Path::new(input);
+    if !input_path.is_file()
+        || get_special_format(input_path) != SpecialFormat::Unknown
+        || crate::config::is_snappy_extension(input_path)
+    {
+        return Ok(false);
+    }
+
+    let stats_csv = get_stats_csv_path(input_path)?;
+    // A baseline parsed with non-default options (--no-headers, another delimiter) describes a
+    // different logical CSV; moarstats would extend it and republish it under default-parsing
+    // metadata, slipping past the loader's own parsing guard.
+    let canonical = input_path
+        .canonicalize()
+        .unwrap_or_else(|_| input_path.to_path_buf());
+    let current = stats_csv_is_current(&stats_csv, input_path)
+        && !stats_csv_version_mismatch(&stats_csv)
+        && !stats_cache_cardinality_is_approx(Some(input))
+        && !stats_cache_parsing_opts_conflict(input_path, &canonical, false, None, None, false);
+    let header: Vec<String> = File::open(&stats_csv)
+        .ok()
+        .and_then(|f| BufReader::new(f).lines().next())
+        .and_then(Result::ok)
+        .map(|line| line.split(',').map(str::to_string).collect())
+        .unwrap_or_default();
+    let has = |col: &str| header.iter().any(|h| h == col);
+    let baseline_ok = ADVANCED_BASELINE_COLUMNS.iter().all(|c| has(c));
+    // the JSONL is what consumers load; moarstats writes it after the stats CSV
+    let jsonl_ok = {
+        let jsonl = stats_csv.with_extension("csv.data.jsonl");
+        match (
+            std::fs::metadata(&jsonl).and_then(|m| m.modified()),
+            std::fs::metadata(&stats_csv).and_then(|m| m.modified()),
+        ) {
+            (Ok(j), Ok(s)) => j >= s,
+            _ => false,
+        }
+    };
+
+    if current && baseline_ok && has(ADVANCED_MARKER_COLUMN) && jsonl_ok {
+        return Ok(false);
+    }
+
+    let mut cmd = std::process::Command::new(current_exe()?);
+    cmd.args([
+        "moarstats",
+        input,
+        "--advanced",
+        "--stats-options",
+        ADVANCED_STATS_OPTIONS,
+    ]);
+    // moarstats only rewrites the JSONL when it adds columns, so an enriched CSV with a missing or
+    // outdated JSONL needs --force too.
+    if !(current && baseline_ok && jsonl_ok) {
+        cmd.arg("--force");
+    }
+    let output = cmd.stdin(std::process::Stdio::null()).output()?;
+    if output.status.success() {
+        return Ok(true);
+    }
+    // relay the child's own diagnostic, as the stats subprocess does (#4611)
+    let child_stderr = String::from_utf8_lossy(&output.stderr);
+    let child_stderr = child_stderr.trim();
+    let detail = if child_stderr.is_empty() {
+        String::new()
+    } else {
+        format!("\n{child_stderr}")
+    };
+    Err(CliError::Other(match output.status.code() {
+        Some(code) => format!("qsv moarstats exited with code: {code}{detail}"),
+        None => format!("qsv moarstats terminated by a signal{detail}"),
+    }))
+}

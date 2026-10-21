@@ -6772,6 +6772,30 @@ fn sqlp_read_csv_list_of_paths() {
     assert_eq!(got, vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]]);
 }
 
+#[test]
+fn sqlp_decimal_cast_to_int_truncates() {
+    // pola-rs/polars#30069: a Decimal cast to an integer truncates toward zero.
+    // It used to round half to even (-1.7 -> -2, 1.99 -> 2). Exact numeric
+    // literals are Decimal since py-2.0.0, so this covers literal casts too.
+    let wrk = Workdir::new("sqlp_decimal_cast_to_int_truncates");
+    wrk.create(
+        "dec.csv",
+        vec![svec!["x"], svec!["-1.7"], svec!["2.5"], svec!["1.99"]],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT CAST(-1.7 AS INT) AS a, CAST(1.99 AS BIGINT) AS b, CAST(-2.5 AS INT) AS c");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["a", "b", "c"], svec!["-1", "1", "-2"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dec.csv")
+        .arg("SELECT CAST(CAST(x AS DECIMAL(10,2)) AS INT) AS i FROM dec");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["i"], svec!["-1"], svec!["2"], svec!["1"]]);
+}
+
 // --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
 #[test]
 fn sqlp_default_delimiter_env() {

@@ -1194,3 +1194,53 @@ fn temp_dir_is_removable_refuses_the_system_temp_root() {
         "a qsv-created temp directory must remain removable"
     );
 }
+
+// A schema with a compound type (Datetime) round-trips through write_pschema/read_pschema.
+#[cfg(feature = "polars")]
+#[test]
+fn pschema_write_read_roundtrip() {
+    use polars::prelude::{DataType, PlSmallStr, Schema, TimeUnit};
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("data.csv.pschema.json");
+    let mut schema = Schema::with_capacity(2);
+    schema.insert(PlSmallStr::from_static("id"), DataType::Int64);
+    schema.insert(
+        PlSmallStr::from_static("ts"),
+        DataType::Datetime(TimeUnit::Milliseconds, None),
+    );
+    super::write_pschema(&file, &schema).unwrap();
+    assert_eq!(super::read_pschema(&file).unwrap(), schema);
+}
+
+// load_valid_pschema: None without a schema file, Some when the schema is at least as new as the
+// input, None again once the input is newer than the schema.
+#[cfg(feature = "polars")]
+#[test]
+fn load_valid_pschema_honors_freshness() {
+    use polars::prelude::{DataType, PlSmallStr, Schema};
+
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("data.csv");
+    std::fs::write(&input, "id\n1\n").unwrap();
+    assert!(super::load_valid_pschema(&input).unwrap().is_none());
+
+    let schema_file = super::pschema_path(&input.canonicalize().unwrap());
+    assert_eq!(
+        schema_file.file_name().unwrap(),
+        std::ffi::OsStr::new("data.csv.pschema.json")
+    );
+    let mut schema = Schema::with_capacity(1);
+    schema.insert(PlSmallStr::from_static("id"), DataType::Int64);
+    super::write_pschema(&schema_file, &schema).unwrap();
+    let old = filetime::FileTime::from_unix_time(1_000_000_000, 0);
+    filetime::set_file_mtime(&input, old).unwrap();
+    assert!(super::pschema_is_current(&input, &schema_file));
+    assert_eq!(*super::load_valid_pschema(&input).unwrap().unwrap(), schema);
+
+    // the input changed after the schema was written
+    filetime::set_file_mtime(&schema_file, old).unwrap();
+    filetime::set_file_mtime(&input, filetime::FileTime::now()).unwrap();
+    assert!(!super::pschema_is_current(&input, &schema_file));
+    assert!(super::load_valid_pschema(&input).unwrap().is_none());
+}

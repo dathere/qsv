@@ -317,7 +317,7 @@ use std::{
     env,
     fs::File,
     io,
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufWriter, Read, Write},
     num::NonZeroUsize,
     path::{Path, PathBuf},
     str::FromStr,
@@ -1097,13 +1097,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // we build the lazyframe, accounting for the --cache-schema flag
             let mut create_schema = cache_schemas;
 
-            let canonical_table = table.canonicalize()?;
-            let schema_file = PathBuf::from(format!("{}.pschema.json", canonical_table.display()));
+            let schema_file = util::pschema_path(&table.canonicalize()?);
 
             // check if the pschema.json file exists and is newer or created at the same time
             // as the table file
-            let mut valid_schema_exists = schema_file.exists()
-                && schema_file.metadata()?.modified()? >= table.metadata()?.modified()?;
+            let mut valid_schema_exists = util::pschema_is_current(table, &schema_file);
 
             let separator = input_delim(table);
             if separator == b',' && args.flag_decimal_comma {
@@ -1141,11 +1139,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let mut lf = if valid_schema_exists {
                 // We have a valid pschema.json file!
                 // load the schema and deserialize it and use it with the lazy frame
-                let file = File::open(&schema_file)?;
-                let mut buf_reader = BufReader::new(file);
-                let mut schema_json = String::with_capacity(100);
-                buf_reader.read_to_string(&mut schema_json)?;
-                let schema: Schema = serde_json::from_str(&schema_json)?;
+                let schema = util::read_pschema(&schema_file)?;
                 if debuglog_flag {
                     log::debug!("Loaded schema from file: {}", schema_file.display());
                 }
@@ -1164,13 +1158,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // update the pschema.json file, if necessary
             if create_schema {
                 let schema = lf.collect_schema()?;
-                // Use serde_json as the schema may contain compound types (e.g. Datetime)
-                // that simd_json::to_string_pretty doesn't serialize correctly
-                let schema_json = serde_json::to_string_pretty(&schema)?;
-
-                let mut file = BufWriter::new(File::create(&schema_file)?);
-                file.write_all(schema_json.as_bytes())?;
-                file.flush()?;
+                util::write_pschema(&schema_file, &schema)?;
                 if debuglog_flag {
                     log::debug!("Saved schema to file: {}", schema_file.display());
                 }

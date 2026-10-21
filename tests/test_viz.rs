@@ -23625,6 +23625,25 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert_eq!(bridge.matches("if (gen !== live.gen) return;").count(), 2);
     // Disconnect withdraws the token on the daemon, not only in the page
     assert!(bridge.contains(r#"call("POST", dsPath("/disconnect"), {}).catch(function () {});"#));
+    // only the latest query/drill shows its answer, labeled with the command that was submitted
+    // (not whatever the selector shows when the answer lands)
+    assert!(bridge.contains("var r = ++live.req;"));
+    assert!(bridge.contains("if (r === live.req) done(j || {});"));
+    assert!(bridge.contains("if (r === live.req) fail(e);"));
+    assert!(bridge.contains(r#"ask("/query", { command: cmd, args: splitArgs(argIn.value) }"#));
+    assert!(
+        bridge.contains(r#"ask("/rows", { column: column, value: value, limit: DRILL_LIMIT }"#)
+    );
+    assert!(!bridge.contains(r#""qsv " + sel.value"#));
+    // Disconnect, a revoked token and a (re)connect each orphan the answers still on their way
+    assert_eq!(bridge.matches("live.req++;").count(), 3);
+    // Cancel orphans an in-flight pairing poll: its answer, even an approval, is dropped
+    assert!(bridge.contains("live.pairGen++;"));
+    assert_eq!(bridge.matches("if (g !== live.pairGen) return;").count(), 2);
+    assert!(bridge.contains("poll(j.request_id, Date.now(), st, live.pairGen);"));
+    // a second Connect click before the pairing reply lands starts no second pairing
+    assert!(bridge.contains("if (live.dialog || live.pairing) return;"));
+    assert!(bridge.contains("}).catch(function (e) { live.pairing = false; fail(e); });"));
     assert!(bridge.contains("if (o) body.order = { column: o.column, desc: o.dir === \"desc\" };"));
     // Re-render's document.write keeps window.DataTable, so every instance goes first
     let rerender = &bridge[bridge.find(r#"dsPath("/render")"#).unwrap()..];

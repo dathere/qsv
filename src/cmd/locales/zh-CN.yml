@@ -353,6 +353,7 @@ viz:
     btn_next: "下一步 &rarr;"
     btn_prev: "&larr; 上一步"
     btn_done: "完成"
+    btn_skip: "跳到面板 &rarr;"
     progress: "{{current}} / {{total}}"
     intro_title: "欢迎来到您的 Data Schematic"
     intro_body: "这个简短导览将带您了解 %{q_title}:每个部分的作用,以及为什么为这些数据选择了每个图表。使用方向键或下方按钮;随时按 Esc 退出导览。"

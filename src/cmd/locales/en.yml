@@ -644,6 +644,7 @@ viz:
     btn_next: "Next &rarr;"
     btn_prev: "&larr; Back"
     btn_done: "Done"
+    btn_skip: "Skip to panels &rarr;"
     progress: "{{current}} of {{total}}"
     intro_title: "Welcome to your Data Schematic"
     intro_body: "This short tour walks through %{q_title}: what each part does, and why each chart was chosen for this data. Use the arrow keys or the buttons below; Esc leaves the tour at any time."

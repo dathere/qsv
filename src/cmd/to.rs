@@ -279,8 +279,6 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-#[cfg(feature = "polars")]
-use std::io::{BufReader, Read};
 use std::{io::Write, path::PathBuf};
 
 use csvs_convert::{
@@ -731,22 +729,10 @@ fn to_parquet(
             };
             lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(infer_len);
         } else {
-            // Check if a .pschema.json schema file exists and is current
-            let schema_file = PathBuf::from(format!(
-                "{}.pschema.json",
-                input_path.canonicalize()?.display()
-            ));
-            let valid_schema_exists = schema_file.exists()
-                && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
-
-            if valid_schema_exists {
-                let file = std::fs::File::open(&schema_file)?;
-                let mut buf_reader = BufReader::new(file);
-                let mut schema_json = String::with_capacity(100);
-                buf_reader.read_to_string(&mut schema_json)?;
-                let schema: Schema = serde_json::from_str(&schema_json)?;
-                debug!("using schema file: {}", schema_file.display());
-                lazy_csv_reader = lazy_csv_reader.with_schema(Some(Arc::new(schema)));
+            // use a current .pschema.json schema file, if there is one
+            if let Some(schema) = util::load_valid_pschema(&input_path)? {
+                debug!("using schema file for: {}", input_path.display());
+                lazy_csv_reader = lazy_csv_reader.with_schema(Some(schema));
             } else {
                 lazy_csv_reader = lazy_csv_reader.with_infer_schema_length(Some(1000));
             }

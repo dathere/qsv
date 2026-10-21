@@ -453,22 +453,56 @@ pub fn convert_special_format(
     )
 }
 
-/// Load `<canonical input>.pschema.json` (written by `schema --polars` / `sqlp --cache-schema`)
-/// when it is at least as new as `input`. `Ok(None)` when there is no such file or it is older
-/// than the input. A present but unreadable schema is an error, not a silent fallback.
+/// The `.pschema.json` sidecar path for a CANONICAL input path: `<canonical>.pschema.json`.
+/// Built on the `OsStr`, not through string formatting, so non-UTF-8 paths round-trip.
+#[cfg(feature = "polars")]
+pub fn pschema_path(canonical_input: &Path) -> PathBuf {
+    let mut schema_path = canonical_input.as_os_str().to_os_string();
+    schema_path.push(".pschema.json");
+    PathBuf::from(schema_path)
+}
+
+/// Does `schema_file` exist and is it at least as new as `input`? An older schema describes data
+/// that has since changed. An unreadable mtime counts as not current.
+#[cfg(feature = "polars")]
+pub fn pschema_is_current(input: &Path, schema_file: &Path) -> bool {
+    let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match (mtime(schema_file), mtime(input)) {
+        (Some(schema), Some(input)) => schema >= input,
+        _ => false,
+    }
+}
+
+/// Read a `.pschema.json` file. `serde_json`, not `simd_json`: a schema can hold compound types
+/// (e.g. Datetime) that only round-trip through `serde_json`.
+#[cfg(feature = "polars")]
+pub fn read_pschema(schema_file: &Path) -> CliResult<Schema> {
+    let mut schema_json = String::with_capacity(256);
+    BufReader::new(File::open(schema_file)?).read_to_string(&mut schema_json)?;
+    Ok(serde_json::from_str(&schema_json)?)
+}
+
+/// Write `schema` to a `.pschema.json` file (pretty-printed, `serde_json` - see `read_pschema`).
+#[cfg(feature = "polars")]
+pub fn write_pschema(schema_file: &Path, schema: &Schema) -> CliResult<()> {
+    let schema_json = serde_json::to_string_pretty(schema)?;
+    let mut file = BufWriter::new(File::create(schema_file)?);
+    file.write_all(schema_json.as_bytes())?;
+    file.flush()?;
+    Ok(())
+}
+
+/// Load `<canonical input>.pschema.json` (written by `schema --polars`, `sqlp --cache-schema`
+/// or `joinp --cache-schema`) when it is at least as new as `input`. `Ok(None)` when there is no
+/// such file or it is older than the input. A present but unreadable schema is an error, not a
+/// silent fallback.
 #[cfg(feature = "polars")]
 pub fn load_valid_pschema(input: &Path) -> CliResult<Option<Arc<Schema>>> {
-    let schema_file = PathBuf::from(format!("{}.pschema.json", input.canonicalize()?.display()));
-    let Ok(schema_meta) = schema_file.metadata() else {
-        return Ok(None);
-    };
-    if schema_meta.modified()? < input.metadata()?.modified()? {
+    let schema_file = pschema_path(&input.canonicalize()?);
+    if !pschema_is_current(input, &schema_file) {
         return Ok(None);
     }
-    let mut schema_json = String::with_capacity(256);
-    BufReader::new(File::open(&schema_file)?).read_to_string(&mut schema_json)?;
-    let schema: Schema = serde_json::from_str(&schema_json)?;
-    Ok(Some(Arc::new(schema)))
+    Ok(Some(Arc::new(read_pschema(&schema_file)?)))
 }
 
 #[cfg(feature = "polars")]
@@ -476,7 +510,7 @@ pub fn infer_polars_schema(
     delimiter: Option<crate::config::Delimiter>,
     debuglog_flag: bool,
     table: &Path,
-    schema_file: &std::path::PathBuf,
+    schema_file: &Path,
     prefer_dmy: bool,
 ) -> Result<bool, crate::clitypes::CliError> {
     // Run sniff to auto-detect date/datetime columns
@@ -676,13 +710,7 @@ pub fn infer_polars_schema(
             },
         );
     }
-    let stats_schema = std::sync::Arc::new(schema);
-    // Use serde_json for schema serialization as the schema may contain compound types
-    // (e.g. Datetime) that simd_json::to_string_pretty doesn't serialize correctly
-    let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
-    let mut file = std::io::BufWriter::new(File::create(schema_file)?);
-    file.write_all(stats_schema_json.as_bytes())?;
-    file.flush()?;
+    write_pschema(schema_file, &schema)?;
     if debuglog_flag {
         log::debug!("Saved stats_schema to file: {}", schema_file.display());
     }

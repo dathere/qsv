@@ -275,7 +275,7 @@ Common options:
 use std::{
     env,
     fs::File,
-    io::{self, BufReader, BufWriter, Read, Write},
+    io::{self, Write},
     mem::swap,
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -1025,9 +1025,8 @@ impl Args {
             // First, check if the pschema.json file exists and is newer or created at the same time
             // as the table file. Canonicalize once and reuse for any later schema writeback.
             let canonical_path = input_path.canonicalize()?;
-            let schema_file = pschema_path(&canonical_path);
-            let mut valid_schema_exists = schema_file.exists()
-                && schema_file.metadata()?.modified()? >= input_path.metadata()?.modified()?;
+            let schema_file = util::pschema_path(&canonical_path);
+            let mut valid_schema_exists = util::pschema_is_current(input_path, &schema_file);
 
             let cache_schema: i8 = if args.flag_infer_len == 0 {
                 0
@@ -1060,12 +1059,7 @@ impl Args {
                 1 => {
                     if !valid_schema_exists {
                         let schema = create_schema_from_stats(input_path, args)?;
-                        let stats_schema = Arc::new(schema);
-                        let stats_schema_json = serde_json::to_string_pretty(&stats_schema)?;
-
-                        let mut file = BufWriter::new(File::create(&schema_file)?);
-                        file.write_all(stats_schema_json.as_bytes())?;
-                        file.flush()?;
+                        util::write_pschema(&schema_file, &schema)?;
                         if debuglog_flag {
                             log::debug!("Saved schema to file: {}", schema_file.display());
                         }
@@ -1073,11 +1067,7 @@ impl Args {
                     }
 
                     if valid_schema_exists {
-                        let file = File::open(&schema_file)?;
-                        let mut buf_reader = BufReader::new(file);
-                        let mut schema_json = String::with_capacity(100);
-                        buf_reader.read_to_string(&mut schema_json)?;
-                        let schema: Schema = serde_json::from_str(&schema_json)?;
+                        let schema = util::read_pschema(&schema_file)?;
                         reader = reader.with_schema(Some(Arc::new(schema)));
                         create_schema = false;
                     } else {
@@ -1109,12 +1099,7 @@ impl Args {
 
                     // create and cache allstring schema
                     if cache_schema == -2 {
-                        let allstring_schema_json =
-                            serde_json::to_string_pretty(&allstring_schema)?;
-
-                        let mut file = BufWriter::new(File::create(&schema_file)?);
-                        file.write_all(allstring_schema_json.as_bytes())?;
-                        file.flush()?;
+                        util::write_pschema(&schema_file, &allstring_schema)?;
                         if debuglog_flag {
                             log::debug!(
                                 "Saved allstring_schema to file: {}",
@@ -1177,11 +1162,8 @@ impl Args {
 
         if create_left_schema {
             let schema = left_lf.collect_schema()?;
-            let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = pschema_path(&left_canonical);
-            let mut file = BufWriter::new(File::create(&schema_file)?);
-            file.write_all(schema_json.as_bytes())?;
-            file.flush()?;
+            let schema_file = util::pschema_path(&left_canonical);
+            util::write_pschema(&schema_file, &schema)?;
             if debuglog_flag {
                 log::debug!("Saved left schema to file: {}", schema_file.display());
             }
@@ -1211,11 +1193,8 @@ impl Args {
 
         if create_right_schema {
             let schema = right_lf.collect_schema()?;
-            let schema_json = serde_json::to_string_pretty(&schema)?;
-            let schema_file = pschema_path(&right_canonical);
-            let mut file = BufWriter::new(File::create(&schema_file)?);
-            file.write_all(schema_json.as_bytes())?;
-            file.flush()?;
+            let schema_file = util::pschema_path(&right_canonical);
+            util::write_pschema(&schema_file, &schema)?;
             if debuglog_flag {
                 log::debug!("Saved right schema to file: {}", schema_file.display());
             }
@@ -1252,14 +1231,6 @@ impl Args {
             ignore_leading_zeros: self.flag_ignore_leading_zeros,
         })
     }
-}
-
-/// Build a `.pschema.json` sidecar path without going through UTF-8 string formatting,
-/// so paths that are not valid UTF-8 round-trip correctly.
-fn pschema_path(canonical_path: &Path) -> PathBuf {
-    let mut schema_path = canonical_path.as_os_str().to_os_string();
-    schema_path.push(".pschema.json");
-    PathBuf::from(schema_path)
 }
 
 /// if the file has a TSV/TAB or SSV extension, we automatically use

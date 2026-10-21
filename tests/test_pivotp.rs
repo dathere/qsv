@@ -3187,3 +3187,34 @@ pivotp_groupby_test!(
         wrk.assert_success(&mut cmd);
     }
 );
+
+// A value column that is also the pivot or index column (to count rows) can't be pre-aggregated
+// - it would be both a group key and an aggregate - so it is pivoted directly (roborev 5686).
+#[test]
+fn pivotp_values_overlapping_on_or_index_columns() {
+    let wrk = setup("pivotp_values_overlapping_on_or_index_columns");
+    for values in ["product", "region"] {
+        let mut cmd = wrk.command("pivotp");
+        cmd.args([
+            "product",
+            "--index",
+            "region",
+            "--values",
+            values,
+            "--agg",
+            "len",
+            "sales.csv",
+        ]);
+        let out = cmd.output().unwrap();
+        assert!(
+            out.status.success(),
+            "--values {values}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "region,A,B\nNorth,2,2\nSouth,1,1\n",
+            "--values {values}"
+        );
+    }
+}

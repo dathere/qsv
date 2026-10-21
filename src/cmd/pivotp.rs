@@ -1431,7 +1431,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
         let column_naming = PivotColumnNaming::default();
 
-        let mut pivot_result = if agg_kind.pre_aggregates() {
+        // A value column that is also an index or pivot column (e.g. `--values product` with
+        // product as <on-cols>, to count rows) would be both a group key and an aggregate in the
+        // pre-aggregation, so those pivots go direct.
+        let pre_aggregate = agg_kind.pre_aggregates()
+            && !actual_value_cols
+                .iter()
+                .any(|vc| actual_index_cols.contains(vc) || on_cols.contains(vc));
+
+        let mut pivot_result = if pre_aggregate {
             // Aggregate each (index, pivot column) group FIRST, then pivot the grouped frame,
             // where every cell holds at most one row. Pivoting raw rows costs Polars one filtered
             // aggregation per output column, ~1.4 MB each regardless of the input size
@@ -1488,7 +1496,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // A cell with no rows: pivoting the raw rows gives 0 for sum and len, and null for every
         // other aggregation. Pivoting the pre-aggregated groups gives null throughout (the group
         // does not exist), so restore the 0s. A sum or len that exists is never null.
-        if agg_kind.pre_aggregates() && agg_kind.empty_cell_is_zero() {
+        if pre_aggregate && agg_kind.empty_cell_is_zero() {
             let index_set: HashSet<&str> = actual_index_cols
                 .iter()
                 .map(std::string::String::as_str)

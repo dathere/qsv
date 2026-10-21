@@ -174,6 +174,70 @@ fn parse_quantile_agg(s: &str) -> Option<f64> {
     (p.is_finite() && (0.0..=1.0).contains(&p)).then_some(p)
 }
 
+/// An aggregation, applicable to a column (group-by mode, and the pre-aggregation in pivot mode).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AggKind {
+    First,
+    Last,
+    Sum,
+    Min,
+    Max,
+    Mean,
+    Median,
+    Len,
+    Item,
+    Quantile(f64),
+}
+
+impl AggKind {
+    /// Parse an explicit (already lowercased) `--agg` name. `smart` and `none` are resolved by
+    /// the caller.
+    fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "first" => Self::First,
+            "last" => Self::Last,
+            "sum" => Self::Sum,
+            "min" => Self::Min,
+            "max" => Self::Max,
+            "mean" => Self::Mean,
+            "median" => Self::Median,
+            "len" => Self::Len,
+            "item" => Self::Item,
+            s => Self::Quantile(parse_quantile_agg(s)?),
+        })
+    }
+
+    /// The aggregation applied to `e`. `Len` counts rows, nulls included.
+    fn on(self, e: Expr) -> Expr {
+        match self {
+            Self::First => e.first(),
+            Self::Last => e.last(),
+            Self::Sum => e.sum(),
+            Self::Min => e.min(),
+            Self::Max => e.max(),
+            Self::Mean => e.mean(),
+            Self::Median => e.median(),
+            Self::Len => e.len(),
+            Self::Item => e.item(true),
+            Self::Quantile(p) => e.quantile(lit(p), QuantileMethod::Linear),
+        }
+    }
+
+    /// Should pivot mode aggregate the (index, pivot column) groups before pivoting? Median and
+    /// quantiles are already cheap to pivot directly (Polars runs them on its in-memory engine,
+    /// ~300 MB for a 50 x 2000 pivot of a 65 MB CSV), and pre-aggregating them costs ~90 MB more.
+    /// Every other aggregation costs ~1.4 MB per output column when pivoted directly.
+    const fn pre_aggregates(self) -> bool {
+        !matches!(self, Self::Median | Self::Quantile(_))
+    }
+
+    /// Polars' pivot reports an EMPTY cell (no rows for that index/column pair) as 0 for these
+    /// aggregations and as null for every other one.
+    const fn empty_cell_is_zero(self) -> bool {
+        matches!(self, Self::Sum | Self::Len)
+    }
+}
+
 /// Build the `SchemaArgs` used for stats/frequency lookups.
 /// Extracted to avoid duplicated construction at multiple call sites.
 fn build_schema_args(args: &Args) -> util::SchemaArgs {
@@ -532,11 +596,11 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
 /// cell with two rows (even identical ones). Every row holds the same value, so `first` returns
 /// exactly what `item` would - and it is also safe when the cardinality is a `HyperLogLog`
 /// estimate (`stats --cardinality-method approx`).
-fn single_value_agg(args: &Args, value_col: &str) -> Expr {
+fn single_value_agg(args: &Args, value_col: &str) -> AggKind {
     if !args.flag_quiet {
         eprintln!("Info: \"{value_col}\" contains only one value, using First");
     }
-    Expr::Element.first()
+    AggKind::First
 }
 
 /// Suggest an appropriate aggregation function based on column statistics
@@ -546,10 +610,10 @@ fn suggest_agg_function(
     on_cols: &[String],
     index_cols: Option<&[String]>,
     value_cols: &[String],
-) -> std::option::Option<polars::prelude::Expr> {
+) -> Option<AggKind> {
     // If multiple value columns, default to First
     if value_cols.len() > 1 {
-        return Some(Expr::Element.first());
+        return Some(AggKind::First);
     }
 
     let quiet = args.flag_quiet;
@@ -627,7 +691,7 @@ fn suggest_agg_function(
                 if !quiet {
                     eprintln!("Info: \"{value_col}\" contains only NULL values");
                 }
-                Expr::Element.len()
+                AggKind::Len
             },
             "Integer" | "Float" => {
                 if stats.cardinality == 1 {
@@ -636,7 +700,7 @@ fn suggest_agg_function(
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains >50% NULL values, using Len");
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 } else if let Some(mc) = stats.mode_count
                     && mc > 10
                     && mc < stats.cardinality
@@ -649,7 +713,7 @@ fn suggest_agg_function(
                             "Info: Complex multimodal distribution ({mc} modes > 10), using Len"
                         );
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 } else if let Some(bc) = stats.bimodality_coefficient {
                     // Bimodal distribution — central tendency is misleading. Require negative
                     // excess kurtosis too: heavily skewed UNIMODAL data (amounts, counts,
@@ -665,7 +729,7 @@ fn suggest_agg_function(
                                  {bc:.3} >= 0.60, excess kurtosis {kurt:.3} < 0), using Len"
                             );
                         }
-                        Expr::Element.len()
+                        AggKind::Len
                     } else {
                         suggest_numeric_after_bimodality(
                             stats,
@@ -699,7 +763,7 @@ fn suggest_agg_function(
                             stats.r#type
                         );
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if ordered_pivot && ordered_index {
                         if !quiet {
@@ -707,7 +771,7 @@ fn suggest_agg_function(
                                 "Info: Ordered temporal data with high cardinality, using Last"
                             );
                         }
-                        Expr::Element.last()
+                        AggKind::Last
                     } else {
                         if !quiet {
                             eprintln!(
@@ -715,7 +779,7 @@ fn suggest_agg_function(
                                 stats.r#type
                             );
                         }
-                        Expr::Element.first()
+                        AggKind::First
                     }
                 } else if let Some(sort_order) = &stats.sort_order
                     && sort_order.starts_with("Ascending")
@@ -728,12 +792,12 @@ fn suggest_agg_function(
                             stats.r#type
                         );
                     }
-                    Expr::Element.last()
+                    AggKind::Last
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Len for {} column", stats.r#type);
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 }
             },
             _ => {
@@ -744,12 +808,12 @@ fn suggest_agg_function(
                     if !quiet {
                         eprintln!("Info: \"{value_col}\" contains all unique values, using First");
                     }
-                    Expr::Element.first()
+                    AggKind::First
                 } else if stats.sparsity > Some(0.5) {
                     if !quiet {
                         eprintln!("Info: Sparse data detected, using Len");
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 } else if let Some(ne) = stats.normalized_entropy {
                     if ne > 0.9 {
                         if !quiet {
@@ -758,30 +822,30 @@ fn suggest_agg_function(
                                  {ne:.3} > 0.9), using Len"
                             );
                         }
-                        Expr::Element.len()
+                        AggKind::Len
                     } else if high_cardinality_pivot || high_cardinality_index {
                         if !quiet {
                             eprintln!("Info: High cardinality detected, using First");
                         }
-                        Expr::Element.first()
+                        AggKind::First
                     } else {
                         // Low entropy means few dominant values — First is more
                         // informative than a count
                         if !quiet {
                             eprintln!("Info: Low entropy string column, using First");
                         }
-                        Expr::Element.first()
+                        AggKind::First
                     }
                 } else if high_cardinality_pivot || high_cardinality_index {
                     if !quiet {
                         eprintln!("Info: High cardinality detected, using First");
                     }
-                    Expr::Element.first()
+                    AggKind::First
                 } else {
                     if !quiet {
                         eprintln!("Info: Using Len for String column");
                     }
-                    Expr::Element.len()
+                    AggKind::Len
                 }
             },
         };
@@ -805,7 +869,7 @@ fn suggest_numeric_after_bimodality(
     high_cardinality_index: bool,
     ordered_pivot: bool,
     ordered_index: bool,
-) -> Expr {
+) -> AggKind {
     // moarstats: outlier impact ratio — mean shifted >20% by outliers. The ratio is signed
     // (negative when the outliers sit on the low side), so compare its magnitude.
     if let Some(oir) = stats.outlier_impact_ratio
@@ -817,7 +881,7 @@ fn suggest_numeric_after_bimodality(
                  Median"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // moarstats: >15% outlier contamination
@@ -827,7 +891,7 @@ fn suggest_numeric_after_bimodality(
         if !quiet {
             eprintln!("Info: High outlier percentage ({op:.1}% > 15%), using Median");
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // moarstats: leptokurtic / heavy-tailed distribution
@@ -837,7 +901,7 @@ fn suggest_numeric_after_bimodality(
         if !quiet {
             eprintln!("Info: Heavy-tailed distribution (kurtosis {k:.3} > 3.0), using Median");
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // moarstats: high inequality — few values dominate
@@ -847,7 +911,7 @@ fn suggest_numeric_after_bimodality(
         if !quiet {
             eprintln!("Info: High inequality (Gini coefficient {gc:.3} > 0.6), using Median");
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // moarstats: robust vs non-robust spread divergence — outliers inflate stddev
@@ -860,7 +924,7 @@ fn suggest_numeric_after_bimodality(
                  using Median"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // median/mean and (q3-q1)/(q3+q1) are scale ratios: with negative values or a mean near zero
@@ -884,7 +948,7 @@ fn suggest_numeric_after_bimodality(
                  Median"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // moarstats: robust quartile-based variability
@@ -898,7 +962,7 @@ fn suggest_numeric_after_bimodality(
                  0.5), using Median"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // Mixed-sign cancellation guard — Sum cancels out with substantial
@@ -923,7 +987,7 @@ fn suggest_numeric_after_bimodality(
                  central tendency"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // Original: high cardinality pivot + index
@@ -937,7 +1001,7 @@ fn suggest_numeric_after_bimodality(
                     "Info: Near-uniform distribution (normalized entropy {ne:.3} > 0.9), using Len"
                 );
             }
-            return Expr::Element.len();
+            return AggKind::Len;
         }
 
         // Mixed-sign guard applies here too — Sum would cancel out
@@ -945,19 +1009,19 @@ fn suggest_numeric_after_bimodality(
             if !quiet {
                 log_mixed_sign(stats);
             }
-            return Expr::Element.mean();
+            return AggKind::Mean;
         }
 
         if ordered_pivot && ordered_index {
             if !quiet {
                 eprintln!("Info: Ordered high cardinality columns detected, using Mean");
             }
-            return Expr::Element.mean();
+            return AggKind::Mean;
         }
         if !quiet {
             eprintln!("Info: High cardinality in pivot and index columns, using Sum");
         }
-        return Expr::Element.sum();
+        return AggKind::Sum;
     }
 
     // Skewness. `stats.skewness` is Bowley's quartile skewness, bounded to [-1, 1], so it cannot
@@ -972,7 +1036,7 @@ fn suggest_numeric_after_bimodality(
                      using Median"
                 );
             }
-            return Expr::Element.median();
+            return AggKind::Median;
         }
     } else if let Some(ps) = stats.pearson_skewness
         && ps.abs() > HIGH_PEARSON_SKEWNESS
@@ -982,7 +1046,7 @@ fn suggest_numeric_after_bimodality(
                 "Info: Pearson skewness ({ps:.3}, |value| > 1.0) indicates asymmetry, using Median"
             );
         }
-        return Expr::Element.median();
+        return AggKind::Median;
     }
 
     // Mixed-sign guard for the default path
@@ -990,14 +1054,14 @@ fn suggest_numeric_after_bimodality(
         if !quiet {
             log_mixed_sign(stats);
         }
-        return Expr::Element.mean();
+        return AggKind::Mean;
     }
 
     // Default for numeric
     if !quiet {
         eprintln!("Info: Using Sum for \"{value_col}\"");
     }
-    Expr::Element.sum()
+    AggKind::Sum
 }
 
 /// Log message for the mixed-sign cancellation guard.
@@ -1137,51 +1201,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    // Get aggregation function - using generic expressions that pivot will apply to value columns
-    // NOTE: This match must stay in sync with the group-by agg_exprs match below.
-    let agg_expr = if agg_name == "none" {
-        None
+    // Resolve the aggregation. It is applied to each value column: per group in group-by mode,
+    // and per (index, pivot column) group in pivot mode. "none" means first in pivot mode (it
+    // was rejected above in group-by mode).
+    let agg_kind = if agg_name == "none" {
+        AggKind::First
+    } else if agg_name == "smart" {
+        if is_groupby_mode {
+            // In group-by mode, smart defaults to len (count)
+            AggKind::Len
+        } else if let Some(value_cols) = &value_cols {
+            // Try to suggest an appropriate aggregation function
+            let on_cols_ref = on_cols.as_ref().unwrap();
+            // fallback to first, which always works
+            suggest_agg_function(&args, on_cols_ref, index_cols.as_deref(), value_cols)
+                .unwrap_or(AggKind::First)
+        } else {
+            // Default to Len if no value columns specified
+            AggKind::Len
+        }
+    } else if let Some(kind) = AggKind::from_name(&agg_name) {
+        kind
     } else {
-        Some(match agg_name.as_str() {
-            "first" => Expr::Element.first(),
-            "last" => Expr::Element.last(),
-            "sum" => Expr::Element.sum(),
-            "min" => Expr::Element.min(),
-            "max" => Expr::Element.max(),
-            "mean" => Expr::Element.mean(),
-            "median" => Expr::Element.median(),
-            "len" => Expr::Element.len(),
-            "item" => Expr::Element.item(true),
-            s if let Some(p) = parse_quantile_agg(s) => {
-                Expr::Element.quantile(lit(p), QuantileMethod::Linear)
-            },
-            "smart" => {
-                if is_groupby_mode {
-                    // In group-by mode, smart defaults to len (count)
-                    Expr::Element.len()
-                } else if let Some(value_cols) = &value_cols {
-                    // Try to suggest an appropriate aggregation function
-                    let on_cols_ref = on_cols.as_ref().unwrap();
-                    if let Some(suggested_agg) =
-                        suggest_agg_function(&args, on_cols_ref, index_cols.as_deref(), value_cols)
-                    {
-                        suggested_agg
-                    } else {
-                        // fallback to first, which always works
-                        Expr::Element.first()
-                    }
-                } else {
-                    // Default to Len if no value columns specified
-                    Expr::Element.len()
-                }
-            },
-            _ => {
-                let agg_mode = if is_groupby_mode { "group-by" } else { "pivot" };
-                return fail_incorrectusage_clierror!(
-                    "Invalid {agg_mode} aggregation function: {agg_name}"
-                );
-            },
-        })
+        let agg_mode = if is_groupby_mode { "group-by" } else { "pivot" };
+        return fail_incorrectusage_clierror!(
+            "Invalid {agg_mode} aggregation function: {agg_name}"
+        );
     };
 
     // Resolve delimiters the same way sqlp/joinp do: --delimiter, else QSV_DEFAULT_DELIMITER,
@@ -1312,41 +1357,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Branch into group-by or pivot path
     let mut pivot_result = if is_groupby_mode {
         // === GROUP-BY MODE ===
-        // Build aggregation expressions for each value column
-        // NOTE: This match must stay in sync with the agg_expr match above.
-        // "none" is rejected during validation; if it somehow reaches here, treat as error.
+        // Aggregate each value column ("none" and "item" were rejected during validation).
+        // AggKind::Len counts all rows of the group, nulls included.
         let agg_exprs: Vec<Expr> = if let Some(ref val_cols) = actual_value_cols {
             val_cols
                 .iter()
                 .map(|vc| {
-                    let c = col(PlSmallStr::from_str(vc));
-                    // Use len() (counts all rows including nulls) instead of count()
-                    // (counts non-null only) for consistency with pivot mode's
-                    // Expr::Element.len(). "item" is rejected during validation.
-                    match agg_name.as_str() {
-                        "first" => c.first().alias(PlSmallStr::from_str(vc)),
-                        "last" => c.last().alias(PlSmallStr::from_str(vc)),
-                        "sum" => c.sum().alias(PlSmallStr::from_str(vc)),
-                        "min" => c.min().alias(PlSmallStr::from_str(vc)),
-                        "max" => c.max().alias(PlSmallStr::from_str(vc)),
-                        "mean" => c.mean().alias(PlSmallStr::from_str(vc)),
-                        "median" => c.median().alias(PlSmallStr::from_str(vc)),
-                        "len" | "smart" => len().alias(PlSmallStr::from_str(vc)),
-                        s if let Some(p) = parse_quantile_agg(s) => c
-                            .quantile(lit(p), QuantileMethod::Linear)
-                            .alias(PlSmallStr::from_str(vc)),
-                        // Unreachable because:
-                        //   - "none" and "item" are rejected in the group-by validation block in
-                        //     `run` (see the `is_groupby_mode` checks).
-                        //   - malformed quantile@/q@ names are rejected in the same validation
-                        //     block.
-                        //   - any other unknown name is rejected in the pivot `agg_expr` match
-                        //     above, where `agg_expr` is first constructed.
-                        _ => unreachable!(
-                            "Invalid agg_name '{agg_name}' should have been caught during \
-                             validation"
-                        ),
-                    }
+                    agg_kind
+                        .on(col(PlSmallStr::from_str(vc)))
+                        .alias(PlSmallStr::from_str(vc))
                 })
                 .collect()
         } else {
@@ -1404,34 +1423,92 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             Arc::new(unique_df)
         };
 
-        // Create the aggregation expression
-        // If agg_expr is None, we need a default
-        let agg = agg_expr.unwrap_or_else(|| Expr::Element.first());
-
         // Convert separator to PlSmallStr
         let separator = PlSmallStr::from_str(&args.flag_col_separator);
 
-        // Perform pivot operation using the new LazyFrame.pivot API
         let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
         let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
         let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
         let column_naming = PivotColumnNaming::default();
 
-        let mut pivot_result = lf
+        // A value column that is also an index or pivot column (e.g. `--values product` with
+        // product as <on-cols>, to count rows) would be both a group key and an aggregate in the
+        // pre-aggregation, so those pivots go direct.
+        let pre_aggregate = agg_kind.pre_aggregates()
+            && !actual_value_cols
+                .iter()
+                .any(|vc| actual_index_cols.contains(vc) || on_cols.contains(vc));
+
+        let mut pivot_result = if pre_aggregate {
+            // Aggregate each (index, pivot column) group FIRST, then pivot the grouped frame,
+            // where every cell holds at most one row. Pivoting raw rows costs Polars one filtered
+            // aggregation per output column, ~1.4 MB each regardless of the input size
+            // (pola-rs/polars#30173): a 50 x 2000 pivot of a 65 MB CSV peaked at 3.9 GB. With
+            // `item` and EAGER flags Polars takes a direct path instead (here: 0.4 GB, 13x
+            // faster). group_by_stable keeps first-appearance order, so row order is unchanged.
+            lf.group_by_stable(
+                actual_index_cols
+                    .iter()
+                    .chain(on_cols.iter())
+                    .map(col)
+                    .collect::<Vec<_>>(),
+            )
+            .agg(
+                actual_value_cols
+                    .iter()
+                    .map(|vc| {
+                        agg_kind
+                            .on(col(PlSmallStr::from_str(vc)))
+                            .alias(PlSmallStr::from_str(vc))
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .collect()?
+            .lazy()
             .pivot(
                 on_selector,
                 on_columns,
                 index_selector,
                 values_selector,
-                agg,
-                // Rows in first-appearance order of their index values. Polars lowers this to an
-                // order-preserving group-by within the same scan; it replaces a hand-built
-                // row-index -> min -> join -> sort that cost two extra scans of the input.
+                // at most one row per cell (null when empty)
+                Expr::Element.item(true),
+                // rows in first-appearance order of their index values
                 true,
                 separator,
                 column_naming,
             )
-            .collect()?;
+            .with_optimizations(OptFlags::EAGER)
+            .collect()?
+        } else {
+            lf.pivot(
+                on_selector,
+                on_columns,
+                index_selector,
+                values_selector,
+                agg_kind.on(Expr::Element),
+                true,
+                separator,
+                column_naming,
+            )
+            .collect()?
+        };
+
+        // A cell with no rows: pivoting the raw rows gives 0 for sum and len, and null for every
+        // other aggregation. Pivoting the pre-aggregated groups gives null throughout (the group
+        // does not exist), so restore the 0s. A sum or len that exists is never null.
+        if pre_aggregate && agg_kind.empty_cell_is_zero() {
+            let index_set: HashSet<&str> = actual_index_cols
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
+            let fills: Vec<Expr> = pivot_result
+                .schema()
+                .iter()
+                .filter(|(name, _)| !index_set.contains(name.as_str()))
+                .map(|(name, dtype)| col(name.clone()).fill_null(lit(0).cast(dtype.clone())))
+                .collect();
+            pivot_result = pivot_result.lazy().with_columns(fills).collect()?;
+        }
 
         // Sort columns if requested
         if args.flag_sort_columns {

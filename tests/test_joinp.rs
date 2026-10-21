@@ -3356,3 +3356,133 @@ fn joinp_low_memory_flag_removed() {
     cmd.args(["k", "a.csv", "k", "b.csv", "--low-memory"]);
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// joinp --streaming writes the join result batch by batch.
+// ---------------------------------------------------------------------------
+
+/// A 250,000-row left table (so --streaming writes several 100,000-row batches) whose keys
+/// differ from the right table's only in case, plus a 1,000-row right table. With
+/// `bad_last_row`, a final left row whose `v` isn't an integer makes the join fail after
+/// most of the result has been streamed (with `--infer-len 1000`).
+fn joinp_streaming_fixture(wrk: &Workdir, bad_last_row: bool) {
+    let mut left = String::with_capacity(5_000_000);
+    left.push_str("k,v\n");
+    for i in 0..250_000_u32 {
+        left.push_str(&format!("Key{},{i}\n", i % 1000));
+    }
+    if bad_last_row {
+        left.push_str("Key1,oops\n");
+    }
+    wrk.create_from_string("left.csv", &left);
+
+    let mut right = String::with_capacity(20_000);
+    right.push_str("k,t\n");
+    for j in 0..1000_u32 {
+        right.push_str(&format!("key{j},t{j}\n"));
+    }
+    wrk.create_from_string("right.csv", &right);
+}
+
+#[test]
+fn joinp_streaming_matches_collect() {
+    // --ignore-case adds temporary key columns that are dropped again, and --sql-filter runs
+    // on the join result: both are now part of the lazy plan that --streaming writes.
+    let wrk = Workdir::new("joinp_streaming_matches_collect");
+    joinp_streaming_fixture(&wrk, false);
+
+    let run = |streaming: bool| {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["k", "left.csv", "k", "right.csv"])
+            .args(["--ignore-case", "--maintain-order", "left"])
+            .args(["--sql-filter", "SELECT * FROM join_result WHERE v % 2 = 0"]);
+        if streaming {
+            cmd.arg("--streaming");
+        }
+        wrk.stdout_and_stderr_on_success::<String>(&mut cmd)
+    };
+    let (collected, collected_shape) = run(false);
+    let (streamed, streamed_shape) = run(true);
+
+    assert_eq!(streamed, collected);
+    assert!(
+        streamed.starts_with("k,v,k_right,t\n"),
+        "header: {}",
+        &streamed[..40]
+    );
+    assert!(!streamed.contains("-transformed"));
+    assert_eq!(streamed_shape.trim(), "(125000, 4)");
+    assert_eq!(streamed_shape, collected_shape);
+}
+
+#[test]
+fn joinp_streaming_empty_result_writes_header() {
+    let wrk = Workdir::new("joinp_streaming_empty_result_writes_header");
+    wrk.create("a.csv", vec![svec!["k", "x"], svec!["1", "a"]]);
+    wrk.create("b.csv", vec![svec!["k", "y"], svec!["2", "b"]]);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "a.csv", "k", "b.csv", "--streaming"]);
+    let (got, shape) = wrk.stdout_and_stderr_on_success::<String>(&mut cmd);
+    assert_eq!(got, "k,x,y");
+    assert_eq!(shape.trim(), "(0, 3)");
+}
+
+/// Names of streaming temp files left in the workdir.
+fn stream_temp_leftovers(wrk: &Workdir) -> Vec<String> {
+    std::fs::read_dir(wrk.path(""))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name.starts_with(".qsv-stream-"))
+        .collect()
+}
+
+#[test]
+fn joinp_streaming_failure_keeps_existing_output() {
+    // Streaming writes rows before the join finishes. A join that fails part-way must not
+    // leave a truncated --output that looks complete: the old file stays, and no temp is left.
+    let wrk = Workdir::new("joinp_streaming_failure_keeps_existing_output");
+    joinp_streaming_fixture(&wrk, true);
+    wrk.create_from_string("out.csv", "ORIGINAL\n");
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "left.csv", "k", "right.csv"]).args([
+        "--ignore-case",
+        "--streaming",
+        "--infer-len",
+        "1000",
+        "-o",
+        "out.csv",
+    ]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("oops"), "{stderr}");
+
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "ORIGINAL\n");
+    let leftovers = stream_temp_leftovers(&wrk);
+    assert!(
+        leftovers.is_empty(),
+        "temp files left behind: {leftovers:?}"
+    );
+}
+
+#[test]
+fn joinp_failure_keeps_existing_output() {
+    // Without --streaming, the output is now opened only once the join has been computed,
+    // so a failing join no longer truncates an existing --output first.
+    let wrk = Workdir::new("joinp_failure_keeps_existing_output");
+    joinp_streaming_fixture(&wrk, true);
+    wrk.create_from_string("out.csv", "ORIGINAL\n");
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "left.csv", "k", "right.csv"]).args([
+        "--ignore-case",
+        "--infer-len",
+        "1000",
+        "-o",
+        "out.csv",
+    ]);
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(wrk.read_to_string("out.csv").unwrap(), "ORIGINAL\n");
+}

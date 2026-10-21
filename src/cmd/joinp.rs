@@ -111,8 +111,15 @@ joinp options:
                             [default: none]
     --nulls                When set, joins will work on empty fields.
                            Otherwise, empty fields are completely ignored.
-    --streaming            When set, the join will be done in a streaming fashion.
-                           Only use this when you get out of memory errors.
+    --streaming            Write the join result as it is computed, batch by batch, instead
+                           of collecting the whole result in memory first. Use this when the
+                           result is too big for memory: it uses less memory but is slower.
+                           An --output file is written beside its target and only moved into
+                           place if the join succeeds; overwriting an existing file copies the
+                           result into it, so it keeps its owner, group, mode and links, and
+                           briefly needs disk space for two copies.
+                           On stdout, rows are sent as they are computed, so a join that fails
+                           part-way leaves its output cut short; check the exit code.
 
                            POLARS CSV PARSING OPTIONS:
     --try-parsedates       When set, will attempt to parse the columns as dates.
@@ -270,6 +277,7 @@ use std::{
     fs::File,
     io::{self, BufReader, BufWriter, Read, Write},
     mem::swap,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     str,
 };
@@ -279,7 +287,13 @@ use serde::Deserialize;
 use tempfile::tempdir;
 
 use crate::{
-    CliResult, cmd::sqlp::compress_output_if_needed, config::Delimiter, util,
+    CliResult,
+    cmd::sqlp::{
+        STREAM_BATCH_ROWS, SharedOutput, StreamWriter, compress_output_if_needed,
+        open_staged_output, sink_to,
+    },
+    config::Delimiter,
+    util,
     util::get_stats_records,
 };
 
@@ -694,27 +708,33 @@ impl JoinStruct {
             );
         }
 
-        let mut out_writer: Box<dyn Write> = match self.output {
-            Some(ref output_file) => {
-                // no need to use buffered writer here, as CsvWriter already does that
-                Box::new(File::create(Path::new(output_file))?)
-            },
-            None => Box::new(io::stdout()),
+        // Shared by the collect and --streaming paths. It captures only the format fields, so
+        // the join below can still move left_lf/right_lf out of self.
+        let csv_writer = |w: SharedOutput| {
+            CsvWriter::new(w)
+                .include_header(true)
+                .with_separator(out_delim)
+                .with_datetime_format(self.datetime_format.clone().map(Into::into))
+                .with_date_format(self.date_format.clone().map(Into::into))
+                .with_time_format(self.time_format.clone().map(Into::into))
+                .with_float_precision(self.float_precision)
+                .with_null_value(self.null_value.clone().into())
+                .with_decimal_comma(self.decimal_comma)
+                .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
         };
 
         // Start from Polars' defaults, the same flags sqlp's queries run with; the old
         // hand-built list predated JOIN_ORDER, SORT_COLLAPSE, CHECK_ORDER_OBSERVE etc.
-        let mut optflags = if self.no_optimizations {
+        let optflags = if self.no_optimizations {
             OptFlags::TYPE_COERCION | OptFlags::TYPE_CHECK
         } else {
             OptFlags::default()
         };
 
-        optflags.set(OptFlags::STREAMING, self.streaming);
-
-        // log::debug!("Optimization flags: {optimization_flags:?}");
-
-        let join_results = if jointype == JoinType::Cross {
+        // The join, --sql-filter and the removal of temporary key columns are all one lazy
+        // plan, so --streaming can write it without collecting it, and a --sql-filter can be
+        // pushed down into the join.
+        let join_lf = if jointype == JoinType::Cross {
             // cross join doesn't need join columns
             self.left_lf
                 .with_optimizations(optflags)
@@ -725,7 +745,6 @@ impl JoinStruct {
                 .allow_parallel(true)
                 .validate(validation)
                 .finish()?
-                .collect()?
         } else {
             if special_join == SpecialJoin::AsOfAutoSort {
                 // it's an asof join and --no-sort is not set
@@ -785,7 +804,6 @@ impl JoinStruct {
                     .join_builder()
                     .with(self.right_lf.with_optimizations(optflags))
                     .join_where(vec![expr])
-                    .collect()?
             } else {
                 // it's one of the "standard" joins as indicated by jointype
                 self.left_lf
@@ -800,65 +818,69 @@ impl JoinStruct {
                     .allow_parallel(true)
                     .validate(validation)
                     .finish()?
-                    .collect()?
             }
         };
 
-        let mut results_df = match &self.sql_filter {
+        let mut results_lf = match &self.sql_filter {
             Some(sql_filter) => {
                 let mut ctx = polars::sql::SQLContext::new();
-                ctx.register("join_result", join_results.lazy());
-                ctx.execute(sql_filter)
-                    .and_then(polars::prelude::LazyFrame::collect)?
+                ctx.register("join_result", join_lf);
+                ctx.execute(sql_filter)?
             },
-            _ => join_results,
+            _ => join_lf,
         };
 
         if keys_transformed {
             // Remove temporary transformed columns and
             // duplicate right-side join columns if coalesce is true
-            let cols = results_df.get_column_names();
-            let mut keep_cols: Vec<String> = Vec::new();
-
-            let left_join_cols: Vec<String> = self
-                .left_sel
-                .split(',')
-                .map(std::string::ToString::to_string)
-                .collect();
-
-            for col in cols {
-                if col.contains("-transformed") {
-                    continue;
-                }
-
-                // For join columns, only keep the left version if coalesce is true
-                if self.coalesce && col.ends_with("_right") {
-                    let base_col = col.trim_end_matches("_right");
-                    if left_join_cols.contains(&base_col.to_string()) {
-                        continue;
+            let left_join_cols: Vec<&str> = self.left_sel.split(',').collect();
+            let keep_cols: Vec<Expr> = results_lf
+                .collect_schema()?
+                .iter_names()
+                .filter(|col| {
+                    if col.contains("-transformed") {
+                        return false;
                     }
-                }
-
-                keep_cols.push(col.to_string());
-            }
-
-            results_df = results_df.select(keep_cols)?;
+                    // For join columns, only keep the left version if coalesce is true
+                    !(self.coalesce
+                        && col.ends_with("_right")
+                        && left_join_cols.contains(&col.trim_end_matches("_right")))
+                })
+                .map(|col| polars::lazy::dsl::col(col.as_str()))
+                .collect();
+            results_lf = results_lf.select(keep_cols);
         }
 
-        // shape is the number of rows and columns
-        let join_shape = results_df.shape();
+        // SQLContext defers a --sql-filter query into a plan with default flags, so set them
+        // on the whole plan to honor --no-optimizations
+        let mut results_lf = results_lf.with_optimizations(optflags);
 
-        CsvWriter::new(&mut out_writer)
-            .include_header(true)
-            .with_separator(out_delim)
-            .with_datetime_format(self.datetime_format.map(std::convert::Into::into))
-            .with_date_format(self.date_format.map(std::convert::Into::into))
-            .with_time_format(self.time_format.map(std::convert::Into::into))
-            .with_float_precision(self.float_precision)
-            .with_null_value(self.null_value.into())
-            .with_decimal_comma(self.decimal_comma)
-            .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
-            .finish(&mut results_df)?;
+        // shape is the number of rows and columns
+        let join_shape = if self.streaming {
+            let schema = results_lf.collect_schema()?;
+            let (w, staged) = open_staged_output(self.output.as_deref())?;
+            let out = SharedOutput::new(w);
+            let writer = StreamWriter::Csv(Box::new(csv_writer(out.clone()).batched(&schema)?));
+            let rows = sink_to(
+                results_lf,
+                writer,
+                &out,
+                NonZeroUsize::new(STREAM_BATCH_ROWS),
+                staged,
+            )?;
+            (rows, schema.len())
+        } else {
+            let mut results_df = results_lf.collect()?;
+            // opened only now, so a join that fails leaves an existing --output untouched
+            let w: Box<dyn Write + Send> = match self.output {
+                Some(ref output_file) => Box::new(File::create(Path::new(output_file))?),
+                None => Box::new(io::stdout()),
+            };
+            let out = SharedOutput::new(io::BufWriter::with_capacity(256_000, w));
+            csv_writer(out.clone()).finish(&mut results_df)?;
+            out.close()?;
+            results_df.shape()
+        };
 
         compress_output_if_needed(self.output)?;
 

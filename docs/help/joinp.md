@@ -65,7 +65,7 @@ qsv joinp --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑maintain‑order`&nbsp; | string | Which row order to preserve, if any. Valid values are: none, left, right, left_right, right_left Defaults to "none", which lets the engine emit rows in whatever order it finishes them - faster on large joins, but the output is NOT reproducible: the same invocation can return the same rows in a different order each run. "left" orders by the left row only, so when one left row matches several right rows those matches are tied and their relative order is still unspecified. Use "left_right" (or "right_left") for a fully deterministic, byte-repeatable order. Only inner, left, right and full joins can maintain order; cross, non-equi and asof joins ignore this option. | `none` |
 | &nbsp;`‑‑nulls`&nbsp; | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. |  |
-| &nbsp;`‑‑streaming`&nbsp; | flag | When set, the join will be done in a streaming fashion. Only use this when you get out of memory errors. |  |
+| &nbsp;`‑‑streaming`&nbsp; | flag | Write the join result as it is computed, batch by batch, instead of collecting the whole result in memory first. Use this when the result is too big for memory: it uses less memory but is slower. An --output file is written beside its target and only moved into place if the join succeeds; overwriting an existing file copies the result into it, so it keeps its owner, group, mode and links, and briefly needs disk space for two copies. On stdout, rows are sent as they are computed, so a join that fails part-way leaves its output cut short; check the exit code. |  |
 
 <a name="polars-csv-parsing-options"></a>
 

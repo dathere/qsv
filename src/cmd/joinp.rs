@@ -931,6 +931,17 @@ impl Args {
             let (csv_fields, csv_stats) =
                 get_stats_records(&schema_args, util::StatsMode::PolarsSchema)?;
 
+            // A reused stats cache can type a column Date/DateTime that Polars can't read (an
+            // enriched `moarstats --advanced` cache infers dates qsv-dateparser accepts, e.g.
+            // "04/18/2019 09:55:45 PM"). As in util::infer_polars_schema (#4751), only give a
+            // column a temporal type if Polars parses a sample of its raw values.
+            let temporal_samples = util::raw_temporal_samples(
+                &input_path.to_string_lossy().into_owned(),
+                args.flag_delimiter,
+                &csv_stats,
+            )?;
+            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+
             let mut schema = Schema::with_capacity(csv_stats.len());
             for (idx, stat) in csv_stats.iter().enumerate() {
                 schema.insert(
@@ -955,11 +966,12 @@ impl Args {
                             // util::infer_polars_schema)
                             "Float" => polars::datatypes::DataType::Float64,
                             "Boolean" => polars::datatypes::DataType::Boolean,
-                            "Date" => polars::datatypes::DataType::Date,
-                            "DateTime" => polars::datatypes::DataType::Datetime(
-                                polars::datatypes::TimeUnit::Milliseconds,
-                                None,
-                            ),
+                            "Date" | "DateTime" => {
+                                let samples =
+                                    temporal_samples.get(&idx).map_or(&[][..], Vec::as_slice);
+                                util::polars_temporal_dtype(samples, prefer_dmy)
+                                    .unwrap_or(polars::datatypes::DataType::String)
+                            },
                             _ => polars::datatypes::DataType::String,
                         }
                     },

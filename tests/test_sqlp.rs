@@ -6870,27 +6870,37 @@ fn sqlp_stdin_default_delimiter_env() {
 // sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
 // ---------------------------------------------------------------------------
 
-/// 250,000 rows, so `--streaming` writes several 100,000-row batches. `d` is null on every
-/// 5th row; with `bad_last_row`, a final row whose `a` isn't an integer makes the query fail
-/// after most of the result has been streamed (with `--infer-len 1000`).
 fn streaming_fixture(wrk: &Workdir, bad_last_row: bool) {
-    let mut data = String::with_capacity(6_000_000);
-    data.push_str("a,b,d\n");
+    let mut data = String::with_capacity(12_000_000);
+    data.push_str("a,b,d,s,dt\n");
     for i in 0..250_000_u32 {
         let d = if i % 5 == 0 {
             String::new()
         } else {
             i.to_string()
         };
-        data.push_str(&format!("{i},{}.5,{d}\n", i % 7));
+        // a nullable string column and a date column, the types most likely to differ
+        // between the batched writers and the collect path
+        let s = if i % 3 == 0 {
+            String::new()
+        } else {
+            format!("s{}", i % 1000)
+        };
+        data.push_str(&format!(
+            "{i},{}.5,{d},{s},2024-{:02}-{:02}\n",
+            i % 7,
+            i % 12 + 1,
+            i % 28 + 1
+        ));
     }
     if bad_last_row {
-        data.push_str("oops,1.5,1\n");
+        data.push_str("oops,1.5,1,x,2024-01-01\n");
     }
     wrk.create_from_string("t.csv", &data);
 }
 
-const STREAMING_QUERY: &str = "SELECT a, b * 1.1 AS b, d FROM t ORDER BY b DESC, a";
+const STREAMING_QUERY: &str =
+    "SELECT a, b * 1.1 AS b, d, s, CAST(dt AS DATE) AS dt FROM t ORDER BY b DESC, a";
 
 #[test]
 fn sqlp_streaming_csv_matches_collect() {
@@ -6900,7 +6910,14 @@ fn sqlp_streaming_csv_matches_collect() {
     let run = |streaming: bool| {
         let mut cmd = wrk.command("sqlp");
         cmd.arg("t.csv")
-            .args(["--float-precision", "3", "--wnull-value", "NULL"])
+            .args([
+                "--float-precision",
+                "3",
+                "--wnull-value",
+                "NULL",
+                "--date-format",
+                "%d/%m/%Y",
+            ])
             .arg(STREAMING_QUERY);
         if streaming {
             cmd.arg("--streaming");
@@ -6912,9 +6929,11 @@ fn sqlp_streaming_csv_matches_collect() {
 
     // ORDER BY holds across batches, and the header is written once
     assert_eq!(streamed, collected);
-    assert_eq!(streamed.matches("a,b,d").count(), 1);
+    assert_eq!(streamed.matches("a,b,d,s,dt").count(), 1);
     assert!(streamed.contains("NULL"));
-    assert_eq!(streamed_shape.trim(), "(250000, 3)");
+    // --date-format reached the batched writer
+    assert!(streamed.contains(",15/03/2024"), "dates not formatted");
+    assert_eq!(streamed_shape.trim(), "(250000, 5)");
     assert_eq!(streamed_shape, collected_shape);
 }
 
@@ -6952,7 +6971,15 @@ fn sqlp_streaming_parquet_and_arrow_round_trip() {
             .args(["--streaming", "--format", format, "-o", &out])
             .arg(STREAMING_QUERY);
         let shape = wrk.stderr_on_success(&mut cmd);
-        assert_eq!(shape.trim(), "(250000, 3)", "{format}");
+        assert_eq!(shape.trim(), "(250000, 5)", "{format}");
+
+        // dtypes survive too, not just the printed values: s stays a string, dt a date
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("SKIP_INPUT").arg(format!(
+            "SELECT COUNT(s) AS n_s, MIN(dt) + 1 AS dt_plus_1 FROM {read_fn}('{out}')"
+        ));
+        let got: String = wrk.stdout_on_success(&mut cmd);
+        assert_eq!(got, "n_s,dt_plus_1\n166666,2024-01-02", "{format}");
 
         let mut cmd = wrk.command("sqlp");
         cmd.arg("SKIP_INPUT")
@@ -7077,4 +7104,22 @@ fn sqlp_low_memory_flag_removed() {
     let mut cmd = wrk.command("sqlp");
     cmd.arg("t.csv").arg("--low-memory").arg("SELECT a FROM t");
     wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn sqlp_explain_uses_polars_default_optimizations() {
+    // sqlp now starts from Polars' default OptFlags (SORT_COLLAPSE, CHECK_ORDER_OBSERVE, ...),
+    // the same ones a deferred query runs with, so EXPLAIN shows the plan that actually runs:
+    // the inner ORDER BY a, overridden by the outer ORDER BY b, is dropped.
+    let wrk = Workdir::new("sqlp_explain_uses_polars_default_optimizations");
+    wrk.create(
+        "o.csv",
+        vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("o.csv")
+        .arg("EXPLAIN SELECT a, b FROM (SELECT * FROM o ORDER BY a) AS s ORDER BY b");
+    let plan: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(plan.matches("SORT BY").count(), 1, "{plan}");
 }

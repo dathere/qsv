@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`qsv-sqlp` drops `--low-memory` and redescribes `--streaming`**, following the `sqlp` change. `--low-memory` had no effect on Polars' streaming engine and was removed from `sqlp`, so a client that still sends it gets an unknown-flag error. `--streaming` now writes `csv`, `jsonl`, `parquet` and `arrow` results batch by batch instead of collecting them first; an `--output` file appears only once the query succeeds.
+
 ## [26.0.0] - 2026-10-19
 
 Companion release to qsv 26.0.0, "The New Angles Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 26.0.0 because the regenerated skill JSONs advertise subcommands and options that only exist in the new binary (`viz barpolar`, `ternary` and `parcoords`, `funnel --area`, `--degrees`, `--no-parcoords`, and `sqlp`'s `read_ndjson()` named options). The headline for MCP/Cowork users is **`qsv-viz`'s new chart types**: wind roses, ternary plots, parallel coordinates and funnel areas. The skill count stays at **57**. Update your qsv binary first.

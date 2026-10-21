@@ -417,10 +417,6 @@ impl OutputMode {
                 return Ok(());
             }
 
-            // The streaming engine can return the result as many tiny chunks, and the writers
-            // pay per chunk (Arrow writes one record batch each), so write one chunk.
-            df.rechunk_mut_par();
-
             let mut w = open_output(args, &mut delim)?;
 
             let out_result = match self {
@@ -527,10 +523,10 @@ impl OutputMode {
                 Ok(false)
             });
 
-        // Without a chunk size the sink calls back once per morsel, which for a plain scan can
-        // be ~2 rows (277,604 calls for 600k rows), and per-call writer overhead then
-        // dominates. Parquet batches become row groups, so keep them the size the collect
-        // path writes.
+        // Without a chunk size the sink calls back once per morsel, which can be a handful of
+        // rows (a debug build saw 277,604 calls for 600k rows), and per-call writer overhead
+        // then dominates. Parquet batches become row groups, so keep them the size the
+        // collect path writes.
         let chunk_size = NonZeroUsize::new(if matches!(self, OutputMode::Parquet) {
             PARQUET_ROW_GROUP_SIZE
         } else {
@@ -780,9 +776,9 @@ enum StreamWriter {
 
 impl StreamWriter {
     fn write_batch(&mut self, mut df: DataFrame) -> PolarsResult<()> {
-        // A batch is stitched from the sink's morsels, which can be a few rows each, so it
-        // arrives as thousands of tiny chunks. Writing it as-is costs per-chunk overhead (one
-        // Parquet page per chunk), so make it one contiguous chunk first.
+        // A batch is stitched from the sink's morsels, so it can arrive as many small chunks,
+        // and the writers pay per chunk (Parquet writes a page per chunk). Copying one
+        // bounded batch into a single chunk is cheap insurance against that.
         df.rechunk_mut_par();
         match self {
             StreamWriter::Csv(w) => w.write_batch(&df),

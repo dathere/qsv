@@ -346,6 +346,7 @@ viz:
     btn_next: "次へ &rarr;"
     btn_prev: "&larr; 戻る"
     btn_done: "完了"
+    btn_skip: "パネルへスキップ &rarr;"
     progress: "{{current}} / {{total}}"
     intro_title: "Data Schematic へようこそ"
     intro_body: "この短いツアーでは %{q_title} を巡ります。各部分の役割と、このデータに各グラフが選ばれた理由を説明します。矢印キーかボタンで進み、Esc でいつでも終了できます。"

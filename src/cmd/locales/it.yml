@@ -348,6 +348,7 @@ viz:
     btn_next: "Avanti &rarr;"
     btn_prev: "&larr; Indietro"
     btn_done: "Fine"
+    btn_skip: "Vai ai pannelli &rarr;"
     progress: "{{current}} di {{total}}"
     intro_title: "Benvenuto nel tuo Data Schematic"
     intro_body: "Questo breve tour percorre %{q_title}: cosa fa ogni parte e perché ogni grafico è stato scelto per questi dati. Usa le frecce o i pulsanti; Esc chiude il tour in qualsiasi momento."

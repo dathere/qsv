@@ -14091,7 +14091,7 @@ fn viz_smart_has_tour_by_default() {
         "tour relaunch pill chrome missing"
     );
     // attribution: machine-readable comment + human credits footer
-    assert!(html.contains("driver.js 1.8.0 - (c) Kamran Ahmed - MIT"));
+    assert!(html.contains("driver.js 1.10.2 - (c) Kamran Ahmed - MIT"));
     assert!(html.contains(
         r#"<a href="https://driverjs.com/" target="_blank" rel="noopener">driver.js</a> (MIT)"#
     ));
@@ -14114,6 +14114,33 @@ fn viz_smart_has_tour_by_default() {
         !html.contains(r#""open":"qsvOpenDict""#),
         "dict chapter must be gated on --dict-info"
     );
+    // the "Skip to panels" control ships with its localized label substituted
+    assert!(
+        html.contains(r#"b.innerHTML = "Skip to panels \u0026rarr;";"#),
+        "skip-to-panels button label missing"
+    );
+    assert!(
+        !html.contains("__QSVI18N_TOUR_SKIP__"),
+        "skip label placeholder left unsubstituted"
+    );
+}
+
+#[test]
+fn viz_smart_tour_skip_button_is_localized() {
+    let wrk = Workdir::new("viz_smart_tour_skip_button_is_localized");
+    fruits(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "-o", &out_html, "--language", "de"]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#"b.innerHTML = "Zu den Panels \u0026rarr;";"#),
+        "--language de must localize the skip-to-panels button"
+    );
+    assert!(!html.contains(r#""Skip to panels &rarr;""#));
 }
 
 #[test]

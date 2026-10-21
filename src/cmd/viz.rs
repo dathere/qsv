@@ -17281,11 +17281,11 @@ fn datatables_lib_block() -> String {
 /// `driverjs_cdn_sri_matches_the_vendored_bundle`).
 const DRIVERJS_JS: &str = include_str!("assets/driverjs.min.js");
 const DRIVERJS_CSS: &str = include_str!("assets/driverjs.min.css");
-const DRIVERJS_CDN_VERSION: &str = "1.8.0";
+const DRIVERJS_CDN_VERSION: &str = "1.10.2";
 const DRIVERJS_CDN_JS_SRI: &str =
-    "sha384-ZD4UAn12lO2plEJ4lonOHO0fRSCgq0VAuoDx6/rglijDjzDYIXgCexIVu3PFJpJf";
+    "sha384-5g481DgM/VdK19dNiL3kmTG/tz1fQriwUvSide6vc77uYGaXh0s5GLQCUN6dgI8n";
 const DRIVERJS_CDN_CSS_SRI: &str =
-    "sha384-XUGWln86d3kDvw/W1Qbii8QQyeWs2LcFYfGhYrmSZ0ZiXxowttKpfdhPdLE+WMFx";
+    "sha384-q84NOjxOvSzdVT3EjRGos6w4J4t7ysF+ueMkf5CCMevHRH2IkF+sEvNvofEU67dW";
 
 /// The driver.js bundle gzipped at max compression + base64 (~25 KB -> ~9 KB b64), computed
 /// once per process like `DATATABLES_GZ_B64`. Empty on (never-expected) gzip failure — callers
@@ -17324,9 +17324,9 @@ static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
 const DRIVERJS_HINTS_JS: &str = include_str!("assets/driverjs-hints.min.js");
 const DRIVERJS_HINTS_CSS: &str = include_str!("assets/driverjs-hints.min.css");
 const DRIVERJS_HINTS_CDN_JS_SRI: &str =
-    "sha384-V6Z/uLTd410gfsytiH4lPk3vuHhB+37yhJ4lxOapeDC+qK2EbyJ2tdFlCFxlmNFl";
+    "sha384-AbaQVT/io7rTQxGfXPHFMep4Omjv0lZLl2SEXmaZwTTUy1NPXqO6XhMleUYGdeAZ";
 const DRIVERJS_HINTS_CDN_CSS_SRI: &str =
-    "sha384-yeSemBGXuXICwjenwGUdbspDzk2rXGW5DlysCWH568VN3z5vEJ+b4Wue27IK64kJ";
+    "sha384-E0PcnW6wtGAssOxWd7JDpsYR8eKlinn6frHOAW2KS8pwV0kXreVNT1weNM8rMHQP";
 
 /// Like `DRIVERJS_GZ_B64` but for the hints bundle (~15 KB -> ~6.3 KB b64).
 static DRIVERJS_HINTS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
@@ -18087,6 +18087,10 @@ fn tour_script() -> String {
             &js_string_literal(&t!("viz.tour.btn_done")),
         )
         .replace(
+            "__QSVI18N_TOUR_SKIP__",
+            &js_string_literal(&t!("viz.tour.btn_skip")),
+        )
+        .replace(
             "__QSVI18N_TOUR_PROGRESS__",
             &js_string_literal(&t!("viz.tour.progress")),
         )
@@ -18120,6 +18124,13 @@ const TOUR_SCRIPT: &str = r##"<style>
   body.qsv-dark .driver-popover-navigation-btns button { background-color: #22272e; color: #adbac7; text-shadow: none; border-color: #444c56; }
   body.qsv-dark .driver-popover-progress-text { color: #768390; }
   body.qsv-dark .driver-popover-close-btn { color: #768390; }
+  /* "Skip to panels" — a link-styled button on the progress row, apart from Prev/Next (driver
+     styles its own buttons by class, so this one starts unstyled). */
+  .driver-popover-footer:has(.qsv-tour-skip) { flex-wrap: wrap; row-gap: 6px; }
+  .driver-popover-footer .qsv-tour-skip { all: unset; box-sizing: border-box; margin-left: 10px; font-size: 12px; line-height: 1.3; color: var(--qsv-link, #0a5fb4); cursor: pointer; white-space: nowrap; }
+  .driver-popover-footer .qsv-tour-skip:hover, .driver-popover-footer .qsv-tour-skip:focus-visible { text-decoration: underline; color: var(--qsv-link-hover, #084a8c); }
+  body.qsv-dark .driver-popover-footer .qsv-tour-skip { color: var(--qsv-link, #6cb6ff); }
+  body.qsv-dark .driver-popover-footer .qsv-tour-skip:hover, body.qsv-dark .driver-popover-footer .qsv-tour-skip:focus-visible { color: var(--qsv-link-hover, #96d0ff); }
   /* Hint beacons, brand-colored off the page variables so they follow the Theme toggle just
      like the popovers above. The hints widget has NO beacon offset option: it writes a bare
      corner of the target's bounding rect into style.top/left and `.driver-hint` centers on it
@@ -18338,13 +18349,14 @@ const TOUR_SCRIPT: &str = r##"<style>
 
   // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
   // omissions section in this dictionary — is skipped, drawer steps skip when their opener
-  // is absent)
-  function move(dir, fromIdx) {
+  // is absent). `toIdx` jumps instead of stepping (the "Skip to panels" button) through the
+  // same serialized path, so leaveChapter still closes whichever drawer is open.
+  function move(dir, fromIdx, toIdx) {
     if (navBusy) return;
     navBusy = true;
     setTimeout(function () { navBusy = false; }, 2500);
     var gen = tourGen;
-    var i = fromIdx + dir;
+    var i = typeof toIdx === "number" ? toIdx : fromIdx + dir;
     while (i >= 0 && i < cfg.steps.length) {
       var step = cfg.steps[i];
       if (!step.open || typeof window[step.open] === "function") break;
@@ -18429,6 +18441,32 @@ const TOUR_SCRIPT: &str = r##"<style>
           },
         };
       });
+      // "Skip to panels": offered on the generic opening steps (intro + the dictionary and data
+      // viewer chapters, i.e. everything before panels-intro) and lands on the first
+      // dataset-specific panel step — panels-intro is generic too. With no chapter steps,
+      // skipping would just be Next, so the button isn't offered at all.
+      var panelsIntroIdx = -1, skipIdx = -1;
+      cfg.steps.forEach(function (s, i) {
+        if (s.id === "panels-intro" && panelsIntroIdx < 0) panelsIntroIdx = i;
+        if (s.id === "panel" && skipIdx < 0) skipIdx = i;
+      });
+      if (skipIdx < 0) skipIdx = panelsIntroIdx;
+      function addSkipButton(popover) {
+        // driver sets activeIndex before it renders the step's popover, so this is current
+        var idx = driverObj.getActiveIndex();
+        if (panelsIntroIdx <= 1 || skipIdx < 0 || typeof idx !== "number" || idx >= panelsIntroIdx) return;
+        var footer = popover && popover.footer;
+        if (!footer || footer.querySelector(".qsv-tour-skip")) return;
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "qsv-tour-skip";
+        b.innerHTML = __QSVI18N_TOUR_SKIP__;
+        b.addEventListener("click", function () {
+          move(1, driverObj.getActiveIndex(), skipIdx);
+        });
+        // on the progress row, before driver's Prev/Next group
+        footer.insertBefore(b, popover.footerButtons || null);
+      }
       driverObj = driver({
         showProgress: true,
         progressText: __QSVI18N_TOUR_PROGRESS__,
@@ -18447,6 +18485,7 @@ const TOUR_SCRIPT: &str = r##"<style>
         // hands us the built popover, and the tick deferral lets driver's own
         // focus-first-button call (synchronous, later in its render) run first so ours wins.
         onPopoverRender: function (popover) {
+          addSkipButton(popover);
           if (!focusFirstPopover) return;
           focusFirstPopover = false;
           var gen = tourGen;

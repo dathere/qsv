@@ -3806,7 +3806,8 @@ fn validate_offline_refuses_external_refs() {
     let wrk = Workdir::new("validate_offline_refuses_external_refs").flexible(true);
     wrk.create("data.csv", vec![svec!["n"], svec!["ab"]]);
     wrk.create_from_string("name.json", r#"{ "type": "string", "minLength": 3 }"#);
-    let file_uri = format!("file://{}", wrk.path("name.json").display());
+    // `Url::from_file_path` gives a valid file URI on Windows too (`file:///C:/...`)
+    let file_uri = url::Url::from_file_path(wrk.path("name.json")).unwrap();
     wrk.create_from_string(
         "fileref.json",
         &format!(

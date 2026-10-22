@@ -4964,6 +4964,16 @@ fn weighted_mad(data: &[(f64, f64)], median: f64) -> Option<f64> {
     weighted_median(&abs_deviations)
 }
 
+/// Renders a mode/antimode value for output: the empty value is the NULL value, so it is shown
+/// as `NULL` rather than as an empty string that reads as "no mode".
+fn null_aware_str(value: &[u8]) -> std::borrow::Cow<'_, str> {
+    if value.is_empty() {
+        std::borrow::Cow::Borrowed("NULL")
+    } else {
+        util::bytes_to_cow_str(value)
+    }
+}
+
 /// Formats a list of antimodes into a display string with optional preview prefix,
 /// NULL handling, and length truncation.
 ///
@@ -4989,14 +4999,7 @@ fn format_antimodes(
     // for a leading separator missed a lone NULL and invented one for a value like "|a"
     let antimodes_vals = antimodes
         .iter()
-        .map(|c| {
-            let c = c.as_ref();
-            if c.is_empty() {
-                std::borrow::Cow::Borrowed("NULL")
-            } else {
-                util::bytes_to_cow_str(c)
-            }
-        })
+        .map(|c| null_aware_str(c.as_ref()))
         .join(separator);
     antimodes_list.push_str(&antimodes_vals);
 
@@ -5828,12 +5831,12 @@ impl Stats {
                         let modes_list = if visualize_ws {
                             modes_keys
                                 .iter()
-                                .map(|c| util::visualize_whitespace(&util::bytes_to_cow_str(c)))
+                                .map(|c| util::visualize_whitespace(&null_aware_str(c)))
                                 .join(stats_separator)
                         } else {
                             modes_keys
                                 .iter()
-                                .map(|c| util::bytes_to_cow_str(c))
+                                .map(|c| null_aware_str(c))
                                 .join(stats_separator)
                         };
 
@@ -5929,12 +5932,12 @@ impl Stats {
                             let modes_list = if visualize_ws {
                                 modes_result
                                     .iter()
-                                    .map(|c| util::visualize_whitespace(&util::bytes_to_cow_str(c)))
+                                    .map(|c| util::visualize_whitespace(&null_aware_str(c)))
                                     .join(stats_separator)
                             } else {
                                 modes_result
                                     .iter()
-                                    .map(|c| util::bytes_to_cow_str(c))
+                                    .map(|c| null_aware_str(c))
                                     .join(stats_separator)
                             };
 

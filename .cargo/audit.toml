@@ -37,6 +37,15 @@ ignore = [
     # Build/runtime path for static viz export; clears when plotly's deps move to
     # reqwest 0.12 (which dropped rustls-pemfile 1.x).
     "RUSTSEC-2025-0134",
+
+    # RUSTSEC-2026-0374: basic-toml is unmaintained.
+    #   qsv -> plotly -> askama (default `config` feature) -> askama_macros
+    #       -> askama_derive -> basic-toml
+    # Compiled as a host-side dep of the askama_derive proc-macro (it would parse an
+    # askama.toml, which plotly doesn't have); never linked into the qsv binary.
+    # askama main already swapped it for `toml` (askama-rs/askama#594); clears on
+    # the next askama release (0.16.1 is still the latest). See dathere/qsv#4860.
+    "RUSTSEC-2026-0374",
 ]
 
 [yanked]

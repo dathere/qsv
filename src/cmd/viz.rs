@@ -376,9 +376,10 @@ choropleth options:
                            feature id, per --location-mode). With --geocode, this instead
                            names a place-name column to forward-geocode into region codes.
     --location-mode <m>    How --locations values are matched to regions. One of: iso3
-                           (the default, ISO-3166-1 alpha-3 country codes), usa-states
-                           (2-letter US state codes), country-names (full country names),
-                           geojson-id (match a --geojson feature id). [default: iso3]
+                           (ISO-3166-1 alpha-3 country codes), usa-states (2-letter US
+                           state codes), country-names (full country names), geojson-id
+                           (match a --geojson feature id). Defaults to geojson-id when
+                           a --geojson source is given (without --geocode), else iso3.
     --color-scale <name>   Colorscale for the region fill. One of: viridis (the default),
                            cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered,
                            rdbu, portland, electric, jet, hot, blackbody, earth, picnic,
@@ -1916,7 +1917,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // `--denominator census` is read from the raw argv: docopt parses the flag into a
     // `SelectColumns`, which cannot tell the reserved source name from a column of that name.
-    let census_denominator = ArgvExtras::from_argv(argv).census_denominator.is_some();
+    let argv_extras = ArgvExtras::from_argv(argv);
+    if argv_extras.bad_census_vintage {
+        return fail_incorrectusage_clierror!(
+            "--denominator census@<year>: the year must be a four-digit ACS vintage (e.g. \
+             census@2022)."
+        );
+    }
+    let census_denominator = argv_extras.census_denominator.is_some();
 
     // Denominator scope checks (issue #4394). Both flags name a per-region denominator that turns
     // a raw-count region map into a rate map; they are two SOURCES for the same quantity, so
@@ -5549,7 +5557,7 @@ fn feature_id_by_path_value(feature: &serde_json::Value, path: &str) -> Option<S
     }
     match node {
         serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Number(n) => Some(feature_id_number_string(n)),
         _ => None,
     }
 }
@@ -7995,6 +8003,19 @@ fn feature_member_by_path<'a>(
     Some(cur)
 }
 
+/// Stringify a numeric GeoJSON feature id the way plotly will see it. plotly keys its lookup by
+/// JS `String(value)`, which prints an integral float as an integer (`6037.0` -> `"6037"`), while
+/// `serde_json` prints `"6037.0"`. Integral floats are common: geopandas writes an integer code
+/// column as float whenever it holds a `NaN`. Non-integral values keep `serde_json`'s spelling.
+fn feature_id_number_string(n: &serde_json::Number) -> String {
+    match n.as_f64() {
+        Some(f) if n.is_f64() && f.is_finite() && f.fract() == 0.0 && f.abs() < 1e21 => {
+            format!("{f:.0}")
+        },
+        _ => n.to_string(),
+    }
+}
+
 /// Resolve a GeoJSON feature's id by a dotted `--feature-id-key` path. Supports the top-level
 /// `"id"`, `"properties.<...>"` paths (mirroring plotly's `featureidkey` convention), and any
 /// other key as a top-level foreign member (e.g. a bare `"name"` on each feature — TopoJSON-style
@@ -8005,12 +8026,12 @@ fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
     if key == "id" {
         return feature.id.as_ref().map(|id| match id {
             geojson::feature::Id::String(s) => s.clone(),
-            geojson::feature::Id::Number(n) => n.to_string(),
+            geojson::feature::Id::Number(n) => feature_id_number_string(n),
         });
     }
     match feature_member_by_path(feature, key)? {
         serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Number(n) => Some(feature_id_number_string(n)),
         _ => None,
     }
 }
@@ -8634,6 +8655,10 @@ struct ArgvExtras {
     /// `--denominator census[@<year>]`: the outer `Option` is "is this a Census request", the
     /// inner one the pinned vintage (issue #4395).
     census_denominator:      Option<Option<u16>>,
+    /// `--denominator census@<year>` whose year does not parse. Without this, the value fails
+    /// `parse_census_denominator` and is resolved as a column NAME, which reports a misleading
+    /// error (and, on `viz choropleth`, only after fetching boundaries).
+    bad_census_vintage:      bool,
 }
 
 impl ArgvExtras {
@@ -8660,6 +8685,11 @@ impl ArgvExtras {
                 "--denominator" => {
                     extras.census_denominator =
                         next_value.and_then(crate::cmd::viz_census::parse_census_denominator);
+                    extras.bad_census_vintage = extras.census_denominator.is_none()
+                        && next_value.is_some_and(|v| {
+                            v.split_once('@')
+                                .is_some_and(|(base, _)| base.eq_ignore_ascii_case("census"))
+                        });
                 },
                 _ => {},
             }
@@ -10019,10 +10049,18 @@ fn build_choropleth_plot(
     // conjoined with --geocode — the county-name path publishes aliases without it.
     let region_aliases_active = auto_region_aliases().is_some();
     let snap = !args.flag_no_snap;
+    // An omitted --location-mode follows the region source: a supplied --geojson keys regions by
+    // feature id. Defaulting to iso3 there emitted `locationmode: "ISO-3"` beside the geojson, and
+    // plotly then ignores the geojson and shades nothing. --geocode keeps iso3: it yields
+    // ISO-3/US-state codes, not feature ids.
     let mode = if pip || region_aliases_active {
         LocationMode::GeoJsonId
+    } else if let Some(m) = args.flag_location_mode.as_deref() {
+        parse_location_mode(m)?
+    } else if args.flag_geojson.is_some() && !args.flag_geocode {
+        LocationMode::GeoJsonId
     } else {
-        parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?
+        LocationMode::Iso3
     };
     let palette = parse_color_scale(args.flag_color_scale.as_deref().unwrap_or("viridis"))?;
 
@@ -10530,7 +10568,11 @@ fn choropleth_literal_locations(
         .unwrap_or_default();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let raw_loc = cell_to_string(record.get(loc_idx));
+        // trimmed here, not only in the matcher: the built-in iso3/usa-states modes have no
+        // matcher, so `PA ` would otherwise aggregate apart from `PA` and match no plotly
+        // region (and miss a `--denominator census` value, which is keyed by the trimmed
+        // code)
+        let raw_loc = cell_to_string(record.get(loc_idx)).trim().to_string();
         if raw_loc.is_empty() {
             continue;
         }

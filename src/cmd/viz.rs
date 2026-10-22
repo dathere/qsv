@@ -12627,6 +12627,9 @@ fn heatmap_trace_with_range(
     }
     hover_template.push_str("<extra></extra>");
 
+    // labels are raw column names, rendered as tick text and through `%{x}`/`%{y}` in the hover —
+    // both plotly pseudo-HTML — so escape them (callers truncate first, so no entity is split)
+    let labels: Vec<String> = labels.iter().map(|l| escape_hover(l)).collect();
     let mut h = HeatMap::new(labels.clone(), labels, matrix)
         .color_scale(ColorScale::Palette(palette))
         .zmin(zmin)
@@ -18024,12 +18027,16 @@ fn build_tour_chrome(
         "steps": steps,
         "hints": hints,
     });
-    // `</` must not appear inside a <script> payload (it would terminate the tag mid-JSON);
-    // serde_json never escapes it, so do it here — JSON string escaping makes `<\/` read back
-    // as `</`.
+    // Escape `<`/`>`/`&` as the figure payloads do. Rewriting only `</` was not enough: `"key"`
+    // carries the raw column name, and a header containing `<!--<script>` puts the HTML tokenizer
+    // into the double-escaped script state, where this block's own `</script>` no longer closes
+    // it and the rest of the page is swallowed as script text. `<` cannot occur outside a JSON
+    // string, so the rewrite is lossless (JSON.parse reads each escape back as the original char).
     let config_json = serde_json::to_string(&config)
         .unwrap_or_default()
-        .replace("</", "<\\/");
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
     let mut out = String::with_capacity(config_json.len() + 4096);
     out.push_str(&driverjs_lib_block());
     out.push('\n');
@@ -39587,14 +39594,20 @@ fn panel_trace_funnel_bridge(
             }
         };
 
-        cats.push(stages[0].clone());
+        // category names are displayed as plotly pseudo-HTML ticks, so escape them like the hover
+        // (escaping is injective, so the categories stay distinct)
+        cats.push(escape_hover(&stages[0]));
         vals.push(totals[0]);
         measures.push(Measure::Absolute);
         hover.push(stage_hover(0));
 
         for k in 1..stages.len() {
             let delta = totals[k] - totals[k - 1];
-            cats.push(format!("{} \u{2212} {}", stages[k], stages[k - 1]));
+            cats.push(format!(
+                "{} \u{2212} {}",
+                escape_hover(&stages[k]),
+                escape_hover(&stages[k - 1])
+            ));
             vals.push(delta);
             measures.push(Measure::Relative);
             hover.push(format!(
@@ -39609,7 +39622,7 @@ fn panel_trace_funnel_bridge(
 
             // `Total` re-derives its own height from the running total; the real amount goes
             // in the slot anyway so the arrays stay parallel and the JSON self-documenting.
-            cats.push(stages[k].clone());
+            cats.push(escape_hover(&stages[k]));
             vals.push(totals[k]);
             measures.push(Measure::Total);
             hover.push(stage_hover(k));
@@ -43218,7 +43231,7 @@ fn hierarchy_arrays(
     let root_children = tree.get(&Vec::<String>::new())?;
     let total: f64 = root_children.values().sum();
 
-    let mut labels = vec![root_label.to_string()];
+    let mut labels = vec![escape_hover(root_label)];
     let mut parents = vec![String::new()];
     let mut values = vec![total];
     let mut ids = vec![HIER_ROOT_ID.to_string()];
@@ -43275,7 +43288,8 @@ fn hierarchy_arrays(
                 let child_id = unique_id(format!("{prefix_id}{HIER_PATH_SEP}{seg}"));
                 let mut child_path = prefix.clone();
                 child_path.push(seg.clone());
-                labels.push(seg.clone());
+                // display text only (plotly pseudo-HTML); `ids`/`parents` keep the raw segment
+                labels.push(escape_hover(seg));
                 parents.push(prefix_id.clone());
                 values.push(v);
                 ids.push(child_id.clone());
@@ -43454,7 +43468,10 @@ fn sankey_trace(
     link_value: &[f64],
     positions: Option<&(Vec<f64>, Vec<f64>)>,
 ) -> Box<dyn Trace> {
-    let label_refs: Vec<&str> = node_labels.iter().map(String::as_str).collect();
+    // node labels are raw CSV values rendered as plotly pseudo-HTML (an `<a href>` became a live
+    // link); links address nodes by index, so escaping the display text cannot break the graph
+    let escaped: Vec<String> = node_labels.iter().map(|l| escape_hover(l)).collect();
+    let label_refs: Vec<&str> = escaped.iter().map(String::as_str).collect();
     let node_colors: Vec<String> = (0..node_labels.len())
         .map(|i| PALETTE[i % PALETTE.len()].to_string())
         .collect();
@@ -44596,7 +44613,8 @@ fn lollipop_category_axis(theme: Option<BuiltinTheme>, tick_text: &[String]) -> 
         .show_line(false)
         .tick_mode(TickMode::Array)
         .tick_values((0..tick_text.len()).map(|i| i as f64).collect())
-        .tick_text(tick_text.to_vec());
+        // raw column names / dictionary stage names, rendered as plotly pseudo-HTML
+        .tick_text(tick_text.iter().map(|t| escape_hover(t)).collect());
     if theme.is_none() {
         a = a
             .tick_color(AXIS_LINE)

@@ -1504,7 +1504,7 @@ fn dyn_enum_validator_factory<'a, F: Json>(
     // Only created in the URL branch; local paths don't need a temp file.
     let mut _temp_download: Option<NamedTempFile> = None;
 
-    let dynenum_path = if base_uri.starts_with("http") {
+    let dynenum_path = if is_http_url(base_uri) {
         let valid_url = reqwest::Url::parse(base_uri)
             .map_err(|e| ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}")))?;
 
@@ -3072,9 +3072,17 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
     Ok(header_types)
 }
 
+/// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such
+/// as `httpd.schema.json`, which were then fetched as URLs.
+fn is_http_url(uri: &str) -> bool {
+    let scheme_end = uri.find("://").unwrap_or(0);
+    let scheme = &uri[..scheme_end];
+    scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+}
+
 fn load_json(uri: &str) -> Result<String, String> {
     let json_string = match uri {
-        url if url.to_lowercase().starts_with("http") => {
+        url if is_http_url(url) => {
             let client = match util::create_reqwest_blocking_client(
                 None,
                 TIMEOUT_SECS.load(Ordering::Relaxed),

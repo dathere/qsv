@@ -3866,3 +3866,39 @@ fn validate_offline_refuses_external_refs() {
         );
     }
 }
+
+#[test]
+fn validate_local_files_named_http_are_not_urls() {
+    // a local schema or dynamicEnum lookup whose name starts with "http" used to be
+    // fetched as a URL
+    let wrk = Workdir::new("validate_local_files_named_http_are_not_urls").flexible(true);
+    wrk.create("data.csv", vec![svec!["code"], svec!["200"], svec!["999"]]);
+    wrk.create(
+        "http_codes.csv",
+        vec![svec!["code"], svec!["200"], svec!["404"]],
+    );
+    wrk.create_from_string(
+        "httpd.schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "code": { "type": "string", "dynamicEnum": "http_codes.csv" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("httpd.schema.json");
+    wrk.assert_err(&mut cmd);
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n2\tcode\t\"999\" is not a valid dynamicEnum value\n"
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("httpd.schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+}

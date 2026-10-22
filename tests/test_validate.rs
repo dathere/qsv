@@ -3960,3 +3960,45 @@ fn validate_schema_subcommand_honors_timeout() {
         "unexpected stderr: {got}"
     );
 }
+
+#[test]
+fn validate_anyof_oneof_error_messages() {
+    // errors come from `Validator::iter_errors`: one summary line per failed `anyOf`/`oneOf`,
+    // naming the value, rather than one line per failed branch
+    let wrk = Workdir::new("validate_anyof_oneof_error_messages").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["abcd", "x1"], svec!["ab", "z"]],
+    );
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "a": { "anyOf": [
+                    { "type": "string", "minLength": 4 },
+                    { "type": "string", "pattern": "^[0-9]+$" }
+                ] },
+                "b": { "oneOf": [
+                    { "type": "string", "maxLength": 2 },
+                    { "type": "string", "pattern": "^x" }
+                ] }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    let expected = [
+        "row_number\tfield\terror",
+        "1\tb\t\"x1\" is valid under more than one of the schemas listed in the 'oneOf' keyword",
+        "2\ta\t\"ab\" is not valid under any of the schemas listed in the 'anyOf' keyword",
+        "",
+    ]
+    .join("\n");
+    assert_eq!(validation_errors, expected);
+}

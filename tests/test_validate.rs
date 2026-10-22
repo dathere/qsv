@@ -3668,3 +3668,37 @@ fn validate_idn_formats_are_checked() {
     let got: String = wrk.stderr_on_success(&mut cmd);
     assert_eq!(got, "Valid JSON Schema.\n");
 }
+
+#[test]
+fn validate_error_field_names_are_unescaped() {
+    // instance locations are JSON Pointers, so `/` and `~` in a column name come back
+    // escaped as `~1` and `~0`; the report must show the real column name.
+    let wrk = Workdir::new("validate_error_field_names_are_unescaped").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a/b", "c~d", "plain"], svec!["x", "1", "ok"]],
+    );
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "a/b": { "type": "string", "minLength": 5 },
+                "c~d": { "type": "string", "minLength": 5 },
+                "plain": { "type": "string" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n1\ta/b\t\"x\" is shorter than 5 characters\n1\tc~d\t\"1\" is \
+         shorter than 5 characters\n"
+    );
+}

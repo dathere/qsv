@@ -2056,7 +2056,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     for e in errors {
                         error_messages.push(format!(
                             "{row_number_string}\t{field}\t{error}",
-                            field = e.instance_location.as_str().trim_start_matches('/'),
+                            field = instance_field(&e.instance_location),
                             error = e.error
                         ));
                     }
@@ -2170,6 +2170,19 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         winfo!("All {} records valid.", HumanCount(row_number));
     }
     Ok(())
+}
+
+/// The column an error points at, as the plain column name. Instance locations are JSON
+/// Pointers, so `/` and `~` inside a name arrive escaped (`~1`, `~0`); `segments()` undoes that.
+fn instance_field(location: &jsonschema::paths::Location) -> String {
+    let mut field = String::new();
+    for (i, segment) in location.segments().enumerate() {
+        if i > 0 {
+            field.push('/');
+        }
+        field.push_str(&segment.to_string());
+    }
+    field
 }
 
 /// Validate multiple files in RFC 4180 mode with Extended Input Support
@@ -3073,7 +3086,7 @@ fn validate_json_instance(
             schema_compiled
                 .evaluate(instance)
                 .iter_errors()
-                .map(|e| (e.instance_location.to_string(), e.error.to_string()))
+                .map(|e| (instance_field(&e.instance_location), e.error.to_string()))
                 .collect(),
         )
     }
@@ -3177,11 +3190,11 @@ mod tests_for_csv_to_json_conversion {
             results,
             vec![Some(vec![
                 (
-                    "/C".to_owned(),
+                    "C".to_owned(),
                     "\"3.0e8\" is not of type \"integer\"".to_owned()
                 ),
                 (
-                    "/D".to_owned(),
+                    "D".to_owned(),
                     "\"yes\" is not of type \"boolean\"".to_owned()
                 ),
             ])]
@@ -3255,7 +3268,7 @@ mod tests_for_csv_to_json_conversion {
         assert_eq!(
             results,
             vec![Some(vec![(
-                "/n".to_owned(),
+                "n".to_owned(),
                 "9007199254740993 is greater than the maximum of 9007199254740992".to_owned()
             )])]
         );
@@ -3352,7 +3365,7 @@ mod tests_for_schema_validation {
         assert_eq!(
             results,
             vec![Some(vec![(
-                "/name".to_string(),
+                "name".to_string(),
                 "\"X\" is shorter than 2 characters".to_string()
             )])]
         );
@@ -3420,7 +3433,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
     assert_eq!(
         results,
         vec![Some(vec![(
-            "/fee".to_owned(),
+            "fee".to_owned(),
             "\"Ð 100.00\" is not a \"currency\"".to_owned()
         )])]
     );
@@ -3443,11 +3456,11 @@ fn test_validate_currency_email_dynamicenum_validator() {
         results,
         vec![Some(vec![
             (
-                "/fee".to_owned(),
+                "fee".to_owned(),
                 "\"Ð 100.00\" is not a \"currency\"".to_owned()
             ),
             (
-                "/email".to_owned(),
+                "email".to_owned(),
                 "\"thisisnotanemail\" is not a \"email\"".to_owned()
             )
         ])]
@@ -3484,11 +3497,11 @@ fn test_validate_currency_email_dynamicenum_validator() {
                 result,
                 Some(vec![
                     (
-                        "/name".to_owned(),
+                        "name".to_owned(),
                         "\"T\" is shorter than 2 characters".to_owned()
                     ),
                     (
-                        "/agency".to_owned(),
+                        "agency".to_owned(),
                         "\"MODA\" is not a valid dynamicEnum value".to_owned()
                     )
                 ])
@@ -3496,7 +3509,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
             4 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/name".to_owned(),
+                    "name".to_owned(),
                     "\"X\" is shorter than 2 characters".to_owned()
                 )])
             ),
@@ -3504,14 +3517,14 @@ fn test_validate_currency_email_dynamicenum_validator() {
             6 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/agency".to_owned(),
+                    "agency".to_owned(),
                     "\"NYFD\" is not a valid dynamicEnum value".to_owned()
                 )])
             ),
             7 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/fee".to_owned(),
+                    "fee".to_owned(),
                     "\"WAX 100.000,00\" is not a \"currency\"".to_owned()
                 )])
             ),
@@ -3519,15 +3532,15 @@ fn test_validate_currency_email_dynamicenum_validator() {
                 result,
                 Some(vec![
                     (
-                        "/fee".to_owned(),
+                        "fee".to_owned(),
                         "\"B 1,000,000\" is not a \"currency\"".to_owned()
                     ),
                     (
-                        "/email".to_owned(),
+                        "email".to_owned(),
                         "\"71076.964-compuserve\" is not a \"email\"".to_owned()
                     ),
                     (
-                        "/agency".to_owned(),
+                        "agency".to_owned(),
                         "\"ABCD\" is not a valid dynamicEnum value".to_owned()
                     )
                 ])

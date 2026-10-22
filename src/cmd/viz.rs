@@ -29075,12 +29075,21 @@ fn bare_year_col(stats: &[crate::cmd::stats::StatsData], sems: &[ColSemantics]) 
 
 /// The per-column test behind [`bare_year_col`].
 fn is_bare_year_col(s: &crate::cmd::stats::StatsData, sem: Option<&ColSemantics>) -> bool {
+    // `has_multiple_dates`, not `cardinality >= 2`: stats counts the blank value, so one year
+    // plus empty cells would pass, tie a real year column on rank and shadow it.
+    has_multiple_dates(s) && looks_like_bare_year_col(s, sem)
+}
+
+/// The shape half of [`is_bare_year_col`]: a dictionary-routed temporal Integer column whose
+/// observed min and max are both 4-digit years, however many distinct years it holds. The skip
+/// note uses it on its own, so a single-year column reads as time-capable ("yr is the time
+/// axis"), like a constant Date column, rather than "not dates or 4-digit years".
+fn looks_like_bare_year_col(s: &crate::cmd::stats::StatsData, sem: Option<&ColSemantics>) -> bool {
     let year = |v: Option<&String>| {
         v.and_then(|s| s.trim().parse::<i64>().ok())
             .filter(|y| BARE_YEAR_RANGE.contains(y))
     };
     s.r#type == "Integer"
-        && s.cardinality >= 2
         && sem.is_some_and(|sem| sem.route == Route::Temporal)
         && year(s.min.as_ref()).is_some()
         && year(s.max.as_ref()).is_some()
@@ -30133,10 +30142,18 @@ fn agg_values(vals: &[f64], agg: Agg) -> f64 {
 /// "Date"/"DateTime" — while `qsv stats` types an all-numeric column as Integer/Float even when it
 /// looks like a date (`20230101`, epoch seconds, a bare year) and even under
 /// `--dates-whitelist all`. So a smart-supplied frame column has zero numeric coverage.
+///
+/// `decline_above` is the caller's frame cap. Below `SLIDER_MAX_FRAMES` (`viz smart`'s
+/// auto-selected panel) an axis longer than the cap is DECLINED (`Ok(None)`) even past
+/// `SLIDER_MAX_FRAMES`: the user never passed `--slider`, so an error naming it would abort the
+/// whole Data Schematic over a panel smart was only considering. At `SLIDER_MAX_FRAMES` (the
+/// explicit `--slider` path) the over-limit axis is the actionable usage error.
 fn resolve_frame_axis(
     cells: &[&str],
     prefer_dmy: bool,
+    decline_above: usize,
 ) -> CliResult<Option<(Vec<Option<usize>>, Vec<String>)>> {
+    let declines = |frames: usize| decline_above < SLIDER_MAX_FRAMES && frames > decline_above;
     let n_numeric = cells
         .iter()
         .filter(|c| parse_finite_f64(c).is_some())
@@ -30157,6 +30174,9 @@ fn resolve_frame_axis(
         if n_parsed >= 2 && n_parsed * 10 >= cells.len() * 9 && n_numeric * 10 <= cells.len() {
             let dates: Vec<chrono::NaiveDate> = parsed.iter().filter_map(|p| *p).collect();
             let (bkt, distinct) = choose_anim_bucket(&dates);
+            if declines(distinct.len()) {
+                return Ok(None);
+            }
             if distinct.len() > SLIDER_MAX_FRAMES {
                 return fail_incorrectusage_clierror!(
                     "--slider column yields {} animation frames; the maximum is \
@@ -30184,6 +30204,9 @@ fn resolve_frame_axis(
         if seen.insert((*c).to_string()) {
             order.push((*c).to_string());
         }
+    }
+    if declines(order.len()) {
+        return Ok(None);
     }
     if order.len() > SLIDER_MAX_FRAMES {
         return fail_incorrectusage_clierror!(
@@ -30311,13 +30334,13 @@ fn read_entity_bucket_agg(
     // which frames on the column's distinct values. Only a genuinely temporal column takes the
     // calendar path.
     let frame_cells: Vec<&str> = rows.iter().map(|r| r.1.as_str()).collect();
-    let (bucket_keys, bucket_labels) = match resolve_frame_axis(&frame_cells, opts.prefer_dmy)? {
-        Some(axis) => axis,
-        // an unparseable/degenerate frame axis is only reachable from the standalone path (smart
-        // always hands us a stats-typed date column), and `build_slider_bubble_plot` turns the
-        // `None` into an actionable error naming the column
-        None => return Ok(None),
-    };
+    let (bucket_keys, bucket_labels) =
+        match resolve_frame_axis(&frame_cells, opts.prefer_dmy, opts.max_frames)? {
+            Some(axis) => axis,
+            // smart: an over-cap axis declines the panel. Standalone: `build_slider_bubble_plot`
+            // turns the `None` into an actionable error naming the column.
+            None => return Ok(None),
+        };
     let nb = bucket_labels.len();
     if nb < opts.min_frames || nb > opts.max_frames {
         return Ok(None);
@@ -38173,7 +38196,7 @@ impl<'a> SmartCtx<'a> {
                 let stats = idx.and_then(|i| self.stats.get(i));
                 let time_capable = stats.is_some_and(|s| {
                     matches!(s.r#type.as_str(), "Date" | "DateTime")
-                        || is_bare_year_col(s, idx.and_then(|i| self.col_sems.get(i)))
+                        || looks_like_bare_year_col(s, idx.and_then(|i| self.col_sems.get(i)))
                 });
                 let why = match (&time_axis, stats) {
                     (Some(axis), _) if time_capable => format!("{axis} is the time axis"),

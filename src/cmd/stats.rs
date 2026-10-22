@@ -43,7 +43,8 @@ You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environm
 or -1 for CPU-based chunking (1 chunk = records/number of CPUs)).
 
 "Antimode" is the least frequently occurring non-zero value and is the opposite of mode.
-It returns "*ALL" if all the values are unique, and only returns a preview of the first
+It returns "*ALL" if all the values are unique (with --weight, if all the values are unique
+AND have the same weight), and only returns a preview of the first
 10 antimodes, truncating after 100 characters (configurable with QSV_ANTIMODES_LEN).
 
 If you need all the antimode values of a column, run the `frequency` command with --limit set
@@ -1465,6 +1466,7 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
 #[cfg(not(target_endian = "big"))]
 fn try_enable_approx_sketches(
     args: &mut Args,
+    stats_args: &mut StatsArgs,
     user_set_quantile_method: bool,
     user_set_cardinality_method: bool,
 ) -> Vec<&'static str> {
@@ -1501,6 +1503,17 @@ fn try_enable_approx_sketches(
         enabled.push("--cardinality-method approx");
     }
 
+    // The cache sidecar was snapshotted from `args` before this fallback ran. Without re-syncing
+    // it records `exact` over t-digest/HLL results: an explicit `--quantile-method exact` rerun is
+    // then served the approximate cache, and `frequency` trusts an HLL cardinality as exact.
+    stats_args
+        .flag_quantile_method
+        .clone_from(&args.flag_quantile_method);
+    stats_args
+        .flag_cardinality_method
+        .clone_from(&args.flag_cardinality_method);
+    stats_args.flag_mad = args.flag_mad;
+
     enabled
 }
 
@@ -1517,6 +1530,7 @@ const fn modes_keep_unbounded_exact_table(args: &Args) -> bool {
 #[cfg(target_endian = "big")]
 fn try_enable_approx_sketches(
     _args: &mut Args,
+    _stats_args: &mut StatsArgs,
     _user_set_quantile_method: bool,
     _user_set_cardinality_method: bool,
 ) -> Vec<&'static str> {
@@ -2272,6 +2286,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             }
                             let enabled = try_enable_approx_sketches(
                                 &mut args,
+                                &mut current_stats_args,
                                 user_set_quantile_method,
                                 user_set_cardinality_method,
                             );
@@ -4960,7 +4975,9 @@ fn format_antimodes(
     max_len: usize,
     visualize_ws: bool,
 ) -> String {
-    let mut antimodes_list = String::with_capacity(max_len);
+    // max_len is usize::MAX when QSV_ANTIMODES_LEN=0 disables truncation, so it can't be the
+    // capacity hint
+    let mut antimodes_list = String::new();
 
     // We only store the first MAX_ANTIMODES antimodes
     // so if antimodes_count > MAX_ANTIMODES, add the "*PREVIEW: " prefix
@@ -4968,17 +4985,20 @@ fn format_antimodes(
         antimodes_list.push_str("*PREVIEW: ");
     }
 
-    let antimodes_vals = &antimodes
+    // an empty antimode is the NULL value; decide per element, since sniffing the joined string
+    // for a leading separator missed a lone NULL and invented one for a value like "|a"
+    let antimodes_vals = antimodes
         .iter()
-        .map(|c| util::bytes_to_cow_str(c.as_ref()))
+        .map(|c| {
+            let c = c.as_ref();
+            if c.is_empty() {
+                std::borrow::Cow::Borrowed("NULL")
+            } else {
+                util::bytes_to_cow_str(c)
+            }
+        })
         .join(separator);
-
-    // if the antimodes result starts with the separator,
-    // it indicates that NULL is the first antimode. Add NULL to the list.
-    if antimodes_vals.starts_with(separator) {
-        antimodes_list.push_str("NULL");
-    }
-    antimodes_list.push_str(antimodes_vals);
+    antimodes_list.push_str(&antimodes_vals);
 
     // truncate at max_len characters with an ellipsis
     if antimodes_list.len() > max_len {
@@ -5747,30 +5767,34 @@ impl Stats {
                         "0".to_string(),
                     ]);
                 } else {
-                    // Check if all values are unique (cardinality == record_count)
+                    let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
+                    let min_weight = weighted_modes_map
+                        .values()
+                        .copied()
+                        .fold(f64::INFINITY, f64::min);
+                    // The unweighted *ALL short-circuit holds because every count ties at 1.
+                    // Weighted, distinct values can still carry different weights, so the
+                    // short-circuit also needs every weight to tie - else the heaviest value
+                    // IS the mode.
                     let unique_count = weighted_modes_map.len() as u64;
-                    if unique_count == record_count {
-                        // all values unique
+                    if unique_count == record_count && (max_weight - min_weight).abs() < 1e-10 {
+                        // all values unique, all with the same weight
+                        #[allow(clippy::cast_possible_truncation)]
+                        let common_weight = min_weight.round() as u64;
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
                                 EMPTY_STRING,
                                 "0".to_string(),
                                 "0".to_string(),
-                                // antimodes - instead of returning everything, just say *ALL
+                                // antimodes - instead of returning everything, just say *ALL;
+                                // each value's occurrences is the shared weight
                                 "*ALL".to_string(),
                                 "0".to_string(),
-                                "1".to_string(),
+                                itoa_buf.format(common_weight).to_owned(),
                             ],
                         );
                     } else {
-                        // Find max and min weights
-                        let max_weight = weighted_modes_map.values().copied().fold(0.0, f64::max);
-                        let min_weight = weighted_modes_map
-                            .values()
-                            .copied()
-                            .fold(f64::INFINITY, f64::min);
-
                         // Collect modes (values with max weight) in deterministic order
                         let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
                             .iter()
@@ -5840,9 +5864,9 @@ impl Stats {
                         // For weighted modes, mode_occurrences is the max weight (rounded)
                         // For weighted antimodes, antimode_occurrences is the min weight (rounded)
                         #[allow(clippy::cast_possible_truncation)]
-                        let mode_occurrences = max_weight.round() as u32;
+                        let mode_occurrences = max_weight.round() as u64;
                         #[allow(clippy::cast_possible_truncation)]
-                        let antimode_occurrences = min_weight.round() as u32;
+                        let antimode_occurrences = min_weight.round() as u64;
 
                         mc_pieces.extend_from_slice(&[
                             // mode/s
@@ -6760,6 +6784,12 @@ fn is_zero_padded_number(sample: &[u8]) -> bool {
         Some(b'+' | b'-') => &sample[1..],
         _ => sample,
     };
+    // An all-zero integer (`00`, `-000`) is the number 0, not padding: the integer path in
+    // from_sample() types it Integer, and this check must agree, or the type would depend on
+    // whether the column had already widened to Float when the value arrived.
+    if b.iter().all(|&c| c == b'0') {
+        return false;
+    }
     // integer part must be '0' followed by another digit
     match b {
         [b'0', d, ..] if d.is_ascii_digit() => {},
@@ -6958,7 +6988,9 @@ impl FieldType {
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct TypedSum {
     float:   Option<f64>,
-    integer: i64,
+    // i128 so that an intermediate total past i64 range can come back in range exactly: a
+    // saturating i64 sum was order-dependent and printed plausible wrong totals
+    integer: i128,
     stotlen: u64, // sum of the total length of strings
 }
 
@@ -6985,7 +7017,7 @@ impl TypedSum {
                 if let Some(ref mut f) = self.float {
                     *f += float_val;
                 } else {
-                    self.integer = self.integer.saturating_add(int_val);
+                    self.integer += i128::from(int_val);
                 }
             },
             TFloat => {
@@ -7005,15 +7037,11 @@ impl TypedSum {
         match typ {
             TNull | TDate | TDateTime => None,
             TInteger => {
-                match self.integer {
-                    // with saturating_add, if this is equal to i64::MAX or i64::MIN
-                    // we overflowed/underflowed
-                    i64::MAX => Some((self.stotlen, OVERFLOW_STRING.to_string())),
-                    i64::MIN => Some((self.stotlen, UNDERFLOW_STRING.to_string())),
-                    _ => Some((
-                        self.stotlen,
-                        itoa::Buffer::new().format(self.integer).to_owned(),
-                    )),
+                // the total is reported only while it fits the column's i64 type
+                match i64::try_from(self.integer) {
+                    Ok(sum) => Some((self.stotlen, itoa::Buffer::new().format(sum).to_owned())),
+                    Err(_) if self.integer > 0 => Some((self.stotlen, OVERFLOW_STRING.to_string())),
+                    Err(_) => Some((self.stotlen, UNDERFLOW_STRING.to_string())),
                 }
             },
             TFloat => Some((
@@ -7035,7 +7063,7 @@ impl Commute for TypedSum {
             (Some(f1), Some(f2)) => self.float = Some(f1 + f2),
             (Some(f1), None) => self.float = Some(f1 + (other.integer as f64)),
             (None, Some(f2)) => self.float = Some((self.integer as f64) + f2),
-            (None, None) => self.integer = self.integer.saturating_add(other.integer),
+            (None, None) => self.integer += other.integer,
         }
         self.stotlen = self.stotlen.saturating_add(other.stotlen);
     }
@@ -7401,8 +7429,45 @@ mod tests {
         full.push("data.csv");
         let mut args: super::Args = crate::util::get_args(super::USAGE, &full).unwrap();
         let unbounded = super::modes_keep_unbounded_exact_table(&args);
-        let enabled = super::try_enable_approx_sketches(&mut args, false, false);
+        let mut stats_args = super::StatsArgs::default();
+        let enabled = super::try_enable_approx_sketches(&mut args, &mut stats_args, false, false);
         (enabled, unbounded, args.flag_cardinality_method)
+    }
+
+    #[test]
+    #[cfg(not(target_endian = "big"))]
+    fn oom_fallback_records_the_estimators_it_enables_in_the_cache_sidecar() {
+        // the sidecar snapshot is taken from `args` BEFORE the fallback runs; a stale snapshot
+        // labels t-digest/HLL results `exact`, so later exact requests are served the approx cache
+        let argv = [
+            "qsv",
+            "stats",
+            "--cardinality",
+            "--quartiles",
+            "--mad",
+            "data.csv",
+        ];
+        let mut args: super::Args = crate::util::get_args(super::USAGE, &argv).unwrap();
+        let mut stats_args = super::StatsArgs {
+            flag_quantile_method: args.flag_quantile_method.clone(),
+            flag_cardinality_method: args.flag_cardinality_method.clone(),
+            flag_mad: args.flag_mad,
+            ..Default::default()
+        };
+        let enabled = super::try_enable_approx_sketches(&mut args, &mut stats_args, false, false);
+        assert_eq!(
+            enabled,
+            [
+                "--quantile-method approx (MAD disabled)",
+                "--cardinality-method approx"
+            ]
+        );
+        assert_eq!(stats_args.flag_quantile_method, "approx");
+        assert_eq!(stats_args.flag_cardinality_method, "approx");
+        assert!(
+            !stats_args.flag_mad,
+            "MAD was disabled, so the sidecar must not claim it"
+        );
     }
 
     #[test]

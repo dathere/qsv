@@ -1450,6 +1450,53 @@ fn viz_smart_bubble_declines_past_the_frame_cap() {
 }
 
 #[test]
+fn viz_smart_bubble_declines_past_the_slider_hard_limit() {
+    // 400 annual frames is past SLIDER_MAX_FRAMES (365) as well as the smart cap. The auto
+    // panel must still be DECLINED: `resolve_frame_axis` used to raise the explicit path's
+    // "--slider column yields 400 animation frames" usage error, aborting the whole Data
+    // Schematic (exit 2, no HTML) over a flag the user never passed.
+    let wrk = Workdir::new("viz_smart_bubble_declines_past_the_slider_hard_limit");
+    wrk.create_from_string("long.csv", &smart_annual_bubble_csv(400));
+    let out_html = wrk.path("long.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "long.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("long.html").unwrap();
+    assert!(
+        !html.contains(" by region over time"),
+        "400 annual frames exceeds every cap and must be declined"
+    );
+
+    // the explicit `--slider` path keeps the actionable usage error: the user picked the column
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "long.csv",
+        "--x",
+        "gdp_index",
+        "--y",
+        "wellbeing_index",
+        "--series",
+        "region",
+        "--size",
+        "population_m",
+        "--slider",
+        "year_date",
+    ]);
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "the standalone slider must refuse 400 frames"
+    );
+    assert!(
+        stderr.contains("--slider column yields 400 animation frames; the maximum is 365"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn viz_smart_bubble_gated_without_entity() {
     // the same measure pair + date but NO categorical entity column => no bubble (and the
     // near-linear gdp/wellbeing trend doesn't drift, so nothing else animates either). Isolates the
@@ -19542,6 +19589,53 @@ fn viz_smart_bare_year_column_drives_the_time_series() {
         html.contains("it is the x-axis of the time-based panels"),
         "the drawer must describe the year column as the time axis"
     );
+}
+
+#[test]
+fn viz_smart_constant_bare_year_does_not_shadow_the_year_column() {
+    // `fy` holds one year plus blanks. `stats` counts the blank in cardinality (2), so a
+    // `cardinality >= 2` gate let it pass as a bare-year column; being constant it is trivially
+    // sorted, tied `yr` on rank, won on column order and drew no trend, and `yr` was never tried.
+    let wrk = Workdir::new("viz_smart_constant_bare_year_does_not_shadow_the_year_column");
+    let mut rows = String::from("fy,yr,amt\n");
+    for (i, year) in (2015..=2023).enumerate() {
+        for k in 0..3 {
+            let fy = if k == 0 { "" } else { "2024" };
+            rows.push_str(&format!("{fy},{year},{}\n", 100 * (i + 1) + k * 7));
+        }
+    }
+    wrk.create_from_string("y.csv", &rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
+  "properties": {
+    "fy": { "type": "integer", "title": "Fiscal Year", "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "time.date" } },
+    "yr": { "type": "integer", "title": "Program Year", "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "time.date" } },
+    "amt": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  } }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "y.csv", "-o", "dash.html", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    let traces = year_axis_line_traces(&html);
+    assert_eq!(traces.len(), 1, "one trend over yr expected: {stderr}");
+    assert_eq!(
+        traces[0].0["x"],
+        serde_json::json!([
+            "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023"
+        ])
+    );
+    // the single-year column still reads as time-capable in the skip note, like a constant
+    // Date column would, rather than "not dates or 4-digit years"
+    assert!(stderr.contains("fy (yr is the time axis)"), "{stderr}");
+    assert!(stderr.contains("yr (time axis)"), "{stderr}");
 }
 
 #[test]

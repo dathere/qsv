@@ -278,8 +278,9 @@ fn csv_record_to_json_map(
                         // Deliberately general rather than keyed to those 8 columns: the map is
                         // per-COLUMN but a rendering is per-ROW, so the map cannot express this.
                         // Verified across String/Boolean/NULL/Integer/Float/Date/DateTime columns
-                        // that those 8 are the complete set of Float-typed cells that can be
-                        // non-numeric, so no other field's Option<f64> can start rejecting lines.
+                        // that those 8 are the Float-typed cells that can be non-numeric, plus
+                        // `sum`, whose integer overflow renders as *OVERFLOW* / *UNDERFLOW*
+                        // (StatsData.sum is therefore deserialized leniently).
                         serde_json::Value::String(val.to_owned())
                     }
                 },

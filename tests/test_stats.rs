@@ -9915,3 +9915,205 @@ fn stats_new_cache_has_umask_default_permissions() {
         "a successful install left a temp file behind: {strays:?}"
     );
 }
+
+fn stats_cell(got: &[Vec<String>], row: usize, col: &str) -> String {
+    let idx = got[0]
+        .iter()
+        .position(|h| h == col)
+        .unwrap_or_else(|| panic!("no `{col}` column in {:?}", got[0]));
+    got[row][idx].clone()
+}
+
+#[test]
+fn stats_weighted_null_cells_do_not_inflate_quantile_total() {
+    // Null cells used to add their weight to the quantile total while their (absent) values
+    // never reached the ranked data, so upper targets were unreachable: Q1/Q2/Q3 came out
+    // empty and the 75th/100th percentiles a fabricated 0.
+    let wrk = Workdir::new("stats_weighted_null_cells_do_not_inflate_quantile_total");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["x", "w"],
+            svec!["1", "1"],
+            svec!["2", "1"],
+            svec!["", "1"],
+            svec!["", "1"],
+        ],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--weight", "w", "--quartiles", "--mad", "--percentiles"])
+        .args(["--percentile-list", "25,50,75,100", "--select", "x"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "q1"), "1");
+    assert_eq!(stats_cell(&got, 1, "q2_median"), "1");
+    assert_eq!(stats_cell(&got, 1, "q3"), "2");
+    assert_eq!(stats_cell(&got, 1, "mad"), "0");
+    assert_eq!(
+        stats_cell(&got, 1, "percentiles"),
+        "25: 1|50: 1|75: 2|100: 2"
+    );
+}
+
+#[test]
+fn stats_weighted_percentiles_survive_float_rounding_of_the_total() {
+    // 0.1+0.2+0.3 (input order) != 0.3+0.2+0.1 (sorted order): a total summed in input
+    // order sat just above the final running sum, so p100 was never reached and kept its
+    // 0.0 placeholder, and p50 skipped past the exact half-way value.
+    let wrk = Workdir::new("stats_weighted_percentiles_survive_float_rounding_of_the_total");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["x", "w"],
+            svec!["30", "0.1"],
+            svec!["20", "0.2"],
+            svec!["10", "0.3"],
+        ],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args([
+        "--weight",
+        "w",
+        "--percentiles",
+        "--percentile-list",
+        "50,100",
+    ])
+    .args(["--select", "x"])
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "percentiles"), "50: 10|100: 30");
+}
+
+#[test]
+fn stats_weighted_zero_and_negative_weights_excluded_from_modes() {
+    // --weight docs: zero and negative weights do not contribute. They used to still become
+    // mode-table keys: cardinality 3 and antimode `a` with 0 occurrences.
+    for (name, w) in [("zero", "0"), ("negative", "-1")] {
+        let wrk = Workdir::new(&format!(
+            "stats_weighted_{name}_weights_excluded_from_modes"
+        ));
+        wrk.create(
+            "data.csv",
+            vec![
+                svec!["value", "weight"],
+                svec!["a", w],
+                svec!["b", "2"],
+                svec!["a", w],
+                svec!["c", "1"],
+            ],
+        );
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--weight", "weight", "--mode", "--cardinality"])
+            .arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "cardinality"), "2", "{name} weights");
+        assert_eq!(stats_cell(&got, 1, "mode"), "b", "{name} weights");
+        assert_eq!(stats_cell(&got, 1, "antimode"), "c", "{name} weights");
+        assert_eq!(
+            stats_cell(&got, 1, "antimode_occurrences"),
+            "1",
+            "{name} weights"
+        );
+    }
+}
+
+#[test]
+fn stats_infer_boolean_requires_one_true_and_one_false_value() {
+    // With the default "t*:f*" pattern, "Fiona" and "Frank" both match the FALSE side;
+    // that is not a true/false pair. Control: "true"/"false" in the same file stays Boolean.
+    let wrk = Workdir::new("stats_infer_boolean_requires_one_true_and_one_false_value");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["name", "flag"],
+            svec!["Fiona", "true"],
+            svec!["Frank", "false"],
+            svec!["Fiona", "true"],
+        ],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-boolean").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "type"), "String");
+    assert_eq!(stats_cell(&got, 2, "type"), "Boolean");
+}
+
+#[test]
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
+fn stats_integer_sum_overflow_keeps_the_stats_cache_readable() {
+    // An overflowing integer sum renders as *OVERFLOW*; the strict f64 `sum` field rejected
+    // the whole cached record, so `schema` failed with "ExpectedFloat".
+    let wrk = Workdir::new("stats_integer_sum_overflow_keeps_the_stats_cache_readable");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "name"],
+            svec!["9000000000000000000", "a"],
+            svec!["9000000000000000000", "b"],
+        ],
+    );
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--stats-jsonl").arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut stats_cmd);
+    // guard: the fixture really overflows, or this test proves nothing
+    assert_eq!(stats_cell(&got, 1, "sum"), "*OVERFLOW*");
+
+    let mut schema_cmd = wrk.command("schema");
+    schema_cmd.arg("data.csv");
+    wrk.assert_success(&mut schema_cmd);
+    assert!(wrk.path("data.csv.schema.json").exists());
+}
+
+#[test]
+fn stats_weighted_mad_total_matches_its_own_deviation_order() {
+    // weighted_mad re-sorts by |x - median|; a total summed in VALUE order
+    // (0.1+0.3+0.2 = 0.6000000000000001) put the half-weight target just above the zero
+    // deviation's 0.3, so MAD came out 1 instead of 0.
+    let wrk = Workdir::new("stats_weighted_mad_total_matches_its_own_deviation_order");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["x", "w"],
+            svec!["20", "0.3"],
+            svec!["21", "0.2"],
+            svec!["0", "0.1"],
+        ],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--weight", "w", "--mad", "--select", "x"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "mad"), "0");
+}
+
+#[test]
+fn stats_weighted_infer_boolean_uses_the_weighted_values() {
+    // Zero-weight rows are not counted in cardinality, so the true/false check must not use
+    // min/max (which still see them). Case 1: Fiona/Frank (+ a 0-weight "true") is not
+    // Boolean. Case 2: yes/no (+ a 0-weight "maybe", which is the min) IS Boolean.
+    for (name, rows, expected) in [
+        (
+            "fiona_frank",
+            [["Fiona", "1"], ["Frank", "1"], ["true", "0"]],
+            "String",
+        ),
+        (
+            "yes_no",
+            [["yes", "1"], ["no", "1"], ["maybe", "0"]],
+            "Boolean",
+        ),
+    ] {
+        let wrk = Workdir::new(&format!(
+            "stats_weighted_infer_boolean_uses_the_weighted_values_{name}"
+        ));
+        let mut data = vec![svec!["value", "w"]];
+        data.extend(rows.iter().map(|[v, w]| svec![*v, *w]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--weight", "w", "--infer-boolean"])
+            .arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "cardinality"), "2", "{name}");
+        assert_eq!(stats_cell(&got, 1, "type"), expected, "{name}");
+    }
+}

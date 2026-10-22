@@ -109,7 +109,7 @@
       {
         "flag": "--no-format-validation",
         "type": "flag",
-        "description": "Disable JSON Schema format validation. Ignores all JSON Schema \"format\" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a \"format\" that qsv does not know (e.g. a typo like \"emial\") is an error rather than being silently ignored."
+        "description": "Disable JSON Schema format validation. Ignores all JSON Schema \"format\" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a \"format\" that qsv does not know (e.g. a typo like \"emial\") is not checked, and a warning names it."
       },
       {
         "flag": "--no-headers",

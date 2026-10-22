@@ -272,7 +272,7 @@ qsv validate --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before validating. |  |
-| &nbsp;`‑‑no‑format‑validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a "format" that qsv does not know (e.g. a typo like "emial") is an error rather than being silently ignored. |  |
+| &nbsp;`‑‑no‑format‑validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a "format" that qsv does not know (e.g. a typo like "emial") is not checked, and a warning names it. |  |
 | &nbsp;`‑‑fail‑fast`&nbsp; | flag | Stops on first error. |  |
 | &nbsp;`‑‑valid`&nbsp; | string | Valid record output file suffix. | `valid` |
 | &nbsp;`‑‑invalid`&nbsp; | string | Invalid record output file suffix. | `invalid` |

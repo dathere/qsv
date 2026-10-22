@@ -3767,9 +3767,10 @@ fn validate_schema_subcommand_matches_row_validation_options() {
 }
 
 #[test]
-fn validate_unknown_format_is_an_error() {
-    // an unknown format used to be ignored during row validation, so a typo checked nothing
-    let wrk = Workdir::new("validate_unknown_format_is_an_error").flexible(true);
+fn validate_unknown_format_warns() {
+    // JSON Schema treats an unknown format as an annotation, so row validation still runs,
+    // but a typo would check nothing silently: it must be named in a warning.
+    let wrk = Workdir::new("validate_unknown_format_warns").flexible(true);
     wrk.create("data.csv", vec![svec!["mail"], svec!["not an email"]]);
     wrk.create_from_string(
         "schema.json",
@@ -3777,28 +3778,37 @@ fn validate_unknown_format_is_an_error() {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "properties": {
-                "mail": { "type": "string", "format": "emial" }
+                "mail": { "type": "string", "format": "emial" },
+                "other": { "type": "string", "format": "email" }
             }
         }"#,
     );
 
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv").arg("schema.json");
-    let got: String = wrk.output_stderr(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
     assert!(
-        got.contains("Cannot compile JSONschema") && got.contains("emial"),
+        got.contains("Unknown format \"emial\" is not checked"),
         "unexpected stderr: {got}"
     );
-    let mut cmd = wrk.command("validate");
-    cmd.arg("data.csv").arg("schema.json");
-    wrk.assert_err(&mut cmd);
-    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+    assert!(!got.contains("\"email\""), "known format warned: {got}");
+    assert!(
+        got.contains("All 1 records valid."),
+        "unexpected stderr: {got}"
+    );
 
+    // `validate schema` still rejects it
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    // with format validation off there is nothing to warn about
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv")
         .arg("--no-format-validation")
         .arg("schema.json");
-    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(!got.contains("Unknown format"), "unexpected stderr: {got}");
 }
 
 #[test]

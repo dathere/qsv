@@ -225,7 +225,7 @@ Validate options:
                                useful when you want to validate the structure of the CSV file
                                w/o worrying about the data types and domain/range of the fields.
                                Without this option, a "format" that qsv does not know (e.g. a
-                               typo like "emial") is an error rather than being silently ignored.
+                               typo like "emial") is not checked, and a warning names it.
     --fail-fast                Stops on first error.
     --valid <suffix>           Valid record output file suffix. [default: valid]
     --invalid <suffix>         Invalid record output file suffix. [default: invalid]
@@ -332,7 +332,7 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     env,
     fmt::Write as _,
     fs::File,
@@ -1630,11 +1630,8 @@ fn validator_options<'i, F: Json>(
     has_currency_format: bool,
     has_email_format: bool,
 ) -> ValidationOptions<'i, Arc<dyn Retrieve>, F> {
-    // An unknown format is an error unless format validation is off: otherwise a typo
-    // (`"format": "emial"`) or a format this build lacks checks nothing, silently.
-    let mut options = jsonschema::options_for::<F>()
-        .should_validate_formats(!args.flag_no_format_validation)
-        .should_ignore_unknown_formats(args.flag_no_format_validation);
+    let mut options =
+        jsonschema::options_for::<F>().should_validate_formats(!args.flag_no_format_validation);
 
     if has_email_format {
         // Apply each option explicitly:
@@ -1689,6 +1686,47 @@ fn validator_options<'i, F: Json>(
     }
 }
 
+/// Warn once per `format` name the validator doesn't check. JSON Schema treats an unknown format
+/// as an annotation, so row validation accepts such schemas, but a typo (`"emial"`) would
+/// otherwise check nothing without any sign of it. `validate schema` rejects them instead.
+fn warn_unknown_formats<F: Json>(
+    schema: &Value,
+    options: &ValidationOptions<'_, Arc<dyn Retrieve>, F>,
+    validator: &Validator<F>,
+) {
+    let mut names = BTreeSet::new();
+    collect_format_names(schema, &mut names);
+    for name in names {
+        if !options.is_known_format(validator.draft(), name) {
+            wwarn!(
+                "Unknown format \"{name}\" is not checked. Run `qsv validate schema` to check the \
+                 JSON Schema, or use --no-format-validation to ignore formats."
+            );
+        }
+    }
+}
+
+fn collect_format_names<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>) {
+    match v {
+        Value::Object(map) => {
+            for (k, val) in map {
+                if k == "format"
+                    && let Some(s) = val.as_str()
+                {
+                    names.insert(s);
+                }
+                collect_format_names(val, names);
+            }
+        },
+        Value::Array(arr) => {
+            for item in arr {
+                collect_format_names(item, names);
+            }
+        },
+        _ => {},
+    }
+}
+
 fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
     let mut has_currency = false;
     let mut has_email = false;
@@ -1728,6 +1766,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 detect_custom_schema_features(&schema_json);
             let test_validator =
                 validator_options::<SerdeJson>(&args, has_currency_format, has_email_format)
+                    .should_ignore_unknown_formats(args.flag_no_format_validation)
                     .build(&schema_json);
             if let Err(e) = test_validator {
                 return fail_clierror!("JSON Schema Format Validation Error: {e}");
@@ -1932,7 +1971,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         drop_required_headers(&mut json, &headers);
                         match validator_options.build(&json) {
-                            Ok(schema) => (json, schema, has_unique_combined),
+                            Ok(schema) => {
+                                if !args.flag_no_format_validation {
+                                    warn_unknown_formats(&json, &validator_options, &schema);
+                                }
+                                (json, schema, has_unique_combined)
+                            },
                             Err(e) => {
                                 return fail_clierror!(r"Cannot compile JSONschema. error: {e}
 Try running `qsv validate schema {}` to check the JSON Schema file.", json_schema_path.to_string_lossy());

@@ -3902,3 +3902,61 @@ fn validate_local_files_named_http_are_not_urls() {
     let got: String = wrk.stderr_on_success(&mut cmd);
     assert_eq!(got, "Valid JSON Schema.\n");
 }
+
+#[test]
+fn validate_unknown_format_warning_ignores_instance_data() {
+    // `examples`, `default`, `const` and `enum` hold data, not schemas; a property *named*
+    // `enum` is still a schema and its format is checked.
+    let wrk = Workdir::new("validate_unknown_format_warning_ignores_instance_data").flexible(true);
+    wrk.create("data.csv", vec![svec!["meta", "enum"], svec!["x", "y"]]);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "examples": [{ "format": "csv" }],
+            "properties": {
+                "meta": {
+                    "type": "string",
+                    "default": { "format": "tsv" },
+                    "enum": ["x", { "format": "ods" }]
+                },
+                "enum": { "type": "string", "format": "emial" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.contains("Unknown format \"emial\" is not checked"),
+        "unexpected stderr: {got}"
+    );
+    for data in ["csv", "tsv", "ods"] {
+        assert!(
+            !got.contains(&format!("\"{data}\"")),
+            "warned about instance data {data}: {got}"
+        );
+    }
+}
+
+#[test]
+fn validate_schema_subcommand_honors_timeout() {
+    // `validate schema` accepts [options]; --timeout must be read there too, not ignored
+    let wrk = Workdir::new("validate_schema_subcommand_honors_timeout").flexible(true);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object" }"#,
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema")
+        .arg("--timeout")
+        .arg("4000")
+        .arg("schema.json");
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Timeout cannot be more than 3,600 seconds"),
+        "unexpected stderr: {got}"
+    );
+}

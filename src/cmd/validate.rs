@@ -1707,20 +1707,42 @@ fn warn_unknown_formats<F: Json>(
 }
 
 fn collect_format_names<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>) {
+    collect_format_names_in(v, names, false);
+}
+
+/// `in_name_map` is true for the object under `properties` and the like, whose keys are
+/// property or definition names (a column may be called `enum`), not keywords.
+fn collect_format_names_in<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>, in_name_map: bool) {
     match v {
         Value::Object(map) => {
             for (k, val) in map {
-                if k == "format"
-                    && let Some(s) = val.as_str()
-                {
-                    names.insert(s);
+                if !in_name_map {
+                    match k.as_str() {
+                        // instance data, not schemas: an `{"format": "csv"}` example is no format
+                        "examples" | "default" | "const" | "enum" => continue,
+                        "format" => {
+                            if let Some(s) = val.as_str() {
+                                names.insert(s);
+                            }
+                        },
+                        _ => {},
+                    }
                 }
-                collect_format_names(val, names);
+                let child_is_name_map = !in_name_map
+                    && matches!(
+                        k.as_str(),
+                        "properties"
+                            | "patternProperties"
+                            | "$defs"
+                            | "definitions"
+                            | "dependentSchemas"
+                    );
+                collect_format_names_in(val, names, child_is_name_map);
             }
         },
         Value::Array(arr) => {
             for item in arr {
-                collect_format_names(item, names);
+                collect_format_names_in(item, names, false);
             }
         },
         _ => {},
@@ -1751,6 +1773,12 @@ fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
+    // set before the `schema` branch too: `load_json` reads it when the schema is a URL
+    TIMEOUT_SECS.store(
+        util::timeout_secs(args.flag_timeout)? as u16,
+        Ordering::Relaxed,
+    );
+
     // Is the JSON Schema file valid?
     if args.cmd_schema {
         if let Some(ref schema) = args.arg_json_schema {
@@ -1778,11 +1806,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         return fail_clierror!("No JSON Schema file supplied.");
     }
-
-    TIMEOUT_SECS.store(
-        util::timeout_secs(args.flag_timeout)? as u16,
-        Ordering::Relaxed,
-    );
 
     // Check if the last argument is a JSON schema file
     let has_json_schema = if let Some(last_input) = args.arg_input.last() {

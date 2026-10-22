@@ -280,6 +280,11 @@ Validate options:
                                used by the engine's lazy Discrete Finite Automata.
                                [default: 10]
 
+    --offline                  Do not resolve "$ref"s to schemas outside the JSON Schema file,
+                               whether they are URLs or local files; a schema that has them
+                               fails to compile. Use this with JSON Schemas you do not trust.
+                               The JSON Schema file itself and dynamicEnum lookups are still
+                               loaded as usual.
     --timeout <seconds>        Timeout for downloading json-schemas on URLs and for
                                'dynamicEnum' lookups on URLs. If 0, no timeout is used.
                                [default: 30]
@@ -420,6 +425,7 @@ struct Args {
     arg_json_schema:           Option<String>,
     flag_fancy_regex:          bool,
     flag_backtrack_limit:      usize,
+    flag_offline:              bool,
     flag_size_limit:           usize,
     flag_dfa_size_limit:       usize,
     flag_timeout:              u16,
@@ -1661,6 +1667,10 @@ fn validator_options<'i, F: Json>(
 
     if has_currency_format {
         options = options.with_format("currency", currency_format_checker);
+    }
+
+    if args.flag_offline {
+        options = options.offline();
     }
 
     if args.flag_fancy_regex {

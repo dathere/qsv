@@ -3789,3 +3789,58 @@ fn validate_unknown_format_is_an_error() {
         .arg("schema.json");
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn validate_offline_refuses_external_refs() {
+    let wrk = Workdir::new("validate_offline_refuses_external_refs").flexible(true);
+    wrk.create("data.csv", vec![svec!["n"], svec!["ab"]]);
+    wrk.create_from_string("name.json", r#"{ "type": "string", "minLength": 3 }"#);
+    let file_uri = format!("file://{}", wrk.path("name.json").display());
+    wrk.create_from_string(
+        "fileref.json",
+        &format!(
+            r#"{{
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {{ "n": {{ "$ref": "{file_uri}" }} }}
+            }}"#
+        ),
+    );
+    // nothing listens on port 1, so any attempt to fetch it would fail differently
+    wrk.create_from_string(
+        "remote_ref.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": { "n": { "$ref": "http://127.0.0.1:1/name.json" } }
+        }"#,
+    );
+
+    // without --offline, the local file $ref resolves and is enforced
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("fileref.json");
+    wrk.assert_err(&mut cmd);
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n1\tn\t\"ab\" is shorter than 3 characters\n"
+    );
+
+    for schema in ["fileref.json", "remote_ref.json"] {
+        let mut cmd = wrk.command("validate");
+        cmd.arg("data.csv").arg("--offline").arg(schema);
+        let got: String = wrk.output_stderr(&mut cmd);
+        assert!(
+            got.contains("Cannot compile JSONschema") && got.contains("Retrieval is disabled"),
+            "{schema}: unexpected stderr: {got}"
+        );
+
+        let mut cmd = wrk.command("validate");
+        cmd.arg("schema").arg("--offline").arg(schema);
+        let got: String = wrk.output_stderr(&mut cmd);
+        assert!(
+            got.contains("Retrieval is disabled"),
+            "schema {schema}: unexpected stderr: {got}"
+        );
+    }
+}

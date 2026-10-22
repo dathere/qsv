@@ -23,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **`validate`: an unknown `format` is an error unless `--no-format-validation` is set (BREAKING).** Row validation used to ignore a `format` it didn't know, so a typo such as `"format": "emial"` checked nothing and every row passed. `validate schema` already rejected such schemas; row validation now fails with "Cannot compile JSONschema" too. `--no-format-validation` still ignores all formats.
-- **`validate`: `--fancy-regex` with `--backtrack-limit` reports a pattern match that hits the limit as an error.** This came with jsonschema 0.59 ([jsonschema#1715](https://github.com/Stranger6667/jsonschema/issues/1715)). Previously such a match counted as a non-match, which let `not` and `patternProperties` accept values they should reject.
 - **deps: Polars bumped to upstream rev [`34cc518`](https://github.com/pola-rs/polars/commit/34cc5185a9d7c83e9e3b6b63022fe596c6aebb53)** (from `c7da28c`, [#4875](https://github.com/dathere/qsv/pull/4875)). No `sqlp` result that already worked changes; every difference is a query that used to fail.
   - **Fixed: `COUNT(*)` over a `UNION ALL ... LIMIT n`** panicked ([#30150](https://github.com/pola-rs/polars/pull/30150)).
   - **Fixed: a correlated subquery whose table has a column named like the outer table** (`WHERE w.g = t.g` where `w` has a column `t`) failed with `StructFieldNotFound` ([#30149](https://github.com/pola-rs/polars/pull/30149)). This regressed in the `c7da28c` bump.

@@ -482,14 +482,15 @@ qsv viz geo quakes.csv --lat lat --lon lon --slider region --series region --sli
 # geojson-id; --map for a MapLibre basemap; --geocode to derive codes from lat/lon or place names)
 qsv viz choropleth country_stats.csv --locations iso3 --value gdp_usd_tn --color-scale viridis -o choropleth.html
 
-# choropleth (US states) — built-in state geometry on the albers-usa projection, no GeoJSON needed
+# choropleth (US states) — built-in state geometry on the albers-usa projection, no GeoJSON needed.
+# --agg mean because a percentage is not additive: the default sum would offer a share-of-total.
 qsv viz choropleth us_state_stats.csv --locations state --value renewable_electricity_pct \
-    --location-mode usa-states -o choropleth_states.html
+    --agg mean --location-mode usa-states -o choropleth_states.html
 
 # choropleth (--geojson auto, Census states) — the same states with Census TIGERweb boundaries.
 # A state set that includes Alaska or Hawaii is drawn on albers-usa with their insets, like above.
 qsv viz choropleth us_state_stats.csv --locations state --value renewable_electricity_pct \
-    --location-mode geojson-id --geojson auto -o choropleth_states_auto.html
+    --agg mean --location-mode geojson-id --geojson auto -o choropleth_states_auto.html
 
 # choropleth (--map) — filled regions on a MapLibre tile basemap from a custom GeoJSON, matched by
 # --feature-id-key; the view auto-centers/zooms to the GeoJSON extent. The id is under the feature's

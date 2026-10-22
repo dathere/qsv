@@ -847,9 +847,10 @@ FIGURES = [
     ("choropleth (US states)", "Same chart, <code>--location-mode usa-states</code>: state codes "
      "matched to Plotly's built-in US-state geometry on the token-free albers-usa projection "
      "(CONUS + Alaska/Hawaii insets) — no GeoJSON needed. States are colored by renewable-electricity "
-     "share.",
+     "share; <code>--agg mean</code> because a percentage is not additive, so hover offers no "
+     "meaningless share-of-total.",
      False, ["choropleth", "us_state_stats.csv", "--locations", "state", "--value",
-             "renewable_electricity_pct", "--location-mode", "usa-states"]),
+             "renewable_electricity_pct", "--agg", "mean", "--location-mode", "usa-states"]),
     ("choropleth (--geojson auto, Census states + AK/HI insets)",
      "The same data with <b>no built-in geometry</b>: <code>--geojson auto</code> fetches the "
      "Census TIGERweb state boundaries for exactly the codes in <code>state</code>. A US state set "
@@ -861,7 +862,8 @@ FIGURES = [
      "than cropping Alaska out of the frame. A set that includes a territory (Puerto Rico, Guam…) "
      "keeps extent framing, since albers-usa cannot draw territories.",
      False, ["choropleth", "us_state_stats.csv", "--locations", "state", "--value",
-             "renewable_electricity_pct", "--location-mode", "geojson-id", "--geojson", "auto"]),
+             "renewable_electricity_pct", "--agg", "mean", "--location-mode", "geojson-id",
+             "--geojson", "auto"]),
     ("choropleth (MapLibre + GeoJSON)", "<code>--map</code> draws the filled regions on an "
      "interactive MapLibre <b>tile</b> basemap (token-free carto-positron) instead of a projection. "
      "The regions come from a custom GeoJSON (<code>--geojson</code> local file or URL) matched to "

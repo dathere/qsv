@@ -2115,46 +2115,35 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                 let json_instance = row.node();
 
                 // validate the record against the JSON Schema
-                // if the schema has stateful validators (like uniqueCombinedWith),
-                // we must fully evaluate every record (this is the hot path in that
-                // configuration, so no cold_path hint). Otherwise, fast-check with
-                // is_valid() and short-circuit valid records; only the rare invalid
-                // case falls through to the full evaluate.
-                let evaluation = if has_unique_combined {
-                    schema_compiled.evaluate(json_instance)
-                } else if schema_compiled.is_valid(json_instance) {
+                // Fast-check with is_valid() and short-circuit valid records. Schemas with
+                // stateful validators (uniqueCombinedWith) skip it: that keyword's is_valid
+                // always answers false so the check-and-record happens once, in iter_errors.
+                // iter_errors, unlike evaluate(), builds no output tree; on error-heavy files
+                // it is about 2x faster.
+                if !has_unique_combined && schema_compiled.is_valid(json_instance) {
                     return None;
-                } else {
-                    std::hint::cold_path();
-                    schema_compiled.evaluate(json_instance)
-                };
-
-                if evaluation.flag().valid {
-                    None
-                } else {
-                    std::hint::cold_path();
-                    // safety: row number was appended as the last field via itoa, so it is
-                    // always valid ASCII; the unwrap can never fire in practice.
-                    let row_number_string =
-                        simdutf8::basic::from_utf8(&record[header_len]).unwrap();
-
-                    // Collect errors into a vector
-                    let errors: Vec<_> = evaluation.iter_errors().collect();
-
-                    // Preallocate the vector with the known size
-                    let mut error_messages = Vec::with_capacity(errors.len());
-
-                    // there can be multiple validation errors for a single record,
-                    // squash multiple errors into one long String with linebreaks
-                    for e in errors {
-                        error_messages.push(format!(
-                            "{row_number_string}\t{field}\t{error}",
-                            field = instance_field(e.instance_location),
-                            error = e.error
-                        ));
-                    }
-                    Some(error_messages.join("\n"))
                 }
+                let errors: Vec<_> = schema_compiled.iter_errors(json_instance).collect();
+                if errors.is_empty() {
+                    return None;
+                }
+                std::hint::cold_path();
+                // safety: row number was appended as the last field via itoa, so it is
+                // always valid ASCII; the unwrap can never fire in practice.
+                let row_number_string = simdutf8::basic::from_utf8(&record[header_len]).unwrap();
+
+                // there can be multiple validation errors for a single record,
+                // squash multiple errors into one long String with linebreaks
+                let error_messages: Vec<String> = errors
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{row_number_string}\t{field}\t{e}",
+                            field = instance_field(e.instance_path())
+                        )
+                    })
+                    .collect();
+                Some(error_messages.join("\n"))
             })
             .collect_into_vec(&mut batch_validation_results);
 
@@ -3181,15 +3170,14 @@ fn validate_json_instance(
     schema_compiled: &Validator<CsvJson>,
 ) -> Option<Vec<(String, String)>> {
     // Use is_valid() for fast boolean check on valid records (doesn't walk full tree)
-    // Only call evaluate() when invalid to get detailed errors
+    // Only call iter_errors() when invalid to get detailed errors
     if schema_compiled.is_valid(instance) {
         None
     } else {
         Some(
             schema_compiled
-                .evaluate(instance)
-                .iter_errors()
-                .map(|e| (instance_field(e.instance_location), e.error.to_string()))
+                .iter_errors(instance)
+                .map(|e| (instance_field(e.instance_path()), e.to_string()))
                 .collect(),
         )
     }

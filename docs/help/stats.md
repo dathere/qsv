@@ -57,7 +57,8 @@ You can override this behavior by setting the QSV_STATS_CHUNK_MEMORY_MB environm
 or -1 for CPU-based chunking (1 chunk = records/number of CPUs)).
 
 "Antimode" is the least frequently occurring non-zero value and is the opposite of mode.
-It returns "*ALL" if all the values are unique, and only returns a preview of the first
+It returns "*ALL" if all the values are unique (with --weight, if all the values are unique
+AND have the same weight), and only returns a preview of the first
 10 antimodes, truncating after 100 characters (configurable with QSV_ANTIMODES_LEN).
 
 If you need all the antimode values of a column, run the `frequency` command with --limit set

@@ -10117,3 +10117,136 @@ fn stats_weighted_infer_boolean_uses_the_weighted_values() {
         assert_eq!(stats_cell(&got, 1, "type"), expected, "{name}");
     }
 }
+
+#[test]
+fn stats_weighted_all_distinct_values_still_report_the_heaviest_mode() {
+    // Every value is distinct, but the weights are not: `a` carries 5 of the 7 total weight, so
+    // it is the weighted mode. The *ALL short-circuit only applies when every weight ties.
+    for (name, rows, mode, occurrences, antimode) in [
+        (
+            "unequal",
+            [["a", "5"], ["b", "1"], ["c", "1"]],
+            "a",
+            "5",
+            "b|c",
+        ),
+        (
+            "equal",
+            [["a", "2"], ["b", "2"], ["c", "2"]],
+            "",
+            "0",
+            "*ALL",
+        ),
+    ] {
+        let wrk = Workdir::new(&format!(
+            "stats_weighted_all_distinct_values_still_report_the_heaviest_mode_{name}"
+        ));
+        let mut data = vec![svec!["value", "w"]];
+        data.extend(rows.iter().map(|[v, w]| svec![*v, *w]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--mode", "--cardinality", "--weight", "w"])
+            .arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "mode"), mode, "{name}");
+        assert_eq!(
+            stats_cell(&got, 1, "mode_occurrences"),
+            occurrences,
+            "{name}"
+        );
+        assert_eq!(stats_cell(&got, 1, "antimode"), antimode, "{name}");
+    }
+}
+
+#[test]
+fn stats_all_zero_integer_typing_does_not_depend_on_row_order() {
+    // `00` is the integer 0 when it arrives first, so it must not be called zero-padded (and
+    // the column String) just because a float arrived before it.
+    for (name, rows) in [
+        ("float_first", ["1.5", "00"]),
+        ("zero_first", ["00", "1.5"]),
+    ] {
+        let wrk = Workdir::new(&format!(
+            "stats_all_zero_integer_typing_does_not_depend_on_row_order_{name}"
+        ));
+        let mut data = vec![svec!["x"]];
+        data.extend(rows.iter().map(|v| svec![*v]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "type"), "Float", "{name}");
+        assert_eq!(stats_cell(&got, 1, "sum"), "1.5", "{name}");
+    }
+}
+
+#[test]
+fn stats_integer_sum_back_in_range_is_exact_in_any_order() {
+    // 9e18 + 9e18 - 9e18 = 9e18 fits i64. A saturating i64 sum clamped at i64::MAX and then
+    // printed 223372036854775807 - a plausible-looking wrong total - depending on row order.
+    let big = "9000000000000000000";
+    let neg = "-9000000000000000000";
+    for (name, rows) in [
+        ("pos_pos_neg", [big, big, neg]),
+        ("pos_neg_pos", [big, neg, big]),
+    ] {
+        let wrk = Workdir::new(&format!(
+            "stats_integer_sum_back_in_range_is_exact_in_any_order_{name}"
+        ));
+        let mut data = vec![svec!["x"]];
+        data.extend(rows.iter().map(|v| svec![*v]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "sum"), big, "{name}");
+    }
+}
+
+#[test]
+fn stats_integer_sum_merged_across_chunks_is_exact() {
+    // One row per chunk, so the out-of-range intermediate total is formed in Commute::merge.
+    let wrk = Workdir::new("stats_integer_sum_merged_across_chunks_is_exact");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["x"],
+            svec!["9000000000000000000"],
+            svec!["9000000000000000000"],
+            svec!["-9000000000000000000"],
+        ],
+    );
+    let mut idx = wrk.command("index");
+    idx.arg("data.csv");
+    wrk.assert_success(&mut idx);
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--jobs", "3"])
+        .env("QSV_STATS_CHUNK_MEMORY_MB", "-1")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "sum"), "9000000000000000000");
+}
+
+#[test]
+fn stats_antimode_null_is_rendered_per_value() {
+    // (a) a lone NULL antimode used to render as "" (indistinguishable from "no antimode");
+    // (b) a real value starting with the separator used to get a fabricated NULL prepended.
+    for (name, rows, antimode) in [
+        ("lone_null", [["a", "1"], ["a", "2"], ["", "3"]], "NULL"),
+        (
+            "leading_separator",
+            [["|a", "1"], ["b", "1"], ["b", "1"]],
+            "|a",
+        ),
+    ] {
+        let wrk = Workdir::new(&format!("stats_antimode_null_is_rendered_per_value_{name}"));
+        let mut data = vec![svec!["v", "w"]];
+        data.extend(rows.iter().map(|[v, w]| svec![*v, *w]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--mode", "--cardinality"]).arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "antimode"), antimode, "{name}");
+        assert_eq!(stats_cell(&got, 1, "antimode_count"), "1", "{name}");
+    }
+}

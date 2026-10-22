@@ -23965,3 +23965,208 @@ fn viz_denominator_census_bad_vintage_is_usage_error() {
         "expected an invalid-vintage error; got: {got}"
     );
 }
+
+/// How viz writes text into JSON inside a `<script>` block: `&`, `<` and `>` become the JSON
+/// escapes for U+0026/U+003C/U+003E (backslash, `u`, four hex digits). Built at runtime so the
+/// needles below never spell those escapes in source.
+fn script_json_escaped(s: &str) -> String {
+    let bs = '\u{5c}';
+    s.replace('&', &format!("{bs}u0026"))
+        .replace('<', &format!("{bs}u003c"))
+        .replace('>', &format!("{bs}u003e"))
+}
+
+/// What a plotly label looks like on the page once viz HTML-escapes it (`escape_hover`) and the
+/// figure JSON is then script-escaped.
+fn escaped_label(s: &str) -> String {
+    script_json_escaped(
+        &s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;"),
+    )
+}
+
+// The guided-tour config is JSON inside `<script type="application/json">`, and its `"key"` carries
+// the raw column name. Escaping only `</` let a header containing `<!--<script>` push the HTML
+// tokenizer into the double-escaped script state, where the block's own `</script>` no longer
+// closes it and the rest of the page (tour, theme toggle, daemon bridge) is swallowed as text.
+#[test]
+fn viz_smart_tour_config_escapes_comment_open() {
+    let wrk = Workdir::new("viz_smart_tour_config_escapes_comment_open");
+    wrk.create_from_string(
+        "t.csv",
+        "id,<!--<script>,val\n1,a,10\n2,b,20\n3,a,30\n4,c,15\n",
+    );
+    let out_html = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "t.csv", "-o", &out_html])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("t.html").unwrap();
+    let start = html
+        .find(r#"id="qsv-tour-config""#)
+        .expect("the page must embed a tour config");
+    let body_start = start + html[start..].find('>').unwrap() + 1;
+    let body = &html[body_start..body_start + html[body_start..].find("</script>").unwrap()];
+    assert!(
+        !body.contains('<'),
+        "no raw `<` may appear inside the tour-config script block; got: {body}"
+    );
+    let key = format!(r#""key":"{}""#, script_json_escaped("<!--<script>"));
+    assert!(
+        body.contains(&key),
+        "the column name must survive as an escaped JSON string ({key}); got: {body}"
+    );
+}
+
+// Sankey node labels are raw CSV values rendered as plotly pseudo-HTML: an `<a href>` became a live
+// off-site link and `<b>` restyled the node. They must be escaped like every hover sink.
+#[test]
+fn viz_sankey_escapes_node_labels() {
+    let wrk = Workdir::new("viz_sankey_escapes_node_labels");
+    wrk.create_from_string(
+        "s.csv",
+        "from,to,w\n<b>x</b>,p,3\nz,\"<a href=\"\"https://e.com\"\">q</a>\",2\n",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "sankey", "s.csv", "--source", "from", "--target", "to", "--value", "w",
+    ])
+    .env("QSV_VIZ_NO_COMPRESS", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(&escaped_label("<b>x</b>")),
+        "node label markup was not escaped"
+    );
+    assert!(
+        !html.contains(&script_json_escaped("<a href")),
+        "a raw `<a href>` node label renders as a live link"
+    );
+}
+
+// Correlation-heatmap categories are raw column names, shown as tick text and via `%{x}`/`%{y}`.
+#[test]
+fn viz_heatmap_correlation_escapes_labels() {
+    let wrk = Workdir::new("viz_heatmap_correlation_escapes_labels");
+    wrk.create_from_string("c.csv", "<b>A</b>,B,C\n1,2,3\n2,4,7\n3,7,8\n4,8,12\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "c.csv"])
+        .env("QSV_VIZ_NO_COMPRESS", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let x = format!(r#""x":["{}","B","C"]"#, escaped_label("<b>A</b>"));
+    assert!(html.contains(&x), "heatmap labels were not escaped ({x})");
+}
+
+// Treemap/sunburst/icicle labels are raw category values; `ids`/`parents` key the tree, so only
+// the display labels change.
+#[test]
+fn viz_treemap_escapes_labels() {
+    let wrk = Workdir::new("viz_treemap_escapes_labels");
+    wrk.create_from_string("t.csv", "r,c,v\n<i>N</i>,a,1\n<i>N</i>,b,2\nS,a,3\nS,b,1\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "treemap", "t.csv", "--cols", "r,c", "--value", "v", "--agg", "sum",
+    ])
+    .env("QSV_VIZ_NO_COMPRESS", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    let labels_at = html.find(r#""labels":["#).expect("treemap labels");
+    let labels = &html[labels_at..labels_at + html[labels_at..].find(']').unwrap()];
+    assert!(
+        labels.contains(&format!(r#""{}""#, escaped_label("<i>N</i>"))),
+        "treemap label was not escaped; labels: {labels}"
+    );
+    assert!(
+        !labels.contains(&script_json_escaped("<i>")),
+        "a raw `<i>` label was emitted; labels: {labels}"
+    );
+}
+
+fn row_pipeline_dict(stages: &str) -> String {
+    format!(
+        r#"{{
+          "properties": {{
+            "stage": {{"type":"string","x-qsv":{{"qsv_type":"String","role":"dimension"}}}},
+            "revenue": {{"type":"integer","x-qsv":{{"qsv_type":"Integer","role":"measure"}}}},
+            "region": {{"type":"string","x-qsv":{{"qsv_type":"String","role":"dimension"}}}}
+          }},
+          "x-qsv": {{ "relationships": [
+            {{"kind":"pipeline","members":["stage","revenue"],"stage_column":"stage",
+             "stages":{stages},"value_column":"revenue"}}
+          ] }}
+        }}"#
+    )
+}
+
+// Pipeline stage names are dictionary text displayed as plotly ticks: the funnel's lollipop
+// category axis and the bridge's waterfall categories. Their hovers were escaped; the ticks were
+// not.
+#[test]
+fn viz_smart_pipeline_stage_ticks_are_escaped() {
+    let wrk = Workdir::new("viz_smart_pipeline_stage_ticks_are_escaped");
+    // revenue GROWS down the stages, so this row-encoded pipeline is drawn as a bridge
+    let mut grow = String::from("stage,revenue,region\n");
+    // every row carries 1, so revenue shrinks with the row counts: drawn as a funnel
+    let mut shrink = String::from("stage,revenue,region\n");
+    for i in 0..300 {
+        let (stage, rev) = match i % 10 {
+            0..=4 => ("Impression", 1),
+            5..=7 => ("Click", 4),
+            8 => ("<b>Lead</b>", 20),
+            _ => ("Conversion", 90),
+        };
+        grow.push_str(&format!("{stage},{rev},r{}\n", i % 3));
+        shrink.push_str(&format!("{stage},1,r{}\n", i % 3));
+    }
+    let stages = r#"["Impression","Click","<b>Lead</b>","Conversion"]"#;
+    wrk.create_from_string("grow.csv", &grow);
+    wrk.create_from_string("shrink.csv", &shrink);
+    wrk.create_from_string("d.schema.json", &row_pipeline_dict(stages));
+
+    let escaped = format!(r#""{}""#, escaped_label("<b>Lead</b>"));
+    // no quote prefix: a bridge step category embeds the name mid-string ("Conversion -
+    // <b>Lead</b>")
+    let raw = script_json_escaped("<b>Lead");
+    // Only the plotly LABEL sinks are checked: the data viewer rows and a freq bar's category keys
+    // legitimately carry the raw value (its displayed ticks and hover are escaped separately).
+    for (csv, kind) in [("grow.csv", "waterfall"), ("shrink.csv", "funnel")] {
+        let out_html = wrk
+            .path(&format!("{csv}.html"))
+            .to_string_lossy()
+            .to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", csv, "-o", &out_html, "--dictionary"])
+            .arg(wrk.path("d.schema.json"))
+            .env("QSV_VIZ_NO_COMPRESS", "1");
+        wrk.assert_success(&mut cmd);
+        let html = wrk.read_to_string(&format!("{csv}.html")).unwrap();
+        let type_tag = format!(r#""type":"{kind}""#);
+        let at = html
+            .find(&type_tag)
+            .unwrap_or_else(|| panic!("{csv} should draw a {kind}"));
+        let label_sinks: Vec<&str> = if kind == "waterfall" {
+            // the bridge's category names are its trace x values
+            let trace = &html[at + type_tag.len()..];
+            vec![&trace[..trace.find(r#""type":"#).unwrap_or(trace.len())]]
+        } else {
+            // the funnel's stage names are the lollipop category axis tick text
+            html.match_indices(r#""ticktext":["#)
+                .map(|(i, _)| &html[i..i + html[i..].find(']').unwrap()])
+                .collect()
+        };
+        assert!(
+            label_sinks.iter().all(|s| !s.contains(&raw)),
+            "{csv}: a raw `<b>` stage name reached a plotly label: {label_sinks:?}"
+        );
+        assert!(
+            label_sinks.iter().any(|s| s.contains(&escaped)),
+            "{csv}: the stage tick/category must carry the escaped stage name: {label_sinks:?}"
+        );
+    }
+}

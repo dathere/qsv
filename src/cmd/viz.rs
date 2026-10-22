@@ -5705,11 +5705,6 @@ fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> 
     ) {
         return Vec::new();
     }
-    // drawn on `albers usa`, which shows the whole US whatever the set's extent, so nothing is
-    // left out of the frame for a note to report
-    if census_state_set_wants_albers_usa(geojson) {
-        return Vec::new();
-    }
     let centroids = feature_centroids(geojson, feature_id_key);
     // a fence needs enough regions to have a meaningful quartile spread
     if centroids.len() < 8 {
@@ -6035,8 +6030,15 @@ fn resolve_auto_geojson(
     // recorded for the provenance note beneath the map, and so the reader can tell an
     // auto-resolved boundary set from one they supplied
     let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
-    // under the RENDER key: framing compares these ids against the drawn features' ids
-    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(&boundaries.geojson, match_key));
+    // under the RENDER key: framing compares these ids against the drawn features' ids. None for a
+    // set drawn on `albers usa`, which shows the whole US, so no region is left out of the frame;
+    // `--map` draws on tiles, which have no such projection, so it keeps the check.
+    let outliers = if !args.flag_map && census_state_set_wants_albers_usa(&boundaries.geojson) {
+        Vec::new()
+    } else {
+        detect_extent_outliers(&boundaries.geojson, match_key)
+    };
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(outliers);
     log::info!(
         "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
         boundaries.provenance,
@@ -7647,11 +7649,18 @@ fn resolve_smart_auto_geojson(
     let provenance = provenance;
 
     let _ = AUTO_BOUNDARY_PROVENANCE.set(provenance.clone());
-    // under the RENDER key: framing compares these ids against the drawn features' ids
-    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
-        &boundaries.geojson,
-        effective_feature_id_key(args, feature_id_key_explicit, &boundaries),
-    ));
+    // under the RENDER key: framing compares these ids against the drawn features' ids. None for a
+    // set drawn on `albers usa`: a smart state panel that includes Alaska or Hawaii always spans
+    // too far for the tile basemap, so it is drawn on the projection, which shows the whole US.
+    let outliers = if census_state_set_wants_albers_usa(&boundaries.geojson) {
+        Vec::new()
+    } else {
+        detect_extent_outliers(
+            &boundaries.geojson,
+            effective_feature_id_key(args, feature_id_key_explicit, &boundaries),
+        )
+    };
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(outliers);
     log::info!(
         "--geojson {spec} resolved: {provenance} -> {} ({matched}/{total} codes matched)",
         boundaries.path

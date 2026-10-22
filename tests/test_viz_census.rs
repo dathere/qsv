@@ -2055,6 +2055,33 @@ fn viz_geojson_auto_state_set_with_alaska_uses_albers_usa() {
     });
 }
 
+// `--map` draws on the tile basemap, which has no `albers usa`, so the same set keeps the
+// extent-outlier check there: Alaska is reported and the tiles frame the others.
+#[test]
+#[serial]
+fn viz_geojson_auto_state_set_with_alaska_on_tiles_keeps_the_outlier_note() {
+    let wrk =
+        Workdir::new("viz_geojson_auto_state_set_with_alaska_on_tiles_keeps_the_outlier_note");
+    wrk.create_from_string(
+        "st.csv",
+        "state,cases\nCA,1\nMD,2\nNY,3\nPA,4\nCT,5\nMA,6\nNJ,7\nAK,8\n",
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let out = state_choropleth_with(&wrk, base, "st.csv", "auto", &["--map"]);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            html.contains("1 region(s) lie far outside the rest (AK)"),
+            "tiles cannot draw an inset, so Alaska must still be reported"
+        );
+    });
+}
+
 // The same for a `viz smart` region panel, which frames its choropleth separately.
 #[test]
 #[serial]

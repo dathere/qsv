@@ -3616,3 +3616,55 @@ fn validate_with_multiple_formats_strict() {
     ];
     assert_eq!(invalid_records, expected_invalid);
 }
+
+#[test]
+fn validate_idn_formats_are_checked() {
+    // jsonschema 0.52 moved idn-hostname/idn-email behind its `idna` feature; without it they
+    // become unknown formats and every value is accepted.
+    let wrk = Workdir::new("validate_idn_formats_are_checked").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "host", "mail"],
+            svec!["1", "bücher.example", "jörg@bücher.example"],
+            svec!["2", "not-a-host..bad!", "jörg@bücher.example"],
+            svec!["3", "bücher.example", "not an email"],
+        ],
+    );
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "host": { "type": "string", "format": "idn-hostname" },
+                "mail": { "type": "string", "format": "idn-email" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    assert_eq!(
+        invalid_records,
+        vec![
+            svec!["2", "not-a-host..bad!", "jörg@bücher.example"],
+            svec!["3", "bücher.example", "not an email"],
+        ]
+    );
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n2\thost\t\"not-a-host..bad!\" is not a \
+         \"idn-hostname\"\n3\tmail\t\"not an email\" is not a \"idn-email\"\n"
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+}

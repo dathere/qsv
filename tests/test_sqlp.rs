@@ -6796,6 +6796,159 @@ fn sqlp_decimal_cast_to_int_truncates() {
     assert_eq!(got, vec![svec!["i"], svec!["-1"], svec!["2"], svec!["1"]]);
 }
 
+// Polars SQL behavior changed between rev c7da28c and 34cc518.
+// Every query below errored or panicked on c7da28c; no result that already
+// succeeded changed.
+
+fn tu_fixture(wrk: &Workdir) {
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["g", "x"],
+            svec!["1", "10"],
+            svec!["1", "20"],
+            svec!["2", "30"],
+            svec!["3", "40"],
+        ],
+    );
+    wrk.create(
+        "u.csv",
+        vec![
+            svec!["g", "y"],
+            svec!["1", "100"],
+            svec!["1", "150"],
+            svec!["2", "200"],
+            svec!["4", "400"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_count_over_limited_union() {
+    // pola-rs/polars#30150: len() is no longer pushed into a sliced union.
+    // Both queries panicked in polars-expr's sum reducer on c7da28c.
+    let wrk = Workdir::new("sqlp_count_over_limited_union");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"])
+        .arg("SELECT COUNT(*) AS n FROM (SELECT g FROM t UNION ALL SELECT g FROM u LIMIT 3)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["3"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"]).arg(
+        "SELECT COUNT(*) AS n FROM (SELECT * FROM (SELECT g FROM t UNION ALL SELECT g FROM u) \
+         LIMIT 5)",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["5"]]);
+}
+
+#[test]
+fn sqlp_outer_qualifier_with_same_named_inner_column() {
+    // pola-rs/polars#30149: in a correlated subquery, `t.g` resolves to the
+    // outer relation `t` even when the subquery has a (non-struct) column named
+    // `t`. It failed with StructFieldNotFound on c7da28c (regressed in #30131).
+    let wrk = Workdir::new("sqlp_outer_qualifier_with_same_named_inner_column");
+    tu_fixture(&wrk);
+    wrk.create(
+        "w.csv",
+        vec![
+            svec!["g", "t", "y"],
+            svec!["1", "z", "5"],
+            svec!["2", "z", "50"],
+            svec!["3", "z", "500"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "w.csv"])
+        .arg("SELECT g, x FROM t WHERE x > (SELECT MIN(y) FROM w WHERE w.g = t.g) ORDER BY x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["g", "x"], svec!["1", "10"], svec!["1", "20"]]
+    );
+}
+
+#[test]
+fn sqlp_correlated_scalar_subquery_limit_1() {
+    // pola-rs/polars#30168: LIMIT 1 is allowed in a correlated scalar subquery.
+    let wrk = Workdir::new("sqlp_correlated_scalar_subquery_limit_1");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"]).arg(
+        "SELECT t.g, t.x, (SELECT y FROM u WHERE u.g = t.g ORDER BY y DESC LIMIT 1) AS y1 FROM t \
+         ORDER BY x",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["g", "x", "y1"],
+            svec!["1", "10", "150"],
+            svec!["1", "20", "150"],
+            svec!["2", "30", "200"],
+            svec!["3", "40", ""],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_with_recursive_without_self_reference() {
+    // pola-rs/polars#30166: WITH RECURSIVE is accepted when no CTE reads itself.
+    let wrk = Workdir::new("sqlp_with_recursive_without_self_reference");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("WITH RECURSIVE c AS (SELECT x FROM t WHERE g = 1) SELECT * FROM c ORDER BY x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["x"], svec!["10"], svec!["20"]]);
+}
+
+#[test]
+fn sqlp_join_on_correlated_in_and_exists() {
+    // pola-rs/polars#30159: a correlated IN or EXISTS in JOIN ... ON may read
+    // both join inputs (equality correlation only).
+    let wrk = Workdir::new("sqlp_join_on_correlated_in_and_exists");
+    tu_fixture(&wrk);
+    wrk.create(
+        "c.csv",
+        vec![
+            svec!["id", "gid"],
+            svec!["10", "1"],
+            svec!["30", "2"],
+            svec!["99", "3"],
+        ],
+    );
+    let expected = vec![
+        svec!["g", "x"],
+        svec!["1", "10"],
+        svec!["1", "10"],
+        svec!["2", "30"],
+        svec!["4", ""],
+    ];
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv", "c.csv"]).arg(
+        "SELECT u.g, t.x FROM u LEFT JOIN t ON t.x IN (SELECT c.id FROM c WHERE c.gid = u.g) \
+         ORDER BY u.g, t.x",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, expected);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv", "c.csv"]).arg(
+        "SELECT u.g, t.x FROM u LEFT JOIN t ON EXISTS (SELECT 1 FROM c WHERE c.gid = u.g AND c.id \
+         = t.x) ORDER BY u.g, t.x",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, expected);
+}
+
 // --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
 #[test]
 fn sqlp_default_delimiter_env() {

@@ -3007,9 +3007,11 @@ impl MomentAccumulator {
         let delta_n2 = delta_n * delta_n;
         let term1 = delta * delta_n * n1;
         self.mean += delta_n;
-        self.m4 += term1 * delta_n2 * (n * n - 3.0 * n + 3.0) + 6.0 * delta_n2 * self.m2
-            - 4.0 * delta_n * self.m3;
-        self.m3 += term1 * delta_n * (n - 2.0) - 3.0 * delta_n * self.m2;
+        self.m4 += (-4.0 * delta_n).mul_add(
+            self.m3,
+            (6.0 * delta_n2).mul_add(self.m2, term1 * delta_n2 * (n * n - 3.0 * n + 3.0)),
+        );
+        self.m3 += (-3.0 * delta_n).mul_add(self.m2, term1 * delta_n * (n - 2.0));
         self.m2 += term1;
     }
 
@@ -4820,8 +4822,8 @@ fn entropy_from_counts(counts: &[u64], all_unique: bool) -> EntropyStats {
         for &count in counts {
             if count > 0 {
                 let p = count as f64 / total;
-                entropy -= p * p.log2();
-                sum_p_squared += p * p;
+                entropy = p.mul_add(-p.log2(), entropy);
+                sum_p_squared = p.mul_add(p, sum_p_squared);
             }
         }
         (entropy, 1.0 - sum_p_squared)

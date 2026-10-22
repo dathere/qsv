@@ -19619,7 +19619,7 @@ fn measure_by_dim_panel(
             };
             let g = &mut grand[mi];
             g.0 += y;
-            g.1 += y * y;
+            g.1 = y.mul_add(y, g.1);
             g.2 += 1;
             for (di, key) in row_keys.iter().enumerate() {
                 let g = &mut groups[mi * n_d + di];
@@ -32822,7 +32822,7 @@ fn ring_area(ring: &[[f64; 2]]) -> f64 {
     for i in 0..n {
         let [xi, yi] = ring[i];
         let [xj, yj] = ring[j];
-        a += (xj + xi) * (yj - yi);
+        a = (xj + xi).mul_add(yj - yi, a);
         j = i;
     }
     (a / 2.0).abs()
@@ -32842,8 +32842,8 @@ fn ring_centroid(ring: &[[f64; 2]]) -> Option<[f64; 2]> {
         let [xj, yj] = ring[j];
         let cross = xj * yi - xi * yj;
         a2 += cross;
-        cx += (xj + xi) * cross;
-        cy += (yj + yi) * cross;
+        cx = (xj + xi).mul_add(cross, cx);
+        cy = (yj + yi).mul_add(cross, cy);
         j = i;
     }
     if a2.abs() < 1e-12 {

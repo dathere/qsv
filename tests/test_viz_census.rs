@@ -294,6 +294,20 @@ async fn serve_county_query(o: web::Data<Observed>, req: HttpRequest) -> HttpRes
     // geometry-free probe vs. the real fetch — both answer from the same fixture
     // State 12 answers probes but its geometry fetch is UNWELL (5xx -> transient). Distinct from
     // state 06's empty-but-healthy answer, so the two failure classes can be told apart.
+    // State 53: an ELONGATED state — eight counties in a row and one far along the same line, the
+    // shape of Florida's panhandle. Every county is the data's own, so the extent-outlier check
+    // must not report any of them. Same nine features for the probe and the fetch: the fixture's
+    // data names all nine, so the probe scores exactly 1.0.
+    if where_clause.contains("'53") {
+        let mut features: Vec<serde_json::Value> = (0..8)
+            .map(|i| county_feature(&format!("530{:02}", 2 * i + 1), f64::from(i)))
+            .collect();
+        features.push(county_feature("53017", 40.0));
+        return HttpResponse::Ok().json(serde_json::json!({
+            "type": "FeatureCollection",
+            "features": features
+        }));
+    }
     if where_clause.starts_with("STATE IN") && where_clause.contains("12") {
         return HttpResponse::InternalServerError().body("boom");
     }
@@ -1975,6 +1989,53 @@ fn viz_geojson_auto_outliers_use_an_explicit_feature_id_key() {
         assert!(
             html.contains("1 region(s) lie far outside the rest (AK)"),
             "Alaska must be recorded under the render key"
+        );
+    });
+}
+
+// A county set is fetched as every county of the states the data names, so none of them is a
+// stray: the extent-outlier check used to crop an elongated state's own edge counties (all 67
+// Florida counties -> Escambia/Santa Rosa reported "far outside" and cut from the frame).
+#[test]
+#[serial]
+fn viz_geojson_auto_county_set_reports_no_extent_outliers() {
+    let wrk = Workdir::new("viz_geojson_auto_county_set_reports_no_extent_outliers");
+    let mut rows = String::from("fips,cases\n");
+    for (i, g) in [
+        "53001", "53003", "53005", "53007", "53009", "53011", "53013", "53015", "53017",
+    ]
+    .iter()
+    .enumerate()
+    {
+        rows.push_str(&format!("{g},{}\n", i + 1));
+    }
+    wrk.create_from_string("wa.csv", &rows);
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "choropleth",
+            "wa.csv",
+            "--locations",
+            "fips",
+            "--value",
+            "cases",
+            "--geojson",
+            "auto",
+        ])
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(html.contains("53017"), "the far county must be drawn");
+        assert!(
+            !html.contains("lie far outside the rest"),
+            "a state-scoped county set has no strays to report"
         );
     });
 }

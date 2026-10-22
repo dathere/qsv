@@ -887,7 +887,7 @@ FIGURES = [
      "counties they cannot be state-scoped and are fetched by exact code set, which is what makes "
      "the two caveats in the note worth reading. <b>Five</b> of the 132 ZIPs match no ZCTA at all "
      "(PO-box-only ZIPs have no tabulation area) and are reported rather than silently dropped. "
-     "<b>Six</b> more sit far outside the rest — two Florida and two Indiana owner ZIPs, four rows "
+     "<b>Four</b> more sit far outside the rest — two Florida and two Indiana owner ZIPs, four rows "
      "out of 50,013 — and framing to the full extent would render the Pittsburgh cluster as a "
      "speck on a map reaching Miami. Those regions are still <i>drawn</i>; they just do not get to "
      "decide the frame, and the note says so. A boundary set qsv derived from your codes is not "

@@ -5630,13 +5630,39 @@ fn feature_centroids(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<(
         .collect()
 }
 
-/// Ids of regions whose centroid falls outside a Tukey fence on either axis.
+/// How far past the core cluster's bounding box, in multiples of the cluster's own span, a
+/// fenced region must lie to count as an extent outlier (see [`detect_extent_outliers`]).
+const EXTENT_OUTLIER_GAP_RATIO: f64 = 2.0;
+
+/// Ids of auto-resolved regions that lie far outside the main cluster: past a Tukey fence on
+/// either axis AND more than [`EXTENT_OUTLIER_GAP_RATIO`] cluster spans from it. Never reported
+/// for state-scoped (county/tract/place) sets.
 ///
 /// A Tukey fence (Q1 - 1.5*IQR, Q3 + 1.5*IQR) is used rather than a fixed percentile because it
 /// reports NOTHING for a tight, well-behaved boundary set — a percentile trim would always flag
 /// some fraction as outliers even when there are none, and then every clean map would carry a
 /// spurious note and a cropped frame.
 fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<String> {
+    // County/tract/place sets are fetched as EVERY region of each state the data names, so none
+    // of them can be a stray the data pulled in, and the fence's quartiles say nothing about a
+    // state's shape: it cropped an elongated state's own edge counties (Florida's panhandle) and
+    // 28 counties across 12 states. Only a set scoped by the data's exact codes (ZCTA, state) can
+    // carry strays. A set with no recorded layer (an older cache entry) still gets the check.
+    let layer = geojson
+        .get("x-qsv")
+        .and_then(|x| x.get("layer"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(crate::cmd::viz_census::Layer::from_selector);
+    if matches!(
+        layer,
+        Some(
+            crate::cmd::viz_census::Layer::County
+                | crate::cmd::viz_census::Layer::Tract
+                | crate::cmd::viz_census::Layer::Place
+        )
+    ) {
+        return Vec::new();
+    }
     let centroids = feature_centroids(geojson, feature_id_key);
     // a fence needs enough regions to have a meaningful quartile spread
     if centroids.len() < 8 {
@@ -5659,9 +5685,31 @@ fn detect_extent_outliers(geojson: &serde_json::Value, feature_id_key: &str) -> 
     };
     let (lat_lo, lat_hi) = fence(centroids.iter().map(|c| c.1).collect());
     let (lon_lo, lon_hi) = fence(centroids.iter().map(|c| c.2).collect());
-    centroids
+    let (candidates, core): (Vec<_>, Vec<_>) = centroids.into_iter().partition(|(_, lat, lon)| {
+        *lat < lat_lo || *lat > lat_hi || *lon < lon_lo || *lon > lon_hi
+    });
+    if candidates.is_empty() || core.is_empty() {
+        return Vec::new();
+    }
+    // The fence alone also catches a region just past the cluster's edge (two Pennsylvania ZCTAs
+    // beside Allegheny's, at 0.1x and 0.74x the cluster's span away), so a candidate must also
+    // lie farther from the core's bounding box than EXTENT_OUTLIER_GAP_RATIO spans. The real
+    // strays there (Florida, Indiana owner ZIPs) sit 5.9x-16.8x away.
+    let (mut la0, mut la1, mut lo0, mut lo1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for (_, lat, lon) in &core {
+        la0 = la0.min(*lat);
+        la1 = la1.max(*lat);
+        lo0 = lo0.min(*lon);
+        lo1 = lo1.max(*lon);
+    }
+    let span = (la1 - la0).max(lo1 - lo0);
+    candidates
         .into_iter()
-        .filter(|(_, lat, lon)| *lat < lat_lo || *lat > lat_hi || *lon < lon_lo || *lon > lon_hi)
+        .filter(|(_, lat, lon)| {
+            let dlat = (la0 - lat).max(lat - la1).max(0.0);
+            let dlon = (lo0 - lon).max(lon - lo1).max(0.0);
+            dlat.hypot(dlon) > EXTENT_OUTLIER_GAP_RATIO * span
+        })
         .map(|(id, _, _)| id)
         .collect()
 }
@@ -48900,6 +48948,58 @@ mod tests {
     fn extent_outliers_need_enough_regions_to_judge() {
         let gj = squares_at(&[(0.0, 0.0), (0.1, 0.1), (-80.0, 26.0)]);
         assert!(detect_extent_outliers(&gj, "properties.GEOID").is_empty());
+    }
+
+    /// `squares_at`, tagged with the census layer the boundary set was fetched as.
+    fn squares_on_layer(points: &[(f64, f64)], selector: &str) -> serde_json::Value {
+        let mut gj = squares_at(points);
+        gj["x-qsv"] = serde_json::json!({ "layer": selector });
+        gj
+    }
+
+    fn cluster_with_strays() -> Vec<(f64, f64)> {
+        let mut pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        pts.push((-80.0, 26.0));
+        pts.push((-86.0, 41.0));
+        pts
+    }
+
+    // County/tract/place sets are fetched as every region of the states the data names, so
+    // nothing in them is a stray: the fence used to crop an elongated state's own counties
+    // (Florida's panhandle). Even far-flung regions in such a set are not reported.
+    #[test]
+    fn extent_outliers_skip_state_scoped_layers() {
+        for selector in ["census:county", "census:tract", "census:place"] {
+            let gj = squares_on_layer(&cluster_with_strays(), selector);
+            assert!(
+                detect_extent_outliers(&gj, "properties.GEOID").is_empty(),
+                "{selector}"
+            );
+        }
+        // a code-scoped ZCTA set with the same geometry still reports its strays
+        let gj = squares_on_layer(&cluster_with_strays(), "census:zcta");
+        assert_eq!(detect_extent_outliers(&gj, "properties.GEOID").len(), 2);
+    }
+
+    // The fence alone also flags a region just past the cluster's edge (two Pennsylvania ZCTAs
+    // beside Allegheny's). A candidate must also sit more than EXTENT_OUTLIER_GAP_RATIO cluster
+    // spans from the core, so the near one is kept in frame and the far stray is not.
+    #[test]
+    fn extent_outliers_ignore_a_region_just_past_the_fence() {
+        let mut pts: Vec<(f64, f64)> = (0..12)
+            .map(|i| (f64::from(i) * 0.1, f64::from(i) * 0.1))
+            .collect();
+        // centroid (2.5, 2.5): just past the longitude fence (2.45), but only ~1.2 spans from
+        // the core's box
+        pts.push((2.0, 2.0));
+        pts.push((-80.0, 26.0));
+        let gj = squares_on_layer(&pts, "census:zcta");
+        assert_eq!(
+            detect_extent_outliers(&gj, "properties.GEOID"),
+            vec!["00013".to_string()]
+        );
     }
 
     // The outlier detector and the framing filter read ids off the RAW json, while every other

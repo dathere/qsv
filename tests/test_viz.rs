@@ -23800,3 +23800,168 @@ fn viz_smart_daemon_column_hook_typed_grid() {
         "no data-qsv-axis-columns map on the typed grid"
     );
 }
+
+const TWO_SQUARES_BY_ID: &str = r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","id":"A","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},
+{"type":"Feature","id":"B","properties":{},"geometry":{"type":"Polygon","coordinates":[[[2,0],[2,1],[3,1],[3,0],[2,0]]]}}]}"#;
+
+// `--locations` + `--geojson` with no `--location-mode` used to inherit docopt's `[default: iso3]`,
+// emitting `"locationmode":"ISO-3"` beside the geojson. plotly then ignores the geojson and the map
+// renders blank while exiting 0. A supplied --geojson must imply geojson-id.
+#[test]
+fn viz_choropleth_geojson_implies_geojson_id_location_mode() {
+    let wrk = Workdir::new("viz_choropleth_geojson_implies_geojson_id_location_mode");
+    wrk.create_from_string("r.csv", "r,v\nA,1\nB,2\n");
+    wrk.create_from_string("sq.geojson", TWO_SQUARES_BY_ID);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "r.csv",
+        "--locations",
+        "r",
+        "--value",
+        "v",
+        "--geojson",
+        "sq.geojson",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""locationmode":"geojson-id""#),
+        "a --geojson choropleth must key regions by feature id"
+    );
+    assert!(
+        !html.contains(r#""locationmode":"ISO-3""#),
+        "ISO-3 beside a geojson makes plotly ignore the geojson (blank map)"
+    );
+}
+
+// An explicit --location-mode still wins over the geojson-implied default, and with no --geojson
+// the default stays iso3.
+#[test]
+fn viz_choropleth_location_mode_default_without_geojson_and_explicit_override() {
+    let wrk = Workdir::new("viz_choropleth_location_mode_default_without_geojson");
+    wrk.create_from_string("c.csv", "iso,v\nUSA,1\nCAN,2\n");
+    wrk.create_from_string("sq.geojson", TWO_SQUARES_BY_ID);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "c.csv", "--locations", "iso", "--value", "v"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains(r#""locationmode":"ISO-3""#));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "c.csv",
+        "--locations",
+        "iso",
+        "--value",
+        "v",
+        "--location-mode",
+        "iso3",
+        "--geojson",
+        "sq.geojson",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains(r#""locationmode":"ISO-3""#));
+}
+
+// The built-in usa-states/iso3 modes have no RegionMatcher, so location cells must be trimmed on
+// read: `PA ` used to aggregate apart from `PA` and match no plotly region.
+#[test]
+fn viz_choropleth_builtin_mode_trims_locations() {
+    let wrk = Workdir::new("viz_choropleth_builtin_mode_trims_locations");
+    wrk.create_from_string("ws.csv", "state,n\nPA,3\nPA ,4\n NY,5\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "ws.csv",
+        "--locations",
+        "state",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""locations":["PA","NY"]"#),
+        "padded codes were not trimmed"
+    );
+    assert!(html.contains(r#""z":[7.0,5.0]"#), "PA rows were not merged");
+}
+
+// An integral float feature id (`"FIPS": 6037.0`, as geopandas writes an int column holding a NaN)
+// must be emitted as plotly sees it — JS `String(6037.0)` is "6037" — not serde_json's "6037.0",
+// which matches no feature.
+#[test]
+fn viz_choropleth_pip_integral_float_feature_id() {
+    let wrk = Workdir::new("viz_choropleth_pip_integral_float_feature_id");
+    wrk.create_from_string(
+        "fid.geojson",
+        r#"{"type":"FeatureCollection","features":[
+{"type":"Feature","properties":{"FIPS":6037.0},"geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}},
+{"type":"Feature","properties":{"FIPS":6059.0},"geometry":{"type":"Polygon","coordinates":[[[2,0],[3,0],[3,1],[2,1],[2,0]]]}}]}"#,
+    );
+    wrk.create_from_string("fid.csv", "lat,lon\n0.5,0.5\n0.5,2.5\n0.4,0.4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "fid.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "fid.geojson",
+        "--feature-id-key",
+        "properties.FIPS",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""locations":["6037","6059"]"#),
+        "integral float ids must be emitted as JS would stringify them"
+    );
+}
+
+// A mistyped vintage (`census@2O21`, letter O) used to fall through to column resolution and fail
+// with a misleading "selector does not exist" — on choropleth only after fetching boundaries.
+#[test]
+fn viz_denominator_census_bad_vintage_is_usage_error() {
+    let wrk = Workdir::new("viz_denominator_census_bad_vintage_is_usage_error");
+    wrk.create_from_string("r.csv", "r,v\nA,1\nB,2\n");
+    wrk.create_from_string("sq.geojson", TWO_SQUARES_BY_ID);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "r.csv",
+        "--locations",
+        "r",
+        "--geojson",
+        "sq.geojson",
+        "--denominator",
+        "census@2O21",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = cmd.output().unwrap();
+    let got = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a bad vintage must fail the run");
+    assert!(
+        got.contains("four-digit ACS vintage"),
+        "expected an invalid-vintage error; got: {got}"
+    );
+}

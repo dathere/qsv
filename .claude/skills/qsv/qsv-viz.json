@@ -244,8 +244,7 @@
       {
         "flag": "--location-mode",
         "type": "string",
-        "description": "How --locations values are matched to regions. One of: iso3 (the default, ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id).",
-        "default": "iso3"
+        "description": "How --locations values are matched to regions. One of: iso3 (ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id). Defaults to geojson-id when a --geojson source is given (without --geocode), else iso3."
       },
       {
         "flag": "--locations",

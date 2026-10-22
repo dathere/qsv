@@ -2199,16 +2199,18 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 }
 
 /// The column an error points at, as the plain column name. Instance locations are JSON
-/// Pointers, so `/` and `~` inside a name arrive escaped (`~1`, `~0`); `segments()` undoes that.
-fn instance_field(location: &jsonschema::paths::Location) -> String {
-    let mut field = String::new();
-    for (i, segment) in location.segments().enumerate() {
-        if i > 0 {
-            field.push('/');
-        }
-        field.push_str(&segment.to_string());
+/// Pointers, so `/` and `~` inside a name arrive escaped (`~1`, `~0`). A CSV row is a flat
+/// object, so the pointer is at most one segment; it is decoded here rather than with
+/// `Location::segments()`, which would turn a column named `01` into the array index `1`.
+/// `~1` must be decoded before `~0`, or a literal `~1` in a name (escaped `~01`) becomes `/`.
+fn instance_field(location: &Location) -> String {
+    let pointer = location.as_str();
+    let field = pointer.strip_prefix('/').unwrap_or(pointer);
+    if field.contains('~') {
+        field.replace("~1", "/").replace("~0", "~")
+    } else {
+        field.to_string()
     }
-    field
 }
 
 /// Validate multiple files in RFC 4180 mode with Extended Input Support

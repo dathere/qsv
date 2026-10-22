@@ -3672,11 +3672,15 @@ fn validate_idn_formats_are_checked() {
 #[test]
 fn validate_error_field_names_are_unescaped() {
     // instance locations are JSON Pointers, so `/` and `~` in a column name come back
-    // escaped as `~1` and `~0`; the report must show the real column name.
+    // escaped as `~1` and `~0`; the report must show the real column name. A numeric-looking
+    // name (`01`) must stay a name, and a literal `~1` (escaped `~01`) must not become `/`.
     let wrk = Workdir::new("validate_error_field_names_are_unescaped").flexible(true);
     wrk.create(
         "data.csv",
-        vec![svec!["a/b", "c~d", "plain"], svec!["x", "1", "ok"]],
+        vec![
+            svec!["a/b", "c~d", "01", "e~1f", "plain"],
+            svec!["x", "1", "2", "3", "ok"],
+        ],
     );
     wrk.create_from_string(
         "schema.json",
@@ -3686,6 +3690,8 @@ fn validate_error_field_names_are_unescaped() {
             "properties": {
                 "a/b": { "type": "string", "minLength": 5 },
                 "c~d": { "type": "string", "minLength": 5 },
+                "01": { "type": "string", "minLength": 5 },
+                "e~1f": { "type": "string", "minLength": 5 },
                 "plain": { "type": "string" }
             }
         }"#,
@@ -3696,11 +3702,16 @@ fn validate_error_field_names_are_unescaped() {
     wrk.assert_err(&mut cmd);
 
     let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
-    assert_eq!(
-        validation_errors,
-        "row_number\tfield\terror\n1\ta/b\t\"x\" is shorter than 5 characters\n1\tc~d\t\"1\" is \
-         shorter than 5 characters\n"
-    );
+    let expected = [
+        "row_number\tfield\terror",
+        "1\ta/b\t\"x\" is shorter than 5 characters",
+        "1\tc~d\t\"1\" is shorter than 5 characters",
+        "1\t01\t\"2\" is shorter than 5 characters",
+        "1\te~1f\t\"3\" is shorter than 5 characters",
+        "",
+    ]
+    .join("\n");
+    assert_eq!(validation_errors, expected);
 }
 
 #[test]

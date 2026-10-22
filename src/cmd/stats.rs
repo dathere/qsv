@@ -858,6 +858,10 @@ pub struct StatsData {
     pub r#type: String,
     #[serde(default)]
     pub is_ascii: bool,
+    // lenient: an integer sum that overflows/underflows i64 renders as the *OVERFLOW* /
+    // *UNDERFLOW* sentinel, which a strict f64 rejected - failing the WHOLE record, so
+    // `schema` and `tojsonl` could not load the stats cache.
+    #[serde(default, deserialize_with = "de_lenient_f64")]
     pub sum: Option<f64>,
     pub min: Option<String>,
     pub max: Option<String>,
@@ -3351,8 +3355,8 @@ impl Args {
         // accumulators: NaN then slipped past `add_weighted`'s `w <= 0.0` guard (every NaN
         // comparison is false) and permanently poisoned sum_weights and weighted_mean, so
         // weighted mean/sem/stddev/variance/cv for the ENTIRE column came out NaN. The sibling
-        // guards (`total_weight` and the weighted-quantile buffer) use `weight > 0.0`, which
-        // NaN fails, so they silently dropped the row instead - the same cell making the
+        // guard (the weighted-quantile buffer) uses `weight > 0.0`, which
+        // NaN fails, so it silently dropped the row instead - the same cell making the
         // moments disagree with the quantiles.
         let weight = if let Some(widx) = weight_col_idx {
             if widx < row.len() {
@@ -4567,8 +4571,7 @@ struct Stats {
     // #[repr(u8)], so it is intentionally not asserted here)
 
     // Hot counters - all 8-byte aligned, accessed frequently
-    nullcount:    u64, // 8 bytes - frequently updated counter
-    total_weight: f64, // 8 bytes - frequently updated for weighted stats
+    nullcount: u64, // 8 bytes - frequently updated counter
 
     // Configuration flags (accessed once during initialization, cold after init)
     which: WhichStats, // 32 bytes - read-only after initialization
@@ -4674,11 +4677,11 @@ impl WeightedOnlineStats {
     fn add_weighted(&mut self, x: f64, w: f64) {
         // The explicit NaN test is the point: a bare `w <= 0.0` is FALSE for NaN, so one NaN
         // weight slipped into the accumulator and poisoned the column's weighted moments
-        // forever. This is exactly equivalent to the sibling sites' `weight > 0.0` gate
-        // (`total_weight` and the weighted-quantile buffer), spelled out rather than written
+        // forever. This is exactly equivalent to the sibling site's `weight > 0.0` gate
+        // (the weighted-quantile buffer), spelled out rather than written
         // as `!(w > 0.0)` so the NaN case is visible instead of implied. add_row now
         // normalizes non-finite weights to 1.0 before they reach here, so this is the belt to
-        // that braces - but all three sites now agree, which is what stops them drifting.
+        // that braces - but both sites now agree, which is what stops them drifting.
         if w.is_nan() || w <= 0.0 {
             return;
         }
@@ -5246,7 +5249,6 @@ impl Stats {
             zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
-            total_weight: 0.0,
             which,
             sum,
             online,
@@ -5309,6 +5311,14 @@ impl Stats {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn update_modes(&mut self, sample: &[u8], weight: f64) {
+        // --weight: zero/negative weights "do not contribute to the statistics". Without this
+        // guard a 0-weight value still became a mode-table key (inflating cardinality and
+        // surfacing as an antimode with 0 occurrences). add_row maps non-finite weights to 1.0,
+        // so `<= 0.0` is the complete exclusion test.
+        if self.which.use_weights && weight <= 0.0 {
+            return;
+        }
+
         // HLL is independent of the mode-cardinality cap: feed every sample regardless
         // of whether the exact mode tracker has been dropped. This is what lets us
         // surface a precise cardinality estimate even when modes/antimodes are gated.
@@ -5420,12 +5430,6 @@ impl Stats {
             } else {
                 self.zpn_disqualified = true;
             }
-        }
-
-        // Update total weight for weighted statistics
-        // Skip entirely when weights aren't active (the common case)
-        if self.which.use_weights && weight > 0.0 {
-            self.total_weight += weight;
         }
 
         // Process the frequently used Option-based statistics first
@@ -5978,7 +5982,12 @@ impl Stats {
             if let Some(patterns) = patterns {
                 let mut is_boolean = false;
                 for pattern in patterns {
-                    if pattern.matches(&minval).is_some() && pattern.matches(&maxval).is_some() {
+                    // one value must be the TRUE side and the other the FALSE side:
+                    // with "t*:f*", "Fiona"/"Frank" both match f* and are not a boolean.
+                    if let (Some(min_is_true), Some(max_is_true)) =
+                        (pattern.matches(&minval), pattern.matches(&maxval))
+                        && min_is_true != max_is_true
+                    {
                         record.push_field("Boolean");
                         is_boolean = true;
                         break;
@@ -6257,6 +6266,15 @@ impl Stats {
             } else {
                 None
             };
+        // The weighted quantile functions compare a running `cum += w` over this sorted data
+        // against `p * total`. Deriving the total from the SAME data, summed in the SAME order,
+        // makes it (1) cover exactly the values being ranked - a total accumulated per sample
+        // also counted weights of null/non-numeric cells, so upper targets were never reached -
+        // and (2) bit-identical to the final running sum, so the p100/Q3 targets cannot be
+        // missed by float rounding (0.1+0.2+0.3 != 0.3+0.2+0.1).
+        let weighted_total: f64 = sorted_weighted_data
+            .as_ref()
+            .map_or(0.0, |d| d.iter().fold(0.0, |acc, &(_, w)| acc + w));
 
         // Check if we should use weighted quartiles
         let quartiles_result = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
@@ -6264,7 +6282,7 @@ impl Stats {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
                     if self.which.quartiles {
-                        weighted_quartiles(weighted_data, self.total_weight)
+                        weighted_quartiles(weighted_data, weighted_total)
                     } else {
                         None
                     }
@@ -6377,7 +6395,7 @@ impl Stats {
                 // Use weighted median
                 match typ {
                     TNull | TString => None,
-                    _ => weighted_median(weighted_data, self.total_weight),
+                    _ => weighted_median(weighted_data, weighted_total),
                 }
             } else if let Some(ref mut td) = self.tdigest.0 {
                 // Approx median via t-digest.
@@ -6424,9 +6442,9 @@ impl Stats {
                     _ => {
                         // Get the weighted median for MAD calculation
                         existing_median
-                            .or_else(|| weighted_median(weighted_data, self.total_weight))
+                            .or_else(|| weighted_median(weighted_data, weighted_total))
                             .and_then(|weighted_median_val| {
-                                weighted_mad(weighted_data, self.total_weight, weighted_median_val)
+                                weighted_mad(weighted_data, weighted_total, weighted_median_val)
                             })
                     },
                 }
@@ -6498,7 +6516,7 @@ impl Stats {
                     let percentile_values =
                         if let Some(weighted_data) = sorted_weighted_data.as_ref() {
                             // Use weighted percentiles
-                            weighted_percentiles(weighted_data, self.total_weight, &percentile_list)
+                            weighted_percentiles(weighted_data, weighted_total, &percentile_list)
                         } else if let Some(ref mut td) = self.tdigest.0 {
                             // Approx percentiles via t-digest. Empty-check up front so the
                             // semantics match the exact path: `Unsorted::custom_percentiles`
@@ -6689,8 +6707,6 @@ impl Commute for Stats {
                 }
             }
         }
-
-        self.total_weight += other.total_weight;
     }
 }
 

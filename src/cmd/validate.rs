@@ -2082,7 +2082,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     for e in errors {
                         error_messages.push(format!(
                             "{row_number_string}\t{field}\t{error}",
-                            field = instance_field(&e.instance_location),
+                            field = instance_field(e.instance_location),
                             error = e.error
                         ));
                     }
@@ -3112,7 +3112,7 @@ fn validate_json_instance(
             schema_compiled
                 .evaluate(instance)
                 .iter_errors()
-                .map(|e| (instance_field(&e.instance_location), e.error.to_string()))
+                .map(|e| (instance_field(e.instance_location), e.error.to_string()))
                 .collect(),
         )
     }

@@ -5634,6 +5634,48 @@ fn feature_centroids(geojson: &serde_json::Value, feature_id_key: &str) -> Vec<(
 /// fenced region must lie to count as an extent outlier (see [`detect_extent_outliers`]).
 const EXTENT_OUTLIER_GAP_RATIO: f64 = 2.0;
 
+/// Whether a Census STATE boundary set should be drawn on the `albers usa` composite, with Alaska
+/// and Hawaii as insets, rather than framed to its extent.
+///
+/// Extent framing cannot place them: Alaska's Aleutians cross the antimeridian and Hawaii's
+/// northwestern islands reach -178°, so a national set fell back to a world view with the states
+/// drawn tiny, and a small cluster (New England + Alaska) cropped them away with a note calling a
+/// member of the set "far outside" it. Only when every region is a state or DC: `albers usa` draws
+/// nothing outside CONUS/Alaska/Hawaii, so a territory (Puerto Rico, Guam...) would vanish
+/// silently, and those sets keep extent framing.
+fn census_state_set_wants_albers_usa(geojson: &serde_json::Value) -> bool {
+    let layer = geojson
+        .get("x-qsv")
+        .and_then(|x| x.get("layer"))
+        .and_then(serde_json::Value::as_str)
+        .and_then(crate::cmd::viz_census::Layer::from_selector);
+    if !matches!(layer, Some(crate::cmd::viz_census::Layer::State)) {
+        return false;
+    }
+    let Some(features) = geojson
+        .get("features")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return false;
+    };
+    let mut has_ak_or_hi = false;
+    for f in features {
+        let Some(geoid) = f
+            .get("properties")
+            .and_then(|p| p.get("GEOID"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return false;
+        };
+        // state and DC FIPS codes are 01-56; territories are 60 and above
+        match geoid.parse::<u8>() {
+            Ok(1..=56) if geoid.len() == 2 => has_ak_or_hi |= geoid == "02" || geoid == "15",
+            _ => return false,
+        }
+    }
+    has_ak_or_hi
+}
+
 /// Ids of auto-resolved regions that lie far outside the main cluster: past a Tukey fence on
 /// either axis AND more than [`EXTENT_OUTLIER_GAP_RATIO`] cluster spans from it. Never reported
 /// for state-scoped (county/tract/place) sets.
@@ -5988,8 +6030,15 @@ fn resolve_auto_geojson(
     // recorded for the provenance note beneath the map, and so the reader can tell an
     // auto-resolved boundary set from one they supplied
     let _ = AUTO_BOUNDARY_PROVENANCE.set(boundaries.provenance.clone());
-    // under the RENDER key: framing compares these ids against the drawn features' ids
-    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(&boundaries.geojson, match_key));
+    // under the RENDER key: framing compares these ids against the drawn features' ids. None for a
+    // set drawn on `albers usa`, which shows the whole US, so no region is left out of the frame;
+    // `--map` draws on tiles, which have no such projection, so it keeps the check.
+    let outliers = if !args.flag_map && census_state_set_wants_albers_usa(&boundaries.geojson) {
+        Vec::new()
+    } else {
+        detect_extent_outliers(&boundaries.geojson, match_key)
+    };
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(outliers);
     log::info!(
         "--geojson {spec} resolved: {} -> {} ({matched}/{total} codes matched)",
         boundaries.provenance,
@@ -7600,11 +7649,18 @@ fn resolve_smart_auto_geojson(
     let provenance = provenance;
 
     let _ = AUTO_BOUNDARY_PROVENANCE.set(provenance.clone());
-    // under the RENDER key: framing compares these ids against the drawn features' ids
-    let _ = AUTO_BOUNDARY_OUTLIERS.set(detect_extent_outliers(
-        &boundaries.geojson,
-        effective_feature_id_key(args, feature_id_key_explicit, &boundaries),
-    ));
+    // under the RENDER key: framing compares these ids against the drawn features' ids. None for a
+    // set drawn on `albers usa`: a smart state panel that includes Alaska or Hawaii always spans
+    // too far for the tile basemap, so it is drawn on the projection, which shows the whole US.
+    let outliers = if census_state_set_wants_albers_usa(&boundaries.geojson) {
+        Vec::new()
+    } else {
+        detect_extent_outliers(
+            &boundaries.geojson,
+            effective_feature_id_key(args, feature_id_key_explicit, &boundaries),
+        )
+    };
+    let _ = AUTO_BOUNDARY_OUTLIERS.set(outliers);
     log::info!(
         "--geojson {spec} resolved: {provenance} -> {} ({matched}/{total} codes matched)",
         boundaries.path
@@ -10519,7 +10575,11 @@ fn build_choropleth_plot(
             // codes, so a few stray codes can inject regions a thousand miles away; those are still
             // drawn, but they do not get to decide the frame (and the note beneath says so).
             let (g_lats, g_lons) = framing_extent(&geojson, args);
-            if !g_lats.is_empty() {
+            if census_state_set_wants_albers_usa(&geojson) {
+                geo = geo
+                    .projection(Projection::new().projection_type(ProjectionType::AlbersUsa))
+                    .scope("usa");
+            } else if !g_lats.is_empty() {
                 let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
                 geo = geo.projection(Projection::new().projection_type(proj));
                 if let Some(lonaxis) = lonaxis {
@@ -41611,7 +41671,11 @@ fn inline_panel_plot_choropleth(panel: &Panel, theme: Option<BuiltinTheme>) -> P
         // dark map has a dark sea. The smart toggle also relayouts geo.bgcolor for live
         // switching.
         .bgcolor(geo_bg);
-    if matches!(location_mode, LocationMode::UsaStates) {
+    if matches!(location_mode, LocationMode::UsaStates)
+        || geojson
+            .as_ref()
+            .is_some_and(census_state_set_wants_albers_usa)
+    {
         // scope:"usa" restricts the basemap (showland, showcountries) to the US extent,
         // preventing Canadian land (e.g. British Columbia) from bleeding into the
         // albers-usa composite canvas above Washington State.

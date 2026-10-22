@@ -88,7 +88,7 @@ as `text/plain`, so a browser won't render it):
 | `wind_obs.csv` | **1,440 SYNTHETIC** hourly wind observations (60 days): 16-point compass `direction`, `bearing_deg`, `speed_kmh` and a `speed_band`, with prevailing south-westerlies | `barpolar` (wind rose) |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
-| `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
+| `us_state_stats.csv` | 50 US states + DC with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa); `choropleth --geojson auto` (Census state boundaries, also on albers-usa with Alaska/Hawaii insets) |
 | `northeast_states.csv` + `northeast_states.geojson` | 11 Northeast states (MD → ME) with `state,people_per_sq_mi`, plus real Census TIGER boundaries keyed by `properties.STUSAB` (with `properties.NAME` auto-detected for hover) | `choropleth --map --geojson … --feature-id-key properties.STUSAB --agg mean` (filled regions on a MapLibre tile basemap; `--agg mean` because density is not additive) |
 | `tristate_county_broadband.csv` | 13 counties across PA, OH and WV keyed by 5-digit county FIPS (`county_fips`), with a **synthetic** `broadband_pct` measure | `choropleth --geojson auto` (**no boundary file supplied** — the county FIPS codes name the states, and just those states' county boundaries are fetched from Census TIGERweb, with `--feature-id-key properties.GEOID` set automatically) |
 | `world_cities.csv` | **1,179 cities** with population **over 500,000** across **six inhabited continents** (GeoNames-derived): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m` (real), `avg_annual_temp_c` (synthesized from latitude + elevation). `continent` uses the [plotly.js geo `scope`](https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope) vocabulary (`Oceania`, `North America`, …) | `smart --dictionary infer` (dense global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a six-continent bar + box panels) |
@@ -482,9 +482,15 @@ qsv viz geo quakes.csv --lat lat --lon lon --slider region --series region --sli
 # geojson-id; --map for a MapLibre basemap; --geocode to derive codes from lat/lon or place names)
 qsv viz choropleth country_stats.csv --locations iso3 --value gdp_usd_tn --color-scale viridis -o choropleth.html
 
-# choropleth (US states) — built-in state geometry on the albers-usa projection, no GeoJSON needed
+# choropleth (US states) — built-in state geometry on the albers-usa projection, no GeoJSON needed.
+# --agg mean because a percentage is not additive: the default sum would offer a share-of-total.
 qsv viz choropleth us_state_stats.csv --locations state --value renewable_electricity_pct \
-    --location-mode usa-states -o choropleth_states.html
+    --agg mean --location-mode usa-states -o choropleth_states.html
+
+# choropleth (--geojson auto, Census states) — the same states with Census TIGERweb boundaries.
+# A state set that includes Alaska or Hawaii is drawn on albers-usa with their insets, like above.
+qsv viz choropleth us_state_stats.csv --locations state --value renewable_electricity_pct \
+    --agg mean --location-mode geojson-id --geojson auto -o choropleth_states_auto.html
 
 # choropleth (--map) — filled regions on a MapLibre tile basemap from a custom GeoJSON, matched by
 # --feature-id-key; the view auto-centers/zooms to the GeoJSON extent. The id is under the feature's

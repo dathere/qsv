@@ -24419,3 +24419,93 @@ fn viz_smart_grid_numeric_labels_use_category_axes() {
 fn viz_smart_inline_numeric_labels_use_category_axes() {
     assert_smart_category_axes("viz_smart_inline_numeric_labels_use_category_axes", true);
 }
+
+// ------------------------------------------------------------------------------------------------
+// A blank --slider cell has no place on the frame axis (as in the bubble reader). Kept, it became
+// a "" frame: the frame order fell back to lexical (1, 10, 11, 12, 2, 3) and the first step was a
+// dead, renamed frame.
+// ------------------------------------------------------------------------------------------------
+
+fn blank_slider_csv() -> String {
+    let mut rows = String::from("m,x,y,lat,lon\n");
+    for m in ["", "1", "2", "3", "10", "11", "12"] {
+        for k in 0..2 {
+            rows.push_str(&format!("{m},a{k},{},40.{k},-75.{k}\n", k + 1));
+        }
+    }
+    rows
+}
+
+fn frame_names(html: &str) -> Vec<String> {
+    frames_json(html)
+        .as_array()
+        .expect("frames array")
+        .iter()
+        .map(|f| f["name"].as_str().unwrap_or("").to_string())
+        .collect()
+}
+
+#[test]
+fn viz_slider_skips_blank_frame_cells() {
+    let wrk = Workdir::new("viz_slider_skips_blank_frame_cells");
+    wrk.create_from_string("s.csv", &blank_slider_csv());
+    let expected = ["1", "2", "3", "10", "11", "12"];
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["bar", "s.csv", "--x", "x", "--y", "y", "--slider", "m"]);
+    let html: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(frame_names(&html), expected, "bar --slider");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "geo", "s.csv", "--lat", "lat", "--lon", "lon", "--slider", "m",
+    ]);
+    let html: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(frame_names(&html), expected, "geo --slider");
+}
+
+#[test]
+fn viz_slider_all_blank_frame_cells_is_an_error() {
+    let wrk = Workdir::new("viz_slider_all_blank_frame_cells_is_an_error");
+    wrk.create_from_string(
+        "b.csv",
+        "m,x,y,lat,lon\n,a,1,40.1,-75.1\n ,b,2,40.2,-75.2\n",
+    );
+    for (args, msg) in [
+        (
+            ["bar", "b.csv", "--x", "x", "--y", "y", "--slider", "m"],
+            "No plottable rows found: every --slider cell is empty.",
+        ),
+        (
+            [
+                "geo", "b.csv", "--lat", "lat", "--lon", "lon", "--slider", "m",
+            ],
+            "No mappable rows found: every --slider cell is empty.",
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(args);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains(msg), "{}: {stderr}", args[0]);
+    }
+}
+
+#[test]
+fn viz_pie_rejects_negative_slice_totals() {
+    // plotly silently drops a negative slice and recomputes every percentage without it
+    let wrk = Workdir::new("viz_pie_rejects_negative_slice_totals");
+    wrk.create_from_string("p.csv", "k,v\na,5\nb,-3\nc,4\nb,1\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["pie", "p.csv", "--x", "k", "--y", "v"]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("A pie cannot represent a negative slice total"),
+        "{stderr}"
+    );
+
+    // a negative ROW is fine when its label's total is not negative
+    wrk.create_from_string("ok.csv", "k,v\na,5\nb,-3\nc,4\nb,4\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["pie", "ok.csv", "--x", "k", "--y", "v"]);
+    wrk.assert_success(&mut cmd);
+}

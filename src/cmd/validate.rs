@@ -147,6 +147,10 @@ JSON SCHEMA SCHEMA VALIDATION SUBMODE:
      `qsv validate schema myjsonschema.json`
      // ignore format validation
      `qsv validate schema --no-format-validation myjsonschema.json`
+     // check that its patterns compile with the fancy regex engine
+     `qsv validate schema --fancy-regex myjsonschema.json`
+The schema is compiled with the same options as JSON Schema validation mode, so qsv's custom
+"currency" format is recognized and the regex options apply.
 
 RFC 4180 VALIDATION MODE:
 ========================
@@ -198,7 +202,7 @@ https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 See also https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate
 
 Usage:
-    qsv validate schema [--no-format-validation] [<json-schema>]
+    qsv validate schema [options] [<json-schema>]
     qsv validate [options] [<input>...]
     qsv validate [options] [<input>] <json-schema>
     qsv validate --help
@@ -329,7 +333,7 @@ use std::{
     path::{Path, PathBuf},
     str,
     sync::{
-        OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicU16, Ordering},
     },
 };
@@ -341,8 +345,8 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    EmailOptions, Keyword, PatternOptions, ValidationError, Validator,
-    json::{Json, Node, Object},
+    EmailOptions, Keyword, PatternOptions, Retrieve, ValidationError, ValidationOptions, Validator,
+    json::{Json, Node, Object, SerdeJson},
     paths::Location,
 };
 use log::debug;
@@ -1610,6 +1614,66 @@ fn detect_custom_schema_features_walk(
     }
 }
 
+/// Validator options shared by `validate schema` and row validation, so the two agree on which
+/// schemas build. Row validation adds the custom keywords (`dynamicEnum`, `uniqueCombinedWith`)
+/// itself: building those loads their lookup data, which `validate schema` must not do.
+fn validator_options<'i, F: Json>(
+    args: &Args,
+    has_currency_format: bool,
+    has_email_format: bool,
+) -> ValidationOptions<'i, Arc<dyn Retrieve>, F> {
+    let mut options =
+        jsonschema::options_for::<F>().should_validate_formats(!args.flag_no_format_validation);
+
+    if has_email_format {
+        // Apply each option explicitly:
+        // - required_tld is enable-only in the jsonschema crate, but the default ("not required")
+        //   matches the docopt default (flag off), so this is fine.
+        // - display_text and domain_literal toggles are explicit in both directions so future
+        //   jsonschema default flips don't silently change behavior.
+        // - min_subdomains keeps the `> 2` guard: at the default of 2 we preserve the jsonschema
+        //   crate's lenient default rather than forcing a stricter rule. Users who want strict
+        //   enforcement set it to 3+.
+        let mut email_options = EmailOptions::default();
+        if args.flag_email_required_tld {
+            email_options = email_options.with_required_tld();
+        }
+        email_options = if args.flag_email_display_text {
+            email_options.with_display_text()
+        } else {
+            email_options.without_display_text()
+        };
+        if args.flag_email_min_subdomains > 2 {
+            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
+        }
+        email_options = if args.flag_email_domain_literal {
+            email_options.with_domain_literal()
+        } else {
+            email_options.without_domain_literal()
+        };
+        options = options.with_email_options(email_options);
+    }
+
+    if has_currency_format {
+        options = options.with_format("currency", currency_format_checker);
+    }
+
+    if args.flag_fancy_regex {
+        options.with_pattern_options(
+            PatternOptions::fancy_regex()
+                .backtrack_limit(args.flag_backtrack_limit)
+                .size_limit(args.flag_size_limit * (1 << 20))
+                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20)),
+        )
+    } else {
+        options.with_pattern_options(
+            PatternOptions::regex()
+                .size_limit(args.flag_size_limit * (1 << 20))
+                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20)),
+        )
+    }
+}
+
 fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
     let mut has_currency = false;
     let mut has_email = false;
@@ -1643,18 +1707,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             if let Err(e) = jsonschema::meta::validate(&schema_json) {
                 return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
             }
-            // Now, validate the JSON Schema formats
-            let test_validator = if args.flag_no_format_validation {
-                Validator::options()
-                    .should_validate_formats(false)
-                    .should_ignore_unknown_formats(true)
-                    .build(&schema_json)
-            } else {
-                Validator::options()
-                    .should_validate_formats(true)
-                    .should_ignore_unknown_formats(false)
-                    .build(&schema_json)
-            };
+            // Now build it with the same options row validation uses, so a schema accepted
+            // here also builds there (and qsv's own `currency` format is known).
+            let (has_currency_format, has_email_format, ..) =
+                detect_custom_schema_features(&schema_json);
+            let test_validator =
+                validator_options::<SerdeJson>(&args, has_currency_format, has_email_format)
+                    .should_ignore_unknown_formats(args.flag_no_format_validation)
+                    .build(&schema_json);
             if let Err(e) = test_validator {
                 return fail_clierror!("JSON Schema Format Validation Error: {e}");
             }
@@ -1842,46 +1902,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         // compile JSON Schema
                         // `CsvJson` reads fields straight out of the `ByteRecord`.
-                        let mut validator_options = jsonschema::options_for::<CsvJson>()
-                            .should_validate_formats(!args.flag_no_format_validation);
-
-                        // Add custom validators based on pre-checked flags
-                        if has_email_format {
-                            // Apply each option explicitly:
-                            // - required_tld is enable-only in the jsonschema crate, but the
-                            //   default ("not required") matches the docopt default (flag off),
-                            //   so this is fine.
-                            // - display_text and domain_literal toggles are explicit in both
-                            //   directions so future jsonschema default flips don't silently
-                            //   change behavior.
-                            // - min_subdomains keeps the `> 2` guard: at the default of 2 we
-                            //   preserve the jsonschema crate's lenient default rather than
-                            //   forcing a stricter rule. Users who want strict enforcement
-                            //   set it to 3+.
-                            let mut email_options = EmailOptions::default();
-                            if args.flag_email_required_tld {
-                                email_options = email_options.with_required_tld();
-                            }
-                            email_options = if args.flag_email_display_text {
-                                email_options.with_display_text()
-                            } else {
-                                email_options.without_display_text()
-                            };
-                            if args.flag_email_min_subdomains > 2 {
-                                email_options = email_options
-                                    .with_minimum_sub_domains(args.flag_email_min_subdomains);
-                            }
-                            email_options = if args.flag_email_domain_literal {
-                                email_options.with_domain_literal()
-                            } else {
-                                email_options.without_domain_literal()
-                            };
-                            validator_options = validator_options.with_email_options(email_options);
-                        }
-
-                        if has_currency_format {
-                            validator_options = validator_options.with_format("currency", currency_format_checker);
-                        }
+                        let mut validator_options = validator_options::<CsvJson>(
+                            &args,
+                            has_currency_format,
+                            has_email_format,
+                        );
 
                         if has_dynamic_enum {
                             validator_options = validator_options.with_keyword("dynamicEnum", dyn_enum_validator_factory::<CsvJson>);
@@ -1889,19 +1914,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         if has_unique_combined {
                             validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory::<CsvJson>);
-                        }
-
-                        if args.flag_fancy_regex {
-                            let fancy_regex_options = PatternOptions::fancy_regex()
-                                .backtrack_limit(args.flag_backtrack_limit)
-                                .size_limit(args.flag_size_limit * (1 << 20))
-                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
-                            validator_options = validator_options.with_pattern_options(fancy_regex_options);
-                        } else {
-                            let regex_options = PatternOptions::regex()
-                                .size_limit(args.flag_size_limit * (1 << 20))
-                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
-                            validator_options = validator_options.with_pattern_options(regex_options);
                         }
 
                         drop_required_headers(&mut json, &headers);

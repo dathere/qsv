@@ -3702,3 +3702,53 @@ fn validate_error_field_names_are_unescaped() {
          shorter than 5 characters\n"
     );
 }
+
+#[test]
+fn validate_schema_subcommand_matches_row_validation_options() {
+    // `validate schema` must build the schema the way row validation does: qsv's own
+    // `currency` format is known, and patterns compile with the selected regex engine.
+    let wrk =
+        Workdir::new("validate_schema_subcommand_matches_row_validation_options").flexible(true);
+    wrk.create_from_string(
+        "currency.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "fee": { "type": "string", "format": "currency" }
+            }
+        }"#,
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("currency.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+
+    // a lookahead only compiles with the fancy regex engine
+    wrk.create_from_string(
+        "lookahead.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "code": { "type": "string", "pattern": "^(?=.*[0-9])[A-Z0-9]+$" }
+            }
+        }"#,
+    );
+    wrk.create("data.csv", vec![svec!["code"], svec!["AB1"]]);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("lookahead.json");
+    wrk.assert_err(&mut cmd);
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("lookahead.json");
+    wrk.assert_err(&mut cmd);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("--fancy-regex").arg("lookahead.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("--fancy-regex").arg("lookahead.json");
+    wrk.assert_success(&mut cmd);
+}

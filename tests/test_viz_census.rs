@@ -396,6 +396,11 @@ async fn serve_state_query(o: web::Data<Observed>, req: HttpRequest) -> HttpResp
         ("78", "VI", "United States Virgin Islands", 50.0),
         // far from the rest, so it is an extent outlier once 8+ states are drawn (#4735)
         ("02", "AK", "Alaska", -150.0),
+        // with the states above, a states-only set of 8+ regions that includes Alaska and Hawaii
+        ("09", "CT", "Connecticut", 52.0),
+        ("25", "MA", "Massachusetts", 54.0),
+        ("34", "NJ", "New Jersey", 56.0),
+        ("15", "HI", "Hawaii", -157.0),
     ]
     .iter()
     .filter(|(geoid, ..)| where_clause.contains(&format!("'{geoid}'")))
@@ -2006,6 +2011,105 @@ fn viz_geojson_auto_outliers_use_an_explicit_feature_id_key() {
             html.contains("1 region(s) lie far outside the rest (AK)"),
             "Alaska must be recorded under the render key"
         );
+        // the set includes territories, which `albers usa` cannot draw, so it keeps extent framing
+        assert!(
+            !html.contains(r#""type":"albers usa""#),
+            "territories must not be dropped"
+        );
+    });
+}
+
+// A set of US states that includes Alaska or Hawaii is drawn on `albers usa` with their insets.
+// Extent framing could not place them (the Aleutians cross the antimeridian, Hawaii's islands
+// reach -178°): a national set fell back to a world view, and a small cluster cropped Alaska away
+// with a note calling it "far outside" a set it belongs to.
+#[test]
+#[serial]
+fn viz_geojson_auto_state_set_with_alaska_uses_albers_usa() {
+    let wrk = Workdir::new("viz_geojson_auto_state_set_with_alaska_uses_albers_usa");
+    wrk.create_from_string(
+        "st.csv",
+        "state,cases\nCA,1\nMD,2\nNY,3\nPA,4\nCT,5\nMA,6\nNJ,7\nAK,8\nHI,9\n",
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let out = state_choropleth(&wrk, base, "st.csv");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            html.contains(r#""projection":{"type":"albers usa"}"#),
+            "a state set with AK/HI must use albers usa"
+        );
+        assert!(
+            html.contains(r#""scope":"usa""#),
+            "albers usa needs the usa scope"
+        );
+        assert!(
+            !html.contains("lie far outside the rest"),
+            "Alaska is drawn in its inset, so no region is left out of the frame"
+        );
+    });
+}
+
+// The same for a `viz smart` region panel, which frames its choropleth separately.
+#[test]
+#[serial]
+fn viz_smart_auto_state_set_with_alaska_uses_albers_usa() {
+    let wrk = Workdir::new("viz_smart_auto_state_set_with_alaska_uses_albers_usa");
+    wrk.create_from_string(
+        "st.csv",
+        "state,cases\nCA,1\nMD,2\nNY,3\nPA,4\nCT,5\nMA,6\nNJ,7\nAK,8\nHI,9\nCA,10\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "state": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+            "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "st.csv",
+            "--geojson",
+            "auto",
+            "-o",
+            "m.html",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.schema.json"))
+        .env("QSV_VIZ_NO_COMPRESS", "1")
+        .env("QSV_CENSUS_TIGERWEB_URL", base)
+        .env(
+            "QSV_CACHE_DIR",
+            wrk.path("boundary-cache").to_string_lossy().to_string(),
+        );
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let html = std::fs::read_to_string(wrk.path("m.html")).unwrap();
+        // both region panels (count, and total by region)
+        assert_eq!(
+            html.matches(r#""projection":{"type":"albers usa"}"#)
+                .count(),
+            2,
+            "the smart region panels must use albers usa for a state set with AK/HI"
+        );
+        assert_eq!(html.matches(r#""scope":"usa""#).count(), 2);
+        assert!(!html.contains("lie far outside the rest"));
     });
 }
 

@@ -10039,6 +10039,7 @@ fn stats_infer_boolean_requires_one_true_and_one_false_value() {
 }
 
 #[test]
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 fn stats_integer_sum_overflow_keeps_the_stats_cache_readable() {
     // An overflowing integer sum renders as *OVERFLOW*; the strict f64 `sum` field rejected
     // the whole cached record, so `schema` failed with "ExpectedFloat".

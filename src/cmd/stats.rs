@@ -4813,14 +4813,24 @@ impl WeightedOnlineStats {
 ///
 /// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
 ///   `to_record()`)
-/// * `total_weight` - Total sum of all weights
 /// * `percentile` - Percentile to compute (0.0 to 1.0, e.g., 0.5 for median)
 ///
 /// # Returns
 ///
 /// The value at the specified percentile, computed using the weighted nearest-rank method (no
 /// interpolation).
-fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) -> Option<f64> {
+/// Sum of the weights of `data`, folded in slice order from 0.0 - the SAME order and start as
+/// the running `cum += w` in the weighted quantile functions below. Each of them derives its
+/// total from the slice it walks (never from a caller): float addition is not associative, so a
+/// total summed in any other order (input order, or value order for `weighted_mad`'s re-sorted
+/// deviations) can land just above the final running sum and leave the p100/Q3 target - or a
+/// median sitting exactly on a half-weight boundary - unreached.
+fn weighted_total(data: &[(f64, f64)]) -> f64 {
+    data.iter().fold(0.0, |acc, &(_, w)| acc + w)
+}
+
+fn weighted_quantile(data: &[(f64, f64)], percentile: f64) -> Option<f64> {
+    let total_weight = weighted_total(data);
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
@@ -4850,12 +4860,12 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
 ///
 /// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
 ///   `to_record()`)
-/// * `total_weight` - Total sum of all weights
 ///
 /// # Returns
 ///
-/// Option containing (Q1, Q2, Q3) if data is not empty and `total_weight` > 0, None otherwise.
-fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
+/// Option containing (Q1, Q2, Q3) if data is not empty and its total weight is > 0, None otherwise.
+fn weighted_quartiles(data: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
+    let total_weight = weighted_total(data);
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
@@ -4894,13 +4904,12 @@ fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f6
 /// # Arguments
 ///
 /// * `data` - Vector of (value, weight) tuples
-/// * `total_weight` - Total sum of all weights
 ///
 /// # Returns
 ///
 /// The weighted median value if data is not empty, None otherwise.
-fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
-    weighted_quantile(data, total_weight, 0.5)
+fn weighted_median(data: &[(f64, f64)]) -> Option<f64> {
+    weighted_quantile(data, 0.5)
 }
 
 /// Computes weighted Median Absolute Deviation (MAD) from (value, weight) pairs.
@@ -4909,14 +4918,13 @@ fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
 ///
 /// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
 ///   `to_record()`)
-/// * `total_weight` - Total sum of all weights
 /// * `median` - The weighted median value
 ///
 /// # Returns
 ///
 /// The weighted MAD value if data is not empty, None otherwise.
-fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f64> {
-    if data.is_empty() || total_weight <= 0.0 {
+fn weighted_mad(data: &[(f64, f64)], median: f64) -> Option<f64> {
+    if data.is_empty() {
         return None;
     }
 
@@ -4938,7 +4946,7 @@ fn weighted_mad(data: &[(f64, f64)], total_weight: f64, median: f64) -> Option<f
     }
 
     // Calculate weighted median of absolute deviations
-    weighted_median(&abs_deviations, total_weight)
+    weighted_median(&abs_deviations)
 }
 
 /// Formats a list of antimodes into a display string with optional preview prefix,
@@ -4991,17 +4999,13 @@ fn format_antimodes(
 ///
 /// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
 ///   `to_record()`)
-/// * `total_weight` - Total sum of all weights
 /// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
 ///
 /// # Returns
 ///
 /// Vector of percentile values in the same order as `percentile_list`, or None if data is empty
-fn weighted_percentiles(
-    data: &[(f64, f64)],
-    total_weight: f64,
-    percentile_list: &[u8],
-) -> Option<Vec<f64>> {
+fn weighted_percentiles(data: &[(f64, f64)], percentile_list: &[u8]) -> Option<Vec<f64>> {
+    let total_weight = weighted_total(data);
     if data.is_empty() || total_weight <= 0.0 {
         return None;
     }
@@ -5980,13 +5984,30 @@ impl Stats {
             // if cardinality is 2, it's a boolean if its in the true/false patterns
             let patterns = BOOLEAN_PATTERNS.get();
             if let Some(patterns) = patterns {
+                // Under --weight, cardinality counts only positively-weighted values, but
+                // min/max still see every row - so take the two candidates from the weighted
+                // mode table, the same population the cardinality was counted over.
+                let (bool_a, bool_b) = match self.weighted_modes.as_ref() {
+                    Some(wm) if wm.len() == 2 => {
+                        let mut keys = wm.keys();
+                        // safety: len() == 2 was just checked
+                        (
+                            String::from_utf8_lossy(keys.next().unwrap()),
+                            String::from_utf8_lossy(keys.next().unwrap()),
+                        )
+                    },
+                    _ => (
+                        std::borrow::Cow::Borrowed(minval.as_str()),
+                        std::borrow::Cow::Borrowed(maxval.as_str()),
+                    ),
+                };
                 let mut is_boolean = false;
                 for pattern in patterns {
                     // one value must be the TRUE side and the other the FALSE side:
                     // with "t*:f*", "Fiona"/"Frank" both match f* and are not a boolean.
-                    if let (Some(min_is_true), Some(max_is_true)) =
-                        (pattern.matches(&minval), pattern.matches(&maxval))
-                        && min_is_true != max_is_true
+                    if let (Some(a_is_true), Some(b_is_true)) =
+                        (pattern.matches(&bool_a), pattern.matches(&bool_b))
+                        && a_is_true != b_is_true
                     {
                         record.push_field("Boolean");
                         is_boolean = true;
@@ -6266,15 +6287,6 @@ impl Stats {
             } else {
                 None
             };
-        // The weighted quantile functions compare a running `cum += w` over this sorted data
-        // against `p * total`. Deriving the total from the SAME data, summed in the SAME order,
-        // makes it (1) cover exactly the values being ranked - a total accumulated per sample
-        // also counted weights of null/non-numeric cells, so upper targets were never reached -
-        // and (2) bit-identical to the final running sum, so the p100/Q3 targets cannot be
-        // missed by float rounding (0.1+0.2+0.3 != 0.3+0.2+0.1).
-        let weighted_total: f64 = sorted_weighted_data
-            .as_ref()
-            .map_or(0.0, |d| d.iter().fold(0.0, |acc, &(_, w)| acc + w));
 
         // Check if we should use weighted quartiles
         let quartiles_result = if let Some(weighted_data) = sorted_weighted_data.as_ref() {
@@ -6282,7 +6294,7 @@ impl Stats {
             match typ {
                 TInteger | TFloat | TDate | TDateTime => {
                     if self.which.quartiles {
-                        weighted_quartiles(weighted_data, weighted_total)
+                        weighted_quartiles(weighted_data)
                     } else {
                         None
                     }
@@ -6395,7 +6407,7 @@ impl Stats {
                 // Use weighted median
                 match typ {
                     TNull | TString => None,
-                    _ => weighted_median(weighted_data, weighted_total),
+                    _ => weighted_median(weighted_data),
                 }
             } else if let Some(ref mut td) = self.tdigest.0 {
                 // Approx median via t-digest.
@@ -6442,9 +6454,9 @@ impl Stats {
                     _ => {
                         // Get the weighted median for MAD calculation
                         existing_median
-                            .or_else(|| weighted_median(weighted_data, weighted_total))
+                            .or_else(|| weighted_median(weighted_data))
                             .and_then(|weighted_median_val| {
-                                weighted_mad(weighted_data, weighted_total, weighted_median_val)
+                                weighted_mad(weighted_data, weighted_median_val)
                             })
                     },
                 }
@@ -6516,7 +6528,7 @@ impl Stats {
                     let percentile_values =
                         if let Some(weighted_data) = sorted_weighted_data.as_ref() {
                             // Use weighted percentiles
-                            weighted_percentiles(weighted_data, weighted_total, &percentile_list)
+                            weighted_percentiles(weighted_data, &percentile_list)
                         } else if let Some(ref mut td) = self.tdigest.0 {
                             // Approx percentiles via t-digest. Empty-check up front so the
                             // semantics match the exact path: `Unsorted::custom_percentiles`

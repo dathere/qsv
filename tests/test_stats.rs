@@ -10062,3 +10062,57 @@ fn stats_integer_sum_overflow_keeps_the_stats_cache_readable() {
     wrk.assert_success(&mut schema_cmd);
     assert!(wrk.path("data.csv.schema.json").exists());
 }
+
+#[test]
+fn stats_weighted_mad_total_matches_its_own_deviation_order() {
+    // weighted_mad re-sorts by |x - median|; a total summed in VALUE order
+    // (0.1+0.3+0.2 = 0.6000000000000001) put the half-weight target just above the zero
+    // deviation's 0.3, so MAD came out 1 instead of 0.
+    let wrk = Workdir::new("stats_weighted_mad_total_matches_its_own_deviation_order");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["x", "w"],
+            svec!["20", "0.3"],
+            svec!["21", "0.2"],
+            svec!["0", "0.1"],
+        ],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--weight", "w", "--mad", "--select", "x"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "mad"), "0");
+}
+
+#[test]
+fn stats_weighted_infer_boolean_uses_the_weighted_values() {
+    // Zero-weight rows are not counted in cardinality, so the true/false check must not use
+    // min/max (which still see them). Case 1: Fiona/Frank (+ a 0-weight "true") is not
+    // Boolean. Case 2: yes/no (+ a 0-weight "maybe", which is the min) IS Boolean.
+    for (name, rows, expected) in [
+        (
+            "fiona_frank",
+            [["Fiona", "1"], ["Frank", "1"], ["true", "0"]],
+            "String",
+        ),
+        (
+            "yes_no",
+            [["yes", "1"], ["no", "1"], ["maybe", "0"]],
+            "Boolean",
+        ),
+    ] {
+        let wrk = Workdir::new(&format!(
+            "stats_weighted_infer_boolean_uses_the_weighted_values_{name}"
+        ));
+        let mut data = vec![svec!["value", "w"]];
+        data.extend(rows.iter().map(|[v, w]| svec![*v, *w]));
+        wrk.create("data.csv", data);
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--weight", "w", "--infer-boolean"])
+            .arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "cardinality"), "2", "{name}");
+        assert_eq!(stats_cell(&got, 1, "type"), expected, "{name}");
+    }
+}

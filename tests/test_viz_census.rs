@@ -1299,6 +1299,23 @@ fn viz_smart_accepts_the_census_denominator() {
 fn viz_denominator_census_is_reserved() {
     let wrk = Workdir::new("viz_denominator_census_is_reserved");
     wrk.create_from_string("rg.csv", "region,census,val\nAB,100,10\nCD,200,20\n");
+    // a local boundary file that matches AB/CD, so boundary resolution succeeds and the run
+    // reaches denominator handling. With `--geojson auto` the codes were rejected first, and that
+    // error satisfied the old assertion whether or not `census` was reserved.
+    let square = |x: i32| {
+        format!(
+            r#"{{"type":"Polygon","coordinates":[[[{x},0],[{x1},0],[{x1},1],[{x},1],[{x},0]]]}}"#,
+            x1 = x + 1
+        )
+    };
+    wrk.create_from_string(
+        "rg.geojson",
+        &format!(
+            r#"{{"type":"FeatureCollection","features":[{{"type":"Feature","id":"AB","properties":{{}},"geometry":{}}},{{"type":"Feature","id":"CD","properties":{{}},"geometry":{}}}]}}"#,
+            square(0),
+            square(2)
+        ),
+    );
 
     let mut cmd = wrk.command("viz");
     cmd.args([
@@ -1311,7 +1328,7 @@ fn viz_denominator_census_is_reserved() {
         "--location-mode",
         "geojson-id",
         "--geojson",
-        "auto",
+        "rg.geojson",
         "--denominator",
         "census",
     ])
@@ -1319,9 +1336,10 @@ fn viz_denominator_census_is_reserved() {
     let out = wrk.output(&mut cmd);
     assert!(!out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    // it tried to RESOLVE the region codes as Census geographies rather than reading the column
+    // it tried to FETCH population for the region codes rather than reading the `census` column
+    // (which would have succeeded: it holds 100 and 200)
     assert!(
-        stderr.contains("county FIPS") || stderr.contains("state codes"),
+        stderr.contains("--denominator census: none of the 2 location values are US state codes"),
         "the reserved value should have been treated as a source, not a column: {stderr}"
     );
 }

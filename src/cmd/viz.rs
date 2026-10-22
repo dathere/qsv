@@ -3034,6 +3034,7 @@ fn read_xy_slider(
     let mut series_seen: HashSet<String> = HashSet::new();
     let mut map: HashMap<String, HashMap<String, (Vec<String>, Vec<f64>)>> = HashMap::new();
 
+    let mut blank_frames: usize = 0;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let Some(y) = parse_f64(record.get(y_idx)) else {
@@ -3045,6 +3046,13 @@ fn read_xy_slider(
             None => String::new(),
         };
         let frame = cell_to_string(record.get(frame_idx));
+        // a blank --slider cell has no place on the frame axis, as in the bubble reader. Kept, it
+        // became a "" frame that broke numeric frame ordering (1, 10, 11, 2, ...) and a dead first
+        // step (plotly renames empty-named frames).
+        if frame.trim().is_empty() {
+            blank_frames += 1;
+            continue;
+        }
 
         if !map.contains_key(&frame) {
             frame_order.push(frame.clone());
@@ -3058,6 +3066,9 @@ fn read_xy_slider(
             .or_insert_with(|| (Vec::new(), Vec::new()));
         entry.0.push(x);
         entry.1.push(y);
+    }
+    if frame_order.is_empty() && blank_frames > 0 {
+        return fail_clierror!("No plottable rows found: every --slider cell is empty.");
     }
     if frame_order.is_empty() {
         return fail_clierror!("No plottable rows found (is --y numeric?).");
@@ -4651,6 +4662,7 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
     let mut map: HashMap<String, HashMap<String, (Vec<f64>, Vec<f64>, Vec<String>)>> =
         HashMap::new();
 
+    let mut blank_frames: usize = 0;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -4667,6 +4679,13 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
             None => String::new(),
         };
         let frame = cell_to_string(record.get(frame_idx));
+        // a blank --slider cell has no place on the frame axis, as in the bubble reader. Kept, it
+        // became a "" frame that broke numeric frame ordering (1, 10, 11, 2, ...) and a dead first
+        // step (plotly renames empty-named frames).
+        if frame.trim().is_empty() {
+            blank_frames += 1;
+            continue;
+        }
 
         if !map.contains_key(&frame) {
             frame_order.push(frame.clone());
@@ -4684,6 +4703,9 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
             // plotly renders hover text as pseudo-HTML, so escape `<`/`&` to show the literal value
             entry.2.push(escape_hover(&cell_to_string(record.get(i))));
         }
+    }
+    if frame_order.is_empty() && blank_frames > 0 {
+        return fail_clierror!("No mappable rows found: every --slider cell is empty.");
     }
     if frame_order.is_empty() {
         return fail_clierror!(
@@ -8163,7 +8185,7 @@ fn fmt_measure(v: f64) -> String {
 /// The scale factor and magnitude suffix for `v`, honoring the ACTIVE LOCALE's convention
 /// (issue #4393). English-speaking audiences read 1e9 as "B" (billion); every other locale qsv
 /// ships reads the SI prefix "G" (giga), so "192G" for a dollar figure reads as engineering
-/// notation, or worse, as a mystery unit. `T`/`M`/`k` are the same either way.
+/// notation, or worse, as a mystery unit. `E`/`P`/`T`/`M`/`k` are the same either way.
 ///
 /// This is the SINGLE OWNER of qsv's large-number suffix convention. Every Data Schematic value
 /// label and KPI number derives from it, and the two plotly-native axes derive from its sibling
@@ -8177,7 +8199,13 @@ fn magnitude_scale(v: f64) -> (f64, &'static str) {
     // Once suffixing is active, switch at each three-significant-digit rounding boundary so the
     // label rolls over to the next unit (999_500 -> 1M), never "1000k". Keep the established 1k
     // entry threshold so ordinary sub-thousand values retain their exact grouped form.
-    if a >= 999_500_000_000.0 {
+    // P/E are the SI prefixes plotly's own `B`/`SI` axis formats use above T, so a value label
+    // and its axis keep agreeing. Without them a 5.97e15 total rendered as "5.97e+3T".
+    if a >= 999.5e15 {
+        (1e18, "E")
+    } else if a >= 999.5e12 {
+        (1e15, "P")
+    } else if a >= 999_500_000_000.0 {
         (1e12, "T")
     } else if a >= 999_500_000.0 {
         (
@@ -12774,6 +12802,12 @@ fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
         return fail_clierror!("No data found for the pie chart.");
     }
     let values: Vec<f64> = order.iter().map(|l| acc[l]).collect();
+    // plotly silently drops a negative slice and recomputes every percentage without it
+    if values.iter().any(|v| *v < 0.0) {
+        return fail_clierror!(
+            "A pie cannot represent a negative slice total; check the --y column."
+        );
+    }
     advise_if_pie_hard_to_read(&values);
     let mut pie = Pie::new(values).labels(order).text_info("label+percent");
     if args.flag_donut {
@@ -57537,6 +57571,11 @@ mod tests {
         assert_eq!(magnitude_scale(2.4e9), (1e9, "B"));
         // every other magnitude is locale-independent
         assert_eq!(magnitude_scale(2.4e12), (1e12, "T"));
+        assert_eq!(magnitude_scale(5.97e15), (1e15, "P"));
+        assert_eq!(magnitude_scale(3.1e18), (1e18, "E"));
+        // the rollover boundary: 999.6T rounds to 3 significant digits as 1000T, so it is 1P
+        assert_eq!(magnitude_scale(999.6e12), (1e15, "P"));
+        assert_eq!(fmt_magnitude(5.97e15), "5.97P");
         assert_eq!(magnitude_scale(1.05e6), (1e6, "M"));
         assert_eq!(magnitude_scale(258_000.0), (1e3, "k"));
         assert_eq!(magnitude_scale(999.0), (1.0, ""));

@@ -24170,3 +24170,158 @@ fn viz_smart_pipeline_stage_ticks_are_escaped() {
         );
     }
 }
+
+// ------------------------------------------------------------------------------------------------
+// Category labels that look numeric must not autotype the axis: plotly types a mostly-numeric axis
+// linear and silently drops the non-numeric labels ("Unknown" beside "1", "2", "10").
+// ------------------------------------------------------------------------------------------------
+
+/// Every box/violin/heatmap trace in an uncompressed page, with the `type` of the layout axes it
+/// is bound to (`""` when the axis is untyped) and its distinct x labels in first-seen order.
+fn category_axis_traces(html: &str) -> Vec<(String, String, String, Vec<String>)> {
+    let mut out = Vec::new();
+    for (k, _) in html.match_indices(r#"{"data":["#) {
+        let mut vals =
+            serde_json::Deserializer::from_str(&html[k..]).into_iter::<serde_json::Value>();
+        let Some(Ok(fig)) = vals.next() else {
+            continue;
+        };
+        for t in fig["data"].as_array().into_iter().flatten() {
+            let kind = t["type"].as_str().unwrap_or("");
+            if !matches!(kind, "box" | "violin" | "heatmap") {
+                continue;
+            }
+            let axis_type = |axis: &str, default: &str| {
+                let r = t[axis].as_str().unwrap_or(default);
+                let key = format!("{}axis{}", &r[..1], &r[1..]);
+                fig["layout"][key]["type"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let mut xs: Vec<String> = Vec::new();
+            for v in t["x"].as_array().into_iter().flatten() {
+                let s = v.as_str().unwrap_or("").to_string();
+                if !xs.contains(&s) {
+                    xs.push(s);
+                }
+            }
+            out.push((
+                kind.to_string(),
+                axis_type("xaxis", "x"),
+                axis_type("yaxis", "y"),
+                xs,
+            ));
+        }
+    }
+    out
+}
+
+/// Labels first seen as 10, 2, Unknown, 1: a category axis draws them in data order, so the
+/// expected `1, 2, 10, Unknown` only appears when the data is put in numeric-first order.
+const NUMERIC_FIRST: [&str; 4] = ["1", "2", "10", "Unknown"];
+
+fn numeric_group_rows(extra_header: &str, extra: impl Fn(usize) -> String) -> String {
+    let labels = ["10", "2", "Unknown", "1"];
+    let mut rows = format!("grp,2019,2020{extra_header}\n");
+    for i in 0..240_usize {
+        let a = (i % 30) + (i % 4) * 40;
+        rows.push_str(&format!(
+            "{},{a},{}{}\n",
+            labels[i % 4],
+            a * 2 + (i * 7) % 10,
+            extra(i)
+        ));
+    }
+    rows
+}
+
+#[test]
+fn viz_heatmap_pivot_numeric_labels_use_ordered_category_axes() {
+    let wrk = Workdir::new("viz_heatmap_pivot_numeric_labels_use_ordered_category_axes");
+    wrk.create_from_string("p.csv", "g,k,v\n10,a,1\n2,b,2\nUnknown,a,3\n1,b,4\n2,a,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "p.csv", "--x", "g", "--y", "k", "--z", "v"]);
+    let html: String = wrk.stdout_on_success(&mut cmd);
+    let traces = category_axis_traces(&html);
+    assert_eq!(traces.len(), 1, "{traces:?}");
+    let (_, xt, yt, xs) = &traces[0];
+    assert_eq!((xt.as_str(), yt.as_str()), ("category", "category"));
+    assert_eq!(xs, &NUMERIC_FIRST);
+    // the z matrix is remapped with the labels: cell (k=a, g=10) holds 1, (k=b, g=1) holds 4
+    let z = extract_z_matrix(&html);
+    assert_eq!(z[0], vec![None, Some(5.0), Some(1.0), Some(3.0)]);
+    assert_eq!(z[1], vec![Some(4.0), Some(2.0), None, None]);
+}
+
+#[test]
+fn viz_box_and_violin_numeric_groups_use_ordered_category_axis() {
+    let wrk = Workdir::new("viz_box_and_violin_numeric_groups_use_ordered_category_axis");
+    wrk.create_from_string("g.csv", &numeric_group_rows("", |_| String::new()));
+    for chart in ["box", "violin"] {
+        let mut cmd = wrk.command("viz");
+        // `--y 2` is the column index of "2019" (a bare number selects by index)
+        cmd.args([chart, "g.csv", "--x", "grp", "--y", "2"]);
+        let html: String = wrk.stdout_on_success(&mut cmd);
+        let traces = category_axis_traces(&html);
+        assert_eq!(traces.len(), 1, "{chart}: {traces:?}");
+        let (_, xt, _, xs) = &traces[0];
+        assert_eq!(xt, "category", "{chart}");
+        assert_eq!(xs, &NUMERIC_FIRST, "{chart}");
+    }
+}
+
+/// `viz smart`'s grouped violin and correlation heatmap, on both the typed subplot grid and the
+/// inline per-panel path (a map panel is non-cartesian and forces the inline path).
+fn assert_smart_category_axes(name: &str, with_map: bool) {
+    let wrk = Workdir::new(name);
+    let rows = if with_map {
+        numeric_group_rows(",latitude,longitude", |i| {
+            format!(
+                ",{},{}",
+                40.0 + (i % 50) as f64 / 100.0,
+                -80.0 + (i % 40) as f64 / 100.0
+            )
+        })
+    } else {
+        numeric_group_rows("", |_| String::new())
+    };
+    wrk.create_from_string("g.csv", &rows);
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1")
+        .args(["smart", "g.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert_eq!(
+        html.contains(r#"Plotly.newPlot("qsv-viz-panel-"#),
+        with_map,
+        "{name}: wrong render path"
+    );
+    let traces = category_axis_traces(&html);
+    let violin = traces
+        .iter()
+        .find(|(k, _, _, xs)| k == "violin" && !xs.is_empty())
+        .unwrap_or_else(|| panic!("{name}: no grouped violin: {traces:?}"));
+    assert_eq!(violin.1, "category", "{name}: grouped violin x");
+    assert_eq!(violin.3, NUMERIC_FIRST, "{name}: grouped violin order");
+    let corr = traces
+        .iter()
+        .find(|(k, _, _, xs)| k == "heatmap" && xs == &["2019", "2020"])
+        .unwrap_or_else(|| panic!("{name}: no correlation heatmap: {traces:?}"));
+    assert_eq!(
+        (corr.1.as_str(), corr.2.as_str()),
+        ("category", "category"),
+        "{name}: correlation axes"
+    );
+}
+
+#[test]
+fn viz_smart_grid_numeric_labels_use_category_axes() {
+    assert_smart_category_axes("viz_smart_grid_numeric_labels_use_category_axes", false);
+}
+
+#[test]
+fn viz_smart_inline_numeric_labels_use_category_axes() {
+    assert_smart_category_axes("viz_smart_inline_numeric_labels_use_category_axes", true);
+}

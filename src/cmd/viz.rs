@@ -31515,6 +31515,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
 /// [`build_smart_choropleth_panel`] this needs no geocode engine. Errors when the explicit
 /// `--geojson` can't be loaded/parsed or the `--feature-id-key` matches nothing; returns
 /// `Ok(None)` only when valid input yields fewer than 2 regions with points.
+#[allow(clippy::too_many_arguments)]
 fn build_smart_pip_choropleth_panel(
     geojson_spec: &str,
     feature_id_key: &str,

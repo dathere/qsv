@@ -413,7 +413,7 @@ stats_tests!(stats_null_stddev, "stddev", &[""], "");
 stats_tests!(stats_null_variance, "variance", &[""], "");
 stats_tests!(stats_null_median, "median", &[""], "");
 stats_tests!(stats_null_quartiles, "quartiles", &[""], ",,,,,");
-stats_tests!(stats_null_mode, "mode", &[""], "N/A");
+stats_tests!(stats_null_mode, "mode", &[""], "NULL");
 stats_tests!(stats_null_antimode, "antimode", &[""], "*ALL");
 stats_tests!(stats_null_range, "range", &[""], "N/A");
 stats_tests!(stats_null_sparsity, "sparsity", &[""], "1.0");
@@ -455,7 +455,7 @@ stats_tests!(
     stats_includenulls_null_mode,
     "mode",
     &[""],
-    "N/A",
+    "NULL",
     true,
     false
 );
@@ -10282,5 +10282,33 @@ fn stats_antimode_null_is_rendered_per_value() {
         let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
         assert_eq!(stats_cell(&got, 1, "antimode"), antimode, "{name}");
         assert_eq!(stats_cell(&got, 1, "antimode_count"), "1", "{name}");
+    }
+}
+
+#[test]
+fn stats_null_mode_is_rendered_as_null() {
+    // An empty mode read as "no mode" (the all-distinct sentinel) when NULL was in fact the most
+    // common value; antimodes already render it as NULL.
+    for (name, weighted) in [("unweighted", false), ("weighted", true)] {
+        let wrk = Workdir::new(&format!("stats_null_mode_is_rendered_as_null_{name}"));
+        wrk.create(
+            "data.csv",
+            vec![
+                svec!["v", "w"],
+                svec!["", "1"],
+                svec!["", "1"],
+                svec!["a", "1"],
+            ],
+        );
+        let mut cmd = wrk.command("stats");
+        cmd.arg("--mode");
+        if weighted {
+            cmd.args(["--weight", "w"]);
+        }
+        cmd.arg("data.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(stats_cell(&got, 1, "mode"), "NULL", "{name}");
+        assert_eq!(stats_cell(&got, 1, "mode_count"), "1", "{name}");
+        assert_eq!(stats_cell(&got, 1, "antimode"), "a", "{name}");
     }
 }

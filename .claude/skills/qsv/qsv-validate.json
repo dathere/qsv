@@ -109,12 +109,17 @@
       {
         "flag": "--no-format-validation",
         "type": "flag",
-        "description": "Disable JSON Schema format validation. Ignores all JSON Schema \"format\" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields."
+        "description": "Disable JSON Schema format validation. Ignores all JSON Schema \"format\" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a \"format\" that qsv does not know (e.g. a typo like \"emial\") is not checked, and a warning names it."
       },
       {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers."
+      },
+      {
+        "flag": "--offline",
+        "type": "flag",
+        "description": "Do not resolve \"$ref\"s to schemas outside the JSON Schema file, whether they are URLs or local files; a schema that has them fails to compile. Use this with JSON Schemas you do not trust. The JSON Schema file itself and dynamicEnum lookups are still loaded as usual."
       },
       {
         "flag": "--pretty-json",

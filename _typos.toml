@@ -38,6 +38,7 @@ lits          = "lits"
 "SME"         = "SME"
 "sav"         = "sav"
 "missings"    = "missings"
+"emial"       = "emial"
 
 [files]
 extend-exclude = [

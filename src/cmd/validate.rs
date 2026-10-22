@@ -147,6 +147,10 @@ JSON SCHEMA SCHEMA VALIDATION SUBMODE:
      `qsv validate schema myjsonschema.json`
      // ignore format validation
      `qsv validate schema --no-format-validation myjsonschema.json`
+     // check that its patterns compile with the fancy regex engine
+     `qsv validate schema --fancy-regex myjsonschema.json`
+The schema is compiled with the same options as JSON Schema validation mode, so qsv's custom
+"currency" format is recognized and the regex options apply.
 
 RFC 4180 VALIDATION MODE:
 ========================
@@ -198,7 +202,7 @@ https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 See also https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate
 
 Usage:
-    qsv validate schema [--no-format-validation] [<json-schema>]
+    qsv validate schema [options] [<json-schema>]
     qsv validate [options] [<input>...]
     qsv validate [options] [<input>] <json-schema>
     qsv validate --help
@@ -220,6 +224,8 @@ Validate options:
                                "format" keywords (e.g. date,email, uri, currency, etc.). This is
                                useful when you want to validate the structure of the CSV file
                                w/o worrying about the data types and domain/range of the fields.
+                               Without this option, a "format" that qsv does not know (e.g. a
+                               typo like "emial") is not checked, and a warning names it.
     --fail-fast                Stops on first error.
     --valid <suffix>           Valid record output file suffix. [default: valid]
     --invalid <suffix>         Invalid record output file suffix. [default: invalid]
@@ -274,6 +280,11 @@ Validate options:
                                used by the engine's lazy Discrete Finite Automata.
                                [default: 10]
 
+    --offline                  Do not resolve "$ref"s to schemas outside the JSON Schema file,
+                               whether they are URLs or local files; a schema that has them
+                               fails to compile. Use this with JSON Schemas you do not trust.
+                               The JSON Schema file itself and dynamicEnum lookups are still
+                               loaded as usual.
     --timeout <seconds>        Timeout for downloading json-schemas on URLs and for
                                'dynamicEnum' lookups on URLs. If 0, no timeout is used.
                                [default: 30]
@@ -321,7 +332,7 @@ Common options:
 "#;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     env,
     fmt::Write as _,
     fs::File,
@@ -329,7 +340,7 @@ use std::{
     path::{Path, PathBuf},
     str,
     sync::{
-        OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicU16, Ordering},
     },
 };
@@ -341,8 +352,8 @@ use indicatif::HumanCount;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
-    EmailOptions, Keyword, PatternOptions, ValidationError, Validator,
-    json::{Json, Node, Object},
+    EmailOptions, Keyword, PatternOptions, Retrieve, ValidationError, ValidationOptions, Validator,
+    json::{Json, Node, Object, SerdeJson},
     paths::Location,
 };
 use log::debug;
@@ -414,6 +425,7 @@ struct Args {
     arg_json_schema:           Option<String>,
     flag_fancy_regex:          bool,
     flag_backtrack_limit:      usize,
+    flag_offline:              bool,
     flag_size_limit:           usize,
     flag_dfa_size_limit:       usize,
     flag_timeout:              u16,
@@ -1492,7 +1504,7 @@ fn dyn_enum_validator_factory<'a, F: Json>(
     // Only created in the URL branch; local paths don't need a temp file.
     let mut _temp_download: Option<NamedTempFile> = None;
 
-    let dynenum_path = if base_uri.starts_with("http") {
+    let dynenum_path = if is_http_url(base_uri) {
         let valid_url = reqwest::Url::parse(base_uri)
             .map_err(|e| ValidationError::custom(format!("Error parsing dynamicEnum URL: {e}")))?;
 
@@ -1610,6 +1622,133 @@ fn detect_custom_schema_features_walk(
     }
 }
 
+/// Validator options shared by `validate schema` and row validation, so the two agree on which
+/// schemas build. Row validation adds the custom keywords (`dynamicEnum`, `uniqueCombinedWith`)
+/// itself: building those loads their lookup data, which `validate schema` must not do.
+fn validator_options<'i, F: Json>(
+    args: &Args,
+    has_currency_format: bool,
+    has_email_format: bool,
+) -> ValidationOptions<'i, Arc<dyn Retrieve>, F> {
+    let mut options =
+        jsonschema::options_for::<F>().should_validate_formats(!args.flag_no_format_validation);
+
+    if has_email_format {
+        // Apply each option explicitly:
+        // - required_tld is enable-only in the jsonschema crate, but the default ("not required")
+        //   matches the docopt default (flag off), so this is fine.
+        // - display_text and domain_literal toggles are explicit in both directions so future
+        //   jsonschema default flips don't silently change behavior.
+        // - min_subdomains keeps the `> 2` guard: at the default of 2 we preserve the jsonschema
+        //   crate's lenient default rather than forcing a stricter rule. Users who want strict
+        //   enforcement set it to 3+.
+        let mut email_options = EmailOptions::default();
+        if args.flag_email_required_tld {
+            email_options = email_options.with_required_tld();
+        }
+        email_options = if args.flag_email_display_text {
+            email_options.with_display_text()
+        } else {
+            email_options.without_display_text()
+        };
+        if args.flag_email_min_subdomains > 2 {
+            email_options = email_options.with_minimum_sub_domains(args.flag_email_min_subdomains);
+        }
+        email_options = if args.flag_email_domain_literal {
+            email_options.with_domain_literal()
+        } else {
+            email_options.without_domain_literal()
+        };
+        options = options.with_email_options(email_options);
+    }
+
+    if has_currency_format {
+        options = options.with_format("currency", currency_format_checker);
+    }
+
+    if args.flag_offline {
+        options = options.offline();
+    }
+
+    if args.flag_fancy_regex {
+        options.with_pattern_options(
+            PatternOptions::fancy_regex()
+                .backtrack_limit(args.flag_backtrack_limit)
+                .size_limit(args.flag_size_limit * (1 << 20))
+                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20)),
+        )
+    } else {
+        options.with_pattern_options(
+            PatternOptions::regex()
+                .size_limit(args.flag_size_limit * (1 << 20))
+                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20)),
+        )
+    }
+}
+
+/// Warn once per `format` name the validator doesn't check. JSON Schema treats an unknown format
+/// as an annotation, so row validation accepts such schemas, but a typo (`"emial"`) would
+/// otherwise check nothing without any sign of it. `validate schema` rejects them instead.
+fn warn_unknown_formats<F: Json>(
+    schema: &Value,
+    options: &ValidationOptions<'_, Arc<dyn Retrieve>, F>,
+    validator: &Validator<F>,
+) {
+    let mut names = BTreeSet::new();
+    collect_format_names(schema, &mut names);
+    for name in names {
+        if !options.is_known_format(validator.draft(), name) {
+            wwarn!(
+                "Unknown format \"{name}\" is not checked. Run `qsv validate schema` to check the \
+                 JSON Schema, or use --no-format-validation to ignore formats."
+            );
+        }
+    }
+}
+
+fn collect_format_names<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>) {
+    collect_format_names_in(v, names, false);
+}
+
+/// `in_name_map` is true for the object under `properties` and the like, whose keys are
+/// property or definition names (a column may be called `enum`), not keywords.
+fn collect_format_names_in<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>, in_name_map: bool) {
+    match v {
+        Value::Object(map) => {
+            for (k, val) in map {
+                if !in_name_map {
+                    match k.as_str() {
+                        // instance data, not schemas: an `{"format": "csv"}` example is no format
+                        "examples" | "default" | "const" | "enum" => continue,
+                        "format" => {
+                            if let Some(s) = val.as_str() {
+                                names.insert(s);
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+                let child_is_name_map = !in_name_map
+                    && matches!(
+                        k.as_str(),
+                        "properties"
+                            | "patternProperties"
+                            | "$defs"
+                            | "definitions"
+                            | "dependentSchemas"
+                    );
+                collect_format_names_in(val, names, child_is_name_map);
+            }
+        },
+        Value::Array(arr) => {
+            for item in arr {
+                collect_format_names_in(item, names, false);
+            }
+        },
+        _ => {},
+    }
+}
+
 fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
     let mut has_currency = false;
     let mut has_email = false;
@@ -1634,6 +1773,12 @@ fn detect_custom_schema_features(schema: &Value) -> (bool, bool, bool, bool) {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
+    // set before the `schema` branch too: `load_json` reads it when the schema is a URL
+    TIMEOUT_SECS.store(
+        util::timeout_secs(args.flag_timeout)? as u16,
+        Ordering::Relaxed,
+    );
+
     // Is the JSON Schema file valid?
     if args.cmd_schema {
         if let Some(ref schema) = args.arg_json_schema {
@@ -1643,18 +1788,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             if let Err(e) = jsonschema::meta::validate(&schema_json) {
                 return fail_clierror!("JSON Schema Meta-Reference Error: {e}");
             }
-            // Now, validate the JSON Schema formats
-            let test_validator = if args.flag_no_format_validation {
-                Validator::options()
-                    .should_validate_formats(false)
-                    .should_ignore_unknown_formats(true)
-                    .build(&schema_json)
-            } else {
-                Validator::options()
-                    .should_validate_formats(true)
-                    .should_ignore_unknown_formats(false)
-                    .build(&schema_json)
-            };
+            // Now build it with the same options row validation uses, so a schema accepted
+            // here also builds there (and qsv's own `currency` format is known).
+            let (has_currency_format, has_email_format, ..) =
+                detect_custom_schema_features(&schema_json);
+            let test_validator =
+                validator_options::<SerdeJson>(&args, has_currency_format, has_email_format)
+                    .should_ignore_unknown_formats(args.flag_no_format_validation)
+                    .build(&schema_json);
             if let Err(e) = test_validator {
                 return fail_clierror!("JSON Schema Format Validation Error: {e}");
             }
@@ -1665,11 +1806,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         return fail_clierror!("No JSON Schema file supplied.");
     }
-
-    TIMEOUT_SECS.store(
-        util::timeout_secs(args.flag_timeout)? as u16,
-        Ordering::Relaxed,
-    );
 
     // Check if the last argument is a JSON schema file
     let has_json_schema = if let Some(last_input) = args.arg_input.last() {
@@ -1842,46 +1978,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
                         // compile JSON Schema
                         // `CsvJson` reads fields straight out of the `ByteRecord`.
-                        let mut validator_options = jsonschema::options_for::<CsvJson>()
-                            .should_validate_formats(!args.flag_no_format_validation);
-
-                        // Add custom validators based on pre-checked flags
-                        if has_email_format {
-                            // Apply each option explicitly:
-                            // - required_tld is enable-only in the jsonschema crate, but the
-                            //   default ("not required") matches the docopt default (flag off),
-                            //   so this is fine.
-                            // - display_text and domain_literal toggles are explicit in both
-                            //   directions so future jsonschema default flips don't silently
-                            //   change behavior.
-                            // - min_subdomains keeps the `> 2` guard: at the default of 2 we
-                            //   preserve the jsonschema crate's lenient default rather than
-                            //   forcing a stricter rule. Users who want strict enforcement
-                            //   set it to 3+.
-                            let mut email_options = EmailOptions::default();
-                            if args.flag_email_required_tld {
-                                email_options = email_options.with_required_tld();
-                            }
-                            email_options = if args.flag_email_display_text {
-                                email_options.with_display_text()
-                            } else {
-                                email_options.without_display_text()
-                            };
-                            if args.flag_email_min_subdomains > 2 {
-                                email_options = email_options
-                                    .with_minimum_sub_domains(args.flag_email_min_subdomains);
-                            }
-                            email_options = if args.flag_email_domain_literal {
-                                email_options.with_domain_literal()
-                            } else {
-                                email_options.without_domain_literal()
-                            };
-                            validator_options = validator_options.with_email_options(email_options);
-                        }
-
-                        if has_currency_format {
-                            validator_options = validator_options.with_format("currency", currency_format_checker);
-                        }
+                        let mut validator_options = validator_options::<CsvJson>(
+                            &args,
+                            has_currency_format,
+                            has_email_format,
+                        );
 
                         if has_dynamic_enum {
                             validator_options = validator_options.with_keyword("dynamicEnum", dyn_enum_validator_factory::<CsvJson>);
@@ -1891,22 +1992,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory::<CsvJson>);
                         }
 
-                        if args.flag_fancy_regex {
-                            let fancy_regex_options = PatternOptions::fancy_regex()
-                                .backtrack_limit(args.flag_backtrack_limit)
-                                .size_limit(args.flag_size_limit * (1 << 20))
-                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
-                            validator_options = validator_options.with_pattern_options(fancy_regex_options);
-                        } else {
-                            let regex_options = PatternOptions::regex()
-                                .size_limit(args.flag_size_limit * (1 << 20))
-                                .dfa_size_limit(args.flag_dfa_size_limit * (1 << 20));
-                            validator_options = validator_options.with_pattern_options(regex_options);
-                        }
-
                         drop_required_headers(&mut json, &headers);
                         match validator_options.build(&json) {
-                            Ok(schema) => (json, schema, has_unique_combined),
+                            Ok(schema) => {
+                                if !args.flag_no_format_validation {
+                                    warn_unknown_formats(&json, &validator_options, &schema);
+                                }
+                                (json, schema, has_unique_combined)
+                            },
                             Err(e) => {
                                 return fail_clierror!(r"Cannot compile JSONschema. error: {e}
 Try running `qsv validate schema {}` to check the JSON Schema file.", json_schema_path.to_string_lossy());
@@ -2056,7 +2149,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     for e in errors {
                         error_messages.push(format!(
                             "{row_number_string}\t{field}\t{error}",
-                            field = e.instance_location.as_str().trim_start_matches('/'),
+                            field = instance_field(e.instance_location),
                             error = e.error
                         ));
                     }
@@ -2170,6 +2263,21 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         winfo!("All {} records valid.", HumanCount(row_number));
     }
     Ok(())
+}
+
+/// The column an error points at, as the plain column name. Instance locations are JSON
+/// Pointers, so `/` and `~` inside a name arrive escaped (`~1`, `~0`). A CSV row is a flat
+/// object, so the pointer is at most one segment; it is decoded here rather than with
+/// `Location::segments()`, which would turn a column named `01` into the array index `1`.
+/// `~1` must be decoded before `~0`, or a literal `~1` in a name (escaped `~01`) becomes `/`.
+fn instance_field(location: &Location) -> String {
+    let pointer = location.as_str();
+    let field = pointer.strip_prefix('/').unwrap_or(pointer);
+    if field.contains('~') {
+        field.replace("~1", "/").replace("~0", "~")
+    } else {
+        field.to_string()
+    }
 }
 
 /// Validate multiple files in RFC 4180 mode with Extended Input Support
@@ -2987,9 +3095,17 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
     Ok(header_types)
 }
 
+/// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such
+/// as `httpd.schema.json`, which were then fetched as URLs.
+fn is_http_url(uri: &str) -> bool {
+    let scheme_end = uri.find("://").unwrap_or(0);
+    let scheme = &uri[..scheme_end];
+    scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+}
+
 fn load_json(uri: &str) -> Result<String, String> {
     let json_string = match uri {
-        url if url.to_lowercase().starts_with("http") => {
+        url if is_http_url(url) => {
             let client = match util::create_reqwest_blocking_client(
                 None,
                 TIMEOUT_SECS.load(Ordering::Relaxed),
@@ -3073,7 +3189,7 @@ fn validate_json_instance(
             schema_compiled
                 .evaluate(instance)
                 .iter_errors()
-                .map(|e| (e.instance_location.to_string(), e.error.to_string()))
+                .map(|e| (instance_field(e.instance_location), e.error.to_string()))
                 .collect(),
         )
     }
@@ -3177,11 +3293,11 @@ mod tests_for_csv_to_json_conversion {
             results,
             vec![Some(vec![
                 (
-                    "/C".to_owned(),
+                    "C".to_owned(),
                     "\"3.0e8\" is not of type \"integer\"".to_owned()
                 ),
                 (
-                    "/D".to_owned(),
+                    "D".to_owned(),
                     "\"yes\" is not of type \"boolean\"".to_owned()
                 ),
             ])]
@@ -3255,7 +3371,7 @@ mod tests_for_csv_to_json_conversion {
         assert_eq!(
             results,
             vec![Some(vec![(
-                "/n".to_owned(),
+                "n".to_owned(),
                 "9007199254740993 is greater than the maximum of 9007199254740992".to_owned()
             )])]
         );
@@ -3352,7 +3468,7 @@ mod tests_for_schema_validation {
         assert_eq!(
             results,
             vec![Some(vec![(
-                "/name".to_string(),
+                "name".to_string(),
                 "\"X\" is shorter than 2 characters".to_string()
             )])]
         );
@@ -3420,7 +3536,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
     assert_eq!(
         results,
         vec![Some(vec![(
-            "/fee".to_owned(),
+            "fee".to_owned(),
             "\"Ð 100.00\" is not a \"currency\"".to_owned()
         )])]
     );
@@ -3443,11 +3559,11 @@ fn test_validate_currency_email_dynamicenum_validator() {
         results,
         vec![Some(vec![
             (
-                "/fee".to_owned(),
+                "fee".to_owned(),
                 "\"Ð 100.00\" is not a \"currency\"".to_owned()
             ),
             (
-                "/email".to_owned(),
+                "email".to_owned(),
                 "\"thisisnotanemail\" is not a \"email\"".to_owned()
             )
         ])]
@@ -3484,11 +3600,11 @@ fn test_validate_currency_email_dynamicenum_validator() {
                 result,
                 Some(vec![
                     (
-                        "/name".to_owned(),
+                        "name".to_owned(),
                         "\"T\" is shorter than 2 characters".to_owned()
                     ),
                     (
-                        "/agency".to_owned(),
+                        "agency".to_owned(),
                         "\"MODA\" is not a valid dynamicEnum value".to_owned()
                     )
                 ])
@@ -3496,7 +3612,7 @@ fn test_validate_currency_email_dynamicenum_validator() {
             4 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/name".to_owned(),
+                    "name".to_owned(),
                     "\"X\" is shorter than 2 characters".to_owned()
                 )])
             ),
@@ -3504,14 +3620,14 @@ fn test_validate_currency_email_dynamicenum_validator() {
             6 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/agency".to_owned(),
+                    "agency".to_owned(),
                     "\"NYFD\" is not a valid dynamicEnum value".to_owned()
                 )])
             ),
             7 => assert_eq!(
                 result,
                 Some(vec![(
-                    "/fee".to_owned(),
+                    "fee".to_owned(),
                     "\"WAX 100.000,00\" is not a \"currency\"".to_owned()
                 )])
             ),
@@ -3519,15 +3635,15 @@ fn test_validate_currency_email_dynamicenum_validator() {
                 result,
                 Some(vec![
                     (
-                        "/fee".to_owned(),
+                        "fee".to_owned(),
                         "\"B 1,000,000\" is not a \"currency\"".to_owned()
                     ),
                     (
-                        "/email".to_owned(),
+                        "email".to_owned(),
                         "\"71076.964-compuserve\" is not a \"email\"".to_owned()
                     ),
                     (
-                        "/agency".to_owned(),
+                        "agency".to_owned(),
                         "\"ABCD\" is not a valid dynamicEnum value".to_owned()
                     )
                 ])

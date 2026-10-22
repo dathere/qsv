@@ -3616,3 +3616,347 @@ fn validate_with_multiple_formats_strict() {
     ];
     assert_eq!(invalid_records, expected_invalid);
 }
+
+#[test]
+fn validate_idn_formats_are_checked() {
+    // jsonschema 0.52 moved idn-hostname/idn-email behind its `idna` feature; without it they
+    // become unknown formats and every value is accepted.
+    let wrk = Workdir::new("validate_idn_formats_are_checked").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "host", "mail"],
+            svec!["1", "bücher.example", "jörg@bücher.example"],
+            svec!["2", "not-a-host..bad!", "jörg@bücher.example"],
+            svec!["3", "bücher.example", "not an email"],
+        ],
+    );
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "host": { "type": "string", "format": "idn-hostname" },
+                "mail": { "type": "string", "format": "idn-email" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    assert_eq!(
+        invalid_records,
+        vec![
+            svec!["2", "not-a-host..bad!", "jörg@bücher.example"],
+            svec!["3", "bücher.example", "not an email"],
+        ]
+    );
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n2\thost\t\"not-a-host..bad!\" is not a \
+         \"idn-hostname\"\n3\tmail\t\"not an email\" is not a \"idn-email\"\n"
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+}
+
+#[test]
+fn validate_error_field_names_are_unescaped() {
+    // instance locations are JSON Pointers, so `/` and `~` in a column name come back
+    // escaped as `~1` and `~0`; the report must show the real column name. A numeric-looking
+    // name (`01`) must stay a name, and a literal `~1` (escaped `~01`) must not become `/`.
+    let wrk = Workdir::new("validate_error_field_names_are_unescaped").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a/b", "c~d", "01", "e~1f", "plain"],
+            svec!["x", "1", "2", "3", "ok"],
+        ],
+    );
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "a/b": { "type": "string", "minLength": 5 },
+                "c~d": { "type": "string", "minLength": 5 },
+                "01": { "type": "string", "minLength": 5 },
+                "e~1f": { "type": "string", "minLength": 5 },
+                "plain": { "type": "string" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    let expected = [
+        "row_number\tfield\terror",
+        "1\ta/b\t\"x\" is shorter than 5 characters",
+        "1\tc~d\t\"1\" is shorter than 5 characters",
+        "1\t01\t\"2\" is shorter than 5 characters",
+        "1\te~1f\t\"3\" is shorter than 5 characters",
+        "",
+    ]
+    .join("\n");
+    assert_eq!(validation_errors, expected);
+}
+
+#[test]
+fn validate_schema_subcommand_matches_row_validation_options() {
+    // `validate schema` must build the schema the way row validation does: qsv's own
+    // `currency` format is known, and patterns compile with the selected regex engine.
+    let wrk =
+        Workdir::new("validate_schema_subcommand_matches_row_validation_options").flexible(true);
+    wrk.create_from_string(
+        "currency.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "fee": { "type": "string", "format": "currency" }
+            }
+        }"#,
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("currency.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+
+    // a lookahead only compiles with the fancy regex engine
+    wrk.create_from_string(
+        "lookahead.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "code": { "type": "string", "pattern": "^(?=.*[0-9])[A-Z0-9]+$" }
+            }
+        }"#,
+    );
+    wrk.create("data.csv", vec![svec!["code"], svec!["AB1"]]);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("lookahead.json");
+    wrk.assert_err(&mut cmd);
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("lookahead.json");
+    wrk.assert_err(&mut cmd);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("--fancy-regex").arg("lookahead.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv")
+        .arg("--fancy-regex")
+        .arg("lookahead.json");
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn validate_unknown_format_warns() {
+    // JSON Schema treats an unknown format as an annotation, so row validation still runs,
+    // but a typo would check nothing silently: it must be named in a warning.
+    let wrk = Workdir::new("validate_unknown_format_warns").flexible(true);
+    wrk.create("data.csv", vec![svec!["mail"], svec!["not an email"]]);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "mail": { "type": "string", "format": "emial" },
+                "other": { "type": "string", "format": "email" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.contains("Unknown format \"emial\" is not checked"),
+        "unexpected stderr: {got}"
+    );
+    assert!(!got.contains("\"email\""), "known format warned: {got}");
+    assert!(
+        got.contains("All 1 records valid."),
+        "unexpected stderr: {got}"
+    );
+
+    // `validate schema` still rejects it
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    // with format validation off there is nothing to warn about
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv")
+        .arg("--no-format-validation")
+        .arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(!got.contains("Unknown format"), "unexpected stderr: {got}");
+}
+
+#[test]
+fn validate_offline_refuses_external_refs() {
+    let wrk = Workdir::new("validate_offline_refuses_external_refs").flexible(true);
+    wrk.create("data.csv", vec![svec!["n"], svec!["ab"]]);
+    wrk.create_from_string("name.json", r#"{ "type": "string", "minLength": 3 }"#);
+    // `Url::from_file_path` gives a valid file URI on Windows too (`file:///C:/...`)
+    let file_uri = url::Url::from_file_path(wrk.path("name.json")).unwrap();
+    wrk.create_from_string(
+        "fileref.json",
+        &format!(
+            r#"{{
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {{ "n": {{ "$ref": "{file_uri}" }} }}
+            }}"#
+        ),
+    );
+    // nothing listens on port 1, so any attempt to fetch it would fail differently
+    wrk.create_from_string(
+        "remote_ref.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": { "n": { "$ref": "http://127.0.0.1:1/name.json" } }
+        }"#,
+    );
+
+    // without --offline, the local file $ref resolves and is enforced
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("fileref.json");
+    wrk.assert_err(&mut cmd);
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n1\tn\t\"ab\" is shorter than 3 characters\n"
+    );
+
+    for schema in ["fileref.json", "remote_ref.json"] {
+        let mut cmd = wrk.command("validate");
+        cmd.arg("data.csv").arg("--offline").arg(schema);
+        let got: String = wrk.output_stderr(&mut cmd);
+        assert!(
+            got.contains("Cannot compile JSONschema") && got.contains("Retrieval is disabled"),
+            "{schema}: unexpected stderr: {got}"
+        );
+
+        let mut cmd = wrk.command("validate");
+        cmd.arg("schema").arg("--offline").arg(schema);
+        let got: String = wrk.output_stderr(&mut cmd);
+        assert!(
+            got.contains("Retrieval is disabled"),
+            "schema {schema}: unexpected stderr: {got}"
+        );
+    }
+}
+
+#[test]
+fn validate_local_files_named_http_are_not_urls() {
+    // a local schema or dynamicEnum lookup whose name starts with "http" used to be
+    // fetched as a URL
+    let wrk = Workdir::new("validate_local_files_named_http_are_not_urls").flexible(true);
+    wrk.create("data.csv", vec![svec!["code"], svec!["200"], svec!["999"]]);
+    wrk.create(
+        "http_codes.csv",
+        vec![svec!["code"], svec!["200"], svec!["404"]],
+    );
+    wrk.create_from_string(
+        "httpd.schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "code": { "type": "string", "dynamicEnum": "http_codes.csv" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("httpd.schema.json");
+    wrk.assert_err(&mut cmd);
+    let validation_errors: String = wrk.from_str(&wrk.path("data.csv.validation-errors.tsv"));
+    assert_eq!(
+        validation_errors,
+        "row_number\tfield\terror\n2\tcode\t\"999\" is not a valid dynamicEnum value\n"
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("httpd.schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(got, "Valid JSON Schema.\n");
+}
+
+#[test]
+fn validate_unknown_format_warning_ignores_instance_data() {
+    // `examples`, `default`, `const` and `enum` hold data, not schemas; a property *named*
+    // `enum` is still a schema and its format is checked.
+    let wrk = Workdir::new("validate_unknown_format_warning_ignores_instance_data").flexible(true);
+    wrk.create("data.csv", vec![svec!["meta", "enum"], svec!["x", "y"]]);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "examples": [{ "format": "csv" }],
+            "properties": {
+                "meta": {
+                    "type": "string",
+                    "default": { "format": "tsv" },
+                    "enum": ["x", { "format": "ods" }]
+                },
+                "enum": { "type": "string", "format": "emial" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.contains("Unknown format \"emial\" is not checked"),
+        "unexpected stderr: {got}"
+    );
+    for data in ["csv", "tsv", "ods"] {
+        assert!(
+            !got.contains(&format!("\"{data}\"")),
+            "warned about instance data {data}: {got}"
+        );
+    }
+}
+
+#[test]
+fn validate_schema_subcommand_honors_timeout() {
+    // `validate schema` accepts [options]; --timeout must be read there too, not ignored
+    let wrk = Workdir::new("validate_schema_subcommand_honors_timeout").flexible(true);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{ "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object" }"#,
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema")
+        .arg("--timeout")
+        .arg("4000")
+        .arg("schema.json");
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Timeout cannot be more than 3,600 seconds"),
+        "unexpected stderr: {got}"
+    );
+}

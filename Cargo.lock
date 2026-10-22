@@ -4334,6 +4334,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "fraction",
  "getrandom 0.3.4",
+ "idna",
  "itoa",
  "jsonschema-regex",
  "jsonschema-value",

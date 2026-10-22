@@ -161,6 +161,10 @@ JSON SCHEMA SCHEMA VALIDATION SUBMODE:
 `qsv validate schema myjsonschema.json`
 // ignore format validation
 `qsv validate schema --no-format-validation myjsonschema.json`
+// check that its patterns compile with the fancy regex engine
+`qsv validate schema --fancy-regex myjsonschema.json`
+The schema is compiled with the same options as JSON Schema validation mode, so qsv's custom
+"currency" format is recognized and the regex options apply.
 
 ### Rfc 4180 Validation Mode:
 
@@ -246,7 +250,7 @@ See also <https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate>
 ## Usage [↩](#nav)
 
 ```console
-qsv validate schema [--no-format-validation] [<json-schema>]
+qsv validate schema [options] [<json-schema>]
 qsv validate [options] [<input>...]
 qsv validate [options] [<input>] <json-schema>
 qsv validate --help
@@ -268,7 +272,7 @@ qsv validate --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑trim`&nbsp; | flag | Trim leading and trailing whitespace from fields before validating. |  |
-| &nbsp;`‑‑no‑format‑validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. |  |
+| &nbsp;`‑‑no‑format‑validation`&nbsp; | flag | Disable JSON Schema format validation. Ignores all JSON Schema "format" keywords (e.g. date,email, uri, currency, etc.). This is useful when you want to validate the structure of the CSV file w/o worrying about the data types and domain/range of the fields. Without this option, a "format" that qsv does not know (e.g. a typo like "emial") is an error rather than being silently ignored. |  |
 | &nbsp;`‑‑fail‑fast`&nbsp; | flag | Stops on first error. |  |
 | &nbsp;`‑‑valid`&nbsp; | string | Valid record output file suffix. | `valid` |
 | &nbsp;`‑‑invalid`&nbsp; | string | Invalid record output file suffix. | `invalid` |
@@ -296,6 +300,7 @@ qsv validate --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑size‑limit`&nbsp; | integer | Set the approximate size limit, in megabytes, of a compiled regex. | `50` |
 | &nbsp;`‑‑dfa‑size‑limit`&nbsp; | integer | Set the approximate capacity, in megabytes, of the cache of transitions used by the engine's lazy Discrete Finite Automata. | `10` |
+| &nbsp;`‑‑offline`&nbsp; | flag | Do not resolve "$ref"s to schemas outside the JSON Schema file, whether they are URLs or local files; a schema that has them fails to compile. Use this with JSON Schemas you do not trust. The JSON Schema file itself and dynamicEnum lookups are still loaded as usual. |  |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading json-schemas on URLs and for 'dynamicEnum' lookups on URLs. If 0, no timeout is used. | `30` |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The directory to use for caching downloaded dynamicEnum resources. If the directory does not exist, qsv will attempt to create it. If the QSV_CACHE_DIR envvar is set, it will be used instead. Not available on qsvlite. | `~/.qsv-cache` |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | The URL of the CKAN API to use for downloading dynamicEnum resources with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. Not available on qsvlite. | `https://data.dathere.com/api/3/action` |

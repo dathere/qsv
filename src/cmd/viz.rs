@@ -2628,7 +2628,15 @@ fn build_plot(
         },
     };
 
-    let mut layout = build_layout(args, default_x, default_y)?;
+    // category labels (heatmap rows/columns, box/violin groups) must not be autotyped: plotly
+    // types a mostly-numeric axis linear and drops the non-numeric labels (see
+    // `numeric_first_order`).
+    let category_axes = match chart_kind(args) {
+        Chart::Heatmap => (true, true),
+        Chart::Box | Chart::Violin => (args.flag_x.is_some(), false),
+        _ => (false, false),
+    };
+    let mut layout = build_layout(args, default_x, default_y, category_axes)?;
     if let Some(menu) = sankey_order_menu {
         layout = layout.update_menus(vec![menu]);
     }
@@ -12055,6 +12063,50 @@ fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
     Ok((hist, label))
 }
 
+/// Display order for distinct category labels, as a permutation (`order[new] = old`): labels
+/// that parse as finite numbers come first in ascending numeric order, and every other label
+/// keeps its first-seen order after them. Plotly autotypes an axis linear when most of its
+/// values look numeric and then silently drops the rest ("Unknown" beside "1", "2", "3"), so
+/// these axes are typed category instead. A category axis draws categories in the order the data
+/// first shows them, and sorting with this keeps the numeric order a linear axis used to give
+/// numeric-looking labels ("2", "10") without reordering text labels the CSV author chose.
+fn numeric_first_order(distinct: &[String]) -> Vec<usize> {
+    let keys: Vec<Option<f64>> = distinct.iter().map(|l| parse_finite_f64(l)).collect();
+    let mut order: Vec<usize> = (0..distinct.len()).collect();
+    order.sort_by(|&a, &b| match (keys[a], keys[b]) {
+        (Some(x), Some(y)) => x.total_cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+    order
+}
+
+/// Reorders paired per-point `(group, value)` data so groups first appear in
+/// `numeric_first_order`, the order a category axis then draws them in. The sort is stable and
+/// only moves whole points, so each group's distribution (box quartiles, violin KDE) is
+/// unchanged.
+fn sort_points_by_group(groups: &mut Vec<String>, values: &mut Vec<f64>) {
+    let mut distinct: Vec<String> = Vec::new();
+    let mut first_seen: HashMap<&str, usize> = HashMap::new();
+    for g in groups.iter() {
+        first_seen.entry(g.as_str()).or_insert_with(|| {
+            distinct.push(g.clone());
+            distinct.len() - 1
+        });
+    }
+    let mut rank = vec![0_usize; distinct.len()];
+    for (new, old) in numeric_first_order(&distinct).into_iter().enumerate() {
+        rank[old] = new;
+    }
+    let mut idx: Vec<usize> = (0..groups.len()).collect();
+    idx.sort_by_key(|&i| rank[first_seen[groups[i].as_str()]]);
+    let sorted_groups: Vec<String> = idx.iter().map(|&i| groups[i].clone()).collect();
+    let sorted_values: Vec<f64> = idx.iter().map(|&i| values[i]).collect();
+    *groups = sorted_groups;
+    *values = sorted_values;
+}
+
 fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
@@ -12090,6 +12142,7 @@ fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)>
     let y_label = col_label(&headers, y_idx, nh);
     let x_label = group_idx.map(|i| col_label(&headers, i, nh));
     let trace: Box<dyn Trace> = if group_idx.is_some() {
+        sort_points_by_group(&mut groups, &mut ys);
         BoxPlot::new_xy(groups, ys)
             .quartile_method(QuartileMethod::Linear)
             .box_points(box_points)
@@ -12134,6 +12187,7 @@ fn build_violin(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String
     let y_label = col_label(&headers, y_idx, nh);
     let x_label = group_idx.map(|i| col_label(&headers, i, nh));
     let trace: Box<dyn Trace> = if group_idx.is_some() {
+        sort_points_by_group(&mut groups, &mut ys);
         Violin::new_xy(groups, ys)
             .quartile_method(QuartileMethod::Linear)
             .box_plot(ViolinBox::new().visible(true))
@@ -12960,7 +13014,7 @@ fn build_barpolar_plot(args: &Args) -> CliResult<Plot> {
     }
     .direction(PolarDirection::Clockwise)
     .rotation(90.0);
-    let layout = build_layout(args, None, None)?.polar(
+    let layout = build_layout(args, None, None, (false, false))?.polar(
         LayoutPolar::new()
             .bar_mode(PolarBarMode::Stack)
             .angular_axis(angular),
@@ -13119,7 +13173,7 @@ fn build_ternary_plot(args: &Args) -> CliResult<Plot> {
             .title(Title::with_text(label))
             .tick_format(".0%")
     };
-    let layout = build_layout(args, None, None)?.ternary(
+    let layout = build_layout(args, None, None, (false, false))?.ternary(
         LayoutTernary::new()
             .a_axis(axis(a_label))
             .b_axis(axis(b_label))
@@ -13298,11 +13352,23 @@ fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>
             cell_count
         );
     }
+    // both axes are category axes (see `build_layout`), drawn in array order: put the categories
+    // in numeric-first order, and map each first-seen index to its new position.
+    let reorder = |cats: Vec<String>| -> (Vec<String>, Vec<usize>) {
+        let order = numeric_first_order(&cats);
+        let mut rank = vec![0_usize; cats.len()];
+        for (new, &old) in order.iter().enumerate() {
+            rank[old] = new;
+        }
+        (order.iter().map(|&i| cats[i].clone()).collect(), rank)
+    };
+    let (x_cats, x_rank) = reorder(x_cats);
+    let (y_cats, y_rank) = reorder(y_cats);
     // z matrix indexed [y][x]; missing cells are NaN (serialized as null -> rendered as a gap)
     let mut z: Vec<Vec<f64>> = vec![vec![f64::NAN; x_cats.len()]; y_cats.len()];
     for ((yi, xi), (sum, cnt)) in cells {
         if cnt > 0.0 {
-            z[yi][xi] = sum / cnt;
+            z[y_rank[yi]][x_rank[xi]] = sum / cnt;
         }
     }
     let x_label = col_label(&headers, x_idx, nh);
@@ -18637,7 +18703,9 @@ fn build_layout(
     args: &Args,
     default_x: Option<String>,
     default_y: Option<String>,
+    category_axes: (bool, bool),
 ) -> CliResult<plotly::Layout> {
+    let (x_category, y_category) = category_axes;
     let mut layout = plotly::Layout::new();
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -18652,8 +18720,11 @@ fn build_layout(
         .flag_x_title
         .clone()
         .or_else(|| default_x.as_deref().map(escape_hover));
-    if x_title.is_some() || args.flag_rangeslider {
+    if x_title.is_some() || args.flag_rangeslider || x_category {
         let mut x = Axis::new();
+        if x_category {
+            x = x.type_(AxisType::Category);
+        }
         if let Some(t) = x_title {
             x = x.title(Title::with_text(t));
         }
@@ -18668,8 +18739,11 @@ fn build_layout(
         .flag_y_title
         .clone()
         .or_else(|| default_y.as_deref().map(escape_hover));
-    if y_title.is_some() || args.flag_y_range.is_some() {
+    if y_title.is_some() || args.flag_y_range.is_some() || y_category {
         let mut y = Axis::new();
+        if y_category {
+            y = y.type_(AxisType::Category);
+        }
         if let Some(t) = y_title {
             y = y.title(Title::with_text(t));
         }
@@ -39176,7 +39250,9 @@ fn panel_trace_grouped_violin(
         // distribution-by-category overview: one KDE silhouette per category (categories on
         // the shared x-axis, the measure on y). A single `new_xy` trace, so it composes with
         // the typed subplot grid and static image export like the MeasureByDim bar.
-        let mut v = Violin::new_xy(groups.clone(), values.clone())
+        let (mut groups, mut values) = (groups.clone(), values.clone());
+        sort_points_by_group(&mut groups, &mut values);
+        let mut v = Violin::new_xy(groups, values)
             .quartile_method(QuartileMethod::Linear)
             .box_plot(ViolinBox::new().visible(true))
             .mean_line(MeanLine::new().visible(true))
@@ -40522,17 +40598,23 @@ fn smart_grid_parts(
             if y_log {
                 y = y.type_(AxisType::Log);
             }
+            let mut x = styled_x_axis(
+                is_box,
+                is_date,
+                is_category,
+                x_log,
+                theme,
+                freq_bar_tick_text(panel, freq),
+            );
+            let (x_cat, y_cat) = panel_category_axes(&panel.kind);
+            if x_cat {
+                x = x.type_(AxisType::Category);
+            }
+            if y_cat {
+                y = y.type_(AxisType::Category);
+            }
             (
-                styled_x_axis(
-                    is_box,
-                    is_date,
-                    is_category,
-                    x_log,
-                    theme,
-                    freq_bar_tick_text(panel, freq),
-                )
-                .domain(&geom.x_domain)
-                .anchor(yref.clone()),
+                x.domain(&geom.x_domain).anchor(yref.clone()),
                 y.domain(&geom.y_domain).anchor(xref.clone()),
             )
         };
@@ -42256,17 +42338,22 @@ fn inline_panel_plot_cartesian(
         if y_log {
             y = y.type_(AxisType::Log);
         }
-        (
-            styled_x_axis(
-                is_box,
-                is_date,
-                is_category,
-                x_log,
-                theme,
-                freq_bar_tick_text(panel, freq),
-            ),
-            y,
-        )
+        let mut x = styled_x_axis(
+            is_box,
+            is_date,
+            is_category,
+            x_log,
+            theme,
+            freq_bar_tick_text(panel, freq),
+        );
+        let (x_cat, y_cat) = panel_category_axes(&panel.kind);
+        if x_cat {
+            x = x.type_(AxisType::Category);
+        }
+        if y_cat {
+            y = y.type_(AxisType::Category);
+        }
+        (x, y)
     };
     let mut layout = Layout::new()
         .show_legend(false)
@@ -44344,6 +44431,19 @@ fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
                 .collect(),
         ),
         _ => None,
+    }
+}
+
+/// Which axes of a Data Schematic panel carry category labels that must not be autotyped:
+/// `(x, y)`. Plotly types an axis linear when most labels look numeric, then drops the rest —
+/// a grouped violin over "1", "2", "3", "Unknown" loses the "Unknown" group, and a correlation
+/// matrix over columns named "2019", "2020" misplaces its cells and in-cell `r` labels (those
+/// annotations are placed by category index).
+fn panel_category_axes(kind: &PanelKind) -> (bool, bool) {
+    match kind {
+        PanelKind::GroupedViolin { .. } => (true, false),
+        PanelKind::CorrHeatmap { .. } | PanelKind::AssocHeatmap { .. } => (true, true),
+        _ => (false, false),
     }
 }
 

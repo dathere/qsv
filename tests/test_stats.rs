@@ -10121,14 +10121,16 @@ fn stats_weighted_infer_boolean_uses_the_weighted_values() {
 #[test]
 fn stats_weighted_all_distinct_values_still_report_the_heaviest_mode() {
     // Every value is distinct, but the weights are not: `a` carries 5 of the 7 total weight, so
-    // it is the weighted mode. The *ALL short-circuit only applies when every weight ties.
-    for (name, rows, mode, occurrences, antimode) in [
+    // it is the weighted mode. The *ALL short-circuit only applies when every weight ties, and
+    // then each value's occurrences is that shared weight.
+    for (name, rows, mode, occurrences, antimode, antimode_occurrences) in [
         (
             "unequal",
             [["a", "5"], ["b", "1"], ["c", "1"]],
             "a",
             "5",
             "b|c",
+            "1",
         ),
         (
             "equal",
@@ -10136,6 +10138,16 @@ fn stats_weighted_all_distinct_values_still_report_the_heaviest_mode() {
             "",
             "0",
             "*ALL",
+            "2",
+        ),
+        // occurrences above u32::MAX must not saturate at 4294967295
+        (
+            "huge",
+            [["a", "5000000000"], ["b", "1"], ["c", "1"]],
+            "a",
+            "5000000000",
+            "b|c",
+            "1",
         ),
     ] {
         let wrk = Workdir::new(&format!(
@@ -10155,7 +10167,29 @@ fn stats_weighted_all_distinct_values_still_report_the_heaviest_mode() {
             "{name}"
         );
         assert_eq!(stats_cell(&got, 1, "antimode"), antimode, "{name}");
+        assert_eq!(
+            stats_cell(&got, 1, "antimode_occurrences"),
+            antimode_occurrences,
+            "{name}"
+        );
     }
+}
+
+#[test]
+fn stats_antimodes_len_zero_disables_truncation_without_panicking() {
+    // QSV_ANTIMODES_LEN=0 is documented as "disable length limiting"; it maps to usize::MAX,
+    // which was also used as a String capacity and aborted with a capacity overflow.
+    let wrk = Workdir::new("stats_antimodes_len_zero_disables_truncation_without_panicking");
+    wrk.create(
+        "data.csv",
+        vec![svec!["v"], svec!["a"], svec!["a"], svec!["b"], svec!["c"]],
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--mode")
+        .env("QSV_ANTIMODES_LEN", "0")
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stats_cell(&got, 1, "antimode"), "b|c");
 }
 
 #[test]

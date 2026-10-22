@@ -4975,7 +4975,9 @@ fn format_antimodes(
     max_len: usize,
     visualize_ws: bool,
 ) -> String {
-    let mut antimodes_list = String::with_capacity(max_len);
+    // max_len is usize::MAX when QSV_ANTIMODES_LEN=0 disables truncation, so it can't be the
+    // capacity hint
+    let mut antimodes_list = String::new();
 
     // We only store the first MAX_ANTIMODES antimodes
     // so if antimodes_count > MAX_ANTIMODES, add the "*PREVIEW: " prefix
@@ -5776,17 +5778,20 @@ impl Stats {
                     // IS the mode.
                     let unique_count = weighted_modes_map.len() as u64;
                     if unique_count == record_count && (max_weight - min_weight).abs() < 1e-10 {
-                        // all values unique
+                        // all values unique, all with the same weight
+                        #[allow(clippy::cast_possible_truncation)]
+                        let common_weight = min_weight.round() as u64;
                         mc_pieces.extend_from_slice(
                             // modes - short-circuit modes calculation as there is none
                             &[
                                 EMPTY_STRING,
                                 "0".to_string(),
                                 "0".to_string(),
-                                // antimodes - instead of returning everything, just say *ALL
+                                // antimodes - instead of returning everything, just say *ALL;
+                                // each value's occurrences is the shared weight
                                 "*ALL".to_string(),
                                 "0".to_string(),
-                                "1".to_string(),
+                                itoa_buf.format(common_weight).to_owned(),
                             ],
                         );
                     } else {
@@ -5859,9 +5864,9 @@ impl Stats {
                         // For weighted modes, mode_occurrences is the max weight (rounded)
                         // For weighted antimodes, antimode_occurrences is the min weight (rounded)
                         #[allow(clippy::cast_possible_truncation)]
-                        let mode_occurrences = max_weight.round() as u32;
+                        let mode_occurrences = max_weight.round() as u64;
                         #[allow(clippy::cast_possible_truncation)]
-                        let antimode_occurrences = min_weight.round() as u32;
+                        let antimode_occurrences = min_weight.round() as u64;
 
                         mc_pieces.extend_from_slice(&[
                             // mode/s

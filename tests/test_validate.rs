@@ -3749,6 +3749,43 @@ fn validate_schema_subcommand_matches_row_validation_options() {
     let got: String = wrk.stderr_on_success(&mut cmd);
     assert_eq!(got, "Valid JSON Schema.\n");
     let mut cmd = wrk.command("validate");
-    cmd.arg("data.csv").arg("--fancy-regex").arg("lookahead.json");
+    cmd.arg("data.csv")
+        .arg("--fancy-regex")
+        .arg("lookahead.json");
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn validate_unknown_format_is_an_error() {
+    // an unknown format used to be ignored during row validation, so a typo checked nothing
+    let wrk = Workdir::new("validate_unknown_format_is_an_error").flexible(true);
+    wrk.create("data.csv", vec![svec!["mail"], svec!["not an email"]]);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "mail": { "type": "string", "format": "emial" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Cannot compile JSONschema") && got.contains("emial"),
+        "unexpected stderr: {got}"
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv")
+        .arg("--no-format-validation")
+        .arg("schema.json");
     wrk.assert_success(&mut cmd);
 }

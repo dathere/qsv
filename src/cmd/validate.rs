@@ -224,6 +224,8 @@ Validate options:
                                "format" keywords (e.g. date,email, uri, currency, etc.). This is
                                useful when you want to validate the structure of the CSV file
                                w/o worrying about the data types and domain/range of the fields.
+                               Without this option, a "format" that qsv does not know (e.g. a
+                               typo like "emial") is an error rather than being silently ignored.
     --fail-fast                Stops on first error.
     --valid <suffix>           Valid record output file suffix. [default: valid]
     --invalid <suffix>         Invalid record output file suffix. [default: invalid]
@@ -1622,8 +1624,11 @@ fn validator_options<'i, F: Json>(
     has_currency_format: bool,
     has_email_format: bool,
 ) -> ValidationOptions<'i, Arc<dyn Retrieve>, F> {
-    let mut options =
-        jsonschema::options_for::<F>().should_validate_formats(!args.flag_no_format_validation);
+    // An unknown format is an error unless format validation is off: otherwise a typo
+    // (`"format": "emial"`) or a format this build lacks checks nothing, silently.
+    let mut options = jsonschema::options_for::<F>()
+        .should_validate_formats(!args.flag_no_format_validation)
+        .should_ignore_unknown_formats(args.flag_no_format_validation);
 
     if has_email_format {
         // Apply each option explicitly:
@@ -1713,7 +1718,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 detect_custom_schema_features(&schema_json);
             let test_validator =
                 validator_options::<SerdeJson>(&args, has_currency_format, has_email_format)
-                    .should_ignore_unknown_formats(args.flag_no_format_validation)
                     .build(&schema_json);
             if let Err(e) = test_validator {
                 return fail_clierror!("JSON Schema Format Validation Error: {e}");

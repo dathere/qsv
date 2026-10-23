@@ -120,7 +120,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             architecture: x86_64
             use-cross: false
-            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,readstat,to,lens,prompt,magika,color,viz_static,viz,profile,synthesize
+            addl-build-args: --features=apply,luau,fetch,foreach,self_update,geocode,polars,readstat,to,lens,prompt,magika,color,viz_static,viz,profile,synthesize,get
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:
@@ -195,7 +195,7 @@ jobs:
             use-cross: false
             musl-prep: true
             # Keep the reduced feature set used by the existing x86_64 musl release.
-            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize
+            addl-build-args: --features=apply,fetch,foreach,self_update,lens,color,synthesize,get
             # tikv-jemalloc does not build with the native ARM64 musl toolchain.
             default-features: --no-default-features
             addl-qsvlite-features:

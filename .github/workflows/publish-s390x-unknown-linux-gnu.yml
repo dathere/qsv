@@ -63,7 +63,7 @@ jobs:
             os-name: linux
             target: s390x-unknown-linux-gnu
             architecture: s390x
-            addl-build-args: --features=apply,fetch,foreach,luau,python,self_update,ui,synthesize
+            addl-build-args: --features=apply,fetch,foreach,luau,python,self_update,ui,synthesize,get
             default-features:
             addl-qsvlite-features:
             addl-qsvdp-features:

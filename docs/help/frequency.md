@@ -62,6 +62,9 @@ By default, ID columns will have an `<ALL UNIQUE>` value with count equal to
 rowcount and percentage set to 100 with a rank of 0. This is done by using the
 stats cache to fetch each column's cardinality - allowing qsv to short-circuit
 frequency compilation and eliminate the need to maintain a hashmap for ID columns.
+The stats cache counts untrimmed values, so if trimming changes any value in such
+a column (e.g. " a" and "a" would merge), that column is counted in full instead,
+and a message names it.
 
 If you wish to compile a "complete" frequency table even for ID columns, set
 QSV_STATSCACHE_MODE to "none". This will force the frequency command to compute
@@ -115,7 +118,7 @@ qsv frequency --help
 | &nbsp;`‑‑null‑text`&nbsp; | string | The text to use for NULL values. If set to the literal string "<NONE>" (case-sensitive, exact match), NULLs will not be included in the frequency table (equivalent to --no-nulls). | `(NULL)` |
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Don't include NULLs in the frequency table. This is equivalent to --null-text "<NONE>". |  |
 | &nbsp;`‑‑pct‑nulls`&nbsp; | flag | Include NULL values in percentage and rank calculations. When disabled (default), percentages are "valid percentages" calculated with NULLs excluded from the denominator, and NULL entries display empty percentage and rank values. When enabled, NULLs are included in the denominator (original behavior). Has no effect when --no-nulls is set. |  |
-| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Ignore case when computing frequencies. The stats cache's cardinality is case-sensitive, so it cannot prove that case-folded values are unique. All-unique columns are therefore counted in full instead of being short-circuited to <ALL_UNIQUE> - except Integer columns, which have no letters to fold. On large files with all-unique text columns (e.g. emails), this can use memory proportional to the row count. Exclude such columns with -s if you don't need them. |  |
+| &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Ignore case when computing frequencies. The stats cache's cardinality is case-sensitive, so it cannot prove that case-folded values are unique. All-unique columns are therefore counted in full instead of being short-circuited to <ALL_UNIQUE> - except Integer columns, which have no letters to fold (unless trimming changes one of their values). On large files with all-unique text columns (e.g. emails), this can use memory proportional to the row count. Exclude such columns with -s if you don't need them. |  |
 | &nbsp;`‑‑no‑float`&nbsp; | string | Exclude Float columns from frequency analysis. Floats typically contain continuous values where frequency tables are not meaningful. To exclude ALL Float columns, use --no-float "*" To exclude Floats except specific columns, specify a comma-separated list of Float columns to INCLUDE. e.g. "--no-float *" excludes all Floats "--no-float price,rate" excludes Floats except 'price' and 'rate' Requires stats cache for type detection. |  |
 | &nbsp;`‑‑stats‑filter`&nbsp; | string | Filter columns based on their statistics using a Luau expression. Columns where the expression evaluates to `true` are EXCLUDED. Available fields: field, type, is_ascii, cardinality, nullcount, sum, min, max, range, sort_order, min_length, max_length, mean, stddev, variance, cv, sparsity, q1, q2_median, q3, iqr, mad, skewness, mode, antimode, n_negative, n_zero, n_positive, etc. e.g. "nullcount > 1000" - exclude columns with many nulls "type == 'Float'" - exclude Float columns "cardinality > 500 and nullcount > 0" - compound expression Requires stats cache and the "luau" feature. |  |
 | &nbsp;`‑‑all‑unique‑text`&nbsp; | string | The text to use for the "<ALL_UNIQUE>" category. | `<ALL_UNIQUE>` |

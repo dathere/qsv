@@ -51,6 +51,9 @@ By default, ID columns will have an `<ALL UNIQUE>` value with count equal to
 rowcount and percentage set to 100 with a rank of 0. This is done by using the
 stats cache to fetch each column's cardinality - allowing qsv to short-circuit
 frequency compilation and eliminate the need to maintain a hashmap for ID columns.
+The stats cache counts untrimmed values, so if trimming changes any value in such
+a column (e.g. " a" and "a" would merge), that column is counted in full instead,
+and a message names it.
 
 If you wish to compile a "complete" frequency table even for ID columns, set
 QSV_STATSCACHE_MODE to "none". This will force the frequency command to compute
@@ -187,7 +190,8 @@ frequency options:
                             unique. All-unique columns are therefore counted
                             in full instead of being short-circuited to
                             <ALL_UNIQUE> - except Integer columns, which have
-                            no letters to fold. On large files with all-unique
+                            no letters to fold (unless trimming changes one
+                            of their values). On large files with all-unique
                             text columns (e.g. emails), this can use memory
                             proportional to the row count. Exclude such
                             columns with -s if you don't need them.
@@ -1489,24 +1493,18 @@ const MERGE_PARALLEL_THRESHOLD: usize = 8;
 const RANKED_ROWS_IN_FLIGHT_BUDGET: usize = 100_000;
 
 // Capacity for each column's fold accumulator in parallel_ftables: its stats-cache
-// cardinality, except 0 for columns that stay empty because counting skips them —
-// columns served from the frequency cache and, unweighted only, all-unique columns
-// (weighted counting tallies all-unique columns too). Mirrors ftables_unweighted.
-fn presized_capacities(
-    col_cardinality: &[u64],
-    skip_all_unique: bool,
-) -> impl Iterator<Item = usize> + '_ {
-    let unique_columns = if skip_all_unique {
-        UNIQUE_COLUMNS_VEC.get().map_or(&[][..], Vec::as_slice)
-    } else {
-        &[][..]
-    };
-    let cache_skip = FREQ_CACHE_SKIP.get().map_or(&[][..], Vec::as_slice);
+// cardinality, except 0 for the columns this pass SKIPS (`skip`, the same mask
+// ftables_unweighted gets): frequency-cache columns and <ALL_UNIQUE> candidates on a first
+// pass, every already-counted column on a recount. Weighted counting skips nothing.
+fn presized_capacities<'a>(
+    col_cardinality: &'a [u64],
+    skip: &'a [bool],
+) -> impl Iterator<Item = usize> + 'a {
     col_cardinality
         .iter()
         .enumerate()
         .map(move |(i, &cardinality)| {
-            if unique_columns.contains(&i) || cache_skip.get(i).copied().unwrap_or(false) {
+            if skip.get(i).copied().unwrap_or(false) {
                 0
             } else {
                 cardinality as usize
@@ -3351,18 +3349,50 @@ impl Args {
 
     pub fn sequential_ftables(&self) -> CliResult<(Headers, FTables, Option<WeightedFTables>)> {
         let mut rdr = self.rconfig().reader()?;
-        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
+        let (headers, sel, weight_col_idx, candidates) = self.sel_headers(&mut rdr)?;
+        let (skip, watch) = candidate_masks(sel.len(), &candidates);
         if weight_col_idx.is_some() {
-            let weighted =
-                self.ftables_weighted_internal(&sel, rdr.byte_records(), 1, weight_col_idx)?;
-            Ok((headers, vec![], Some(weighted)))
-        } else {
-            Ok((
-                headers,
-                self.ftables_unweighted(&sel, |record| rdr.read_byte_record(record), 1)?,
-                None,
-            ))
+            let (weighted, tainted) = self.ftables_weighted_internal(
+                &sel,
+                rdr.byte_records(),
+                1,
+                weight_col_idx,
+                &watch,
+            )?;
+            note_demoted(&headers, &tainted, self.flag_no_headers);
+            finalize_unique_columns(&candidates, &tainted)?;
+            return Ok((headers, vec![], Some(weighted)));
         }
+
+        let (mut tables, tainted) = self.ftables_unweighted(
+            &sel,
+            |record| rdr.read_byte_record(record),
+            1,
+            &skip,
+            &watch,
+        )?;
+        if tainted.iter().any(|&t| t) {
+            // The demoted columns were skipped, so recount exactly those in a second pass.
+            if self.rconfig().is_stdin() {
+                return fail_clierror!(
+                    "Cannot recount <ALL_UNIQUE> candidate columns from stdin. Run frequency on a \
+                     file instead."
+                );
+            }
+            let mut rdr2 = self.rconfig().reader()?;
+            let recount_skip: Vec<bool> = tainted.iter().map(|&t| !t).collect();
+            let (recounted, _) = self.ftables_unweighted(
+                &sel,
+                |record| rdr2.read_byte_record(record),
+                1,
+                &recount_skip,
+                &vec![false; sel.len()],
+            )?;
+            splice_recounted(&mut tables, recounted, &tainted);
+            note_demoted(&headers, &tainted, self.flag_no_headers);
+        }
+        finalize_unique_columns(&candidates, &tainted)?;
+        Ok((headers, tables, None))
     }
 
     // `rconfig` must be the SAME (already-resolved) Config that produced `idx`.
@@ -3376,10 +3406,11 @@ impl Args {
         rconfig: &Config,
     ) -> CliResult<(Headers, FTables, Option<WeightedFTables>)> {
         let mut rdr = rconfig.reader()?;
-        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
+        let (headers, sel, weight_col_idx, candidates) = self.sel_headers(&mut rdr)?;
 
         let idx_count = idx.count() as usize;
         if idx_count == 0 {
+            finalize_unique_columns(&candidates, &[])?;
             return Ok((headers, vec![], None));
         }
 
@@ -3461,139 +3492,205 @@ impl Args {
         let nchunks = util::num_of_chunks(idx_count, chunk_size);
         log::info!("({chunking_mode}) nchunks={nchunks}");
 
-        // First CSV read error seen by any worker. The rayon `reduce` below silently absorbs a
+        let (skip, watch) = candidate_masks(sel.len(), &candidates);
+
+        if weight_col_idx.is_none() {
+            let (mut merged, tainted) = self
+                .parallel_unweighted_pass(rconfig, &sel, njobs, nchunks, chunk_size, skip, watch)?;
+            if tainted.iter().any(|&t| t) {
+                // The demoted columns were skipped, so recount exactly those in a second pass.
+                let recount_skip: Vec<bool> = tainted.iter().map(|&t| !t).collect();
+                let (recounted, _) = self.parallel_unweighted_pass(
+                    rconfig,
+                    &sel,
+                    njobs,
+                    nchunks,
+                    chunk_size,
+                    recount_skip,
+                    vec![false; sel.len()],
+                )?;
+                splice_recounted(&mut merged, recounted, &tainted);
+                note_demoted(&headers, &tainted, self.flag_no_headers);
+            }
+            finalize_unique_columns(&candidates, &tainted)?;
+            return Ok((headers, merged, None));
+        }
+
+        // First CSV read error seen by any worker. The fold below silently absorbs a
         // chunk that was never sent, so without this check a read error would yield a partial
         // frequency table reported as complete (#4611).
         let read_err: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
 
-        if weight_col_idx.is_some() {
-            // Parallel weighted frequencies
-            let pool = ThreadPool::new(njobs);
-            let (send, recv) = crossbeam_channel::bounded(nchunks);
-            for i in 0..nchunks {
-                let (send, args, rconf, sel, weight_idx) = (
-                    send.clone(),
-                    self.clone(),
-                    rconfig.clone(),
-                    sel.clone(),
-                    weight_col_idx,
-                );
-                let read_err = Arc::clone(&read_err);
-                pool.execute(move || {
-                    // The parent verified the index exists before chunking, but it can be
-                    // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
-                    // info, matching parallel_stats.
-                    let mut idx = rconf
-                        .indexed()
-                        .expect("Failed to re-open index for parallel frequency.")
-                        .expect("Index is no longer available for parallel frequency.");
-                    idx.seek((i * chunk_size) as u64)
-                        .expect("Index seek failed.");
-                    let it = idx.byte_records().take(chunk_size);
-                    match args.ftables_weighted_internal(&sel, it, nchunks, weight_idx) {
-                        Ok(ftables) => {
-                            // send only fails if the receiver is already gone, in which case
-                            // the reduce has ended and there is nobody left to hand this to.
-                            let _ = send.send(ftables);
-                        },
-                        // record the error (first one wins) and deliberately DON'T send
-                        Err(e) => {
-                            let _ = read_err.set(e.to_string());
-                        },
-                    }
-                });
-            }
-            drop(send);
-            // Fold chunks into one map per column as they arrive; see the unweighted
-            // branch below.
-            let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
-            let mut merged: WeightedFTables = Vec::new();
-            for chunk in recv {
-                if merged.is_empty() {
-                    if col_cardinality.len() != chunk.len() {
-                        merged = chunk;
-                        continue;
-                    }
-                    merged = presized_capacities(col_cardinality, false)
-                        .map(HashMap::with_capacity)
-                        .collect();
+        // Parallel weighted frequencies
+        let watch = Arc::new(watch);
+        let pool = ThreadPool::new(njobs);
+        let (send, recv) = crossbeam_channel::bounded(nchunks);
+        for i in 0..nchunks {
+            let (send, args, rconf, sel, weight_idx, watch) = (
+                send.clone(),
+                self.clone(),
+                rconfig.clone(),
+                sel.clone(),
+                weight_col_idx,
+                Arc::clone(&watch),
+            );
+            let read_err = Arc::clone(&read_err);
+            pool.execute(move || {
+                // The parent verified the index exists before chunking, but it can be
+                // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
+                // info, matching parallel_stats.
+                let mut idx = rconf
+                    .indexed()
+                    .expect("Failed to re-open index for parallel frequency.")
+                    .expect("Index is no longer available for parallel frequency.");
+                idx.seek((i * chunk_size) as u64)
+                    .expect("Index seek failed.");
+                let it = idx.byte_records().take(chunk_size);
+                match args.ftables_weighted_internal(&sel, it, nchunks, weight_idx, &watch) {
+                    Ok(result) => {
+                        // send only fails if the receiver is already gone, in which case
+                        // the reduce has ended and there is nobody left to hand this to.
+                        let _ = send.send(result);
+                    },
+                    // record the error (first one wins) and deliberately DON'T send
+                    Err(e) => {
+                        let _ = read_err.set(e.to_string());
+                    },
                 }
-                merged = merge_weighted_ftables(merged, chunk);
-            }
-            if let Some(e) = read_err.get() {
-                return fail_clierror!("{e}");
-            }
-            Ok((headers, vec![], Some(merged)))
-        } else {
-            // Parallel unweighted frequencies
-            let pool = ThreadPool::new(njobs);
-            let (send, recv) = crossbeam_channel::bounded(nchunks);
-            for i in 0..nchunks {
-                let (send, args, rconf, sel) =
-                    (send.clone(), self.clone(), rconfig.clone(), sel.clone());
-                let read_err = Arc::clone(&read_err);
-                pool.execute(move || {
-                    // The parent verified the index exists before chunking, but it can be
-                    // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
-                    // info, matching parallel_stats.
-                    let mut idx = rconf
-                        .indexed()
-                        .expect("Failed to re-open index for parallel frequency.")
-                        .expect("Index is no longer available for parallel frequency.");
-                    idx.seek((i * chunk_size) as u64)
-                        .expect("Index seek failed.");
-                    let mut remaining = chunk_size;
-                    match args.ftables_unweighted(
-                        &sel,
-                        |record| {
-                            if remaining == 0 {
-                                return Ok(false);
-                            }
-                            let has_record = idx.read_byte_record(record)?;
-                            if has_record {
-                                remaining -= 1;
-                            }
-                            Ok(has_record)
-                        },
-                        nchunks,
-                    ) {
-                        Ok(ftables) => {
-                            // send only fails if the receiver is already gone, in which case
-                            // the reduce has ended and there is nobody left to hand this to.
-                            let _ = send.send(ftables);
-                        },
-                        // record the error (first one wins) and deliberately DON'T send
-                        Err(e) => {
-                            let _ = read_err.set(e.to_string());
-                        },
-                    }
-                });
-            }
-            drop(send);
-            // Fold each chunk into one table per column as it arrives. Every key is
-            // inserted once (a pairwise tree reduce reinserts it at every level), and
-            // when the stats cache knows a column's cardinality its table is sized once
-            // up front, so it never rehashes. Columns still merge in parallel, and
-            // merging overlaps with the chunks that are still being counted.
-            let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
-            let mut merged: FTables = Vec::new();
-            for chunk in recv {
-                if merged.is_empty() {
-                    if col_cardinality.len() != chunk.len() {
-                        merged = chunk;
-                        continue;
-                    }
-                    merged = presized_capacities(col_cardinality, true)
-                        .map(Frequencies::with_capacity)
-                        .collect();
-                }
-                merged = merge_ftables(merged, chunk);
-            }
-            if let Some(e) = read_err.get() {
-                return fail_clierror!("{e}");
-            }
-            Ok((headers, merged, None))
+            });
         }
+        drop(send);
+        // Fold chunks into one map per column as they arrive; see parallel_unweighted_pass.
+        // Weighted counting skips no column, so nothing is presized to 0.
+        let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+        let no_skip = vec![false; sel.len()];
+        let mut merged: WeightedFTables = Vec::new();
+        let mut tainted: Vec<bool> = vec![false; sel.len()];
+        for (chunk, chunk_tainted) in recv {
+            for (t, c) in tainted.iter_mut().zip(chunk_tainted) {
+                *t |= c;
+            }
+            if merged.is_empty() {
+                if col_cardinality.len() != chunk.len() {
+                    merged = chunk;
+                    continue;
+                }
+                merged = presized_capacities(col_cardinality, &no_skip)
+                    .map(HashMap::with_capacity)
+                    .collect();
+            }
+            merged = merge_weighted_ftables(merged, chunk);
+        }
+        if let Some(e) = read_err.get() {
+            return fail_clierror!("{e}");
+        }
+        note_demoted(&headers, &tainted, self.flag_no_headers);
+        finalize_unique_columns(&candidates, &tainted)?;
+        Ok((headers, vec![], Some(merged)))
+    }
+
+    /// One parallel unweighted counting pass over the indexed input: counts the columns not
+    /// flagged in `skip` (see `ftables_unweighted`), folding chunk tables into one table per
+    /// column as they arrive, and ORs each chunk's per-column trim-change flags.
+    #[allow(clippy::too_many_arguments)]
+    fn parallel_unweighted_pass(
+        &self,
+        rconfig: &Config,
+        sel: &Selection,
+        njobs: usize,
+        nchunks: usize,
+        chunk_size: usize,
+        skip: Vec<bool>,
+        watch: Vec<bool>,
+    ) -> CliResult<(FTables, Vec<bool>)> {
+        // First CSV read error seen by any worker. The fold below silently absorbs a
+        // chunk that was never sent, so without this check a read error would yield a partial
+        // frequency table reported as complete (#4611).
+        let read_err: Arc<OnceLock<String>> = Arc::new(OnceLock::new());
+        let sel_len = sel.len();
+        let skip = Arc::new(skip);
+        let watch = Arc::new(watch);
+
+        let pool = ThreadPool::new(njobs);
+        let (send, recv) = crossbeam_channel::bounded(nchunks);
+        for i in 0..nchunks {
+            let (send, args, rconf, sel, skip, watch) = (
+                send.clone(),
+                self.clone(),
+                rconfig.clone(),
+                sel.clone(),
+                Arc::clone(&skip),
+                Arc::clone(&watch),
+            );
+            let read_err = Arc::clone(&read_err);
+            pool.execute(move || {
+                // The parent verified the index exists before chunking, but it can be
+                // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
+                // info, matching parallel_stats.
+                let mut idx = rconf
+                    .indexed()
+                    .expect("Failed to re-open index for parallel frequency.")
+                    .expect("Index is no longer available for parallel frequency.");
+                idx.seek((i * chunk_size) as u64)
+                    .expect("Index seek failed.");
+                let mut remaining = chunk_size;
+                match args.ftables_unweighted(
+                    &sel,
+                    |record| {
+                        if remaining == 0 {
+                            return Ok(false);
+                        }
+                        let has_record = idx.read_byte_record(record)?;
+                        if has_record {
+                            remaining -= 1;
+                        }
+                        Ok(has_record)
+                    },
+                    nchunks,
+                    &skip,
+                    &watch,
+                ) {
+                    Ok(result) => {
+                        // send only fails if the receiver is already gone, in which case
+                        // the reduce has ended and there is nobody left to hand this to.
+                        let _ = send.send(result);
+                    },
+                    // record the error (first one wins) and deliberately DON'T send
+                    Err(e) => {
+                        let _ = read_err.set(e.to_string());
+                    },
+                }
+            });
+        }
+        drop(send);
+        // Fold each chunk into one table per column as it arrives. Every key is
+        // inserted once (a pairwise tree reduce reinserts it at every level), and
+        // when the stats cache knows a column's cardinality its table is sized once
+        // up front, so it never rehashes. Columns still merge in parallel, and
+        // merging overlaps with the chunks that are still being counted. A column's
+        // trim-change flag is set if ANY chunk saw a changed value.
+        let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
+        let mut merged: FTables = Vec::new();
+        let mut tainted: Vec<bool> = vec![false; sel_len];
+        for (chunk, chunk_tainted) in recv {
+            for (t, c) in tainted.iter_mut().zip(chunk_tainted) {
+                *t |= c;
+            }
+            if merged.is_empty() {
+                if col_cardinality.len() != chunk.len() {
+                    merged = chunk;
+                    continue;
+                }
+                merged = presized_capacities(col_cardinality, &skip)
+                    .map(Frequencies::with_capacity)
+                    .collect();
+            }
+            merged = merge_ftables(merged, chunk);
+        }
+        if let Some(e) = read_err.get() {
+            return fail_clierror!("{e}");
+        }
+        Ok((merged, tainted))
     }
 
     #[inline]
@@ -3603,7 +3700,8 @@ impl Args {
         it: I,
         nchunks: usize,
         weight_col_idx: Option<usize>,
-    ) -> CliResult<WeightedFTables>
+        watch: &[bool],
+    ) -> CliResult<(WeightedFTables, Vec<bool>)>
     where
         I: Iterator<Item = csv::Result<csv::ByteRecord>>,
     {
@@ -3620,6 +3718,8 @@ impl Args {
         let flag_no_nulls = self.flag_no_nulls;
         let flag_ignore_case = self.flag_ignore_case;
         let flag_no_trim = self.flag_no_trim;
+        let detect = !flag_no_trim && watch.iter().any(|&w| w);
+        let mut tainted: Vec<bool> = vec![false; sel_len];
 
         let col_cardinality_vec = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
         let mut weighted_freq_tables: Vec<HashMap<Vec<u8>, f64>> = if col_cardinality_vec.is_empty()
@@ -3744,6 +3844,11 @@ impl Args {
             for (i, field) in sel.select(&row_buffer).enumerate() {
                 // safety: weighted_freq_tables is pre-allocated with sel_len elements.
                 // i will always be < sel_len as it comes from enumerate() over the selected cols
+                if detect && watch[i] && !tainted[i] && trim_changes(field, flag_ignore_case) {
+                    // weighted counting tallies <ALL_UNIQUE> candidates in full anyway; this
+                    // only decides whether the sentinel may stand in for the table
+                    tainted[i] = true;
+                }
                 if !field.is_empty() {
                     process_field(
                         field,
@@ -3762,16 +3867,22 @@ impl Args {
         if let Some(e) = read_err {
             return Err(util::csv_read_error(&e));
         }
-        Ok(weighted_freq_tables)
+        Ok((weighted_freq_tables, tainted))
     }
 
+    /// Counts every selected column except those flagged in `skip` (`<ALL_UNIQUE>` candidates,
+    /// frequency-cache columns, or, on a recount, every column already counted). For each
+    /// skipped column also flagged in `watch`, records whether some value would change when
+    /// trimmed (`trim_changes`); the returned `Vec<bool>` is that per-column flag.
     #[inline]
     fn ftables_unweighted<F>(
         &self,
         sel: &Selection,
         mut next_record: F,
         nchunks: usize,
-    ) -> CliResult<FTables>
+        skip: &[bool],
+        watch: &[bool],
+    ) -> CliResult<(FTables, Vec<bool>)>
     where
         F: FnMut(&mut csv::ByteRecord) -> csv::Result<bool>,
     {
@@ -3781,26 +3892,16 @@ impl Args {
         let mut field_buffer: Vec<u8> = Vec::with_capacity(1024);
         let mut string_buf = String::with_capacity(512);
 
-        let unique_headers_vec = UNIQUE_COLUMNS_VEC.get().unwrap();
-
         // assign flags to local variables for faster access
         let flag_no_nulls = self.flag_no_nulls;
         let flag_ignore_case = self.flag_ignore_case;
         let flag_no_trim = self.flag_no_trim;
 
-        // compile a vector of bool flags for columns to skip in the hot loop.
-        // Includes ALL_UNIQUE columns and columns with pre-built FTables from
-        // the frequency cache (partial cache hit — merged back in run()).
-        let mut all_unique_flag_vec: Vec<bool> = (0..sel_len)
-            .map(|i| unique_headers_vec.contains(&i))
-            .collect();
-        if let Some(cache_skip) = FREQ_CACHE_SKIP.get() {
-            for (i, &is_cached) in cache_skip.iter().enumerate() {
-                if is_cached && i < sel_len {
-                    all_unique_flag_vec[i] = true;
-                }
-            }
-        }
+        debug_assert!(skip.len() == sel_len && watch.len() == sel_len);
+        let all_unique_flag_vec = skip;
+        // trim-change detection is only meaningful when values ARE trimmed
+        let detect = !flag_no_trim && watch.iter().any(|&w| w);
+        let mut tainted: Vec<bool> = vec![false; sel_len];
 
         // optimize the capacity of the freq_tables based on the cardinality of the columns
         // if sequential, use the cardinality from the stats cache
@@ -3886,6 +3987,15 @@ impl Args {
                 let field = $field;
                 // Both tables and the skip mask have exactly sel_len positions.
                 if unsafe { *all_unique_flag_vec.get_unchecked(i) } {
+                    // An <ALL_UNIQUE> candidate is not counted, only checked: one value that
+                    // trimming changes is enough to demote it (and get it recounted in full).
+                    if detect
+                        && unsafe { *watch.get_unchecked(i) }
+                        && !unsafe { *tainted.get_unchecked(i) }
+                        && trim_changes(field, flag_ignore_case)
+                    {
+                        unsafe { *tainted.get_unchecked_mut(i) = true };
+                    }
                     continue;
                 }
                 if !field.is_empty() {
@@ -3940,7 +4050,7 @@ impl Args {
         if nchunks > 1 {
             freq_tables.shrink_to_fit();
         }
-        Ok(freq_tables)
+        Ok((freq_tables, tainted))
     }
 
     /// Compute indices of Float columns that should be skipped from frequency analysis.
@@ -4594,10 +4704,13 @@ impl Args {
         }
     }
 
+    /// Also returns the `<ALL_UNIQUE>` shortcut CANDIDATES (selected positions). They are not
+    /// final: the counting pass demotes any candidate in which trimming changes a value, so the
+    /// caller sets `UNIQUE_COLUMNS_VEC` via `finalize_unique_columns` after counting.
     fn sel_headers<R: io::Read>(
         &self,
         rdr: &mut csv::Reader<R>,
-    ) -> CliResult<(csv::ByteRecord, Selection, Option<usize>)> {
+    ) -> CliResult<(csv::ByteRecord, Selection, Option<usize>, Vec<usize>)> {
         let full_headers = rdr.byte_headers()?.clone();
         let (weight_col_idx, mut sel, selected_headers) =
             self.process_headers_with_weight_exclusion(&full_headers)?;
@@ -4697,10 +4810,6 @@ impl Args {
             })
             .collect();
 
-        UNIQUE_COLUMNS_VEC
-            .set(mapped_unique_headers)
-            .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
-
         // Build the cardinality vector aligned positionally to the FINAL selected
         // columns (after --no-float / --stats-filter dropping), so downstream
         // consumers (cache cardinality, capacity hints) can index by position.
@@ -4735,7 +4844,12 @@ impl Args {
             }
         }
 
-        Ok((final_headers, final_sel, weight_col_idx))
+        Ok((
+            final_headers,
+            final_sel,
+            weight_col_idx,
+            mapped_unique_headers,
+        ))
     }
 
     /// Self-contained Frequent Items (Misra-Gries) processing path.
@@ -4766,7 +4880,7 @@ impl Args {
         use datasketches::frequencies::{ErrorType, FrequentItemsSketch};
 
         let mut rdr = rconfig.reader()?;
-        let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
+        let (headers, sel, weight_col_idx, _) = self.sel_headers(&mut rdr)?;
         debug_assert!(
             weight_col_idx.is_none(),
             "run_frequent_items reached with a weight column — run() should reject --weight"
@@ -5017,6 +5131,83 @@ fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: O
             name:  name.to_string(),
             value: json_value,
         });
+    }
+}
+
+/// Would this run's trim change `field`? The stats cache's cardinality is computed on RAW
+/// values, and trimming can only merge values (` a` and `a`), never split them. So a column the
+/// stats cache proves all-unique stays provably unique after trimming only if no value changes
+/// when trimmed. Mirrors the trims in the `process_field` closures: Unicode `str::trim()` for
+/// valid UTF-8 under `--ignore-case`, ASCII `trim_bs_whitespace` otherwise. Never called under
+/// `--no-trim`.
+#[inline]
+fn trim_changes(field: &[u8], ignore_case: bool) -> bool {
+    if ignore_case && let Ok(s) = simdutf8::basic::from_utf8(field) {
+        return s.trim().len() != s.len();
+    }
+    trim_bs_whitespace(field).len() != field.len()
+}
+
+/// The columns that keep the `<ALL_UNIQUE>` shortcut: the stats-cache candidates, minus those
+/// in which some value changed when trimmed (see `trim_changes`) and that were therefore
+/// counted in full. Set exactly once, after counting.
+fn finalize_unique_columns(candidates: &[usize], demoted: &[bool]) -> CliResult<()> {
+    let kept: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&i| !demoted.get(i).copied().unwrap_or(false))
+        .collect();
+    UNIQUE_COLUMNS_VEC
+        .set(kept)
+        .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
+    Ok(())
+}
+
+/// First-pass masks for `ftables_unweighted`: `watch` = the `<ALL_UNIQUE>` candidates (checked
+/// for trim changes, not counted); `skip` = the candidates plus any column served from the
+/// frequency cache (partial cache hit).
+fn candidate_masks(sel_len: usize, candidates: &[usize]) -> (Vec<bool>, Vec<bool>) {
+    let watch: Vec<bool> = (0..sel_len).map(|i| candidates.contains(&i)).collect();
+    let cache_skip = FREQ_CACHE_SKIP.get().map_or(&[][..], Vec::as_slice);
+    let skip: Vec<bool> = (0..sel_len)
+        .map(|i| watch[i] || cache_skip.get(i).copied().unwrap_or(false))
+        .collect();
+    (skip, watch)
+}
+
+/// Move the recounted tables of the demoted columns into the first pass's tables.
+fn splice_recounted(tables: &mut FTables, recounted: FTables, demoted: &[bool]) {
+    for (i, table) in recounted.into_iter().enumerate() {
+        if demoted.get(i).copied().unwrap_or(false) && i < tables.len() {
+            tables[i] = table;
+        }
+    }
+}
+
+/// Tell the user which `<ALL_UNIQUE>` candidates were counted in full, and why: they lose the
+/// memory saver there, so a run that suddenly uses more memory should be explicable.
+fn note_demoted(headers: &Headers, demoted: &[bool], no_headers: bool) {
+    let names: Vec<String> = demoted
+        .iter()
+        .enumerate()
+        .filter(|&(_, &d)| d)
+        .map(|(i, _)| {
+            if no_headers {
+                (i + 1).to_string()
+            } else {
+                headers
+                    .get(i)
+                    .map_or_else(String::new, |h| util::bytes_to_cow_str(h).into_owned())
+            }
+        })
+        .collect();
+    if !names.is_empty() {
+        winfo!(
+            "Counted in full instead of <ALL_UNIQUE>: {}. Some values have leading/trailing \
+             whitespace, so the stats cache (which counts untrimmed values) cannot prove they \
+             stay unique after trimming.",
+            names.join(", ")
+        );
     }
 }
 

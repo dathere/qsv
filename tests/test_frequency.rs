@@ -9192,3 +9192,117 @@ fn frequency_cache_does_not_merge_non_utf8_values() {
         "a cache hit must reproduce the computed output byte for byte"
     );
 }
+
+// The stats cache counts UNTRIMMED values, and the default trim can only merge them (` a` and
+// `a`). So `cardinality == rowcount` proved the raw values unique, not the trimmed ones, and the
+// <ALL_UNIQUE> shortcut used to replace a real distribution (`a,2` / `A,1`) with one sentinel row.
+// A candidate column in which some value changes when trimmed is now counted in full; a clean
+// all-unique column keeps the shortcut, and --no-trim (nothing merges) keeps it too.
+#[test]
+fn frequency_all_unique_demoted_when_trim_changes_a_value() {
+    let wrk = Workdir::new("frequency_all_unique_demoted_when_trim_changes_a_value");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["v", "id", "w"],
+            svec!["a", "1", "2"],
+            svec![" a", "2", "3"],
+            svec!["A", "3", "4"],
+        ],
+    );
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .args(["--cardinality", "--stats-jsonl"])
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--select", "v,id"]).arg("data.csv");
+    let (got, stderr): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["v", "a", "2", "66.66667", "1"],
+            svec!["v", "A", "1", "33.33333", "2"],
+            svec!["id", "<ALL_UNIQUE>", "3", "100", "0"],
+        ]
+    );
+    assert!(
+        stderr.contains("Counted in full instead of <ALL_UNIQUE>: v."),
+        "the demotion must be reported, got:\n{stderr}"
+    );
+
+    // --no-trim: nothing is merged, so raw-unique IS unique and the shortcut stands
+    let mut no_trim = wrk.command("frequency");
+    no_trim.args(["--no-trim", "--select", "v"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut no_trim);
+    assert_eq!(
+        got,
+        vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["v", "<ALL_UNIQUE>", "3", "100", "0"],
+        ]
+    );
+
+    // weighted counting tallies candidates anyway; the sentinel must not stand in for them
+    let mut weighted = wrk.command("frequency");
+    weighted
+        .args(["--weight", "w", "--select", "v,id"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut weighted);
+    assert_eq!(
+        got,
+        vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["v", "a", "5", "55.55556", "1"],
+            svec!["v", "A", "4", "44.44444", "2"],
+            svec!["id", "<ALL_UNIQUE>", "9", "100", "0"],
+        ]
+    );
+
+    // the frequency cache must not record the demoted column as <ALL_UNIQUE>
+    let mut cache_cmd = wrk.command("frequency");
+    cache_cmd
+        .args(["--frequency-jsonl", "--select", "v,id"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cache_cmd);
+    let fields = decode_cache_fields(&wrk.path("data.freq.csv.data.jsonl"));
+    assert_eq!(fields[0]["field"], "v");
+    assert_ne!(fields[0]["frequencies"][0]["value"], "<ALL_UNIQUE>");
+    assert_eq!(fields[1]["frequencies"][0]["value"], "<ALL_UNIQUE>");
+}
+
+// Parallel (indexed) path: the trim-changed value and its unpadded twin land in DIFFERENT chunks
+// (CPU-based chunking, 400 rows / 4 jobs = 100-row chunks), so only an OR of every chunk's
+// trim-change flags demotes the column; the recount pass then has to merge across chunks.
+#[test]
+fn frequency_all_unique_demotion_across_parallel_chunks() {
+    let wrk = Workdir::new("frequency_all_unique_demotion_across_parallel_chunks");
+    let mut rows = vec![svec!["code", "id"]];
+    for i in 1..400 {
+        rows.push(vec![format!("c{i}"), i.to_string()]);
+    }
+    rows.push(svec![" c1", "400"]); // last chunk; its twin `c1` is in the first
+    wrk.create_indexed("data.csv", rows);
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .args(["--cardinality", "--stats-jsonl"])
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_FREQ_CHUNK_MEMORY_MB", "-1")
+        .args(["--jobs", "4", "--limit", "1"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["field", "value", "count", "percentage", "rank"],
+            svec!["code", "c1", "2", "0.5", "1"],
+            svec!["code", "Other (398)", "398", "99.5", "0"],
+            svec!["id", "<ALL_UNIQUE>", "400", "100", "0"],
+        ]
+    );
+}

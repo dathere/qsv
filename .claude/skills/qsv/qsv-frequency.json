@@ -60,7 +60,7 @@
       {
         "flag": "--ignore-case",
         "type": "flag",
-        "description": "Ignore case when computing frequencies. The stats cache's cardinality is case-sensitive, so it cannot prove that case-folded values are unique. All-unique columns are therefore counted in full instead of being short-circuited to <ALL_UNIQUE> - except Integer columns, which have no letters to fold. On large files with all-unique text columns (e.g. emails), this can use memory proportional to the row count. Exclude such columns with -s if you don't need them."
+        "description": "Ignore case when computing frequencies. The stats cache's cardinality is case-sensitive, so it cannot prove that case-folded values are unique. All-unique columns are therefore counted in full instead of being short-circuited to <ALL_UNIQUE> - except Integer columns, which have no letters to fold (unless trimming changes one of their values). On large files with all-unique text columns (e.g. emails), this can use memory proportional to the row count. Exclude such columns with -s if you don't need them."
       },
       {
         "flag": "--json",

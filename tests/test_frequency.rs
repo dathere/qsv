@@ -9374,6 +9374,17 @@ fn frequency_self_heal_keeps_the_cache_thresholds() {
 #[test]
 #[cfg(debug_assertions)]
 fn frequency_parallel_worker_panic_is_an_error() {
+    // qsv caps --jobs/QSV_MAX_JOBS at the CPU count, and 1 job takes the sequential path, which
+    // has no workers to panic - so this needs >= 2 cores (same guard as
+    // moarstats_parallel_path_matches_sequential).
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    if cores < 2 {
+        eprintln!(
+            "skipping frequency_parallel_worker_panic_is_an_error: needs >= 2 cores to exercise \
+             the parallel path (have {cores})"
+        );
+        return;
+    }
     let wrk = Workdir::new("frequency_parallel_worker_panic_is_an_error");
     let mut rows = vec![svec!["code", "w"]];
     for i in 0..400 {

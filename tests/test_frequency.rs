@@ -9306,3 +9306,102 @@ fn frequency_all_unique_demotion_across_parallel_chunks() {
         ]
     );
 }
+
+// GUARD: refreshing a version-stale cache must keep the HIGH_CARDINALITY thresholds the cache was
+// BUILT with. A plain run only reads its --high-card-* settings under --frequency-jsonl, so the
+// refresh used to rewrite a custom-threshold cache with the defaults (100 / 90%), turning every
+// column the custom thresholds had kept in full into a <HIGH_CARDINALITY> sentinel that is then
+// recomputed on every later run.
+#[test]
+fn frequency_self_heal_keeps_the_cache_thresholds() {
+    let wrk = Workdir::new("frequency_self_heal_keeps_the_cache_thresholds");
+    // `category` has 19 distinct values in 20 rows: above the default effective threshold
+    // min(100, 90% of 20 = 18), but within a custom min(1000, 100% of 20 = 20).
+    let mut rows = vec![svec!["id", "category"]];
+    for i in 1..=20 {
+        rows.push(vec![
+            format!("item_{i}"),
+            format!("cat_{}", if i <= 19 { i } else { 1 }),
+        ]);
+    }
+    wrk.create("in.csv", rows);
+    let mut writer = wrk.command("frequency");
+    writer
+        .args([
+            "--frequency-jsonl",
+            "--high-card-threshold",
+            "1000",
+            "--high-card-pct",
+            "100",
+        ])
+        .arg("in.csv");
+    wrk.assert_success(&mut writer);
+    let cache = wrk.path("in.freq.csv.data.jsonl");
+    let category_is_full = |cache: &std::path::Path| {
+        let fields = decode_cache_fields(cache);
+        fields[1]["field"] == "category" && fields[1]["frequencies"].as_array().unwrap().len() == 19
+    };
+    assert!(
+        category_is_full(&cache),
+        "setup: the custom thresholds keep `category` in full"
+    );
+
+    set_cache_version(&cache, "0.0.1-ancient");
+    let mut heal = wrk.command("frequency");
+    heal.arg("in.csv");
+    let stderr = wrk.output_stderr(&mut heal);
+    assert!(
+        stderr.contains("written by qsv 0.0.1-ancient"),
+        "expected the stale-version diagnostic, got:\n{stderr}"
+    );
+    assert_eq!(
+        cache_meta(&cache, "qsv_version").as_str().unwrap(),
+        env!("CARGO_PKG_VERSION"),
+        "the stale cache should have been refreshed"
+    );
+    assert_eq!(cache_meta(&cache, "flag_high_card_threshold"), 1000);
+    assert_eq!(cache_meta(&cache, "flag_high_card_pct"), 100);
+    assert!(
+        category_is_full(&cache),
+        "the refresh must not demote `category` to <HIGH_CARDINALITY>"
+    );
+}
+
+// A parallel worker that panics (qsv ships with panic = "unwind") drops its channel sender without
+// sending a table or recording a read error, so the fold used to end early and print a PARTIAL
+// frequency table as if it were complete. Every parallel pass now checks that it folded every
+// chunk. The panic is injected through a debug-build-only hook, so this test is too.
+#[test]
+#[cfg(debug_assertions)]
+fn frequency_parallel_worker_panic_is_an_error() {
+    let wrk = Workdir::new("frequency_parallel_worker_panic_is_an_error");
+    let mut rows = vec![svec!["code", "w"]];
+    for i in 0..400 {
+        rows.push(vec![format!("c{}", i % 7), "1".to_string()]);
+    }
+    wrk.create_indexed("data.csv", rows);
+
+    for weighted in [false, true] {
+        let mut cmd = wrk.command("frequency");
+        // pin 2 jobs regardless of the caller's QSV_MAX_JOBS (1 would take the sequential path)
+        cmd.env("QSV_MAX_JOBS", "2")
+            .env("QSV_FREQ_CHUNK_MEMORY_MB", "-1")
+            .env("QSV_TEST_FREQ_PANIC_CHUNK", "0")
+            .args(["--jobs", "2", "--select", "code"]);
+        if weighted {
+            cmd.args(["--weight", "w"]);
+        }
+        cmd.arg("data.csv");
+        let got = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&got.stderr);
+        assert!(
+            !got.status.success(),
+            "a lost chunk must fail the run (weighted={weighted}), got stdout:\n{}",
+            String::from_utf8_lossy(&got.stdout)
+        );
+        assert!(
+            stderr.contains("1 of 2 parallel chunks failed"),
+            "expected the lost-chunk error (weighted={weighted}), got:\n{stderr}"
+        );
+    }
+}

@@ -243,6 +243,23 @@ async fn serve_boston_zst(c: web::Data<Counters>, req: HttpRequest) -> HttpRespo
     ranged_response(BOSTON_ZST, BOSTON_ZST_ETAG, &req, &c)
 }
 
+// Data `viz smart` can chart (STATES_CSV is all unique), for the Data Schematic tests.
+const CHART_CSV: &str = "region,units\nEast,3\nWest,5\nEast,2\nWest,7\nNorth,1\nEast,4\n";
+const CHART_ETAG: &str = "\"chart-v1\"";
+async fn serve_chart(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(CHART_CSV.as_bytes(), CHART_ETAG, &req, &c)
+}
+
+// A minimal CKAN `resource_show`: every resource's data is this server's /chart.csv.
+async fn serve_ckan_resource_show(req: HttpRequest) -> HttpResponse {
+    let host = req.connection_info().host().to_string();
+    // Plain HTTP to the in-process test mock server (not production code).
+    let url = format!("http://{host}/chart.csv"); // DevSkim: ignore DS137138
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(serde_json::json!({"success": true, "result": {"url": url}}).to_string())
+}
+
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     counters: Counters,
@@ -251,6 +268,8 @@ async fn run_webserver(
         let app = App::new()
             .app_data(web::Data::new(counters.clone()))
             .service(web::resource("/states.csv").to(serve_states))
+            .service(web::resource("/chart.csv").to(serve_chart))
+            .service(web::resource("/api/3/action/resource_show").to(serve_ckan_resource_show))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
             // A larger object for the HTTP ranged/streaming download test.
@@ -2860,4 +2879,140 @@ fn get_dc_frequency_cache_captures_out_of_band_sidecar() {
         1,
         "the next dc resolution should capture the out-of-band sidecar"
     );
+}
+
+// ---- viz smart on a dc: input: the Data Schematic records where public data came from ----
+
+#[cfg(feature = "viz")]
+fn schematic_source_of(
+    wrk: &Workdir,
+    cache_dir: &Path,
+    input: &str,
+    extra: &[&str],
+) -> serde_json::Value {
+    let out = wrk.path("schematic.html");
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_CACHE_DIR", cache_dir)
+        .env_remove("QSV_VIZ_NO_DAEMON")
+        .args(["smart", input, "-o"])
+        .arg(&out)
+        .args(extra);
+    wrk.assert_success(&mut cmd);
+    let html = std::fs::read_to_string(&out).unwrap();
+    let tag = html
+        .find(r#"id="qsv-schematic-source""#)
+        .expect("provenance block");
+    let start = tag + html[tag..].find('>').unwrap() + 1;
+    let end = start + html[start..].find("</script>").unwrap();
+    serde_json::from_str(&html[start..end]).unwrap()
+}
+
+#[cfg(feature = "viz")]
+#[test]
+#[serial]
+fn viz_dc_records_the_source_of_a_public_download() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("viz_dc_records_the_source_of_a_public_download");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("chart.csv");
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .env_remove("QSV_CKAN_TOKEN")
+        .args(["--name", "chart.csv"])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    let src = schematic_source_of(&wrk, &cache_dir, "dc:chart.csv", &[]);
+    assert_eq!(src["source"], serde_json::json!({ "url": url }));
+    // like the fingerprint, it is there for live mode: no bridge, no source
+    let src = schematic_source_of(&wrk, &cache_dir, "dc:chart.csv", &["--no-daemon-bridge"]);
+    assert!(src.get("source").is_none(), "{src}");
+}
+
+#[cfg(feature = "viz")]
+#[test]
+#[serial]
+fn viz_dc_records_a_ckan_source_only_when_fetched_without_a_token() {
+    let server = GetWebServer::start();
+    let api = server.url("api/3/action");
+    for (token, recorded) in [(None, true), (Some("s3cret"), false)] {
+        let wrk = Workdir::new("viz_dc_records_a_ckan_source_only_when_fetched_without_a_token");
+        let cache_dir = wrk.path("qsvcache");
+        let mut g = wrk.command("get");
+        g.env("QSV_CACHE_DIR", &cache_dir)
+            .env_remove("QSV_CKAN_TOKEN")
+            .env_remove("QSV_CKAN_API")
+            .args(["--name", "c.csv", "--ckan-api", &api])
+            .arg("ckan://abc");
+        if let Some(t) = token {
+            g.args(["--ckan-token", t]);
+        }
+        wrk.assert_success(&mut g);
+
+        let src = schematic_source_of(&wrk, &cache_dir, "dc:c.csv", &[]);
+        if recorded {
+            assert_eq!(
+                src["source"],
+                serde_json::json!({ "url": "ckan://abc", "ckan_api": api })
+            );
+        } else {
+            // a token means the dataset may be private: its address stays out of the page
+            assert!(src.get("source").is_none(), "{src}");
+            assert!(!src.to_string().contains("ckan://abc"), "{src}");
+        }
+    }
+}
+
+#[cfg(feature = "viz")]
+#[test]
+fn viz_dc_never_records_a_local_source() {
+    let wrk = Workdir::new("viz_dc_never_records_a_local_source");
+    wrk.create_from_string("chart_src.csv", CHART_CSV);
+    let cache_dir = wrk.path("qsvcache");
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "chart.csv"])
+        .arg("chart_src.csv");
+    wrk.assert_success(&mut g);
+    let src = schematic_source_of(&wrk, &cache_dir, "dc:chart.csv", &[]);
+    assert!(src.get("source").is_none(), "{src}");
+    assert!(!src.to_string().contains("chart_src"), "{src}");
+}
+
+#[cfg(feature = "viz")]
+#[test]
+fn viz_dc_title_names_the_data_not_the_cache_handle() {
+    let wrk = Workdir::new("viz_dc_title_names_the_data_not_the_cache_handle");
+    wrk.create_from_string("chart_src.csv", CHART_CSV);
+    let cache_dir = wrk.path("qsvcache");
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "housing.csv"])
+        .arg("chart_src.csv");
+    wrk.assert_success(&mut g);
+
+    let out = wrk.path("schematic.html");
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["smart", "dc:housing.csv", "-o"])
+        .arg(&out);
+    wrk.assert_success(&mut cmd);
+    let html = std::fs::read_to_string(&out).unwrap();
+    // the page <title>, the heading (an <h1>, or a plotly annotation on a small page) and the
+    // tour's welcome text all use it
+    assert!(html.contains("<title>housing.csv — Data Schematic</title>"));
+    assert!(html.contains("walks through housing.csv — Data Schematic"));
+    assert!(
+        !html.contains("dc:housing"),
+        "the dc: handle leaked into the page"
+    );
+
+    // an explicit --title still wins
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["smart", "dc:housing.csv", "--title", "Housing", "-o"])
+        .arg(&out);
+    wrk.assert_success(&mut cmd);
+    let html = std::fs::read_to_string(&out).unwrap();
+    assert!(html.contains("<title>Housing</title>"), "custom title");
 }

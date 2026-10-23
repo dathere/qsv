@@ -706,7 +706,8 @@ smart options:
                            so the page stays self-contained. Setting QSV_VIZ_NO_DAEMON=1 has
                            the same effect. The page's qsv-schematic-source provenance JSON
                            is kept either way, but without the input fingerprint (which
-                           costs an extra read of the input). HTML output only. Only affects `smart`. See
+                           costs an extra read of the input) and without the source URL
+                           of a dc: input. HTML output only. Only affects `smart`. See
                            https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md
     --bivariate           Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
@@ -38518,10 +38519,7 @@ impl<'a> SmartCtx<'a> {
 
         // Data Schematic title: the user's --title, else the dataset's file name
         let title_text = self.args.flag_title.clone().unwrap_or_else(|| {
-            let dataset = std::path::Path::new(self.args.arg_input.as_deref().unwrap_or("data"))
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("data");
+            let dataset = dataset_display_name(self.args.arg_input.as_deref());
             t!("viz.title.data_schematic", q_dataset = dataset).into_owned()
         });
 
@@ -38770,11 +38768,22 @@ impl<'a> SmartCtx<'a> {
                 })
                 .ok()
         });
+        // like the fingerprint, where the data came from is there for live mode, so opting out
+        // of the bridge leaves it out too
+        #[cfg(feature = "get")]
+        let source = if bridge {
+            vd::dc_source(src.input.as_deref())
+        } else {
+            None
+        };
+        #[cfg(not(feature = "get"))]
+        let source = None;
         let json = vd::source_json(
             src,
             fingerprint,
             rows,
             self.args.flag_dataset_pid.as_deref(),
+            source,
         );
         let mut out = inline_json_script(vd::SOURCE_SCRIPT_ID, &json.to_string());
         if bridge {
@@ -44205,6 +44214,17 @@ fn smart_grid_top(row_units: f64, has_subtitles: bool) -> f64 {
     };
     let band = (band_px as f64 / smart_plot_area_h(row_units)).min(0.5);
     1.0 - band
+}
+
+/// The dataset's name in a default Data Schematic title: the input's file name, without the
+/// `dc:` prefix of a `qsv get` disk-cache handle, which means nothing to a reader of the page.
+fn dataset_display_name(input: Option<&str>) -> &str {
+    let input = input.unwrap_or("data");
+    let input = input.strip_prefix("dc:").unwrap_or(input);
+    std::path::Path::new(input)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("data")
 }
 
 /// Paper-fraction gap between a cell's top and its title, fixed at `TITLE_OFFSET_PX` pixels
@@ -55343,6 +55363,15 @@ mod tests {
         let full = cell_geometry(0, 0, rows, cols, true, top, offset, &vec![1.0; rows]);
         assert_eq!(full.x_domain, vec![0.0, 1.0]);
         assert!((full.title_x - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn dataset_display_name_drops_the_dc_prefix() {
+        assert_eq!(dataset_display_name(Some("dc:housing.csv")), "housing.csv");
+        assert_eq!(dataset_display_name(Some("/data/x/sales.csv")), "sales.csv");
+        assert_eq!(dataset_display_name(Some("dc.csv")), "dc.csv");
+        assert_eq!(dataset_display_name(Some("dc:")), "data");
+        assert_eq!(dataset_display_name(None), "data");
     }
 
     #[test]

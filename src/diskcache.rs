@@ -540,6 +540,12 @@ mod rich {
         /// than the ambient `QSV_CKAN_API`/default. None for non-CKAN entries.
         #[serde(default)]
         pub ckan_api_url:       Option<String>,
+        /// `Some(true)` when the last http(s)/CKAN download sent no credentials (no CKAN API
+        /// token), so anyone can fetch `source_uri` the same way; `Some(false)` when it sent
+        /// one. `None` for local and cloud sources, and for entries cached before this field
+        /// existed — treat those as possibly private.
+        #[serde(default)]
+        pub anonymous_fetch:    Option<bool>,
         /// Tabular extension (`csv`/`tsv`/`tab`/`ssv`) of the decompressed content
         /// for compressed sources, so a `dc:` materialized temp gets the right
         /// extension (and thus delimiter). None for plain or unknown sources.
@@ -1202,6 +1208,14 @@ mod rich {
         Ok(Some(load_entry_at(&ep)?))
     }
 
+    /// The metadata of the cache entry `name` (a `dc:` handle without its prefix), read from
+    /// the index as it is: no refresh and no network, unlike [`resolve_dc_path`].
+    #[cfg(feature = "viz")]
+    pub fn dc_entry_meta(name: &str) -> CliResult<Option<CacheEntry>> {
+        let cache_dir = set_qsv_cache_dir(DEFAULT_CACHE_DIR)?;
+        Ok(load_entry_by_name(&get_root(&cache_dir), name)?.map(|e| e.meta))
+    }
+
     /// Alias files that currently point at the given entry key hash.
     fn aliases_pointing_to(root: &Path, keyhash: &str) -> Vec<PathBuf> {
         let mut out = Vec::new();
@@ -1458,6 +1472,7 @@ mod rich {
             compression: opts.compression,
             cloud_identity: Vec::new(),
             ckan_api_url: None,
+            anonymous_fetch: None,
             inner_ext,
             sniffed: None,
         };
@@ -1775,6 +1790,7 @@ mod rich {
                         compression: opts.compression,
                         cloud_identity: identity,
                         ckan_api_url: None,
+                        anonymous_fetch: None,
                         inner_ext,
                         sniffed: None,
                     },
@@ -1830,6 +1846,9 @@ mod rich {
         let cache_key = format!("HTTP:{}", opts.source);
         let kh = keyhash(&cache_key);
         let name = opts.name.clone().unwrap_or_else(|| derive_name(final_url));
+        // A CKAN token goes on the resource_show/resource_search calls whenever one is set,
+        // even when it is then stripped from a cross-origin data download.
+        let anonymous = !(is_ckan && opts.ckan_token.is_some());
 
         let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
 
@@ -2123,6 +2142,7 @@ mod rich {
                     ))
                 })?;
                 entry.meta.downloaded_at = unix_now();
+                entry.meta.anonymous_fetch = Some(anonymous);
                 let json = serde_json::to_vec(&entry).map_err(|e| {
                     CliError::Other(format!("get: failed to serialize cache entry: {e}"))
                 })?;
@@ -2156,6 +2176,7 @@ mod rich {
                         } else {
                             None
                         },
+                        anonymous_fetch: Some(anonymous),
                         inner_ext,
                         sniffed: None,
                     },

@@ -442,7 +442,17 @@ static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
 // refresh the stale file after recomputing, so a version-invalidated cache self-heals instead of
 // missing forever - `frequency` only writes its cache under `--frequency-jsonl`, so unlike
 // stats.rs it has no recompute-and-rewrite path of its own.
-static FREQ_CACHE_STALE_SIG: OnceLock<String> = OnceLock::new();
+static FREQ_CACHE_STALE_SIG: OnceLock<StaleFreqCache> = OnceLock::new();
+
+/// What `run()` needs to refresh a version-stale frequency cache faithfully: the selection it
+/// covered, and the `HIGH_CARDINALITY` thresholds it was BUILT with. A plain `frequency` run only
+/// reads its `QSV_FREQ_HIGH_CARD_*` overrides under `--frequency-jsonl`, so without these the
+/// refresh would silently rewrite a custom-threshold cache with the defaults.
+struct StaleFreqCache {
+    selection_signature:      String,
+    flag_high_card_threshold: usize,
+    flag_high_card_pct:       u8,
+}
 // Frequency-cache sentinels for columns stored WITHOUT per-value data, which every reader
 // (this command's cache hit, `read_frequency_cache_view` for viz, and `scoresql`) must recompute
 // or skip rather than read as a value.
@@ -1375,9 +1385,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     //     cannot overwrite a whole-file cache with a narrow one.
     // An empty recorded signature (a cache predating `selection_signature`) can prove none of
     // this, so it is left alone rather than healed.
-    let refreshing_stale_cache = FREQ_CACHE_STALE_SIG
-        .get()
-        .is_some_and(|sig| !sig.is_empty() && *sig == Args::selection_signature(&headers));
+    let refreshing_stale_cache = FREQ_CACHE_STALE_SIG.get().filter(|stale| {
+        !stale.selection_signature.is_empty()
+            && stale.selection_signature == Args::selection_signature(&headers)
+    });
     if args.flag_frequency_jsonl {
         // explicitly requested: a failure to write the cache the user asked for is fatal
         args.write_frequency_jsonl(&headers, &tables, &rconfig)?;
@@ -1392,7 +1403,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         {
             log::warn!("Could not persist dc frequency cache: {err}");
         }
-    } else if refreshing_stale_cache {
+    } else if let Some(stale) = refreshing_stale_cache {
         // BEST-EFFORT, unlike the branch above. This user asked for frequencies, not for a
         // cache write, and the frequencies are already computed. A cache file we cannot
         // replace - read-only file, read-only media, a directory owned by someone else - must
@@ -1400,7 +1411,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // (`can_use_freq_cache` requires `!flag_frequency_jsonl`, so the two branches are
         // mutually exclusive in practice; they are kept separate because their error policies
         // genuinely differ.)
-        if let Err(e) = args.write_frequency_jsonl(&headers, &tables, &rconfig) {
+        //
+        // Refresh with the thresholds the stale cache was BUILT with, not this run's defaults:
+        // the refresh should change only what the version change invalidated, not demote every
+        // column a custom --high-card-threshold/--high-card-pct kept in full to a sentinel.
+        let mut refresh_args = args.clone();
+        refresh_args.flag_high_card_threshold = stale.flag_high_card_threshold;
+        refresh_args.flag_high_card_pct = stale.flag_high_card_pct;
+        if let Err(e) = refresh_args.write_frequency_jsonl(&headers, &tables, &rconfig) {
             wwarn!(
                 "Could not refresh the version-stale frequency cache: {e}. Continuing with the \
                  computed frequencies."
@@ -2435,7 +2453,11 @@ impl Args {
             // The residual: a strict cache plus a flexible-only user never heals. The message
             // above names --frequency-jsonl so that is recoverable rather than mysterious.
             if metadata.flag_flexible == self.flag_flexible {
-                let _ = FREQ_CACHE_STALE_SIG.set(metadata.selection_signature.clone());
+                let _ = FREQ_CACHE_STALE_SIG.set(StaleFreqCache {
+                    selection_signature:      metadata.selection_signature.clone(),
+                    flag_high_card_threshold: metadata.flag_high_card_threshold,
+                    flag_high_card_pct:       metadata.flag_high_card_pct,
+                });
             }
             return None;
         }
@@ -3536,6 +3558,8 @@ impl Args {
             );
             let read_err = Arc::clone(&read_err);
             pool.execute(move || {
+                #[cfg(debug_assertions)]
+                inject_test_panic(i);
                 // The parent verified the index exists before chunking, but it can be
                 // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
                 // info, matching parallel_stats.
@@ -3566,7 +3590,9 @@ impl Args {
         let no_skip = vec![false; sel.len()];
         let mut merged: WeightedFTables = Vec::new();
         let mut tainted: Vec<bool> = vec![false; sel.len()];
+        let mut received = 0_usize;
         for (chunk, chunk_tainted) in recv {
+            received += 1;
             for (t, c) in tainted.iter_mut().zip(chunk_tainted) {
                 *t |= c;
             }
@@ -3584,6 +3610,7 @@ impl Args {
         if let Some(e) = read_err.get() {
             return fail_clierror!("{e}");
         }
+        check_all_chunks_received(received, nchunks)?;
         note_demoted(&headers, &tainted, self.flag_no_headers);
         finalize_unique_columns(&candidates, &tainted)?;
         Ok((headers, vec![], Some(merged)))
@@ -3624,6 +3651,8 @@ impl Args {
             );
             let read_err = Arc::clone(&read_err);
             pool.execute(move || {
+                #[cfg(debug_assertions)]
+                inject_test_panic(i);
                 // The parent verified the index exists before chunking, but it can be
                 // deleted or invalidated in between (TOCTOU). Fail loudly with actionable
                 // info, matching parallel_stats.
@@ -3672,7 +3701,9 @@ impl Args {
         let col_cardinality = COL_CARDINALITY_VEC.get().unwrap_or(&EMPTY_VEC);
         let mut merged: FTables = Vec::new();
         let mut tainted: Vec<bool> = vec![false; sel_len];
+        let mut received = 0_usize;
         for (chunk, chunk_tainted) in recv {
+            received += 1;
             for (t, c) in tainted.iter_mut().zip(chunk_tainted) {
                 *t |= c;
             }
@@ -3690,6 +3721,7 @@ impl Args {
         if let Some(e) = read_err.get() {
             return fail_clierror!("{e}");
         }
+        check_all_chunks_received(received, nchunks)?;
         Ok((merged, tainted))
     }
 
@@ -5208,6 +5240,34 @@ fn note_demoted(headers: &Headers, demoted: &[bool], no_headers: bool) {
              stay unique after trimming.",
             names.join(", ")
         );
+    }
+}
+
+/// Debug builds only: `QSV_TEST_FREQ_PANIC_CHUNK=<i>` makes the parallel worker for chunk `i`
+/// panic, so tests can prove that a lost chunk is reported instead of silently dropped.
+#[cfg(debug_assertions)]
+fn inject_test_panic(chunk: usize) {
+    if std::env::var("QSV_TEST_FREQ_PANIC_CHUNK")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        == Some(chunk)
+    {
+        panic!("QSV_TEST_FREQ_PANIC_CHUNK: injected panic in frequency chunk {chunk}");
+    }
+}
+
+/// A parallel pass must fold EVERY chunk. A worker that panics (qsv is built with
+/// `panic = "unwind"`) drops its sender without sending or recording a read error, so without
+/// this check the fold would end early and report a partial table as complete.
+fn check_all_chunks_received(received: usize, nchunks: usize) -> CliResult<()> {
+    if received == nchunks {
+        Ok(())
+    } else {
+        fail_clierror!(
+            "frequency: {} of {nchunks} parallel chunks failed (see the panic message above); \
+             refusing to report incomplete frequencies.",
+            nchunks - received
+        )
     }
 }
 

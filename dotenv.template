@@ -163,9 +163,10 @@ QSV_COMMENT_CHAR = '#'
 # logical processors.  See PERFORMANCE-Multithreading section for more info.
 # QSV_MAX_JOBS = 8
 
-# The precision to use when converting Polars-enabled formats (Avro,Arrow,Parquet,JSON,
-# JSONL and gz,zlib & zst compressed files) to CSV. If set, this will also override the
-# --float-precision option of the `sqlp` command.
+# The precision to use when converting Polars-enabled formats (Avro, Arrow, Parquet, JSON
+# and JSONL) to CSV. gz, zlib & zst compressed CSV files are decompressed as-is, so it
+# doesn't apply to them. If set, this will also override the --float-precision option of
+# the `sqlp` command.
 # QSV_POLARS_FLOAT_PRECISION = 8
 
 # The scale to use when using the Polars Decimal type. If not set, defaults to 5.

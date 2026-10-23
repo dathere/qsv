@@ -925,35 +925,22 @@ fn slice_float_precision() {
     let parquet_file = wrk.path("float_data.parquet");
     assert!(parquet_file.exists());
 
-    // gzip float_data.csv, so we go through the polars special format
-    // processing workflow that checks for default precision
-    let mut cmd = std::process::Command::new("gzip");
-    cmd.arg(&test_csv);
-    wrk.assert_success(&mut cmd);
-    // Check if the gzipped file exists
-    let gzipped_file = wrk.path("float_data.csv.gz");
-    assert!(gzipped_file.exists());
-    // Copy the schema file to match the gzipped filename
-    std::fs::copy(
-        wrk.path("float_data.csv.pschema.json"),
-        wrk.path("float_data.csv.gz.pschema.json"),
-    )
-    .unwrap();
-
+    // A compressed CSV is decompressed byte-for-byte (#4900), so float precision is checked
+    // through the parquet conversion, which goes through polars.
     // Test with default precision
     let mut cmd = wrk.command("slice");
-    cmd.arg(&gzipped_file).arg("--json");
+    cmd.arg(&parquet_file).arg("--json");
     let got_default: String = wrk.stdout_on_success(&mut cmd);
 
     // Test with custom precision (2 decimal places)
     let mut cmd = wrk.command("slice");
-    cmd.arg(&gzipped_file).arg("--json");
+    cmd.arg(&parquet_file).arg("--json");
     cmd.env("QSV_POLARS_FLOAT_PRECISION", "2");
     let got_precision_2: String = wrk.stdout_on_success(&mut cmd);
 
     // Test with custom precision (5 decimal places)
     let mut cmd = wrk.command("slice");
-    cmd.arg(&gzipped_file).arg("--json");
+    cmd.arg(&parquet_file).arg("--json");
     cmd.env("QSV_POLARS_FLOAT_PRECISION", "5");
     let got_precision_5: String = wrk.stdout_on_success(&mut cmd);
 
@@ -1229,8 +1216,8 @@ fn slice_from_csvgz_with_decimal_precision() {
 
 #[cfg(feature = "polars")]
 #[test]
-fn slice_from_tsvgz_with_decimal_precision() {
-    let wrk = Workdir::new("slice_from_tsvgz_with_decimal_precision");
+fn slice_from_tsvgz_ignores_pschema_and_float_precision() {
+    let wrk = Workdir::new("slice_from_tsvgz_ignores_pschema_and_float_precision");
 
     // Create a test TSV file with high precision decimal values
     wrk.create_with_delim(
@@ -1244,8 +1231,9 @@ fn slice_from_tsvgz_with_decimal_precision() {
         b'\t',
     );
 
-    // Create a pschema.json file with Decimal type for the 'value' field
-    // Using Decimal with precision 25 and scale 25 to maintain all decimal places
+    // A pschema and float precision used to re-type a compressed CSV through polars, which
+    // changed the digits (3.1415926535897932384626433 -> 3.1415926535897931159979635). It is
+    // now decompressed byte-for-byte (#4900), so neither applies.
     let schema_data = r#"{
         "fields": {
             "id": "String",
@@ -1253,7 +1241,7 @@ fn slice_from_tsvgz_with_decimal_precision() {
             "value": { "Decimal": [25, 25] }
         }
     }"#;
-    wrk.create_from_string("test.tsv.pschema.json", schema_data);
+    wrk.create_from_string("test.tsv.gz.pschema.json", schema_data);
 
     // Compress the TSV file with gzip
     let mut cmd = std::process::Command::new("gzip");
@@ -1262,83 +1250,89 @@ fn slice_from_tsvgz_with_decimal_precision() {
 
     // Run slice command
     let mut cmd = wrk.command("slice");
-    cmd.env("QSV_POLARS_FLOAT_PRECISION", "25")
+    cmd.env("QSV_POLARS_FLOAT_PRECISION", "5")
         .arg("test.tsv.gz")
         .arg("--json");
 
-    // Verify the output - value should maintain all decimal places
+    // the original values come through unchanged
     let got: String = wrk.stdout_on_success(&mut cmd);
 
-    assert!(got.contains("3.1415926535897931159979635"));
-    assert!(got.contains("2.7182818284590450907955983"));
-    assert!(got.contains("1.4142135623730951454746219"));
+    assert!(got.contains("3.1415926535897932384626433"));
+    assert!(got.contains("2.7182818284590452353602874"));
+    assert!(got.contains("1.4142135623730950488016887"));
 }
 
 #[cfg(feature = "polars")]
 #[test]
-// A Decimal pschema preserves more precision than Float64. Exercised via the compressed-CSV
-// reader because polars' JSONL reader does not support a Decimal target type — see the note
-// on slice_from_csvgz_with_decimal_precision and issue #3988. Previously used JSONL and only
-// "passed" because the conversion error was swallowed and raw bytes were read as-is.
-fn slice_from_csvgz_with_decimal_precision_vs_float() {
-    let wrk = Workdir::new("slice_from_csvgz_with_decimal_precision_vs_float");
+// A compressed CSV used to be parsed by polars and re-written as CSV, so its values were
+// re-typed: leading zeros dropped (00501 -> 501), 1.50 -> 1.5, TRUE -> true, a Float64
+// pschema truncated digits, and each blank line became an all-null row. It is now
+// decompressed byte-for-byte (#4900).
+fn slice_compressed_csv_values_pass_through_unchanged() {
+    let wrk = Workdir::new("slice_compressed_csv_values_pass_through_unchanged");
 
-    // High-precision decimal values that exceed f64's ~17 significant digits.
-    let csv_data = "id,name,value\n1,John,3.1415926535897932384626433\n2,Jane,2.\
-                    7182818284590452353602874\n3,Bob,1.4142135623730950488016887\n";
-    wrk.create_from_string("test.csv", csv_data);
+    for ext in ["gz", "zlib"] {
+        let compressed = format!("test.csv.{ext}");
+        let bytes = if ext == "gz" {
+            let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            std::io::Write::write_all(&mut enc, COMPRESSED_PASSTHROUGH_CSV.as_bytes()).unwrap();
+            enc.finish().unwrap()
+        } else {
+            let mut enc =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            std::io::Write::write_all(&mut enc, COMPRESSED_PASSTHROUGH_CSV.as_bytes()).unwrap();
+            enc.finish().unwrap()
+        };
+        std::fs::write(wrk.path(&compressed), bytes).unwrap();
+        assert_compressed_passthrough(&wrk, &compressed);
+    }
+}
 
-    // gzip the CSV; Config detects the .csv.gz special format and decompresses via polars.
-    let mut cmd = std::process::Command::new("gzip");
+#[cfg(feature = "polars")]
+#[cfg(not(all(target_arch = "aarch64", target_os = "windows")))]
+#[test]
+fn slice_compressed_zst_csv_values_pass_through_unchanged() {
+    let wrk = Workdir::new("slice_compressed_zst_csv_values_pass_through_unchanged");
+    wrk.create_from_string("test.csv", COMPRESSED_PASSTHROUGH_CSV);
+    let mut cmd = std::process::Command::new("zstd");
     cmd.arg(wrk.path("test.csv"));
     wrk.assert_success(&mut cmd);
+    assert_compressed_passthrough(&wrk, "test.csv.zst");
+}
 
-    // Decimal schema (named to match the .csv.gz input) preserves all decimal places.
-    let decimal_schema = r#"{
+#[cfg(feature = "polars")]
+const COMPRESSED_PASSTHROUGH_CSV: &str = "zip,amt,flag,value\n00501,1.50,TRUE,3.\
+                                          1415926535897932384626433\n\n02134,2.00,false,2.\
+                                          7182818284590452353602874\n";
+
+// slice and count see the original values and skip the blank line, even with a pschema that
+// would re-type every column
+#[cfg(feature = "polars")]
+fn assert_compressed_passthrough(wrk: &Workdir, compressed: &str) {
+    wrk.create_from_string(
+        &format!("{compressed}.pschema.json"),
+        r#"{
         "fields": {
-            "id": "String",
-            "name": "String",
-            "value": { "Decimal": [38, 25] }
-        },"metadata": null
-    }"#;
-    wrk.create_from_string("test.csv.gz.pschema.json", decimal_schema);
-
-    // Run slice command with Decimal schema
-    let mut cmd = wrk.command("slice");
-    cmd.arg("test.csv.gz").arg("--json");
-
-    // Get the output with Decimal schema
-    let decimal_output: String = wrk.stdout_on_success(&mut cmd);
-
-    // Now create a schema with Float64 instead of Decimal
-    let float_schema = r#"{
-        "fields": {
-            "id": "String",
-            "name": "String",
+            "zip": "Int64",
+            "amt": "Float64",
+            "flag": "Boolean",
             "value": "Float64"
         },"metadata": null
-    }"#;
-    wrk.create_from_string("test.csv.gz.pschema.json", float_schema);
+    }"#,
+    );
 
-    // Run slice command with Float64 schema
     let mut cmd = wrk.command("slice");
-    cmd.arg("test.csv.gz").arg("--json");
+    cmd.arg(compressed);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["zip", "amt", "flag", "value"],
+        svec!["00501", "1.50", "TRUE", "3.1415926535897932384626433"],
+        svec!["02134", "2.00", "false", "2.7182818284590452353602874"],
+    ];
+    assert_eq!(got, expected, "{compressed}");
 
-    // Get the output with Float64 schema
-    let float_output: String = wrk.stdout_on_success(&mut cmd);
-
-    // Verify that the Decimal schema preserves more precision than Float64
-    // The Float64 output should be truncated compared to the Decimal output
-    assert!(decimal_output.len() > float_output.len());
-
-    // Check that the Decimal output contains the full precision values
-    assert!(decimal_output.contains("3.1415926535897932384626433"));
-    assert!(decimal_output.contains("2.7182818284590452353602874"));
-    assert!(decimal_output.contains("1.4142135623730950488016887"));
-
-    // The Float64 output should have truncated values
-    // We're checking for the absence of the full precision values in the Float64 output
-    assert!(!float_output.contains("3.1415926535897932384626433"));
-    assert!(!float_output.contains("2.7182818284590452353602874"));
-    assert!(!float_output.contains("1.4142135623730950488016887"));
+    let mut cmd = wrk.command("count");
+    cmd.arg(compressed);
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(got, "2", "{compressed}");
 }

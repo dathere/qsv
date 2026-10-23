@@ -730,7 +730,7 @@ geocode = [
 luau     = ["mlua", "sanitize-filename", "flate2", "zstd"]
 magika   = ["dep:magika", "dep:ort"]
 mcp      = []
-polars   = ["dep:polars", "dep:polars-arrow", "bytemuck"]
+polars   = ["dep:polars", "dep:polars-arrow", "bytemuck", "flate2", "zstd"]
 readstat = ["dep:polars-readstat-rs", "polars"]
 
 prompt = ["rfd"]

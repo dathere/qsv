@@ -193,6 +193,7 @@ pub(crate) fn source_json(
     fingerprint: Option<(String, u64)>,
     rows: u64,
     pid: Option<&str>,
+    source: Option<serde_json::Value>,
 ) -> serde_json::Value {
     use serde_json::{Value, json};
 
@@ -210,11 +211,103 @@ pub(crate) fn source_json(
             json!({"algo": "blake3", "digest": digest, "bytes": bytes}),
         );
     }
+    // omitted, not null, unless the data is a public download (see `public_source`)
+    if let Some(source) = source {
+        obj.insert("source".into(), source);
+    }
     obj.insert("rows".into(), json!(rows));
     obj.insert("viz_args".into(), json!(src.viz_args));
     obj.insert("redacted".into(), json!(src.redacted));
     obj.insert("pid".into(), json!(pid));
     Value::Object(obj)
+}
+
+/// Where a `dc:` input's data came from, for the provenance `source` object: the cache entry's
+/// source as given to `qsv get`, when [`public_source`] allows it. Reads the cache index only.
+#[cfg(feature = "get")]
+pub(crate) fn dc_source(input: Option<&str>) -> Option<serde_json::Value> {
+    let name = input?.strip_prefix("dc:")?;
+    let entry = crate::diskcache::dc_entry_meta(name).ok().flatten()?;
+    public_source(
+        &entry.source_uri,
+        entry.anonymous_fetch,
+        entry.ckan_api_url.as_deref(),
+    )
+}
+
+/// Query keys (lower-cased, as substrings) that mark a URL as carrying a credential: API
+/// keys, tokens, and presigned-URL signatures (S3 `X-Amz-*`, GCS `X-Goog-*`, Azure SAS `sig`).
+#[cfg(feature = "get")]
+const CREDENTIAL_QUERY_MARKERS: &[&str] = &[
+    "token",
+    "key",
+    "secret",
+    "passw",
+    "sig",
+    "credential",
+    "auth",
+    "session",
+    "x-amz-",
+    "x-goog-",
+];
+
+/// The `{"url", "ckan_api"?}` provenance object for data downloaded from `uri`, or `None`
+/// unless anyone can download it the same way. A published schematic must not reveal where
+/// private data lives, so this records only:
+///
+/// - a download that sent no credentials (`anonymous_fetch == Some(true)`: no CKAN API token;
+///   `None`, from an older cache entry or a local/cloud source, is not enough), from
+/// - an `http(s)://`, `ckan://` or `dathere://` source (never a local path, nor `s3://`, `gs://`,
+///   `az://`, which name infrastructure and are credentialed by nature),
+/// - with no user info and no query key that looks like a credential, checked against the request
+///   `qsv get` expands the source into, and a credential-free CKAN API URL.
+#[cfg(feature = "get")]
+pub(crate) fn public_source(
+    uri: &str,
+    anonymous_fetch: Option<bool>,
+    ckan_api: Option<&str>,
+) -> Option<serde_json::Value> {
+    if anonymous_fetch != Some(true) {
+        return None;
+    }
+    let lower = uri.to_ascii_lowercase();
+    if lower.starts_with("ckan://") {
+        // `qsv get` pastes an id into `resource_show?id=<id>` unencoded, so a `&` or `=` in it
+        // would add query keys; a `<name>?` search is URL-encoded, so any name is safe
+        let rest = uri["ckan://".len()..].trim();
+        if !rest.ends_with('?') && rest.contains(['&', '=', '#']) {
+            return None;
+        }
+        let mut obj = serde_json::json!({ "url": uri });
+        if let Some(api) = ckan_api {
+            // a credentialed API URL is private infrastructure: record nothing, not a bare id
+            if !credential_free_http_url(api) {
+                return None;
+            }
+            obj["ckan_api"] = serde_json::json!(api);
+        }
+        return Some(obj);
+    }
+    if lower.starts_with("dathere://") {
+        // expands to a raw GitHub URL with the rest as its path: check it as that request
+        let expanded = format!("https://raw.invalid/{}", &uri["dathere://".len()..]);
+        return credential_free_http_url(&expanded).then(|| serde_json::json!({ "url": uri }));
+    }
+    credential_free_http_url(uri).then(|| serde_json::json!({ "url": uri }))
+}
+
+#[cfg(feature = "get")]
+fn credential_free_http_url(value: &str) -> bool {
+    let Ok(url) = url::Url::parse(value) else {
+        return false;
+    };
+    matches!(url.scheme(), "http" | "https")
+        && url.username().is_empty()
+        && url.password().is_none()
+        && !url.query_pairs().any(|(k, _)| {
+            let k = k.to_ascii_lowercase();
+            CREDENTIAL_QUERY_MARKERS.iter().any(|m| k.contains(m))
+        })
 }
 
 /// The `qsv-clientd` port the bridge probes: `QSV_CLIENTD_PORT` when it is a valid non-zero
@@ -1055,9 +1148,95 @@ mod tests {
 
     #[test]
     fn source_json_omits_the_fingerprint_without_one() {
-        let v = source_json(&SourceArgs::default(), None, 3, None);
+        let v = source_json(&SourceArgs::default(), None, 3, None, None);
         assert!(v.get("fingerprint").is_none());
+        assert!(v.get("source").is_none());
         assert_eq!(v["pid"], serde_json::Value::Null);
         assert_eq!(v["redacted"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn source_json_records_a_source() {
+        let src = serde_json::json!({"url": "https://h.x/d.csv"});
+        let v = source_json(&SourceArgs::default(), None, 3, None, Some(src.clone()));
+        assert_eq!(v["source"], src);
+    }
+
+    #[cfg(feature = "get")]
+    #[test]
+    fn public_source_records_only_credential_free_downloads() {
+        use serde_json::json;
+        let api = Some("https://data.example.gov/api/3/action");
+        let ok = |uri: &str| public_source(uri, Some(true), None);
+
+        assert_eq!(
+            ok("https://data.example.gov/dataset/d/resource/r/download/x.csv"),
+            Some(json!({"url": "https://data.example.gov/dataset/d/resource/r/download/x.csv"}))
+        );
+        assert_eq!(
+            ok("https://h.x/q?layer=0&format=csv"),
+            Some(json!({"url": "https://h.x/q?layer=0&format=csv"}))
+        );
+        assert_eq!(
+            public_source("ckan://abc", Some(true), api),
+            Some(json!({"url": "ckan://abc", "ckan_api": api}))
+        );
+        assert_eq!(
+            public_source("CKAN://abc", Some(true), None),
+            Some(json!({"url": "CKAN://abc"}))
+        );
+        for search in ["ckan://housing?", "ckan://R&D?", "ckan://a=b #2?"] {
+            assert_eq!(ok(search), Some(json!({ "url": search })), "{search}");
+        }
+        // a CKAN API that itself carries credentials is private infrastructure: no source at
+        // all, not a bare id that names no site
+        for bad_api in [
+            "https://u:p@h.x/api/3/action",
+            "https://h.x/api/3/action?api_key=S",
+        ] {
+            assert_eq!(public_source("ckan://abc", Some(true), Some(bad_api)), None);
+        }
+        // `qsv get` pastes a ckan:// id into resource_show's query unencoded
+        for uri in [
+            "ckan://abc&api_key=SECRET",
+            "ckan://abc&x=1",
+            "ckan://abc#frag",
+        ] {
+            assert_eq!(public_source(uri, Some(true), api), None, "{uri}");
+        }
+        assert_eq!(
+            ok("dathere://boston311.csv"),
+            Some(json!({"url": "dathere://boston311.csv"}))
+        );
+        assert_eq!(ok("dathere://boston311.csv?token=SECRET"), None);
+        assert_eq!(ok("dathere://x.csv?X-Amz-Signature=S"), None);
+
+        // fetched with a CKAN token (a private dataset, or a token set for every fetch), or
+        // not known to have been fetched anonymously (older entries, local and cloud sources)
+        assert_eq!(public_source("ckan://abc", Some(false), api), None);
+        assert_eq!(public_source("https://h.x/d.csv", None, None), None);
+
+        for uri in [
+            "/home/me/private/data.csv",
+            "C:\\Users\\me\\data.csv",
+            "data.csv",
+            "file:///etc/passwd",
+            "s3://bucket/key.csv",
+            "gs://bucket/key.csv",
+            "az://container/key.csv",
+            "ftp://h.x/d.csv",
+            "https://user:pass@h.x/d.csv",
+            "https://user@h.x/d.csv",
+            "https://h.x/d.csv?api_key=1",
+            "https://h.x/d.csv?Token=1",
+            "https://s3.amazonaws.com/b/k.csv?X-Amz-Signature=abc&X-Amz-Expires=86400",
+            "https://acct.blob.core.windows.net/c/k.csv?sv=2022&sig=abc",
+            "https://storage.googleapis.com/b/k?X-Goog-Signature=abc",
+            "https://h.x/d.csv?auth=1",
+            "https://h.x/d.csv?password=1",
+            "not a url",
+        ] {
+            assert_eq!(ok(uri), None, "{uri} must not be recorded");
+        }
     }
 }

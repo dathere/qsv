@@ -540,6 +540,12 @@ mod rich {
         /// than the ambient `QSV_CKAN_API`/default. None for non-CKAN entries.
         #[serde(default)]
         pub ckan_api_url:       Option<String>,
+        /// `Some(true)` when the last http(s)/CKAN download sent no credentials (no CKAN API
+        /// token), so anyone can fetch `source_uri` the same way; `Some(false)` when it sent
+        /// one. `None` for local and cloud sources, and for entries cached before this field
+        /// existed — treat those as possibly private.
+        #[serde(default)]
+        pub anonymous_fetch:    Option<bool>,
         /// Tabular extension (`csv`/`tsv`/`tab`/`ssv`) of the decompressed content
         /// for compressed sources, so a `dc:` materialized temp gets the right
         /// extension (and thus delimiter). None for plain or unknown sources.
@@ -1202,6 +1208,26 @@ mod rich {
         Ok(Some(load_entry_at(&ep)?))
     }
 
+    /// The metadata of the cache entry `name` (a `dc:` handle without its prefix) as this run
+    /// resolved it, so it describes the data actually used even if `qsv get` has rebound the
+    /// alias since. `None` unless this run resolved the handle. No refresh and no network.
+    #[cfg(feature = "viz")]
+    pub fn dc_entry_meta(name: &str) -> CliResult<Option<CacheEntry>> {
+        let cache_dir = set_qsv_cache_dir(DEFAULT_CACHE_DIR)?;
+        Ok(resolved_meta(&cache_dir, name))
+    }
+
+    #[cfg(feature = "viz")]
+    fn resolved_meta(cache_dir: &str, name: &str) -> Option<CacheEntry> {
+        let slot = {
+            let memo = DC_RESOLVED.lock().unwrap_or_else(PoisonError::into_inner);
+            memo.get(&(cache_dir.to_string(), name.to_string()))
+                .cloned()
+        }?;
+        let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.as_ref().map(|r| CacheEntry::clone(&r.meta))
+    }
+
     /// Alias files that currently point at the given entry key hash.
     fn aliases_pointing_to(root: &Path, keyhash: &str) -> Vec<PathBuf> {
         let mut out = Vec::new();
@@ -1458,6 +1484,7 @@ mod rich {
             compression: opts.compression,
             cloud_identity: Vec::new(),
             ckan_api_url: None,
+            anonymous_fetch: None,
             inner_ext,
             sniffed: None,
         };
@@ -1775,6 +1802,7 @@ mod rich {
                         compression: opts.compression,
                         cloud_identity: identity,
                         ckan_api_url: None,
+                        anonymous_fetch: None,
                         inner_ext,
                         sniffed: None,
                     },
@@ -1830,6 +1858,9 @@ mod rich {
         let cache_key = format!("HTTP:{}", opts.source);
         let kh = keyhash(&cache_key);
         let name = opts.name.clone().unwrap_or_else(|| derive_name(final_url));
+        // A CKAN token goes on the resource_show/resource_search calls whenever one is set,
+        // even when it is then stripped from a cross-origin data download.
+        let anonymous = !(is_ckan && opts.ckan_token.is_some());
 
         let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
 
@@ -2123,6 +2154,7 @@ mod rich {
                     ))
                 })?;
                 entry.meta.downloaded_at = unix_now();
+                entry.meta.anonymous_fetch = Some(anonymous);
                 let json = serde_json::to_vec(&entry).map_err(|e| {
                     CliError::Other(format!("get: failed to serialize cache entry: {e}"))
                 })?;
@@ -2156,6 +2188,7 @@ mod rich {
                         } else {
                             None
                         },
+                        anonymous_fetch: Some(anonymous),
                         inner_ext,
                         sniffed: None,
                     },
@@ -2888,6 +2921,10 @@ mod rich {
         csv_path: PathBuf,
         blake3:   String,
         ext:      String,
+        /// The entry's metadata as resolved, for `viz`'s provenance: the alias may be rebound
+        /// to another source later in the run, even one serving identical bytes.
+        #[cfg(feature = "viz")]
+        meta:     Arc<CacheEntry>,
     }
 
     /// Per-run memo of resolved `dc:` handles, keyed by (cache dir, entry name).
@@ -3180,6 +3217,8 @@ mod rich {
 
         Ok(ResolvedDc {
             csv_path,
+            #[cfg(feature = "viz")]
+            meta: Arc::new(entry.meta.clone()),
             blake3: entry.meta.blake3,
             ext,
         })
@@ -3422,11 +3461,18 @@ mod rich {
     #[cfg(test)]
     mod tests {
         use std::io::Cursor;
+        #[cfg(feature = "viz")]
+        use std::{
+            path::PathBuf,
+            sync::{Arc, Mutex},
+        };
 
         use super::{
             CacheEntry, RefreshPolicy, ckan_auth_hint, emit_preview_reservoir, entry_age_secs,
             is_due_for_refresh, unix_now,
         };
+        #[cfg(feature = "viz")]
+        use super::{DC_RESOLVED, ResolvedDc, resolved_meta};
 
         /// A metadata record with only the fields the staleness rule reads.
         fn meta(ttl_secs: i64, refresh_policy: RefreshPolicy) -> CacheEntry {
@@ -3435,6 +3481,31 @@ mod rich {
                 refresh_policy,
                 ..Default::default()
             }
+        }
+
+        #[cfg(feature = "viz")]
+        #[test]
+        fn dc_entry_meta_describes_the_entry_as_this_run_resolved_it() {
+            let (dir, name) = ("/nonexistent/dc-entry-meta-test", "rebound.csv");
+            assert!(resolved_meta(dir, name).is_none());
+            let resolved = CacheEntry {
+                source_uri: "https://a.example/d.csv".to_string(),
+                blake3: "aaa".to_string(),
+                ..Default::default()
+            };
+            DC_RESOLVED.lock().unwrap().insert(
+                (dir.to_string(), name.to_string()),
+                Arc::new(Mutex::new(Some(ResolvedDc {
+                    csv_path: PathBuf::from("x.csv"),
+                    blake3:   "aaa".to_string(),
+                    ext:      "csv".to_string(),
+                    meta:     Arc::new(resolved),
+                }))),
+            );
+            // the index is never read: a later rebinding (even to identical bytes from another
+            // source) cannot change what this run credits
+            let meta = resolved_meta(dir, name).unwrap();
+            assert_eq!(meta.source_uri, "https://a.example/d.csv");
         }
 
         // A `downloaded_at` in the FUTURE — a backward clock step, or a cache dir shared with

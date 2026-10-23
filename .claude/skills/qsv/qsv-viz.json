@@ -281,7 +281,7 @@
       {
         "flag": "--no-daemon-bridge",
         "type": "flag",
-        "description": "Leave out the qsv-clientd bridge script. By default a `smart` HTML Data Schematic sends one \"hello\" request to 127.0.0.1 when opened (port 14470, or QSV_CLIENTD_PORT at render time) and, only if a qsv-clientd daemon answers, offers a \"Live data\" chip to pair with it (approved in a shell) for drill-down, refresh, re-render and read-only queries. With no daemon it does nothing, so the page stays self-contained. Setting QSV_VIZ_NO_DAEMON=1 has the same effect. The page's qsv-schematic-source provenance JSON is kept either way, but without the input fingerprint (which costs an extra read of the input). HTML output only. Only affects `smart`. See https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md"
+        "description": "Leave out the qsv-clientd bridge script. By default a `smart` HTML Data Schematic sends one \"hello\" request to 127.0.0.1 when opened (port 14470, or QSV_CLIENTD_PORT at render time) and, only if a qsv-clientd daemon answers, offers a \"Live data\" chip to pair with it (approved in a shell) for drill-down, refresh, re-render and read-only queries. With no daemon it does nothing, so the page stays self-contained. Setting QSV_VIZ_NO_DAEMON=1 has the same effect. The page's qsv-schematic-source provenance JSON is kept either way, but without the input fingerprint (which costs an extra read of the input) and without the source URL of a dc: input. HTML output only. Only affects `smart`. See https://github.com/dathere/qsv/blob/master/docs/DATA_SCHEMATIC.md"
       },
       {
         "flag": "--no-headers",

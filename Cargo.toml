@@ -639,10 +639,11 @@ geosuggest-core = "0.9.0"
 [features]
 default = ["jemallocator"]
 # NOTE: no publish workflow builds the prebuilt `qsv` with distrib_features. Each one passes an
-# explicit --features list that INTENTIONALLY leaves out `get`, `get_cloud` and `geoconnex`
-# (see #4737). So the prebuilt `qsv`/`qsvpy*` binaries have no `get` command, no `dc:` inputs,
-# no s3:///gs:///az:// sources and no `profile --profile geoconnex`. Users who need them can
-# use the prebuilt `qsvdp` (get + get_cloud) or build from source with
+# explicit --features list. The prebuilt `qsv` includes `get` (so `qsv get` and `dc:` inputs work,
+# e.g. to render a Data Schematic that records where its data came from), but INTENTIONALLY
+# leaves out `get_cloud` and `geoconnex` (see #4737): it has no s3:///gs:///az:// sources and no
+# `profile --profile geoconnex`. The prebuilt `qsvpy*` binaries have no `get` at all. Users who
+# need these can use the prebuilt `qsvdp` (get + get_cloud) or build from source with
 # -F distrib_features, or selectively with -F feature_capable,get[,get_cloud] /
 # -F feature_capable,geoconnex (the `qsv` bin requires feature_capable).
 distrib_features = [
@@ -709,8 +710,8 @@ get = ["zstd", "flate2", "glob"]
 # get_cloud: adds cloud object-storage sources (s3://, gs://, az://) to `get`,
 # via the object_store crate. Opt-in so a bare `-F get` build stays lean;
 # included in distrib_features/datapusher_plus (where polars already pulls
-# object_store). NOT in qsvmcp, and NOT in the prebuilt `qsv` (see the NOTE
-# above distrib_features). See `qsv get --help`.
+# object_store). NOT in qsvmcp, and NOT in the prebuilt `qsv`, which has plain
+# `get` only (see the NOTE above distrib_features). See `qsv get --help`.
 get_cloud = ["get", "dep:object_store"]
 geocode = [
     "bytemuck",

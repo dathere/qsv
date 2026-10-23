@@ -2582,11 +2582,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .unwrap()
                 .to_string();
             // Use platform-appropriate JSON serialization
-            let json_string =
-                cfg_select! {
-                    target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
-                    _ => serde_json::to_string_pretty(&current_stats_args)?,
-                };
+            let json_string = cfg_select! {
+                target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
+                _ => serde_json::to_string_pretty(&current_stats_args)?,
+            };
             std::fs::write(stats_pathbuf.clone(), json_string)?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"

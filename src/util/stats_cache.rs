@@ -694,11 +694,10 @@ pub fn get_stats_records_flexible(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            let parse_result =
-                cfg_select! {
-                    target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
-                    _ => serde_json::from_slice::<StatsData>(&s_slice),
-                };
+            let parse_result = cfg_select! {
+                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                _ => serde_json::from_slice::<StatsData>(&s_slice),
+            };
 
             if let Ok(mut stats) = parse_result {
                 // a pre-fix cache carries fabricated 0.0 renderings on a date row; drop them
@@ -918,13 +917,11 @@ pub fn get_stats_records_flexible(
                 )));
             }
             return Err(CliError::Other(cfg_select! {
-                target_family = "unix" => {
-                    match status.signal() {
-                        Some(signal) => {
-                            format!("qsv stats terminated with signal: {signal}{detail}")
-                        },
-                        None => format!("qsv stats terminated by unknown cause{detail}"),
-                    }
+                target_family = "unix" => match status.signal() {
+                    Some(signal) => {
+                        format!("qsv stats terminated with signal: {signal}{detail}")
+                    },
+                    None => format!("qsv stats terminated by unknown cause{detail}"),
                 },
                 _ => {
                     format!("qsv stats terminated by unknown cause{detail}")
@@ -958,11 +955,10 @@ pub fn get_stats_records_flexible(
             s_slice = curr_line.as_bytes().to_vec();
 
             // Parse regular stats record
-            let parse_result =
-                cfg_select! {
-                    target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
-                    _ => serde_json::from_slice::<StatsData>(&s_slice),
-                };
+            let parse_result = cfg_select! {
+                target_endian = "little" => simd_json::from_slice::<StatsData>(&mut s_slice),
+                _ => serde_json::from_slice::<StatsData>(&s_slice),
+            };
 
             match parse_result {
                 Ok(mut stats) => {

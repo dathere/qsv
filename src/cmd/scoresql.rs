@@ -1450,6 +1450,7 @@ fn score_filter_selectivity(
                     && top.percentage > 70.0
                     && top.value != "<ALL_UNIQUE>"
                     && top.value != "<HIGH_CARDINALITY>"
+                    && top.value != "<NON_UTF8>"
                 {
                     // Could not match the filter value (e.g. literal not in the top-N
                     // sample, or compared against another column). Note the skew, but
@@ -1485,6 +1486,7 @@ fn score_filter_selectivity(
                 && top.percentage > 70.0
                 && top.value != "<ALL_UNIQUE>"
                 && top.value != "<HIGH_CARDINALITY>"
+                && top.value != "<NON_UTF8>"
             {
                 details.push(format!(
                     "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends on \

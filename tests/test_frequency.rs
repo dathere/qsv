@@ -9126,3 +9126,69 @@ fn frequency_json_unknown_stats_are_null() {
         );
     }
 }
+
+// The frequency cache stores values as JSON strings, so a non-UTF8 value could only be written
+// lossily: Latin-1 `P\xe9` and `P\xe8` both read back as `P\u{FFFD}`, so a cache hit MERGED them
+// (`P\u{FFFD},3`) and shifted every other rank. Such a column is now cached as a `<NON_UTF8>`
+// sentinel and recomputed on a cache hit, while the other columns are still served from cache.
+#[test]
+fn frequency_cache_does_not_merge_non_utf8_values() {
+    let wrk = Workdir::new("frequency_cache_does_not_merge_non_utf8_values");
+    std::fs::write(
+        wrk.path("data.csv"),
+        b"name,city\nP\xe9,a\nP\xe8,a\nP\xe9,b\nQ,b\nQ,a\n",
+    )
+    .unwrap();
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .args(["--cardinality", "--stats-jsonl"])
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut write = wrk.command("frequency");
+    write.arg("--frequency-jsonl").arg("data.csv");
+    let computed = write.output().unwrap();
+    assert!(
+        computed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&computed.stderr)
+    );
+
+    let cache = std::fs::read_to_string(wrk.path("data.freq.csv.data.jsonl")).unwrap();
+    assert!(
+        cache.contains(r#""field":"name","cardinality":3,"frequencies":[{"value":"<NON_UTF8>""#),
+        "the non-UTF8 column must be cached as a <NON_UTF8> sentinel, got:\n{cache}"
+    );
+    assert!(
+        !cache.contains('\u{FFFD}'),
+        "no value may be written lossily, got:\n{cache}"
+    );
+
+    let mut hit = wrk.command("frequency");
+    hit.arg("data.csv");
+    let cached = hit.output().unwrap();
+    let stderr = String::from_utf8_lossy(&cached.stderr);
+    assert!(cached.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("Partial frequency cache hit: 1/2 columns from cache"),
+        "`city` must come from the cache and `name` be recomputed, got:\n{stderr}"
+    );
+
+    let expected: &[u8] = b"field,value,count,percentage,rank\n\
+        name,P\xe9,2,40,1\n\
+        name,Q,2,40,1\n\
+        name,P\xe8,1,20,2\n\
+        city,a,3,60,1\n\
+        city,b,2,40,2\n";
+    // compare raw bytes: a lossy conversion would map P\xe9 and P\xe8 to the same text
+    assert_eq!(
+        computed.stdout,
+        expected,
+        "computed output (lossy view: {})",
+        String::from_utf8_lossy(&computed.stdout)
+    );
+    assert_eq!(
+        cached.stdout, computed.stdout,
+        "a cache hit must reproduce the computed output byte for byte"
+    );
+}

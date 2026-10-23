@@ -272,10 +272,10 @@ pub(crate) fn public_source(
     }
     let lower = uri.to_ascii_lowercase();
     if lower.starts_with("ckan://") {
-        // `qsv get` pastes the id into `resource_show?id=<id>` unencoded, so a `&` or `=` in it
-        // would add query keys: no resource id or `<name>?` search carries either
-        let rest = &uri["ckan://".len()..];
-        if rest.contains(['&', '=', '#']) {
+        // `qsv get` pastes an id into `resource_show?id=<id>` unencoded, so a `&` or `=` in it
+        // would add query keys; a `<name>?` search is URL-encoded, so any name is safe
+        let rest = uri["ckan://".len()..].trim();
+        if !rest.ends_with('?') && rest.contains(['&', '=', '#']) {
             return None;
         }
         let mut obj = serde_json::json!({ "url": uri });
@@ -1185,10 +1185,9 @@ mod tests {
             public_source("CKAN://abc", Some(true), None),
             Some(json!({"url": "CKAN://abc"}))
         );
-        assert_eq!(
-            ok("ckan://housing?"),
-            Some(json!({"url": "ckan://housing?"}))
-        );
+        for search in ["ckan://housing?", "ckan://R&D?", "ckan://a=b #2?"] {
+            assert_eq!(ok(search), Some(json!({ "url": search })), "{search}");
+        }
         // a CKAN API that itself carries credentials is private infrastructure: no source at
         // all, not a bare id that names no site
         for bad_api in [

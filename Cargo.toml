@@ -829,7 +829,7 @@ priority             = "optional"
 # Default feature and asset. THIRD_PARTY_NOTICES.md ships alongside the binary
 # so the vendored MIT/BSD notices travel with the package, as those licenses
 # require; license-file above generates /usr/share/doc/qsv/copyright.
-features = ["feature_capable"]
+features = ["feature_capable", "get"]
 assets = [
     [
         "target/release/qsv",

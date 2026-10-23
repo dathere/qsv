@@ -675,3 +675,46 @@ fn scoresql_plan_uses_polars_default_optimizations() {
     let out: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(out.matches("SORT BY").count(), 1, "{out}");
 }
+
+/// Regression: a frequency-cache column stored as a single sentinel (`<NON_UTF8>`, `<ALL_UNIQUE>`,
+/// `<HIGH_CARDINALITY>`) has no per-value data. A WHERE literal equal to the sentinel's text used
+/// to "match" the sentinel entry, which is stamped 100%, and was penalized as matching ~100% of
+/// rows.
+#[test]
+fn scoresql_sentinel_text_literal_is_not_a_match() {
+    let wrk = Workdir::new("scoresql_sentinel_text_literal_is_not_a_match");
+    // `name` holds Latin-1 bytes, so the frequency cache stores it as `<NON_UTF8>`; `id` is all
+    // unique, so it is stored as `<ALL_UNIQUE>`.
+    std::fs::write(
+        wrk.path("data.csv"),
+        b"id,name\n1,P\xe9\n2,P\xe8\n3,P\xe9\n4,Q\n5,Q\n6,P\xe9\n7,R\n8,R\n9,P\xe8\n10,S\n",
+    )
+    .unwrap();
+
+    for (sql, col) in [
+        ("SELECT id FROM data WHERE name = '<NON_UTF8>'", "name"),
+        ("SELECT name FROM data WHERE id = '<ALL_UNIQUE>'", "id"),
+    ] {
+        let mut cmd = wrk.command("scoresql");
+        cmd.arg("--json").arg("data.csv").arg(sql);
+        let got = wrk.output(&mut cmd);
+        assert!(
+            got.status.success(),
+            "scoresql failed: {}",
+            String::from_utf8_lossy(&got.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&got.stdout);
+        let cache = std::fs::read_to_string(wrk.path("data.freq.csv.data.jsonl")).unwrap();
+        assert!(
+            cache.contains(r#""value":"<NON_UTF8>""#)
+                && cache.contains(r#""value":"<ALL_UNIQUE>""#),
+            "fixture must produce both sentinels, got:\n{cache}"
+        );
+        assert!(
+            !stdout.contains(&format!("data.{col}' filter matches"))
+                && !stdout.contains(&format!("data.{col} filter value matches"))
+                && !stdout.contains(&format!("data.{col} is highly skewed")),
+            "a sentinel must not be treated as a value covering 100% of rows ({sql}):\n{stdout}"
+        );
+    }
+}

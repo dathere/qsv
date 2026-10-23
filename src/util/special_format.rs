@@ -169,6 +169,46 @@ pub fn extract_zip_to_temp(
     Ok(out)
 }
 
+/// Decompress a `.gz`/`.zlib`/`.zst` CSV-family file byte-for-byte to a temp file whose
+/// extension (`.csv`/`.tsv`/`.ssv`) selects the delimiter downstream. Same temp lifecycle
+/// as `extract_zip_to_temp`.
+#[cfg(feature = "polars")]
+fn decompress_csv_to_temp(
+    path: &Path,
+    format: SpecialFormat,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let suffix = match format {
+        SpecialFormat::CompressedTsv => ".tsv",
+        SpecialFormat::CompressedSsv => ".ssv",
+        _ => ".csv",
+    };
+    let outer_ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
+    let input = BufReader::new(File::open(path)?);
+    let mut decoder: Box<dyn Read> = match outer_ext.as_deref() {
+        // multi-member gzip (e.g. concatenated .gz files) must be read to the end
+        Some("gz") => Box::new(flate2::read::MultiGzDecoder::new(input)),
+        Some("zlib") => Box::new(flate2::read::ZlibDecoder::new(input)),
+        Some("zst") => Box::new(zstd::stream::read::Decoder::new(input)?),
+        other => return Err(format!("unsupported compression: {other:?}").into()),
+    };
+
+    let temp_dir =
+        crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+    let mut temp_file = tempfile::Builder::new()
+        .suffix(suffix)
+        .tempfile_in(temp_dir)?;
+    std::io::copy(&mut decoder, &mut temp_file)
+        .map_err(|e| format!("failed to decompress {}: {e}", path.display()))?;
+    temp_file.flush()?;
+
+    let out = temp_file.path().to_path_buf();
+    temp_file.keep()?;
+    Ok(out)
+}
+
 /// Extract a zip archive's usable entries into a temp subdirectory and return
 /// that subdirectory and the entries' paths, **tabular entries first** (CSV/TSV/TAB/SSV in archive
 /// order), followed by other supported entries (special formats parquet/avro/json/…, in
@@ -296,8 +336,8 @@ pub fn convert_special_format(
     use polars::{
         io::avro::AvroReader,
         prelude::{
-            CsvParseOptions, CsvReadOptions, CsvWriter, IpcReader, JsonReader, LazyFileListReader,
-            LazyJsonLineReader, ParquetReader, PlRefPath, SerReader, SerWriter,
+            CsvWriter, IpcReader, JsonReader, LazyFileListReader, LazyJsonLineReader,
+            ParquetReader, PlRefPath, SerReader, SerWriter,
         },
     };
 
@@ -306,17 +346,26 @@ pub fn convert_special_format(
     if format == SpecialFormat::CompressedZip {
         return extract_zip_to_temp(path, delim);
     }
+    // A compressed CSV is already delimited text: decompress the bytes rather than parsing
+    // and re-writing them through polars, which rewrote values (00501 -> 501, 1.50 -> 1.5,
+    // TRUE -> true) and turned blank lines into all-null rows (#4900).
+    if let SpecialFormat::CompressedCsv
+    | SpecialFormat::CompressedTsv
+    | SpecialFormat::CompressedSsv = format
+    {
+        return decompress_csv_to_temp(path, format);
+    }
 
     // Check if there's a pschema.json file with the same filestem
     // the Polars schema will be used in parsing
-    // JSON/JSONL and compressed CSV files only
+    // JSON/JSONL files only
     let schema = if let SpecialFormat::Avro | SpecialFormat::Parquet | SpecialFormat::Ipc = format {
         None
     } else {
         load_schema_from_file(path)?
     };
 
-    let mut extension = ".csv";
+    let extension = ".csv";
     // Create a reader based on the file format and convert to DataFrame
     let mut df = match format {
         SpecialFormat::Avro => AvroReader::new(BufReader::new(File::open(path)?)).finish()?,
@@ -340,66 +389,12 @@ pub fn convert_special_format(
                 df.finish()?
             }
         },
-        SpecialFormat::CompressedCsv
-        | SpecialFormat::CompressedTsv
-        | SpecialFormat::CompressedSsv => {
-            let separator = match format {
-                SpecialFormat::CompressedTsv => {
-                    extension = ".tsv";
-                    b'\t'
-                },
-                SpecialFormat::CompressedSsv => {
-                    extension = ".ssv";
-                    b';'
-                },
-                _ => delim,
-            };
-
-            // Create base CSV read options with the appropriate separator
-            let base_options = CsvReadOptions::default()
-                .with_parse_options(CsvParseOptions::default().with_separator(separator));
-
-            // Try reading the compressed file with a schema if available
-            let reader = CsvReadOptions::default()
-                .try_into_reader_with_file_path(Some(path.to_path_buf()))?
-                .with_options(if let Some(schema) = schema {
-                    base_options.clone().with_schema(Some(schema))
-                } else {
-                    // it failed, try to infer it with 1,000 rows
-                    base_options.clone().with_infer_schema_length(Some(1_000))
-                });
-
-            if let Ok(df) = reader.finish() {
-                df
-            } else {
-                // Got an error. Try again with a larger infer schema length of 10,000 rows
-                log::warn!(
-                    "Falling back to reading file \"{}\" without a schema. 2nd try using infer \
-                     schema length of 10,000 rows.",
-                    path.display()
-                );
-
-                let reader_2ndtry = CsvReadOptions::default()
-                    .try_into_reader_with_file_path(Some(path.to_path_buf()))?
-                    .with_options(base_options.clone().with_infer_schema_length(Some(10_000)));
-
-                if let Ok(df) = reader_2ndtry.finish() {
-                    df
-                } else {
-                    log::warn!("Still failing. 3rd try - scanning the whole file to infer schema.");
-
-                    // Try one last time without an infer schema length, scanning the whole file
-                    let reader_3rdtry = CsvReadOptions::default()
-                        .try_into_reader_with_file_path(Some(path.to_path_buf()))?
-                        .with_options(base_options.with_infer_schema_length(None));
-
-                    reader_3rdtry.finish()?
-                }
-            }
-        },
         SpecialFormat::Unknown => return Err("Unknown format".into()),
-        // handled by the early return at the top of this function
-        SpecialFormat::CompressedZip => unreachable!(),
+        // handled by the early returns at the top of this function
+        SpecialFormat::CompressedZip
+        | SpecialFormat::CompressedCsv
+        | SpecialFormat::CompressedTsv
+        | SpecialFormat::CompressedSsv => unreachable!(),
     };
 
     // Get or initialize temp directory that persists until program exit

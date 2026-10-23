@@ -221,6 +221,18 @@ struct FreqValue {
     percentage: f64,
 }
 
+/// A frequency-cache column stored as a single sentinel (`<ALL_UNIQUE>`, `<HIGH_CARDINALITY>`,
+/// `<NON_UTF8>`) has no per-value data: its one entry is a marker, not a value covering 100% of
+/// rows. It must be neither matched against a WHERE literal (`WHERE col = '<NON_UTF8>'` would
+/// "match 100% of rows") nor reported as a skewed top value.
+fn is_sentinel_entry(freq: &FreqEntry) -> bool {
+    freq.frequencies.len() == 1
+        && matches!(
+            freq.frequencies[0].value.as_str(),
+            "<ALL_UNIQUE>" | "<HIGH_CARDINALITY>" | "<NON_UTF8>"
+        )
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // run()
 // ════════════════════════════════════════════════════════════════════════════
@@ -1409,6 +1421,7 @@ fn score_filter_selectivity(
                 .freq_entries
                 .iter()
                 .find(|f| f.field.eq_ignore_ascii_case(col_upper))
+                && !is_sentinel_entry(freq)
             {
                 // Look up the literal in the frequency cache. SQL keyword
                 // literals get normalization, but only when they came from
@@ -1448,8 +1461,6 @@ fn score_filter_selectivity(
                     // Otherwise the filter is selective: no penalty.
                 } else if let Some(top) = freq.frequencies.first()
                     && top.percentage > 70.0
-                    && top.value != "<ALL_UNIQUE>"
-                    && top.value != "<HIGH_CARDINALITY>"
                 {
                     // Could not match the filter value (e.g. literal not in the top-N
                     // sample, or compared against another column). Note the skew, but
@@ -1481,10 +1492,9 @@ fn score_filter_selectivity(
                 .freq_entries
                 .iter()
                 .find(|f| f.field.eq_ignore_ascii_case(col_upper))
+                && !is_sentinel_entry(freq)
                 && let Some(top) = freq.frequencies.first()
                 && top.percentage > 70.0
-                && top.value != "<ALL_UNIQUE>"
-                && top.value != "<HIGH_CARDINALITY>"
             {
                 details.push(format!(
                     "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends on \

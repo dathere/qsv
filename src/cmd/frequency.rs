@@ -229,6 +229,10 @@ frequency options:
                             ALL_UNIQUE sentinel. HIGH_CARDINALITY columns (cardinality
                             exceeds the smaller of --high-card-threshold/--high-card-pct
                             of rowcount) get a single HIGH_CARDINALITY sentinel.
+                            Columns with any value that is not valid UTF-8 get
+                            a single NON_UTF8 sentinel, since the cache stores
+                            values as UTF-8 text. HIGH_CARDINALITY and NON_UTF8
+                            columns are recomputed when the cache is reused.
                             When a valid (fresh) cache already exists, frequency will
                             automatically reuse it instead of recomputing from the CSV.
                             Use --force to regenerate the cache even when it is valid.
@@ -435,6 +439,21 @@ static FREQ_CACHE_FTABLES: OnceLock<FTables> = OnceLock::new();
 // missing forever - `frequency` only writes its cache under `--frequency-jsonl`, so unlike
 // stats.rs it has no recompute-and-rewrite path of its own.
 static FREQ_CACHE_STALE_SIG: OnceLock<String> = OnceLock::new();
+// Frequency-cache sentinels for columns stored WITHOUT per-value data, which every reader
+// (this command's cache hit, `read_frequency_cache_view` for viz, and `scoresql`) must recompute
+// or skip rather than read as a value.
+const CACHE_HIGH_CARD: &str = "<HIGH_CARDINALITY>";
+const CACHE_NON_UTF8: &str = "<NON_UTF8>";
+
+/// True when a cache entry is a sentinel that must be recomputed - as opposed to `<ALL_UNIQUE>`,
+/// which the output path renders directly.
+fn cache_entry_needs_recompute(entry: &FrequencyCacheEntry) -> bool {
+    entry.frequencies.len() == 1
+        && matches!(
+            entry.frequencies[0].value.as_str(),
+            CACHE_HIGH_CARD | CACHE_NON_UTF8
+        )
+}
 // FrequencyCacheEntry and FrequencyCacheValue are structs for --frequency-jsonl JSON cache
 #[derive(Serialize, Deserialize)]
 struct FrequencyCacheEntry {
@@ -508,8 +527,9 @@ struct FrequencyCacheMetadata {
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 pub(crate) struct FreqCacheView {
     /// Map of column field name -> per-column data. For `--no-headers` caches the keys are
-    /// 1-based positional strings ("1", "2", ...). The `<HIGH_CARDINALITY>` / `<ALL_UNIQUE>`
-    /// sentinel columns are omitted, so a missing key signals "recompute this column".
+    /// 1-based positional strings ("1", "2", ...). The `<HIGH_CARDINALITY>` / `<NON_UTF8>` /
+    /// `<ALL_UNIQUE>` sentinel columns are omitted, so a missing key signals "recompute this
+    /// column".
     pub columns: std::collections::HashMap<String, FreqCacheColumn>,
 }
 
@@ -682,11 +702,8 @@ pub(crate) fn read_frequency_cache_view(
         }
         // Skip sentinel columns (no usable per-value data) — leaving them out of
         // the map makes the caller fall back to recomputation for that column.
-        if entry.frequencies.len() == 1
-            && matches!(
-                entry.frequencies[0].value.as_str(),
-                "<HIGH_CARDINALITY>" | "<ALL_UNIQUE>"
-            )
+        if cache_entry_needs_recompute(&entry)
+            || (entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>")
         {
             continue;
         }
@@ -2126,7 +2143,25 @@ impl Args {
                     field: field_name,
                     cardinality,
                     frequencies: vec![FrequencyCacheValue {
-                        value:      "<HIGH_CARDINALITY>".to_string(),
+                        value:      CACHE_HIGH_CARD.to_string(),
+                        count:      row_count,
+                        percentage: 100.0,
+                    }],
+                }
+            } else if i < tables.len()
+                && tables[i]
+                    .unique_values()
+                    .any(|v| simdutf8::basic::from_utf8(v).is_err())
+            {
+                // NON_UTF8: the cache stores values as JSON strings, so a non-UTF8 value can only
+                // be written lossily - and two values differing only in their invalid bytes
+                // (Latin-1 `P\xe9` / `P\xe8`) would both read back as `P\u{FFFD}`, MERGING their
+                // counts on a cache hit. Store a sentinel instead, so readers recompute the column.
+                FrequencyCacheEntry {
+                    field: field_name,
+                    cardinality,
+                    frequencies: vec![FrequencyCacheValue {
+                        value:      CACHE_NON_UTF8.to_string(),
                         count:      row_count,
                         percentage: 100.0,
                     }],
@@ -2542,18 +2577,18 @@ impl Args {
         // If so, set up a partial cache: pre-build FTables for columns with actual
         // cached data, and let the parallel computation handle only the
         // HIGH_CARDINALITY columns (which have no data in the cache).
-        let has_high_cardinality = selected_entries.iter().any(|entry| {
-            entry.frequencies.len() == 1 && entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-        });
+        let has_recompute_sentinel = selected_entries
+            .iter()
+            .any(|entry| cache_entry_needs_recompute(entry));
 
-        if has_high_cardinality {
+        if has_recompute_sentinel {
             let mut skip_vec: Vec<bool> = Vec::with_capacity(selected_entries.len());
             let mut cached_ftables: FTables = Vec::with_capacity(selected_entries.len());
 
             for entry in &selected_entries {
-                let is_sentinel = entry.frequencies.len() == 1
-                    && (entry.frequencies[0].value == "<HIGH_CARDINALITY>"
-                        || entry.frequencies[0].value == "<ALL_UNIQUE>");
+                let is_sentinel = cache_entry_needs_recompute(entry)
+                    || (entry.frequencies.len() == 1
+                        && entry.frequencies[0].value == "<ALL_UNIQUE>");
 
                 if is_sentinel {
                     // No actual data in cache — needs computation (or ALL_UNIQUE skip)

@@ -1209,11 +1209,36 @@ mod rich {
     }
 
     /// The metadata of the cache entry `name` (a `dc:` handle without its prefix), read from
-    /// the index as it is: no refresh and no network, unlike [`resolve_dc_path`].
+    /// the index as it is: no refresh and no network, unlike [`resolve_dc_path`]. `None` unless
+    /// this run resolved the handle and the entry still holds the bytes it resolved to, so the
+    /// metadata describes the data actually used.
     #[cfg(feature = "viz")]
     pub fn dc_entry_meta(name: &str) -> CliResult<Option<CacheEntry>> {
         let cache_dir = set_qsv_cache_dir(DEFAULT_CACHE_DIR)?;
-        Ok(load_entry_by_name(&get_root(&cache_dir), name)?.map(|e| e.meta))
+        let Some(resolved) = resolved_blake3(&cache_dir, name) else {
+            return Ok(None);
+        };
+        let meta = load_entry_by_name(&get_root(&cache_dir), name)?.map(|e| e.meta);
+        Ok(meta_of_resolved(meta, &resolved))
+    }
+
+    /// The BLAKE3 of the bytes this run resolved `dc:<name>` to, if it resolved it.
+    #[cfg(feature = "viz")]
+    fn resolved_blake3(cache_dir: &str, name: &str) -> Option<String> {
+        let slot = {
+            let memo = DC_RESOLVED.lock().unwrap_or_else(PoisonError::into_inner);
+            memo.get(&(cache_dir.to_string(), name.to_string()))
+                .cloned()
+        }?;
+        let guard = slot.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.as_ref().map(|r| r.blake3.clone())
+    }
+
+    /// `meta`, if it still holds the bytes resolved to: another `qsv get` may have rebound the
+    /// alias to other data since, and its source must not be credited with this run's data.
+    #[cfg(feature = "viz")]
+    fn meta_of_resolved(meta: Option<CacheEntry>, resolved: &str) -> Option<CacheEntry> {
+        meta.filter(|m| m.blake3 == resolved)
     }
 
     /// Alias files that currently point at the given entry key hash.
@@ -3443,11 +3468,18 @@ mod rich {
     #[cfg(test)]
     mod tests {
         use std::io::Cursor;
+        #[cfg(feature = "viz")]
+        use std::{
+            path::PathBuf,
+            sync::{Arc, Mutex},
+        };
 
         use super::{
             CacheEntry, RefreshPolicy, ckan_auth_hint, emit_preview_reservoir, entry_age_secs,
             is_due_for_refresh, unix_now,
         };
+        #[cfg(feature = "viz")]
+        use super::{DC_RESOLVED, ResolvedDc, meta_of_resolved, resolved_blake3};
 
         /// A metadata record with only the fields the staleness rule reads.
         fn meta(ttl_secs: i64, refresh_policy: RefreshPolicy) -> CacheEntry {
@@ -3456,6 +3488,31 @@ mod rich {
                 refresh_policy,
                 ..Default::default()
             }
+        }
+
+        #[cfg(feature = "viz")]
+        #[test]
+        fn dc_entry_meta_describes_only_the_bytes_this_run_resolved() {
+            let (dir, name) = ("/nonexistent/dc-entry-meta-test", "rebound.csv");
+            assert_eq!(resolved_blake3(dir, name), None);
+            DC_RESOLVED.lock().unwrap().insert(
+                (dir.to_string(), name.to_string()),
+                Arc::new(Mutex::new(Some(ResolvedDc {
+                    csv_path: PathBuf::from("x.csv"),
+                    blake3:   "aaa".to_string(),
+                    ext:      "csv".to_string(),
+                }))),
+            );
+            assert_eq!(resolved_blake3(dir, name).as_deref(), Some("aaa"));
+
+            let entry = |b3: &str| CacheEntry {
+                blake3: b3.to_string(),
+                ..Default::default()
+            };
+            assert!(meta_of_resolved(Some(entry("aaa")), "aaa").is_some());
+            // the alias now points at other data: its source would be the wrong one
+            assert!(meta_of_resolved(Some(entry("bbb")), "aaa").is_none());
+            assert!(meta_of_resolved(None, "aaa").is_none());
         }
 
         // A `downloaded_at` in the FUTURE — a backward clock step, or a cache dir shared with

@@ -259,7 +259,8 @@ const CREDENTIAL_QUERY_MARKERS: &[&str] = &[
 ///   `None`, from an older cache entry or a local/cloud source, is not enough), from
 /// - an `http(s)://`, `ckan://` or `dathere://` source (never a local path, nor `s3://`, `gs://`,
 ///   `az://`, which name infrastructure and are credentialed by nature),
-/// - with no user info and no query key that looks like a credential.
+/// - with no user info and no query key that looks like a credential, checked against the request
+///   `qsv get` expands the source into, and a credential-free CKAN API URL.
 #[cfg(feature = "get")]
 pub(crate) fn public_source(
     uri: &str,
@@ -271,16 +272,28 @@ pub(crate) fn public_source(
     }
     let lower = uri.to_ascii_lowercase();
     if lower.starts_with("ckan://") {
+        // `qsv get` pastes the id into `resource_show?id=<id>` unencoded, so a `&` or `=` in it
+        // would add query keys: no resource id or `<name>?` search carries either
+        let rest = &uri["ckan://".len()..];
+        if rest.contains(['&', '=', '#']) {
+            return None;
+        }
         let mut obj = serde_json::json!({ "url": uri });
-        if let Some(api) = ckan_api.filter(|a| credential_free_http_url(a)) {
+        if let Some(api) = ckan_api {
+            // a credentialed API URL is private infrastructure: record nothing, not a bare id
+            if !credential_free_http_url(api) {
+                return None;
+            }
             obj["ckan_api"] = serde_json::json!(api);
         }
         return Some(obj);
     }
-    if lower.starts_with("dathere://") || credential_free_http_url(uri) {
-        return Some(serde_json::json!({ "url": uri }));
+    if lower.starts_with("dathere://") {
+        // expands to a raw GitHub URL with the rest as its path: check it as that request
+        let expanded = format!("https://raw.invalid/{}", &uri["dathere://".len()..]);
+        return credential_free_http_url(&expanded).then(|| serde_json::json!({ "url": uri }));
     }
-    None
+    credential_free_http_url(uri).then(|| serde_json::json!({ "url": uri }))
 }
 
 #[cfg(feature = "get")]
@@ -1172,19 +1185,32 @@ mod tests {
             public_source("CKAN://abc", Some(true), None),
             Some(json!({"url": "CKAN://abc"}))
         );
-        // a CKAN API that itself carries credentials is left out
         assert_eq!(
-            public_source(
-                "ckan://abc",
-                Some(true),
-                Some("https://u:p@h.x/api/3/action")
-            ),
-            Some(json!({"url": "ckan://abc"}))
+            ok("ckan://housing?"),
+            Some(json!({"url": "ckan://housing?"}))
         );
+        // a CKAN API that itself carries credentials is private infrastructure: no source at
+        // all, not a bare id that names no site
+        for bad_api in [
+            "https://u:p@h.x/api/3/action",
+            "https://h.x/api/3/action?api_key=S",
+        ] {
+            assert_eq!(public_source("ckan://abc", Some(true), Some(bad_api)), None);
+        }
+        // `qsv get` pastes a ckan:// id into resource_show's query unencoded
+        for uri in [
+            "ckan://abc&api_key=SECRET",
+            "ckan://abc&x=1",
+            "ckan://abc#frag",
+        ] {
+            assert_eq!(public_source(uri, Some(true), api), None, "{uri}");
+        }
         assert_eq!(
             ok("dathere://boston311.csv"),
             Some(json!({"url": "dathere://boston311.csv"}))
         );
+        assert_eq!(ok("dathere://boston311.csv?token=SECRET"), None);
+        assert_eq!(ok("dathere://x.csv?X-Amz-Signature=S"), None);
 
         // fetched with a CKAN token (a private dataset, or a token set for every fetch), or
         // not known to have been fetched anonymously (older entries, local and cloud sources)

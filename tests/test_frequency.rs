@@ -8961,3 +8961,168 @@ fn frequency_drops_group_bits_when_the_cache_group_differs() {
         "left temp/probe files behind: {strays:?}"
     );
 }
+
+// A full frequency-cache hit must report the input's row count for <ALL_UNIQUE> columns. It used
+// to re-derive it by summing the first non-ALL_UNIQUE column's counts, which under --no-nulls
+// leaves out that column's NULLs (here: 3 instead of 5). `a` must come BEFORE `id` to hit it.
+#[test]
+fn frequency_cache_hit_all_unique_count_is_the_row_count() {
+    let wrk = Workdir::new("frequency_cache_hit_all_unique_count_is_the_row_count");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "id"],
+            svec!["x", "1"],
+            svec!["", "2"],
+            svec!["x", "3"],
+            svec!["y", "4"],
+            svec!["", "5"],
+        ],
+    );
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .args(["--cardinality", "--stats-jsonl"])
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut write = wrk.command("frequency");
+    write
+        .args(["--no-nulls", "--frequency-jsonl"])
+        .arg("data.csv");
+    let computed: Vec<Vec<String>> = wrk.read_stdout(&mut write);
+
+    let mut hit = wrk.command("frequency");
+    hit.arg("--no-nulls").arg("data.csv");
+    let (cached, stderr): (Vec<Vec<String>>, String) =
+        wrk.read_stdout_and_stderr_on_success(&mut hit);
+    assert!(
+        stderr.contains("Frequency cache hit"),
+        "second run must be served from the cache, got:\n{stderr}"
+    );
+
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["a", "x", "2", "66.66667", "1"],
+        svec!["a", "y", "1", "33.33333", "2"],
+        svec!["id", "<ALL_UNIQUE>", "5", "100", "0"],
+    ];
+    assert_eq!(computed, expected);
+    assert_eq!(cached, expected, "cache hit must match the computed output");
+}
+
+// The stats cache's cardinality is case-SENSITIVE, so `cardinality == rowcount` cannot prove a
+// column is unique once --ignore-case folds `a`/`A` together. The <ALL_UNIQUE> shortcut used to
+// fire anyway and discard the real distribution. Integer columns (no letters) keep it.
+#[test]
+fn frequency_ignore_case_does_not_short_circuit_to_all_unique() {
+    let wrk = Workdir::new("frequency_ignore_case_does_not_short_circuit_to_all_unique");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["email", "id"],
+            svec!["Bob@x.com", "101"],
+            svec!["bob@x.com", "102"],
+            svec!["amy@x.com", "103"],
+        ],
+    );
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .args(["--cardinality", "--stats-jsonl"])
+        .arg("data.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--ignore-case", "--select", "email,id"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["email", "bob@x.com", "2", "66.66667", "1"],
+        svec!["email", "amy@x.com", "1", "33.33333", "2"],
+        // an Integer column has no letters to fold, so it keeps the shortcut
+        svec!["id", "<ALL_UNIQUE>", "3", "100", "0"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// The Frequent Items path must lay out NULL, Other and percentages exactly like the exact path
+// (only the bare "Other" label differs). NULLs used to be fed into the sketch: they took a
+// --limit slot, left a gap in the ranks, and were folded into Other over a non-NULL
+// denominator (percentages summing to > 100). No count ties, and a stream far below the sketch's
+// map size, so the sketch's estimates are exact and the comparison is deterministic.
+#[test]
+#[cfg(not(target_endian = "big"))]
+fn frequency_frequent_items_null_and_other_match_exact() {
+    let wrk = Workdir::new("frequency_frequent_items_null_and_other_match_exact");
+    let mut rows = vec![svec!["c", "d"]];
+    for v in ["x", "x", "x", "x", "y", "y", "z", "", "", ""] {
+        rows.push(svec![v, "1"]);
+    }
+    wrk.create("data.csv", rows);
+
+    let strip_other_count = |rows: Vec<Vec<String>>| -> Vec<Vec<String>> {
+        rows.into_iter()
+            .map(|mut r| {
+                if r[1].starts_with("Other (") {
+                    r[1] = "Other".to_string();
+                }
+                r
+            })
+            .collect()
+    };
+
+    for pct_nulls in [false, true] {
+        for limit in ["1", "2", "3", "-2", "0"] {
+            let mut exact = wrk.command("frequency");
+            exact.args(["--select", "c", "--limit", limit]);
+            let mut fi = wrk.command("frequency");
+            fi.args([
+                "--select",
+                "c",
+                "--limit",
+                limit,
+                "--sketch-method",
+                "frequent_items",
+            ]);
+            if pct_nulls {
+                exact.arg("--pct-nulls");
+                fi.arg("--pct-nulls");
+            }
+            exact.arg("data.csv");
+            fi.arg("data.csv");
+            let exact_rows = strip_other_count(wrk.read_stdout(&mut exact));
+            let fi_rows: Vec<Vec<String>> = wrk.read_stdout(&mut fi);
+            assert_eq!(
+                fi_rows, exact_rows,
+                "frequent_items must match exact (--limit {limit}, --pct-nulls {pct_nulls})"
+            );
+        }
+    }
+}
+
+// Without a stats cache, nullcount is unknown and there is no row count, so JSON must report
+// nullcount / sparsity / uniqueness_ratio as null - not a fabricated 0, which reads as "no NULLs"
+// and "no distinct values" (uniqueness_ratio 0.0 for an all-distinct column).
+#[test]
+fn frequency_json_unknown_stats_are_null() {
+    let wrk = Workdir::new("frequency_json_unknown_stats_are_null");
+    wrk.create(
+        "data.csv",
+        vec![svec!["id"], svec!["1"], svec!["2"], svec!["3"]],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_STATSCACHE_MODE", "none")
+        .arg("--json")
+        .arg("data.csv");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let v: Value = serde_json::from_str(&got).unwrap();
+    let field = &v["fields"][0];
+    assert_eq!(field["cardinality"], 3);
+    for key in ["nullcount", "sparsity", "uniqueness_ratio"] {
+        assert!(
+            field[key].is_null(),
+            "{key} must be null when unknown, got {}",
+            field[key]
+        );
+    }
+}

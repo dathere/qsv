@@ -106,7 +106,9 @@ frequency options:
                             label is the bare other-text (no unique-count suffix
                             since the sketch cannot recover the true count of
                             items not in the top-K); rank is 0 to match the
-                            exact convention.
+                            exact convention. Its count is approximate.
+                            NULLs are counted exactly, outside the sketch, and
+                            are reported as in exact mode (after "Other").
                             Note: 'frequent_items' requires a little-endian
                             target. Apache DataSketches does not support
                             big-endian platforms (e.g., s390x); on those
@@ -180,6 +182,15 @@ frequency options:
                             (original behavior).
                             Has no effect when --no-nulls is set.
     -i, --ignore-case       Ignore case when computing frequencies.
+                            The stats cache's cardinality is case-sensitive,
+                            so it cannot prove that case-folded values are
+                            unique. All-unique columns are therefore counted
+                            in full instead of being short-circuited to
+                            <ALL_UNIQUE> - except Integer columns, which have
+                            no letters to fold. On large files with all-unique
+                            text columns (e.g. emails), this can use memory
+                            proportional to the row count. Exclude such
+                            columns with -s if you don't need them.
     --no-float <cols>       Exclude Float columns from frequency analysis.
                             Floats typically contain continuous values where
                             frequency tables are not meaningful.
@@ -721,9 +732,11 @@ struct FrequencyField {
     field:            String,
     r#type:           String,
     cardinality:      u64,
-    nullcount:        u64,
-    sparsity:         f64,
-    uniqueness_ratio: f64,
+    // None (JSON `null`) when unknown - no stats record, or no row count - rather than a
+    // fabricated 0, which would read as "no NULLs" / "no distinct values".
+    nullcount:        Option<u64>,
+    sparsity:         Option<f64>,
+    uniqueness_ratio: Option<f64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     stats:            Vec<FieldStats>,
     frequencies:      Vec<FrequencyEntry>,
@@ -1082,8 +1095,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
             if args.flag_null_sorted {
                 return fail_incorrectusage_clierror!(
-                    "--sketch-method frequent_items does not support --null-sorted. The sketch \
-                     ranks NULL alongside other values by estimate. Use --sketch-method exact."
+                    "--sketch-method frequent_items does not support --null-sorted. NULL is \
+                     always placed at the end. Use --sketch-method exact."
                 );
             }
             if args.flag_frequency_jsonl {
@@ -2579,19 +2592,11 @@ impl Args {
             return Ok(false);
         }
 
-        // Derive row_count from cache: sum counts of first non-ALL_UNIQUE column,
-        // or use cardinality of an ALL_UNIQUE column
-        let row_count = selected_entries
-            .iter()
-            .find_map(|entry| {
-                if entry.frequencies.len() == 1 && entry.frequencies[0].value == "<ALL_UNIQUE>" {
-                    Some(entry.cardinality)
-                } else {
-                    let total: u64 = entry.frequencies.iter().map(|f| f.count).sum();
-                    if total > 0 { Some(total) } else { None }
-                }
-            })
-            .unwrap_or(0);
+        // The cache records the input's exact row count. Don't re-derive it by summing a
+        // column's counts: under --no-nulls (no NULL bucket) or --flexible (short records)
+        // that sum is smaller than the row count, and it would be reported as the
+        // <ALL_UNIQUE> count.
+        let row_count = cache_metadata.record_count;
 
         if row_count == 0 {
             return Ok(false);
@@ -4077,7 +4082,9 @@ impl Args {
         // What positional structures each feature needs, so we only pay for what's
         // requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV column
         // position) so duplicate-named columns are each classified on their own data.
-        let needs_float_types = self.flag_no_float.is_some();
+        // --ignore-case also needs the types: it keeps the <ALL_UNIQUE> shortcut for Integer
+        // columns only (see below).
+        let needs_col_types = self.flag_no_float.is_some() || self.flag_ignore_case;
         #[cfg(feature = "luau")]
         let needs_stats_by_pos = is_json || self.flag_stats_filter.is_some();
         #[cfg(not(feature = "luau"))]
@@ -4105,7 +4112,7 @@ impl Args {
         // name-keyed lookup would collapse them onto the first match).
         let mut col_cardinality_by_pos: Vec<u64> = Vec::with_capacity(csv_stats.len());
         // Per-column types for --no-float detection (built only when needed).
-        let mut col_type_by_pos: Vec<String> = if needs_float_types {
+        let mut col_type_by_pos: Vec<String> = if needs_col_types {
             Vec::with_capacity(csv_stats.len())
         } else {
             Vec::new()
@@ -4119,7 +4126,7 @@ impl Args {
         };
 
         for stats_record in &csv_stats {
-            if needs_float_types {
+            if needs_col_types {
                 col_type_by_pos.push(stats_record.r#type.clone());
             }
             if needs_stats_by_pos {
@@ -4153,6 +4160,16 @@ impl Args {
         } else {
             for &orig_idx in sel.iter() {
                 let cardinality = col_cardinality_by_pos.get(orig_idx).copied().unwrap_or(0);
+                // The stats cache's cardinality is case-SENSITIVE, and case folding can only
+                // merge values, never split them: under --ignore-case, `cardinality == row_count`
+                // proves the raw values unique, not the folded ones (`Bob@x.com` / `bob@x.com`).
+                // Only an Integer column provably has no letters to fold - a Float can
+                // (`1E5`/`1e5`), as can dates and booleans - so only it keeps the shortcut.
+                if self.flag_ignore_case
+                    && col_type_by_pos.get(orig_idx).map(String::as_str) != Some("Integer")
+                {
+                    continue;
+                }
                 if cardinality == row_count {
                     all_unique_headers_vec.push(orig_idx);
                 }
@@ -4236,13 +4253,16 @@ impl Args {
 
             // Get data type and nullcount from stats record
             let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
-            let nullcount = stats_record.map_or(0, |sr| sr.nullcount);
-            let sparsity =
-                fast_float2::parse(util::round_num(nullcount as f64 / rowcount as f64, 4))
-                    .unwrap_or(0.0);
-            let uniqueness_ratio =
-                fast_float2::parse(util::round_num(cardinality as f64 / rowcount as f64, 4))
-                    .unwrap_or(0.0);
+            let nullcount = stats_record.map(|sr| sr.nullcount);
+            let ratio_of_rows = |n: u64| {
+                (rowcount > 0)
+                    .then(|| {
+                        fast_float2::parse(util::round_num(n as f64 / rowcount as f64, 4)).ok()
+                    })
+                    .flatten()
+            };
+            let sparsity = nullcount.and_then(ratio_of_rows);
+            let uniqueness_ratio = ratio_of_rows(cardinality);
 
             // Build stats vector from stats record if type is not empty and not NULL or Boolean
             // Skip stats when using weighted mode (stats would be misleading)
@@ -4700,8 +4720,11 @@ impl Args {
     ///     `--ignore-case` and `--no-trim` are rejected upstream.
     ///   * Counts are estimates. The `count` column carries the FI point estimate; its error is
     ///     bounded by `sketch.maximum_error()` (which equals the stream length minus the active
-    ///     threshold). The "Other" row's count is `total_weight - sum(top_k_estimates)` and is
-    ///     therefore approximate.
+    ///     threshold). The "Other" row's count is the percentage base minus the shown counts, and
+    ///     is therefore approximate.
+    ///   * NULLs are counted exactly, outside the sketch, and laid out as in the exact path: at the
+    ///     end (after Other) without a rank or percentage, or, with `--pct-nulls`, ranked and
+    ///     limited by their exact count alongside the values.
     #[cfg(not(target_endian = "big"))]
     #[allow(clippy::cast_precision_loss)]
     fn run_frequent_items(&self, rconfig: &Config) -> CliResult<()> {
@@ -4729,12 +4752,9 @@ impl Args {
                 ))
             })?;
 
-        // Per-column non-null observation count, used as the percentage denominator
-        // when --pct-nulls is false (the default — null cells are excluded from the
-        // valid-percentage base). We track it ourselves rather than calling
-        // sketch.total_weight() because total_weight folds nulls in.
+        // Per-column non-null observation count (== the sketch's total weight, since NULLs
+        // never enter the sketch) and exact NULL count (stays 0 under --no-nulls).
         let mut nonnull_counts: Vec<u64> = vec![0; sel_len];
-        // Per-column null observation count (only populated when nulls are tracked).
         let mut null_counts: Vec<u64> = vec![0; sel_len];
 
         let flag_no_nulls = self.flag_no_nulls;
@@ -4757,21 +4777,15 @@ impl Args {
         for row in rdr.byte_records() {
             row_buffer.clone_from(&row?);
             for (i, field) in sel.select(&row_buffer).enumerate() {
-                if field.is_empty() {
-                    if !flag_no_nulls {
-                        // Track empty cells as a sentinel value so they can show up as
-                        // a heavy hitter row labelled with --null-text. Use the empty
-                        // Vec<u8> as the sketch key — distinct from any real value.
-                        sketches[i].update(Vec::new());
-                        null_counts[i] += 1;
-                    }
-                    continue;
-                }
-                // Default trim (ignore-case + no-trim are rejected upstream).
+                // Default trim (ignore-case + no-trim are rejected upstream). An empty or
+                // whitespace-only cell is NULL, as in the exact path.
                 let trimmed = trim_bs_whitespace(field);
                 if trimmed.is_empty() {
+                    // NULLs are counted EXACTLY and kept OUT of the sketch: they are
+                    // reported separately (like the exact path), and keeping them out stops
+                    // them using sketch capacity or inflating the stream weight that the
+                    // sketch's error bound is measured against.
                     if !flag_no_nulls {
-                        sketches[i].update(Vec::new());
                         null_counts[i] += 1;
                     }
                     continue;
@@ -4831,26 +4845,55 @@ impl Args {
 
             // NoFalsePositives ensures every emitted item's true count is >= lower_bound,
             // so we never report a value that wasn't actually a heavy hitter.
-            let mut rows = sketch.frequent_items(ErrorType::NoFalsePositives);
-            // Already sorted by estimate descending.
+            // Already sorted by estimate descending. `None` is the (exact) NULL entry.
+            let fi_rows = sketch.frequent_items(ErrorType::NoFalsePositives);
+            let mut entries: Vec<(Option<&[u8]>, u64)> = fi_rows
+                .iter()
+                .map(|r| {
+                    let item: &[u8] = r.item();
+                    (Some(item), r.estimate())
+                })
+                .collect();
+            // With --pct-nulls, NULL is ranked and limited alongside the values (as in the
+            // exact path), so it competes for a --limit slot by its exact count.
+            if pct_nulls && null_count > 0 {
+                let pos = entries.partition_point(|&(_, c)| c >= null_count);
+                entries.insert(pos, (None, null_count));
+            }
             // Apply --limit semantics on top of the sketch's natural ordering.
             if limit > 0 {
-                rows.truncate(limit as usize);
+                entries.truncate(limit as usize);
             } else if limit < 0 {
                 let min_count = limit.unsigned_abs() as u64;
-                rows.retain(|r| r.estimate() >= min_count);
+                entries.retain(|&(_, c)| c >= min_count);
             }
 
-            let kept_estimate_sum: u64 = rows
-                .iter()
-                .map(datasketches::frequencies::Row::estimate)
-                .sum();
+            let kept_sum: u64 = entries.iter().map(|&(_, c)| c).sum();
+            let pct_of = |count: u64| {
+                if pct_denom > 0.0 {
+                    100.0 * (count as f64) / pct_denom
+                } else {
+                    0.0
+                }
+            };
 
-            for (rank_idx, r) in rows.iter().enumerate() {
-                let item: &[u8] = r.item();
-                let display_bytes: Vec<u8> = if item.is_empty() {
-                    null_label.clone()
-                } else if vis_whitespace {
+            // The NULL row goes at the end, after Other (the exact path's default; FI
+            // rejects --null-sorted). Without --pct-nulls it is always reported, with an
+            // empty percentage and rank; with --pct-nulls it keeps the ordinal rank it won
+            // above, or, if --limit cut it, it is counted in Other.
+            let mut null_row: Option<(u64, String, String)> = None;
+            if !pct_nulls && null_count > 0 {
+                null_row = Some((null_count, String::new(), String::new()));
+            }
+
+            for (rank_idx, &(item, count)) in entries.iter().enumerate() {
+                let rank_val = (rank_idx as u64) + 1;
+                let pct_str = self.format_percentage(pct_of(count), abs_dec_places);
+                let Some(item) = item else {
+                    null_row = Some((count, pct_str, itoa_buf.format(rank_val).to_string()));
+                    continue;
+                };
+                let display_bytes: Vec<u8> = if vis_whitespace {
                     value_str.clear();
                     value_str.push_str(&util::visualize_whitespace(&util::bytes_to_cow_str(item)));
                     value_str.as_bytes().to_vec()
@@ -4858,22 +4901,8 @@ impl Args {
                     item.to_vec()
                 };
 
-                let count = r.estimate();
-                let pct: f64 = if item.is_empty() && !pct_nulls {
-                    -1.0
-                } else if pct_denom > 0.0 {
-                    100.0 * (count as f64) / pct_denom
-                } else {
-                    0.0
-                };
-                let pct_str = self.format_percentage(pct, abs_dec_places);
-
                 rank_buf.clear();
-                if !item.is_empty() || pct_nulls {
-                    let rank_val = (rank_idx as u64) + 1;
-                    rank_buf.push_str(itoa_buf.format(rank_val));
-                }
-
+                rank_buf.push_str(itoa_buf.format(rank_val));
                 wtr.write_record([
                     header_vec.as_slice(),
                     &display_bytes,
@@ -4884,26 +4913,25 @@ impl Args {
             }
 
             if emit_other {
-                let total = sketch.total_weight();
-                if total > kept_estimate_sum {
-                    let other_count = total - kept_estimate_sum;
-                    let pct: f64 = if pct_denom > 0.0 {
-                        100.0 * (other_count as f64) / pct_denom
-                    } else {
-                        0.0
-                    };
-                    let pct_str = self.format_percentage(pct, abs_dec_places);
-                    rank_buf.clear();
+                // Other = everything in the percentage base that isn't shown above, so the
+                // shown percentages and Other's add up to 100. It is approximate, because the
+                // shown counts are sketch estimates.
+                let base = if pct_nulls {
+                    nonnull_count + null_count
+                } else {
+                    nonnull_count
+                };
+                if base > kept_sum {
+                    let other_count = base - kept_sum;
+                    let pct_str = self.format_percentage(pct_of(other_count), abs_dec_places);
                     // Match the exact path's Other-row convention: rank is "0"
                     // (sentinel for synthetic rows like Other / *ALL_UNIQUE).
-                    // The exact path renders rank 0.0 as the integer "0" via
-                    // itoa (see emit_unweighted_csv_rows), so we do the same
-                    // here. The label intentionally diverges from exact —
-                    // the exact path emits "<other-text> (<unique_count>)" but
-                    // FI cannot recover the count of distinct items not in the
-                    // top-K (purged items aren't tracked), so we emit the bare
-                    // --other-text. This divergence is documented in the
-                    // --sketch-method help.
+                    // The label intentionally diverges from exact - the exact path
+                    // emits "<other-text> (<unique_count>)" but FI cannot recover the
+                    // count of distinct items not in the top-K (purged items aren't
+                    // tracked), so we emit the bare --other-text. This divergence is
+                    // documented in the --sketch-method help.
+                    rank_buf.clear();
                     rank_buf.push_str(itoa_buf.format(0_u64));
                     wtr.write_record([
                         header_vec.as_slice(),
@@ -4913,6 +4941,16 @@ impl Args {
                         rank_buf.as_bytes(),
                     ])?;
                 }
+            }
+
+            if let Some((count, pct_str, rank_str)) = null_row {
+                wtr.write_record([
+                    header_vec.as_slice(),
+                    null_label.as_slice(),
+                    itoa_buf.format(count).as_bytes(),
+                    pct_str.as_bytes(),
+                    rank_str.as_bytes(),
+                ])?;
             }
         }
 

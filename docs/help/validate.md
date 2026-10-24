@@ -101,7 +101,8 @@ dynamicEnum = "dathere://us_states.csv"
 If colname is not specified, the first column of the CSV file is read and used for validation.
 
 Values are compared as text, so `dynamicEnum` works on integer and number columns too (`1` in
-the data matches `1` in the reference file). Empty cells are not looked up: whether they are
+the data matches `1` in the reference file). In a boolean column, a cell matches either spelling
+of its value (`true` or `1`, `false` or `0`). Empty cells are not looked up: whether they are
 allowed is up to the column's `type` (e.g. ["string", "null"]).
 
 ### Uniquecombinedwith

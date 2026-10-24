@@ -87,7 +87,8 @@ The "dynamicEnum" value has the form:
 If colname is not specified, the first column of the CSV file is read and used for validation.
 
 Values are compared as text, so `dynamicEnum` works on integer and number columns too (`1` in
-the data matches `1` in the reference file). Empty cells are not looked up: whether they are
+the data matches `1` in the reference file). In a boolean column, a cell matches either spelling
+of its value (`true` or `1`, `false` or `0`). Empty cells are not looked up: whether they are
 allowed is up to the column's `type` (e.g. ["string", "null"]).
 
 uniqueCombinedWith
@@ -1000,10 +1001,11 @@ impl DynEnumValidator {
         Self { dynenum_set }
     }
 
-    /// Whether the lookup holds the cell's text. A cell in a numeric or boolean column is
-    /// compared by its text (a number by its spelling in the CSV), so `1` in an integer
-    /// column matches `1` in the lookup. An empty cell is not judged here: the column's
-    /// `type` decides whether null is allowed, as no lookup file can list it.
+    /// Whether the lookup holds the cell's text. A cell in a numeric column is compared by
+    /// its spelling in the CSV, so `1` in an integer column matches `1` in the lookup; a cell
+    /// in a boolean column matches either spelling of its value (`true`/`1`, `false`/`0`).
+    /// An empty cell is not judged here: the column's `type` decides whether null is allowed,
+    /// as no lookup file can list it.
     #[inline]
     fn accepts<'i, F: Json>(&self, instance: &F::Node<'i>) -> bool {
         if instance.is_null() {
@@ -1016,9 +1018,10 @@ impl DynEnumValidator {
             return self.dynenum_set.contains(number.as_str().as_ref());
         }
         if let Some(value) = instance.as_boolean() {
-            return self
-                .dynenum_set
-                .contains(if value { "true" } else { "false" });
+            // a boolean cell's text is one of these spellings (see `Kind::resolve`), and its
+            // value is all that is left of it here, so either spelling in the lookup matches
+            let (word, digit) = if value { ("true", "1") } else { ("false", "0") };
+            return self.dynenum_set.contains(word) || self.dynenum_set.contains(digit);
         }
         false
     }
@@ -3160,15 +3163,40 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
 /// A property's `type`: its own, or else the one its local `$ref` (`#/...`) chain points to.
 /// A remote `$ref`, or none at all, leaves the column read as strings.
 fn field_type_def<'s>(schema: &'s Value, mut field_def: &'s Value) -> Option<&'s Value> {
+    // A `#/...` pointer is relative to the schema resource it appears in: the root, or the
+    // nearest subschema with its own `$id`.
+    let mut resource = schema;
     // bounds a `$ref` cycle, which the validator rejects anyway
     for _ in 0..32 {
+        if declares_id(field_def) {
+            resource = field_def;
+        }
         if let Some(type_def) = field_def.get("type") {
             return Some(type_def);
         }
         let pointer = field_def.get("$ref")?.as_str()?.strip_prefix('#')?;
-        field_def = schema.pointer(pointer)?;
+        field_def = resolve_in_resource(resource, pointer)?;
     }
     None
+}
+
+/// Resolve a JSON Pointer within one schema resource. A pointer that passes through another
+/// embedded resource (a subschema with its own `$id`) is not followed, leaving the column read
+/// as strings rather than risk the wrong definition.
+fn resolve_in_resource<'s>(resource: &'s Value, pointer: &str) -> Option<&'s Value> {
+    // every proper prefix of the pointer, e.g. "/$defs" for "/$defs/value"
+    for (end, _) in pointer.match_indices('/').skip(1) {
+        if declares_id(resource.pointer(&pointer[..end])?) {
+            return None;
+        }
+    }
+    resource.pointer(pointer)
+}
+
+/// Whether a schema object starts an embedded resource. `$id` must be a string: a `$defs` or
+/// `properties` map can hold a schema *named* "$id", whose value is an object.
+fn declares_id(schema: &Value) -> bool {
+    schema.get("$id").is_some_and(Value::is_string)
 }
 
 /// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such

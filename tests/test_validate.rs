@@ -4178,3 +4178,75 @@ fn validate_rfc4180_stdin_uses_default_delimiter_env() {
     let all = format!("{stdout}{stderr}");
     assert!(all.contains(r#"Columns: ("a", "b")"#), "{all}");
 }
+
+/// Run `validate data.csv schema.json` in `wrk` and return the error report's rows (without
+/// the header), or an empty Vec when every record is valid.
+fn validation_errors(wrk: &Workdir, csv: &str, schema: &str) -> Vec<String> {
+    // a valid run writes no report, so one left by an earlier run must not be read
+    let _ = std::fs::remove_file(wrk.path("data.csv.validation-errors.tsv"));
+    wrk.create_from_string("data.csv", csv);
+    wrk.create_from_string("schema.json", schema);
+    let mut cmd = wrk.command("validate");
+    cmd.args(["data.csv", "schema.json"]);
+    wrk.output(&mut cmd);
+    wrk.read_to_string("data.csv.validation-errors.tsv")
+        .map(|report| report.lines().skip(1).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn validate_dynamicenum_numeric_column_and_nulls() {
+    // dynamicEnum compared only string cells, so every value of an integer column failed, and
+    // an empty cell failed even where the column's type allowed null
+    let wrk = Workdir::new("validate_dynamicenum_numeric_column_and_nulls");
+    wrk.create_from_string("codes.csv", "code\n1\n2\n");
+    let schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"code":{"type":["integer","null"],"dynamicEnum":"codes.csv"}}}"#;
+
+    assert!(validation_errors(&wrk, "code\n1\n2\n\n", schema).is_empty());
+    assert_eq!(
+        validation_errors(&wrk, "code\n1\n3\n", schema),
+        ["2\tcode\t3 is not a valid dynamicEnum value"]
+    );
+}
+
+#[test]
+fn validate_dynamicenum_null_still_needs_type_to_allow_it() {
+    // dynamicEnum leaves null to `type`: a column whose type excludes null still rejects it
+    let wrk = Workdir::new("validate_dynamicenum_null_still_needs_type_to_allow_it");
+    wrk.create_from_string("names.csv", "name\nAl\n");
+    let schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"name":{"type":"string","dynamicEnum":"names.csv"},"x":{"type":"string"}}}"#;
+
+    assert_eq!(
+        validation_errors(&wrk, "name,x\n,a\n", schema),
+        ["1\tname\tnull is not of type \"string\""]
+    );
+}
+
+#[test]
+fn validate_property_type_through_ref() {
+    // a property typed through a local $ref was read as a string, so `"type": "integer"` in
+    // the referenced definition rejected every row
+    let wrk = Workdir::new("validate_property_type_through_ref");
+    let schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"age":{"$ref":"#/$defs/count"},"count":{"type":"integer","minimum":0}},"properties":{"age":{"$ref":"#/$defs/age"}}}"##;
+
+    assert!(validation_errors(&wrk, "age\n5\n7\n", schema).is_empty());
+    assert_eq!(
+        validation_errors(&wrk, "age\n5\n-1\n", schema),
+        ["2\tage\t-1 is less than the minimum of 0"]
+    );
+}
+
+#[test]
+fn validate_multi_type_arrays_read_cells_by_any_allowed_type() {
+    // only the last entry of a `type` array chose how a cell was read, so ["number", "integer"]
+    // rejected 1.5, ["boolean", "integer"] rejected true, and ["integer", "string"] read
+    // numbers as strings, skipping `minimum`
+    let wrk = Workdir::new("validate_multi_type_arrays_read_cells_by_any_allowed_type");
+    let schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"x":{"type":["number","integer"]},"b":{"type":["boolean","integer"]},"v":{"type":["integer","string"],"minimum":0}}}"#;
+
+    assert!(validation_errors(&wrk, "x,b,v\n1.5,true,5\n2,7,hello\n", schema).is_empty());
+    assert_eq!(
+        validation_errors(&wrk, "x,b,v\n1.5,true,-3\n", schema),
+        ["1\tv\t-3 is less than the minimum of 0"]
+    );
+}

@@ -82,7 +82,9 @@ Schema options:
                                When enabled, String fields are checked against
                                email, hostname, IPv4, and IPv6 formats. Format
                                constraints are only added if ALL unique values
-                               in the field match the detected format.
+                               in the field match the detected format. Hostnames
+                               must contain a dot (e.g. "example.com"), so columns
+                               of single words are not mistaken for hostnames.
     --pattern-columns <args>   Select columns to derive regex pattern constraints.
                                That is, this will create a regular expression
                                that matches all values for each specified column.
@@ -197,11 +199,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // so the name of the generated schema.json file is readable and predictable
     // (stdin.csv.schema.json)
     let (input_path, input_filename) = if let Some(ref input) = args.arg_input {
-        let filename = Path::new(&input)
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        let Some(filename) = Path::new(&input).file_name() else {
+            return fail_incorrectusage_clierror!("<input> must be a file path: {input}");
+        };
+        let filename = filename.to_string_lossy().to_string();
         (input.clone(), filename)
     } else {
         let mut stdin_file = File::create(STDIN_CSV)?;
@@ -348,9 +349,9 @@ pub fn infer_schema_from_stats(
         }
     }
 
-    // amortize memory allocation
-    let mut low_cardinality_column_indices: Vec<u64> =
-        Vec::with_capacity(args.flag_enum_threshold as usize);
+    // amortize memory allocation (sized by column count, never by the user-supplied
+    // --enum-threshold, which can be arbitrarily large)
+    let mut low_cardinality_column_indices: Vec<u64> = Vec::with_capacity(csv_stats.len());
     let mut const_column_indices: Vec<u64> = Vec::new();
 
     // build column selector arg to invoke cmd::frequency with
@@ -385,7 +386,7 @@ pub fn infer_schema_from_stats(
     // amortize memory allocations
     let mut field_map: Map<String, Value> = Map::with_capacity(10);
     let mut type_list: Vec<Value> = Vec::with_capacity(4);
-    let mut enum_list: Vec<Value> = Vec::with_capacity(args.flag_enum_threshold as usize);
+    let mut enum_list: Vec<Value> = Vec::new();
     let mut const_value: Value;
     let mut header_string;
     let mut col_null_count;
@@ -934,10 +935,12 @@ fn is_email(value: &str) -> bool {
     email_re.is_match(value)
 }
 
-/// Check if a string is a valid hostname
+/// Check if a string is a valid, dotted hostname.
+/// A dot is required: any single word ("Alice", "red") is a valid RFC 1123 label,
+/// so without it plain-word columns would be constrained to `format: hostname`.
 #[inline]
 fn is_hostname(value: &str) -> bool {
-    if value.is_empty() {
+    if !value.contains('.') {
         return false;
     }
     hostname_validator::is_valid(value)
@@ -1034,6 +1037,12 @@ fn generate_string_patterns(
     args: &util::SchemaArgs,
     properties_map: &Map<String, Value>,
 ) -> CliResult<HashMap<String, String>> {
+    let mut pattern_map: HashMap<String, String> = HashMap::new();
+    if args.flag_pattern_columns.is_unspecified() {
+        debug!("no pattern columns selected");
+        return Ok(pattern_map);
+    }
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
@@ -1044,13 +1053,7 @@ fn generate_string_patterns(
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
 
-    let mut pattern_map: HashMap<String, String> = HashMap::new();
-
-    // return empty pattern map when:
-    //  * no columns are selected
-    //  * all columns are selected (by default, all columns are selected when no columns are
-    //    explicitly specified)
-    if sel.is_empty() || sel.len() == headers.len() {
+    if sel.is_empty() {
         debug!("no pattern columns selected");
         return Ok(pattern_map);
     }

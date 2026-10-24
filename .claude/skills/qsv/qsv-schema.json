@@ -84,7 +84,7 @@
       {
         "flag": "--strict-formats",
         "type": "flag",
-        "description": "Enforce JSON Schema format constraints for detected email, hostname, and IP address columns. When enabled, String fields are checked against email, hostname, IPv4, and IPv6 formats. Format constraints are only added if ALL unique values in the field match the detected format."
+        "description": "Enforce JSON Schema format constraints for detected email, hostname, and IP address columns. When enabled, String fields are checked against email, hostname, IPv4, and IPv6 formats. Format constraints are only added if ALL unique values in the field match the detected format. Hostnames must contain a dot (e.g. \"example.com\"), so columns of single words are not mistaken for hostnames."
       }
     ]
   },

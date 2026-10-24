@@ -1226,3 +1226,86 @@ fn schema_unicode_lengths_indexed_parallel() {
     validate.args(["u.csv", "u.csv.schema.json"]);
     wrk.assert_success(&mut validate);
 }
+
+#[test]
+#[file_serial]
+fn generate_schema_pattern_columns_selecting_every_column() {
+    // a selection covering every column (here, the only one) must still emit patterns
+    let wrk = Workdir::new("generate_schema_pattern_columns_selecting_every_column");
+    wrk.create_from_string("one.csv", "code\nab1\ncd2\nef3\n");
+
+    let mut cmd = wrk.command("schema");
+    cmd.args([
+        "one.csv",
+        "--pattern-columns",
+        "code",
+        "--enum-threshold",
+        "1",
+        "--stdout",
+    ]);
+    let schema: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    assert_eq!(schema["properties"]["code"]["pattern"], "^(?:ab1|cd2|ef3)$");
+
+    // without --pattern-columns, no pattern is emitted
+    let mut cmd = wrk.command("schema");
+    cmd.args(["one.csv", "--enum-threshold", "1", "--stdout"]);
+    let schema: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    assert!(schema["properties"]["code"].get("pattern").is_none());
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_strict_formats_undotted_words_not_hostname() {
+    // single words are valid RFC 1123 labels, but must not be inferred as hostnames
+    let wrk = Workdir::new("generate_schema_strict_formats_undotted_words_not_hostname");
+    wrk.create_from_string("names.csv", "name\nAlice\nBob\nCarol\n");
+
+    let mut cmd = wrk.command("schema");
+    cmd.args([
+        "names.csv",
+        "--strict-formats",
+        "--enum-threshold",
+        "1",
+        "--stdout",
+    ]);
+    let schema: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    assert!(schema["properties"]["name"].get("format").is_none());
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_huge_enum_threshold() {
+    // --enum-threshold must not size an allocation
+    let wrk = Workdir::new("generate_schema_huge_enum_threshold");
+    wrk.create_from_string("data.csv", "code\nab\ncd\nab\n");
+
+    let mut cmd = wrk.command("schema");
+    cmd.args([
+        "data.csv",
+        "--enum-threshold",
+        "100000000000000",
+        "--stdout",
+    ]);
+    let schema: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    assert_eq!(
+        schema["properties"]["code"]["enum"],
+        serde_json::json!(["ab", "cd"])
+    );
+}
+
+#[test]
+#[file_serial]
+fn generate_schema_input_without_file_name() {
+    // a path with no file name component must error, not panic
+    let wrk = Workdir::new("generate_schema_input_without_file_name");
+
+    let mut cmd = wrk.command("schema");
+    cmd.arg("..");
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
+    assert!(
+        stderr.contains("<input> must be a file path"),
+        "stderr: {stderr}"
+    );
+}

@@ -4296,3 +4296,17 @@ fn validate_ref_resolves_within_embedded_resource() {
         ["1\tn\t\"x\" is not of type \"integer\""]
     );
 }
+
+#[test]
+fn validate_ref_beside_a_definition_named_id() {
+    // a `$defs` entry named "$id" is a schema, not a resource identifier, so it must not stop
+    // `#/$defs/n` from resolving (roborev 5825)
+    let wrk = Workdir::new("validate_ref_beside_a_definition_named_id");
+    let schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"$id":{"type":"string"},"n":{"type":"integer"}},"properties":{"n":{"$ref":"#/$defs/n"}}}"##;
+
+    assert!(validation_errors(&wrk, "n\n5\n", schema).is_empty());
+    assert_eq!(
+        validation_errors(&wrk, "n\nx\n", schema),
+        ["1\tn\t\"x\" is not of type \"integer\""]
+    );
+}

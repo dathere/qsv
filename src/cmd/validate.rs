@@ -3168,7 +3168,7 @@ fn field_type_def<'s>(schema: &'s Value, mut field_def: &'s Value) -> Option<&'s
     let mut resource = schema;
     // bounds a `$ref` cycle, which the validator rejects anyway
     for _ in 0..32 {
-        if field_def.get("$id").is_some() {
+        if declares_id(field_def) {
             resource = field_def;
         }
         if let Some(type_def) = field_def.get("type") {
@@ -3186,11 +3186,17 @@ fn field_type_def<'s>(schema: &'s Value, mut field_def: &'s Value) -> Option<&'s
 fn resolve_in_resource<'s>(resource: &'s Value, pointer: &str) -> Option<&'s Value> {
     // every proper prefix of the pointer, e.g. "/$defs" for "/$defs/value"
     for (end, _) in pointer.match_indices('/').skip(1) {
-        if resource.pointer(&pointer[..end])?.get("$id").is_some() {
+        if declares_id(resource.pointer(&pointer[..end])?) {
             return None;
         }
     }
     resource.pointer(pointer)
+}
+
+/// Whether a schema object starts an embedded resource. `$id` must be a string: a `$defs` or
+/// `properties` map can hold a schema *named* "$id", whose value is an object.
+fn declares_id(schema: &Value) -> bool {
+    schema.get("$id").is_some_and(Value::is_string)
 }
 
 /// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such

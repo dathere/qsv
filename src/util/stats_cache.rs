@@ -669,11 +669,12 @@ pub fn get_stats_records_flexible(
     let csv_fields = rdr.byte_headers()?.clone();
     drop(rdr);
 
-    // Update args with the detected delimiter if it wasn't explicitly set
+    // Update args with the detected delimiter if it wasn't explicitly set. Use the delimiter
+    // the reader above resolved, not just the extension's: the stats child is a separate
+    // process, so it can't tell that a temp `stdin.csv` is spooled stdin (which reads with
+    // QSV_DEFAULT_DELIMITER), and it must read the file the way this process did.
     let detected_delimiter = if args.flag_delimiter.is_none() {
-        let path = Path::new(input_path);
-        let (_, detected_delim, _) = get_delim_by_extension(path, b',');
-        Some(Delimiter(detected_delim))
+        Some(Delimiter(rconfig.get_delimiter()))
     } else {
         args.flag_delimiter
     };

@@ -413,6 +413,12 @@ pub fn process_input_with_sources(
                 std::io::copy(&mut std::io::stdin(), &mut tmp_file)?;
                 tmp_file.flush()?;
                 stdin_copied = true;
+                // stdin can be read only once, so there is only ever one spool to record
+                let _ = crate::config::STDIN_SPOOL.set(
+                    stdin_path
+                        .canonicalize()
+                        .unwrap_or_else(|_| stdin_path.clone()),
+                );
             }
             processed_input.push((stdin_path.clone(), InputSource::Stdin));
             continue;

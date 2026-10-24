@@ -2,8 +2,8 @@
 name          = "qsv"
 version       = "26.0.0"                                                                   #:version
 authors       = ["Joel Natividad <joel@datHere.com>"]
-description   = "A Blazing-Fast Data-wrangling toolkit."
-documentation = "https://github.com/dathere/qsv#qsv-ultra-fast-csv-data-wrangling-toolkit"
+description   = "A Blazing-Fast Neuro-symbolic Data-wrangling toolkit."
+documentation = "https://github.com/dathere/qsv/wiki"
 homepage      = "https://qsv.dathere.com"
 repository    = "https://github.com/dathere/qsv"
 keywords      = ["csv", "geocode", "data-engineering", "etl", "opendata"]

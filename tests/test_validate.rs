@@ -4002,3 +4002,179 @@ fn validate_anyof_oneof_error_messages() {
     .join("\n");
     assert_eq!(validation_errors, expected);
 }
+
+/// Run `cmd` with `data` piped to its stdin.
+fn output_with_stdin(cmd: &mut std::process::Command, data: &[u8]) -> std::process::Output {
+    use std::io::Write;
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child.stdin.take().unwrap().write_all(data).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+const AGE_SCHEMA: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"age":{"type":"integer","minimum":0}}}"#;
+
+#[test]
+fn validate_schema_explicit_stdin_detects_invalid() {
+    // "-" with a schema used to drain stdin while counting rows, then validate 0 rows and pass
+    let wrk = Workdir::new("validate_schema_explicit_stdin_detects_invalid");
+    wrk.create_from_string("age.schema.json", AGE_SCHEMA);
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["-", "age.schema.json"]);
+    let output = output_with_stdin(&mut cmd, b"age\nabc\n5\n-3\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("2 out of 3 records invalid."),
+        "stderr: {stderr}"
+    );
+
+    assert_eq!(wrk.read_to_string("stdin.csv.valid").unwrap(), "age\n5\n");
+    assert_eq!(
+        wrk.read_to_string("stdin.csv.invalid").unwrap(),
+        "age\nabc\n-3\n"
+    );
+}
+
+#[test]
+fn validate_schema_piped_stdin_without_data_arg() {
+    // `cat data.csv | qsv validate schema.json` (as in the USAGE) reads the data from stdin
+    let wrk = Workdir::new("validate_schema_piped_stdin_without_data_arg");
+    wrk.create_from_string("age.schema.json", AGE_SCHEMA);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("age.schema.json");
+    let output = output_with_stdin(&mut cmd, b"age\n1\n-3\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 out of 2 records invalid."),
+        "stderr: {stderr}"
+    );
+    assert_eq!(
+        wrk.read_to_string("stdin.csv.invalid").unwrap(),
+        "age\n-3\n"
+    );
+    assert!(!wrk.path("age.schema.json.invalid").exists());
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("age.schema.json");
+    let output = output_with_stdin(&mut cmd, b"age\n1\n2\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(stderr.contains("All 2 records valid."), "stderr: {stderr}");
+}
+
+#[test]
+fn validate_schema_without_data_and_empty_stdin() {
+    // no data file and nothing on stdin keeps the "no data file" error
+    let wrk = Workdir::new("validate_schema_without_data_and_empty_stdin");
+    wrk.create_from_string("age.schema.json", AGE_SCHEMA);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("age.schema.json");
+    let output = output_with_stdin(&mut cmd, b"");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("Only a JSON Schema file was provided"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn validate_rfc4180_piped_stdin_without_args() {
+    // with no input argument, RFC 4180 mode reads piped stdin, as the USAGE says
+    let wrk = Workdir::new("validate_rfc4180_piped_stdin_without_args");
+
+    let mut cmd = wrk.command("validate");
+    let output = output_with_stdin(&mut cmd, b"a,b\n1,2\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+
+    let mut cmd = wrk.command("validate");
+    let output = output_with_stdin(&mut cmd, b"a,b\n1\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stderr.contains("found record with 1 fields"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn validate_unique_combined_with_flags_later_duplicate() {
+    // Rows were validated in parallel, so whichever duplicate a thread reached first was
+    // accepted. Each key occurs at row k and row k + 20000; the later row must be the
+    // invalid one, every run. (Against parallel validation this only fails when the threads
+    // race the "wrong" way, roughly half the time; in-order validation always passes.)
+    let wrk = Workdir::new("validate_unique_combined_with_flags_later_duplicate");
+    let mut csv = String::from("k,v\n");
+    for i in 0..40_000 {
+        csv.push_str(&format!("{},x\n", i % 20_000));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "data.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","uniqueCombinedWith":["k"],"properties":{"k":{"type":"integer"},"v":{"type":"string"}}}"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["data.csv", "data.schema.json", "--jobs", "4"]);
+    wrk.assert_err(&mut cmd);
+
+    let report = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    let rows: Vec<u64> = report
+        .lines()
+        .skip(1)
+        .map(|line| line.split('\t').next().unwrap().parse().unwrap())
+        .collect();
+    assert_eq!(rows.len(), 20_000);
+    assert!(
+        rows.iter().all(|&row| row > 20_000),
+        "an earlier row was flagged"
+    );
+}
+
+#[test]
+fn validate_schema_stdin_uses_default_delimiter_env() {
+    // stdin is read from a temp `stdin.csv`; its made-up extension must not force a comma
+    // over QSV_DEFAULT_DELIMITER (read as one `name;age` column, the bad age passed)
+    let wrk = Workdir::new("validate_schema_stdin_uses_default_delimiter_env");
+    wrk.create_from_string("age.schema.json", AGE_SCHEMA);
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["-", "age.schema.json"])
+        .env("QSV_DEFAULT_DELIMITER", ";");
+    let output = output_with_stdin(&mut cmd, b"name;age\nx;-3\ny;4\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 out of 2 records invalid."),
+        "stderr: {stderr}"
+    );
+    let report = wrk
+        .read_to_string("stdin.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(
+        report.contains("1\tage\t-3 is less than the minimum of 0"),
+        "{report}"
+    );
+}
+
+#[test]
+fn validate_rfc4180_stdin_uses_default_delimiter_env() {
+    let wrk = Workdir::new("validate_rfc4180_stdin_uses_default_delimiter_env");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("-").env("QSV_DEFAULT_DELIMITER", ";");
+    let output = output_with_stdin(&mut cmd, b"a;b\n1;2\n");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let all = format!("{stdout}{stderr}");
+    assert!(all.contains(r#"Columns: ("a", "b")"#), "{all}");
+}

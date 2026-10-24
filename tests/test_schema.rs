@@ -1329,3 +1329,37 @@ fn generate_schema_polars_rejects_stdout() {
     );
     assert!(!Path::new(&wrk.path("data.csv.pschema.json")).exists());
 }
+
+// Regression (roborev 5818): the stats child reads an unrecognized extension with
+// QSV_DEFAULT_DELIMITER and records it, so the cache check must compare against that same
+// resolved delimiter. Comparing against the extension default (a comma) rejected the cache
+// each run had just written and recomputed stats on unchanged data.
+#[test]
+#[file_serial]
+fn generate_schema_reuses_stats_cache_with_default_delimiter_env() {
+    let wrk = Workdir::new("generate_schema_reuses_stats_cache_with_default_delimiter_env");
+    wrk.create_from_string("data", "a|b\n1|x\n2|y\n");
+
+    let run = || {
+        let mut cmd = wrk.command("schema");
+        cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+            .env("QSV_DEFAULT_DELIMITER", "|")
+            .args(["data", "--stdout"]);
+        let schema: Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+        schema
+    };
+
+    let schema = run();
+    let mut columns: Vec<&String> = schema["properties"].as_object().unwrap().keys().collect();
+    columns.sort();
+    assert_eq!(columns, ["a", "b"]);
+
+    let jsonl = wrk.path("data.stats.csv.data.jsonl");
+    let first = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    run();
+    let second = std::fs::metadata(&jsonl).unwrap().modified().unwrap();
+    assert_eq!(
+        first, second,
+        "the stats cache was regenerated on an identical second run"
+    );
+}

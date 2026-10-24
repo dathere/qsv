@@ -4139,3 +4139,42 @@ fn validate_unique_combined_with_flags_later_duplicate() {
         "an earlier row was flagged"
     );
 }
+
+#[test]
+fn validate_schema_stdin_uses_default_delimiter_env() {
+    // stdin is read from a temp `stdin.csv`; its made-up extension must not force a comma
+    // over QSV_DEFAULT_DELIMITER (read as one `name;age` column, the bad age passed)
+    let wrk = Workdir::new("validate_schema_stdin_uses_default_delimiter_env");
+    wrk.create_from_string("age.schema.json", AGE_SCHEMA);
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["-", "age.schema.json"])
+        .env("QSV_DEFAULT_DELIMITER", ";");
+    let output = output_with_stdin(&mut cmd, b"name;age\nx;-3\ny;4\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("1 out of 2 records invalid."),
+        "stderr: {stderr}"
+    );
+    let report = wrk
+        .read_to_string("stdin.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(
+        report.contains("1\tage\t-3 is less than the minimum of 0"),
+        "{report}"
+    );
+}
+
+#[test]
+fn validate_rfc4180_stdin_uses_default_delimiter_env() {
+    let wrk = Workdir::new("validate_rfc4180_stdin_uses_default_delimiter_env");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("-").env("QSV_DEFAULT_DELIMITER", ";");
+    let output = output_with_stdin(&mut cmd, b"a;b\n1;2\n");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    let all = format!("{stdout}{stderr}");
+    assert!(all.contains(r#"Columns: ("a", "b")"#), "{all}");
+}

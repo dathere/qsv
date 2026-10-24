@@ -1920,7 +1920,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             DEFAULT_RDR_BUFFER_CAPACITY
         });
 
-    if args.flag_delimiter.is_some() {
+    if stdin_input {
+        rconfig = rconfig.delimiter(Some(stdin_delimiter(args.flag_delimiter)?));
+    } else if args.flag_delimiter.is_some() {
         rconfig = rconfig.delimiter(args.flag_delimiter);
     }
     // ignore the "already set" error so re-entrant calls (e.g., qsv used as a library)
@@ -2308,6 +2310,18 @@ fn instance_field(location: &Location) -> String {
     }
 }
 
+/// The delimiter for stdin: `--delimiter`, else `QSV_DEFAULT_DELIMITER`, else `,`. stdin is
+/// read from a temp `stdin.csv`, whose made-up extension must not pick the delimiter.
+fn stdin_delimiter(flag: Option<Delimiter>) -> CliResult<Delimiter> {
+    if let Some(delimiter) = flag {
+        return Ok(delimiter);
+    }
+    match env::var("QSV_DEFAULT_DELIMITER") {
+        Ok(delimiter) => Ok(Delimiter::decode_delimiter(&delimiter)?),
+        Err(_) => Ok(Delimiter(b',')),
+    }
+}
+
 /// Copy all of stdin to `<tmpdir>/stdin.csv` and return its path; empty stdin fails with
 /// `empty_msg`.
 fn spool_stdin(tmpdir: &tempfile::TempDir, empty_msg: &str) -> CliResult<PathBuf> {
@@ -2377,7 +2391,9 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                 DEFAULT_RDR_BUFFER_CAPACITY
             });
 
-        if args.flag_delimiter.is_some() {
+        if matches!(source, InputSource::Stdin) {
+            rconfig = rconfig.delimiter(Some(stdin_delimiter(args.flag_delimiter)?));
+        } else if args.flag_delimiter.is_some() {
             rconfig = rconfig.delimiter(args.flag_delimiter);
         }
 

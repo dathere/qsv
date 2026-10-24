@@ -6949,6 +6949,165 @@ fn sqlp_join_on_correlated_in_and_exists() {
     assert_eq!(got, expected);
 }
 
+// Polars SQL behavior changed between rev 34cc518 and d02c621.
+// pola-rs/polars#30207 is BREAKING: a FROM-item alias can no longer be read as
+// a table. Every other query below errored on 34cc518.
+
+#[test]
+fn sqlp_from_alias_is_not_a_table() {
+    // pola-rs/polars#30207: reading a derived table's alias as a table, in a
+    // subquery or in a later FROM item, returned rows on 34cc518 and now fails.
+    let wrk = Workdir::new("sqlp_from_alias_is_not_a_table");
+    tu_fixture(&wrk);
+
+    for (i, sql) in [
+        "SELECT a.x FROM (SELECT * FROM t WHERE g = 1) AS a WHERE a.x IN (SELECT x FROM a)",
+        "SELECT * FROM (SELECT g FROM t) AS a, a AS b LIMIT 2",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv").arg(sql);
+        wrk.assert_err(&mut cmd);
+
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv").arg(sql);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("relation 'a' was not found"),
+            "query {i}: {stderr}"
+        );
+    }
+
+    // the documented migration: move the subquery into a CTE
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "WITH a AS (SELECT * FROM t WHERE g = 1) SELECT a.x FROM a WHERE a.x IN (SELECT x FROM a) \
+         ORDER BY 1",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["x"], svec!["10"], svec!["20"]]);
+}
+
+#[test]
+fn sqlp_from_alias_does_not_hide_input_table() {
+    // pola-rs/polars#30207: the alias `t` no longer replaces the loaded `t`
+    // input inside the subquery. It failed with ColumnNotFound on 34cc518.
+    let wrk = Workdir::new("sqlp_from_alias_does_not_hide_input_table");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"])
+        .arg("SELECT x FROM (SELECT g AS x FROM u) AS t WHERE x IN (SELECT g FROM t) ORDER BY 1");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["x"], svec!["1"], svec!["1"], svec!["2"]]);
+}
+
+#[test]
+fn sqlp_recursive_cte() {
+    // pola-rs/polars#30188: a WITH RECURSIVE CTE may read itself.
+    let wrk = Workdir::new("sqlp_recursive_cte");
+    wrk.create(
+        "tree.csv",
+        vec![
+            svec!["id", "parent"],
+            svec!["1", ""],
+            svec!["2", "1"],
+            svec!["3", "2"],
+            svec!["4", "2"],
+            svec!["5", ""],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("tree.csv").arg(
+        "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r WHERE n < 5) SELECT n \
+         FROM r ORDER BY n",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["n"],
+            svec!["1"],
+            svec!["2"],
+            svec!["3"],
+            svec!["4"],
+            svec!["5"]
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("tree.csv").arg(
+        "WITH RECURSIVE d AS (SELECT id, 0 AS depth FROM tree WHERE id = 1 UNION ALL SELECT \
+         tree.id, d.depth + 1 FROM tree JOIN d ON tree.parent = d.id) SELECT * FROM d ORDER BY id",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "depth"],
+            svec!["1", "0"],
+            svec!["2", "1"],
+            svec!["3", "2"],
+            svec!["4", "2"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_join_on_subquery_reading_one_input() {
+    // pola-rs/polars#30206: a JOIN ... ON subquery correlated with only one
+    // join input. It failed with "no table or struct column named 'u'".
+    let wrk = Workdir::new("sqlp_join_on_subquery_reading_one_input");
+    tu_fixture(&wrk);
+    wrk.create(
+        "c.csv",
+        vec![
+            svec!["id", "gid"],
+            svec!["10", "1"],
+            svec!["30", "2"],
+            svec!["99", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv", "c.csv"]).arg(
+        "SELECT t.g, t.x, u.y FROM t JOIN u ON t.g = u.g AND u.y > (SELECT MIN(id) FROM c WHERE \
+         c.gid = u.g) * 12 ORDER BY 1, 2, 3",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["g", "x", "y"],
+            svec!["1", "10", "150"],
+            svec!["1", "20", "150"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_create_temp_table() {
+    // pola-rs/polars#30256: CREATE TEMP TABLE used to fail with
+    // "`CREATE TEMPORARY TABLE` is not supported".
+    let wrk = Workdir::new("sqlp_create_temp_table");
+    tu_fixture(&wrk);
+    wrk.create_from_string(
+        "test.sql",
+        "CREATE TEMP TABLE z AS SELECT * FROM t WHERE g = 1;\nSELECT * FROM z ORDER BY x;\n",
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("test.sql");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["g", "x"], svec!["1", "10"], svec!["1", "20"]]
+    );
+}
+
 // --delimiter used to carry a docopt `[default: ,]`, so QSV_DEFAULT_DELIMITER was never read.
 #[test]
 fn sqlp_default_delimiter_env() {

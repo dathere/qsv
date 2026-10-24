@@ -554,6 +554,19 @@ pub fn get_stats_records_flexible(
     let canonical_input_path = Path::new(input_path).canonicalize()?;
     let statsdata_path = canonical_input_path.with_extension("stats.csv.data.jsonl");
 
+    let rconfig = Config::new(Some(input_path))
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    // The delimiter the stats child is told to use, and the one an existing cache is checked
+    // against: both must be the delimiter this reader resolved, not just the extension's. The
+    // child is a separate process, so it can't tell that a temp `stdin.csv` is spooled stdin
+    // (read with QSV_DEFAULT_DELIMITER), and an unrecognized extension also reads with that
+    // env var; checking the cache against the extension default instead rejected the cache
+    // each run had just written.
+    let effective_delimiter = args
+        .flag_delimiter
+        .or_else(|| Some(Delimiter(rconfig.get_delimiter())));
+
     let stats_data_current = if statsdata_path.exists() {
         let statsdata_metadata = std::fs::metadata(&statsdata_path)?;
 
@@ -595,7 +608,7 @@ pub fn get_stats_records_flexible(
                 Path::new(input_path),
                 &canonical_input_path,
                 args.flag_no_headers,
-                args.flag_delimiter,
+                effective_delimiter,
                 effective_prefer_dmy,
                 flexible,
             ) {
@@ -660,23 +673,12 @@ pub fn get_stats_records_flexible(
     // Both auto and force now fall through to the regeneration block below, which already
     // adds --force to the stats args for force mode. Only "none" skips the cache.
 
-    // Use qsv's Config system to properly detect delimiter based on file extension
-    let rconfig = Config::new(Some(input_path))
-        .delimiter(args.flag_delimiter)
-        .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
     // get the headers from the input file
     let csv_fields = rdr.byte_headers()?.clone();
     drop(rdr);
 
-    // Update args with the detected delimiter if it wasn't explicitly set
-    let detected_delimiter = if args.flag_delimiter.is_none() {
-        let path = Path::new(input_path);
-        let (_, detected_delim, _) = get_delim_by_extension(path, b',');
-        Some(Delimiter(detected_delim))
-    } else {
-        args.flag_delimiter
-    };
+    let detected_delimiter = effective_delimiter;
 
     let mut stats_data_loaded = false;
     let mut csv_stats: Vec<StatsData> = Vec::with_capacity(csv_fields.len());

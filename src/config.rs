@@ -33,6 +33,11 @@ Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.dat
 
 pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// The temp `stdin.csv` that `util::process_input` copies stdin to, canonicalized.
+/// `Config::new` reads it with stdin's delimiter (the default), not the one its made-up
+/// extension implies.
+pub static STDIN_SPOOL: OnceLock<PathBuf> = OnceLock::new();
+
 // Index paths this process has already rebuilt because they looked stale.
 //
 // Several parallel workers call `index_files()` on the same input and can all observe the
@@ -323,6 +328,18 @@ impl Config {
                 // formats this is the write/fallback delimiter; the read delimiter
                 // is re-derived from the converted temp in `prepared_for_read`.
                 let (file_extension, delim, snappy) = get_delim_by_extension(&path, default_delim);
+                // spooled stdin takes stdin's delimiter, as `-` does above. Compared
+                // canonicalized (some commands canonicalize their input, and macOS temp dirs
+                // are symlinked), but only for files named like the spool.
+                let delim = if path.file_name().is_some_and(|name| name == "stdin.csv")
+                    && STDIN_SPOOL
+                        .get()
+                        .is_some_and(|spool| path.canonicalize().is_ok_and(|p| p == *spool))
+                {
+                    default_delim
+                } else {
+                    delim
+                };
 
                 if special_format == SpecialFormat::Unknown {
                     // Only ordinary inputs are subject to the extension check.

@@ -1528,3 +1528,31 @@ fn cat_rows_directory_without_skip_format_check_fails() {
         stderr
     );
 }
+
+#[test]
+fn cat_rows_stdin_default_delimiter_env() {
+    // piped stdin is copied to a temp `stdin.csv`; its made-up extension must not force a
+    // comma over QSV_DEFAULT_DELIMITER
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_rows_stdin_default_delimiter_env");
+    let mut cmd = wrk.command("cat");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .args(["rows", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a|bb\nccc|d\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "a|bb\nccc|d"
+    );
+}

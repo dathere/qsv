@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **`sqlp`: the alias of a subquery in `FROM` can no longer be read as a table** ([#4907](https://github.com/dathere/qsv/pull/4907), Polars [#30207](https://github.com/pola-rs/polars/pull/30207)). Some queries that worked in qsv 26.0.0 now fail with `relation '<alias>' was not found`. The alias still qualifies the subquery's columns (`a.x`). Reading it as a table, whether in another subquery or in a later `FROM` item, now fails:
+  ```sql
+  -- now fails: `a` is read as a table in the IN subquery
+  SELECT a.x FROM (SELECT * FROM t WHERE g = 1) AS a WHERE a.x IN (SELECT x FROM a)
+  -- now fails: `a` is read as a table in a later FROM item
+  SELECT * FROM (SELECT g FROM t) AS a, a AS b
+  ```
+  **To fix a query, move the subquery into a `WITH` clause** (a CTE), which still works and returns the same rows as before:
+  ```sql
+  WITH a AS (SELECT * FROM t WHERE g = 1) SELECT a.x FROM a WHERE a.x IN (SELECT x FROM a)
+  WITH a AS (SELECT g FROM t) SELECT * FROM a, a AS b
+  ```
+  In a `.sql` script, `CREATE TABLE a AS SELECT ...` also keeps a result for later statements. This also fixes queries where the alias hid a loaded table of the same name: in `SELECT x FROM (SELECT g AS x FROM u) AS t WHERE x IN (SELECT g FROM t)`, the inner `t` now reads the `t` input file, as in DuckDB and PostgreSQL, instead of failing.
+
 ### Added
 - **`viz smart`: optional live mode for Data Schematics with [qsv-clientd](https://github.com/dathere/qsv-client)** ([#4848](https://github.com/dathere/qsv/pull/4848)).
   - **Embedded source block.** Smart HTML now embeds a `qsv-schematic-source` JSON block. It contains the qsv version, a per-render `schematic_uuid`, a BLAKE3 fingerprint of the input (local files only; memory-mapped and multithreaded, about 0.05s per GB from the OS cache, skipped with `--no-daemon-bridge`), the row count, the PID and the smart arguments.
@@ -26,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The prebuilt `qsv` binaries now include `get`.** ([#4903](https://github.com/dathere/qsv/pull/4903)) `qsv get` and `dc:` inputs used to need `qsvdp` or a source build ([#4737](https://github.com/dathere/qsv/issues/4737)). Every release workflow's `qsv` build, and the Debian package's `qsv`, now adds the `get` feature. Rendering a Data Schematic from a `dc:` input, which records where its data came from for qsv-clientd's Fetch latest, also needs `viz`, so that recipe works with the prebuilt `qsv` only on **x86_64 Linux (gnu), x86_64 Windows (msvc and gnu) and macOS Apple Silicon**. The other prebuilt `qsv` builds have `get` but no `viz`: x86_64 Linux musl, aarch64 Linux (gnu and musl), ARM64 Windows (msvc and gnullvm), ppc64le, s390x and the Debian package. Cloud sources (`get_cloud`: `s3://`, `gs://`, `az://`) and `geoconnex` are still left out (use `qsvdp` or a source build), and the `qsvpy*` binaries are unchanged.
 - **`validate` reports errors about twice as fast on files with many invalid rows.** ([#4887](https://github.com/dathere/qsv/pull/4887)) Errors now come from jsonschema's `Validator::iter_errors` instead of building the full `evaluate` output for each invalid row. On the 1M-row NYC 311 sample, where every row is invalid, validation takes 1.6 s instead of 3.8 s, and about 2.3x less time single-threaded (release build). The report is unchanged except for `anyOf` and `oneOf`. A failed `anyOf` is one line, `"ab" is not valid under any of the schemas listed in the 'anyOf' keyword`, instead of one line per failed branch. A `oneOf` that matches more than one branch now names the value: `"x1" is valid under more than one of the schemas listed in the 'oneOf' keyword` instead of `more than one subschema succeeded`.
 - **`validate`: warns about each `format` it doesn't check.** ([#4886](https://github.com/dathere/qsv/pull/4886)) JSON Schema treats an unknown `format` as a label, so validation still runs, but a typo such as `"format": "emial"` used to check nothing with no sign of it. `validate` now names each such format in a warning; `validate schema` still rejects them. `--no-format-validation` ignores all formats, without warnings.
+- **deps: Polars bumped to upstream rev [`d02c621`](https://github.com/pola-rs/polars/commit/d02c62175ad906f3c54cda7a0d917e6a72f73865)** (from `34cc518`, [#4907](https://github.com/dathere/qsv/pull/4907)). It includes the breaking `FROM`-alias change above. Every other `sqlp` difference is a query that used to fail:
+  - **New: recursive CTEs** ([#30188](https://github.com/pola-rs/polars/pull/30188)): a `WITH RECURSIVE` CTE can read itself, e.g. `WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r WHERE n < 5) SELECT n FROM r`, or a walk down a parent/child table.
+  - **New: a subquery in `JOIN ... ON` that is correlated with only one join input** ([#30206](https://github.com/pola-rs/polars/pull/30206)), e.g. `JOIN u ON t.g = u.g AND u.y > (SELECT MIN(id) FROM c WHERE c.gid = u.g) * 12`. A non-equality correlation that reads both inputs still fails.
+  - **New: `CREATE [OR REPLACE] TEMP TABLE`** in `.sql` scripts ([#30256](https://github.com/pola-rs/polars/pull/30256)). It works like `CREATE TABLE`.
+  - Unchanged on both revs: `REGEXP_REPLACE`, `REAL`/`DECIMAL` division and `CORR`/`COVAR` results.
+  - Also lower memory for CSV scans of wide rows ([#30165](https://github.com/pola-rs/polars/pull/30165)), out-of-core streaming windows and sorts, and smaller SQL code size.
 - **deps: Polars bumped to upstream rev [`34cc518`](https://github.com/pola-rs/polars/commit/34cc5185a9d7c83e9e3b6b63022fe596c6aebb53)** (from `c7da28c`, [#4875](https://github.com/dathere/qsv/pull/4875)). No `sqlp` result that already worked changes; every difference is a query that used to fail.
   - **Fixed: `COUNT(*)` over a `UNION ALL ... LIMIT n`** panicked ([#30150](https://github.com/pola-rs/polars/pull/30150)).
   - **Fixed: a correlated subquery whose table has a column named like the outer table** (`WHERE w.g = t.g` where `w` has a column `t`) failed with `StructFieldNotFound` ([#30149](https://github.com/pola-rs/polars/pull/30149)). This regressed in the `c7da28c` bump.

@@ -117,6 +117,9 @@ uniqueCombinedWith = ["name", 2]
 When a duplicate combination is found, the validation will fail and the error message will indicate
 which columns had duplicate combinations (named columns first, then indexed columns). The invalid
 records will be written to the .invalid file, while valid records will be written to the .valid file.
+Rows are checked in file order, so the first row with a combination is valid and its later
+duplicates are invalid. To keep that order, a schema using `uniqueCombinedWith` is validated
+on a single thread.
 
 `uniqueCombinedWith` complements the standard `uniqueItems` keyword, which can only validate
 uniqueness across a single column.

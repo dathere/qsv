@@ -103,6 +103,9 @@ are unique. It can be used with either column names or column indices (0-based).
 When a duplicate combination is found, the validation will fail and the error message will indicate
 which columns had duplicate combinations (named columns first, then indexed columns). The invalid
 records will be written to the .invalid file, while valid records will be written to the .valid file.
+Rows are checked in file order, so the first row with a combination is valid and its later
+duplicates are invalid. To keep that order, a schema using `uniqueCombinedWith` is validated
+on a single thread.
 
 `uniqueCombinedWith` complements the standard `uniqueItems` keyword, which can only validate
 uniqueness across a single column.
@@ -336,7 +339,7 @@ use std::{
     env,
     fmt::Write as _,
     fs::File,
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufReader, BufWriter, IsTerminal, Read, Write},
     path::{Path, PathBuf},
     str,
     sync::{
@@ -1867,17 +1870,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_clierror!("Cannot validate CSV without headers against a JSON Schema.");
     }
 
-    let input_path = input_files.first().ok_or_else(|| {
-        if has_json_schema && args.arg_input.len() == 1 {
-            CliError::Other(
-                "Only a JSON Schema file was provided, but no data file to validate. Please \
-                 provide a data file to validate against the schema."
-                    .to_string(),
-            )
+    // Piped stdin is the input when it is named ("-"), or when no data file is given and
+    // stdin is not a terminal (`cat data.csv | qsv validate schema.json`).
+    let stdin_input = match input_files.as_slice() {
+        [] => !std::io::stdin().is_terminal(),
+        [path] => path.as_os_str() == "-",
+        _ => false,
+    };
+    // stdin is read more than once (row count, validation, valid/invalid split), so it is
+    // spooled to a temp file first; reading it directly let the row count drain it, and
+    // validation then saw no rows and passed. Its outputs are still `stdin.csv.*` in the cwd.
+    let stdin_tmpdir;
+    let stdin_spool;
+    let input_path = if stdin_input {
+        stdin_tmpdir = tempfile::tempdir()?;
+        let empty_msg = if input_files.is_empty() {
+            "Only a JSON Schema file was provided, but no data file to validate. Please provide a \
+             data file to validate against the schema, or pipe data to stdin."
         } else {
-            CliError::Other("No input file provided for JSON Schema validation".to_string())
-        }
-    })?;
+            "No data on stdin. Please provide at least one input file or pipe data to stdin."
+        };
+        stdin_spool = spool_stdin(&stdin_tmpdir, empty_msg)?;
+        &stdin_spool
+    } else {
+        input_files.first().ok_or_else(|| {
+            if has_json_schema && args.arg_input.len() == 1 {
+                CliError::Other(
+                    "Only a JSON Schema file was provided, but no data file to validate. Please \
+                     provide a data file to validate against the schema."
+                        .to_string(),
+                )
+            } else {
+                CliError::Other("No input file provided for JSON Schema validation".to_string())
+            }
+        })?
+    };
+    // base name of the valid/invalid/validation-errors output files
+    let output_base = if stdin_input {
+        "stdin.csv".to_string()
+    } else {
+        input_path.to_string_lossy().to_string()
+    };
 
     let mut rconfig = Config::new(Some(&input_path.to_string_lossy().to_string()))
         .no_headers_flag(args.flag_no_headers)
@@ -1887,7 +1920,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             DEFAULT_RDR_BUFFER_CAPACITY
         });
 
-    if args.flag_delimiter.is_some() {
+    if stdin_input {
+        rconfig = rconfig.delimiter(Some(stdin_delimiter(args.flag_delimiter)?));
+    } else if args.flag_delimiter.is_some() {
         rconfig = rconfig.delimiter(args.flag_delimiter);
     }
     // ignore the "already set" error so re-entrant calls (e.g., qsv used as a library)
@@ -2088,64 +2123,73 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 
         // do actual validation via Rayon parallel iterator
         // validation_results vector should have same row count and in same order as input CSV
-        batch[..batch_len]
-            .par_iter()
-            .with_min_len(batch_pariter_min_len)
-            .map(|record| {
-                // --split-ragged: a ragged row has a field count != header_len. Because we append
-                // the row number as an extra field, a well-formed row here has exactly
-                // header_len + 1 fields. Ragged rows are always marked invalid (quarantined) and
-                // skip schema validation entirely (which would otherwise silently zip to the
-                // shorter length and possibly pass). The reader is only flexible when
-                // --split-ragged is set, so this never fires otherwise.
-                if split_ragged && record.len() != header_len + 1 {
-                    std::hint::cold_path();
-                    // the row number is always the last appended field, regardless of raggedness
-                    // safety: row number was appended via itoa, so it is always valid ASCII
-                    let row_number_string =
-                        simdutf8::basic::from_utf8(&record[record.len() - 1]).unwrap();
-                    return Some(format!(
-                        "{row_number_string}\t<RECORD>\tfound {} fields, but expected {header_len}",
-                        record.len() - 1
-                    ));
-                }
-
-                // Decodes the row once and borrows from it.
-                let row = csv_json::Row::new(&columns, record);
-                let json_instance = row.node();
-
-                // validate the record against the JSON Schema
-                // Fast-check with is_valid() and short-circuit valid records. Schemas with
-                // stateful validators (uniqueCombinedWith) skip it: that keyword's is_valid
-                // always answers false so the check-and-record happens once, in iter_errors.
-                // iter_errors, unlike evaluate(), builds no output tree; on error-heavy files
-                // it is about 2x faster.
-                if !has_unique_combined && schema_compiled.is_valid(json_instance) {
-                    return None;
-                }
-                let errors: Vec<_> = schema_compiled.iter_errors(json_instance).collect();
-                if errors.is_empty() {
-                    return None;
-                }
+        let validate_record = |record: &ByteRecord| -> Option<String> {
+            // --split-ragged: a ragged row has a field count != header_len. Because we append
+            // the row number as an extra field, a well-formed row here has exactly
+            // header_len + 1 fields. Ragged rows are always marked invalid (quarantined) and
+            // skip schema validation entirely (which would otherwise silently zip to the
+            // shorter length and possibly pass). The reader is only flexible when
+            // --split-ragged is set, so this never fires otherwise.
+            if split_ragged && record.len() != header_len + 1 {
                 std::hint::cold_path();
-                // safety: row number was appended as the last field via itoa, so it is
-                // always valid ASCII; the unwrap can never fire in practice.
-                let row_number_string = simdutf8::basic::from_utf8(&record[header_len]).unwrap();
+                // the row number is always the last appended field, regardless of raggedness
+                // safety: row number was appended via itoa, so it is always valid ASCII
+                let row_number_string =
+                    simdutf8::basic::from_utf8(&record[record.len() - 1]).unwrap();
+                return Some(format!(
+                    "{row_number_string}\t<RECORD>\tfound {} fields, but expected {header_len}",
+                    record.len() - 1
+                ));
+            }
 
-                // there can be multiple validation errors for a single record,
-                // squash multiple errors into one long String with linebreaks
-                let error_messages: Vec<String> = errors
-                    .iter()
-                    .map(|e| {
-                        format!(
-                            "{row_number_string}\t{field}\t{e}",
-                            field = instance_field(e.instance_path())
-                        )
-                    })
-                    .collect();
-                Some(error_messages.join("\n"))
-            })
-            .collect_into_vec(&mut batch_validation_results);
+            // Decodes the row once and borrows from it.
+            let row = csv_json::Row::new(&columns, record);
+            let json_instance = row.node();
+
+            // validate the record against the JSON Schema
+            // Fast-check with is_valid() and short-circuit valid records. Schemas with
+            // stateful validators (uniqueCombinedWith) skip it: that keyword's is_valid
+            // always answers false so the check-and-record happens once, in iter_errors.
+            // iter_errors, unlike evaluate(), builds no output tree; on error-heavy files
+            // it is about 2x faster.
+            if !has_unique_combined && schema_compiled.is_valid(json_instance) {
+                return None;
+            }
+            let errors: Vec<_> = schema_compiled.iter_errors(json_instance).collect();
+            if errors.is_empty() {
+                return None;
+            }
+            std::hint::cold_path();
+            // safety: row number was appended as the last field via itoa, so it is
+            // always valid ASCII; the unwrap can never fire in practice.
+            let row_number_string = simdutf8::basic::from_utf8(&record[header_len]).unwrap();
+
+            // there can be multiple validation errors for a single record,
+            // squash multiple errors into one long String with linebreaks
+            let error_messages: Vec<String> = errors
+                .iter()
+                .map(|e| {
+                    format!(
+                        "{row_number_string}\t{field}\t{e}",
+                        field = instance_field(e.instance_path())
+                    )
+                })
+                .collect();
+            Some(error_messages.join("\n"))
+        };
+        if has_unique_combined {
+            // uniqueCombinedWith accepts whichever row with a combination it sees first, so
+            // rows must reach it in file order: in parallel, which duplicate was flagged
+            // changed from run to run.
+            batch_validation_results.clear();
+            batch_validation_results.extend(batch[..batch_len].iter().map(validate_record));
+        } else {
+            batch[..batch_len]
+                .par_iter()
+                .with_min_len(batch_pariter_min_len)
+                .map(validate_record)
+                .collect_into_vec(&mut batch_validation_results);
+        }
 
         // write to validation error report, but keep Vec<bool> to gen valid/invalid files later
         // because Rayon collect() guarantees original order, we can sequentially append results
@@ -2212,10 +2256,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         // if 100% invalid, valid file isn't needed, but this is rare so OK creating empty file.
         woutinfo!("Writing invalid/valid/error files...");
 
-        let input_path = args.arg_input.first().map_or_else(
-            || "stdin.csv".to_string(),
-            |p| p.to_string_lossy().to_string(),
-        );
+        let input_path = output_base;
 
         write_error_report(&input_path, validation_error_messages)?;
 
@@ -2269,12 +2310,43 @@ fn instance_field(location: &Location) -> String {
     }
 }
 
+/// The delimiter for stdin: `--delimiter`, else `QSV_DEFAULT_DELIMITER`, else `,`. stdin is
+/// read from a temp `stdin.csv`, whose made-up extension must not pick the delimiter.
+fn stdin_delimiter(flag: Option<Delimiter>) -> CliResult<Delimiter> {
+    if let Some(delimiter) = flag {
+        return Ok(delimiter);
+    }
+    match env::var("QSV_DEFAULT_DELIMITER") {
+        Ok(delimiter) => Ok(Delimiter::decode_delimiter(&delimiter)?),
+        Err(_) => Ok(Delimiter(b',')),
+    }
+}
+
+/// Copy all of stdin to `<tmpdir>/stdin.csv` and return its path; empty stdin fails with
+/// `empty_msg`.
+fn spool_stdin(tmpdir: &tempfile::TempDir, empty_msg: &str) -> CliResult<PathBuf> {
+    let path = tmpdir.path().join("stdin.csv");
+    let mut file = File::create(&path)?;
+    let copied = std::io::copy(&mut std::io::stdin().lock(), &mut file)?;
+    if copied == 0 {
+        return fail_clierror!("{empty_msg}");
+    }
+    file.flush()?;
+    Ok(path)
+}
+
 /// Validate multiple files in RFC 4180 mode with Extended Input Support
 fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
     use tempfile::tempdir;
 
     let tmpdir = tempdir()?;
-    let processed_inputs = util::process_input_with_sources(args.arg_input.clone(), &tmpdir, "")?;
+    // with no input file, read piped stdin (a terminal still gets the "no data" error)
+    let arg_input = if args.arg_input.is_empty() && !std::io::stdin().is_terminal() {
+        vec![PathBuf::from("-")]
+    } else {
+        args.arg_input.clone()
+    };
+    let processed_inputs = util::process_input_with_sources(arg_input, &tmpdir, "")?;
     let input_count = processed_inputs.len();
 
     let flag_json = args.flag_json || args.flag_pretty_json;
@@ -2319,7 +2391,9 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
                 DEFAULT_RDR_BUFFER_CAPACITY
             });
 
-        if args.flag_delimiter.is_some() {
+        if matches!(source, InputSource::Stdin) {
+            rconfig = rconfig.delimiter(Some(stdin_delimiter(args.flag_delimiter)?));
+        } else if args.flag_delimiter.is_some() {
             rconfig = rconfig.delimiter(args.flag_delimiter);
         }
 

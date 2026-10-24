@@ -86,6 +86,10 @@ The "dynamicEnum" value has the form:
 
 If colname is not specified, the first column of the CSV file is read and used for validation.
 
+Values are compared as text, so `dynamicEnum` works on integer and number columns too (`1` in
+the data matches `1` in the reference file). Empty cells are not looked up: whether they are
+allowed is up to the column's `type` (e.g. ["string", "null"]).
+
 uniqueCombinedWith
 ==================
 `uniqueCombinedWith` allows you to validate that combinations of values across specified columns
@@ -356,7 +360,7 @@ use indicatif::HumanCount;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use jsonschema::{
     EmailOptions, Keyword, PatternOptions, Retrieve, ValidationError, ValidationOptions, Validator,
-    json::{Json, Node, Object, SerdeJson},
+    json::{Json, JsonNumber, Node, Object, SerdeJson},
     paths::Location,
 };
 use log::debug;
@@ -379,9 +383,6 @@ use crate::{
     config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
     util::{self, InputSource},
 };
-
-// to save on repeated init/allocs
-static NULL_TYPE: OnceLock<Value> = OnceLock::new();
 
 static TIMEOUT_SECS: AtomicU16 = AtomicU16::new(30);
 
@@ -441,13 +442,28 @@ struct Args {
     flag_email_domain_literal: bool,
 }
 
-#[derive(Clone, Copy)]
-enum JSONtypes {
-    String,
-    Number,
-    Integer,
-    Boolean,
-    Unsupported,
+/// The non-string JSON types a column's schema allows (its `type`, ignoring "null"). A cell
+/// reads as a number when numbers are allowed and it parses as one, else as a boolean when
+/// booleans are, else as a string; so `["boolean", "integer"]` and `["integer", "boolean"]`
+/// read alike. No flags (a "string" column, or no usable `type`) reads every cell as a string.
+#[derive(Clone, Copy, Default)]
+struct JSONtypes {
+    integer: bool,
+    number:  bool,
+    boolean: bool,
+}
+
+impl JSONtypes {
+    /// Fold one `type` name in; "string", "null" and non-scalar types add nothing, as a cell
+    /// that matches no allowed scalar reads as a string anyway.
+    fn allow(&mut self, type_name: &str) {
+        match type_name {
+            "integer" => self.integer = true,
+            "number" => self.number = true,
+            "boolean" => self.boolean = true,
+            _ => {},
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -664,21 +680,27 @@ mod csv_json {
             if text.is_empty() {
                 return Kind::Null;
             }
-            match declared {
-                // `Unsupported` is any `type` other than the four scalars, which a cell cannot
-                // hold; reading it as a string lets the schema reject it
-                JSONtypes::String | JSONtypes::Unsupported => Kind::Str(text),
-                JSONtypes::Boolean => match text {
-                    "true" | "1" => Kind::Boolean(true),
-                    "false" | "0" => Kind::Boolean(false),
-                    // uncastable, so it reads as the string it is and `type` rejects it
-                    _ => Kind::Str(text),
-                },
-                JSONtypes::Number => CsvNumber::number(text).map_or(Kind::Str(text), Kind::Number),
-                JSONtypes::Integer => {
-                    CsvNumber::integer(text).map_or(Kind::Str(text), Kind::Number)
-                },
+            // numbers first, so "1" in an integer-or-boolean column is the integer 1
+            if declared.number
+                && let Some(number) = CsvNumber::number(text)
+            {
+                return Kind::Number(number);
             }
+            if declared.integer
+                && let Some(number) = CsvNumber::integer(text)
+            {
+                return Kind::Number(number);
+            }
+            if declared.boolean {
+                match text {
+                    "true" | "1" => return Kind::Boolean(true),
+                    "false" | "0" => return Kind::Boolean(false),
+                    _ => {},
+                }
+            }
+            // a string, or uncastable to any allowed type: it reads as the string it is, and
+            // `type` rejects it if strings are not allowed
+            Kind::Str(text)
         }
     }
 
@@ -977,14 +999,35 @@ impl DynEnumValidator {
     const fn new(dynenum_set: HashSet<String>) -> Self {
         Self { dynenum_set }
     }
+
+    /// Whether the lookup holds the cell's text. A cell in a numeric or boolean column is
+    /// compared by its text (a number by its spelling in the CSV), so `1` in an integer
+    /// column matches `1` in the lookup. An empty cell is not judged here: the column's
+    /// `type` decides whether null is allowed, as no lookup file can list it.
+    #[inline]
+    fn accepts<'i, F: Json>(&self, instance: &F::Node<'i>) -> bool {
+        if instance.is_null() {
+            return true;
+        }
+        if let Some(text) = instance.as_string() {
+            return self.dynenum_set.contains(text.as_ref());
+        }
+        if let Some(number) = instance.as_number() {
+            return self.dynenum_set.contains(number.as_str().as_ref());
+        }
+        if let Some(value) = instance.as_boolean() {
+            return self
+                .dynenum_set
+                .contains(if value { "true" } else { "false" });
+        }
+        false
+    }
 }
 
 impl<'i, F: Json> Keyword<'i, F> for DynEnumValidator {
     #[inline]
     fn validate(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>> {
-        if let Some(s) = instance.as_string()
-            && self.dynenum_set.contains(s.as_ref())
-        {
+        if self.accepts::<F>(&instance) {
             return Ok(());
         }
         Err(ValidationError::custom(format!(
@@ -995,9 +1038,7 @@ impl<'i, F: Json> Keyword<'i, F> for DynEnumValidator {
 
     #[inline]
     fn is_valid(&self, instance: F::Node<'i>) -> bool {
-        instance
-            .as_string()
-            .is_some_and(|s| self.dynenum_set.contains(s.as_ref()))
+        self.accepts::<F>(&instance)
     }
 }
 
@@ -2056,10 +2097,6 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         debug!("schema json: {schema_json:?}");
     }
 
-    // set this once, as this is used repeatedly in a hot loop.
-    // get_or_init makes this re-entry-safe (first-call value wins).
-    NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
-
     // get JSON types for each column in CSV file
     let header_types = get_json_types(&headers, &schema_json)?;
     let columns = csv_json::Columns::new(&header_types);
@@ -3083,7 +3120,8 @@ fn drop_required_headers(schema: &mut Value, headers: &ByteRecord) {
 }
 
 /// get JSON types for each column in CSV file
-/// returns a Vector of tuples of column/header name (String) & JSON type (`JSONtypes` enum)
+/// returns a Vector of tuples of column/header name (String) & the JSON types its schema
+/// allows (`JSONtypes`)
 #[inline]
 fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String, JSONtypes)>> {
     // make sure schema has expected structure
@@ -3091,12 +3129,6 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
         return fail_clierror!("JSON Schema missing 'properties' object");
     };
 
-    // safety: we set NULL_TYPE in main() and it's never changed
-    let null_type = NULL_TYPE.get().unwrap();
-
-    let mut field_def: &Value;
-    let mut field_type_def: &Value;
-    let mut json_type: JSONtypes;
     let mut header_types: Vec<(String, JSONtypes)> = Vec::with_capacity(headers.len());
 
     // iterate over each CSV field and convert to JSON type
@@ -3106,43 +3138,37 @@ fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String
             return fail_encoding_clierror!("CSV header is not valid UTF-8: {s}");
         };
 
-        field_def = schema_properties.get(key).unwrap_or(&Value::Null);
-        field_type_def = field_def.get("type").unwrap_or(&Value::Null);
-
-        json_type = match field_type_def {
-            Value::String(s) => match s.as_str() {
-                "string" => JSONtypes::String,
-                "number" => JSONtypes::Number,
-                "integer" => JSONtypes::Integer,
-                "boolean" => JSONtypes::Boolean,
-                _ => JSONtypes::Unsupported,
-            },
-            Value::Array(vec) => {
-                let mut return_val = JSONtypes::String;
-                for val in vec {
-                    if *val == *null_type {
-                        continue;
-                    }
-                    return_val = if let Some(s) = val.as_str() {
-                        match s {
-                            "string" => JSONtypes::String,
-                            "number" => JSONtypes::Number,
-                            "integer" => JSONtypes::Integer,
-                            "boolean" => JSONtypes::Boolean,
-                            _ => JSONtypes::Unsupported,
-                        }
-                    } else {
-                        JSONtypes::String
-                    };
+        let mut json_type = JSONtypes::default();
+        match schema_properties
+            .get(key)
+            .and_then(|field_def| field_type_def(schema, field_def))
+        {
+            Some(Value::String(type_name)) => json_type.allow(type_name),
+            Some(Value::Array(type_names)) => {
+                for type_name in type_names.iter().filter_map(Value::as_str) {
+                    json_type.allow(type_name);
                 }
-                return_val
             },
-            _ => JSONtypes::String,
-        };
+            _ => {},
+        }
 
         header_types.push((key.to_owned(), json_type));
     }
     Ok(header_types)
+}
+
+/// A property's `type`: its own, or else the one its local `$ref` (`#/...`) chain points to.
+/// A remote `$ref`, or none at all, leaves the column read as strings.
+fn field_type_def<'s>(schema: &'s Value, mut field_def: &'s Value) -> Option<&'s Value> {
+    // bounds a `$ref` cycle, which the validator rejects anyway
+    for _ in 0..32 {
+        if let Some(type_def) = field_def.get("type") {
+            return Some(type_def);
+        }
+        let pointer = field_def.get("$ref")?.as_str()?.strip_prefix('#')?;
+        field_def = schema.pointer(pointer)?;
+    }
+    None
 }
 
 /// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such
@@ -3205,7 +3231,6 @@ fn with_csv_rows<T>(
     schema: &Value,
     mut f: impl FnMut(csv_json::CsvNode<'_>) -> T,
 ) -> Vec<T> {
-    let _ = NULL_TYPE.get_or_init(|| Value::String("null".to_string()));
     let mut rdr = csv::Reader::from_reader(csv.as_ref());
     let headers = rdr.byte_headers().unwrap().clone();
     let header_types = get_json_types(&headers, schema).unwrap();

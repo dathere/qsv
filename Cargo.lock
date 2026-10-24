@@ -125,9 +125,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web"
-version = "4.17.0"
+version = "4.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67756b0fc99e07b8702b9a856e3d6ec036387243c2ce6310070d1e8f02680bb0"
+checksum = "81f8da0d2ae4200dde8773d72ba47a65c220b251ba7b9248db5bd263c247e959"
 dependencies = [
  "actix-codec",
  "actix-http",
@@ -1601,9 +1601,9 @@ dependencies = [
 
 [[package]]
 name = "const_format"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4481a617ad9a412be3b97c5d403fef8ed023103368908b9c50af598ff467cc1e"
+checksum = "a3decb4d6965448659923544a634a0571ba44cede4e11ef15a5a317126840454"
 dependencies = [
  "const_format_proc_macros",
  "konst",
@@ -1611,9 +1611,9 @@ dependencies = [
 
 [[package]]
 name = "const_format_proc_macros"
-version = "0.2.34"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+checksum = "941b570269a642506f08cb5b688c04bfa6cfd41a26f8bcdc49db8fd00c0ab659"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4323,9 +4323,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.60.0"
+version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e7305938cac5ee144352ceb71583ffc6cfeac7d20fcb20ef865a4d5c314e499"
+checksum = "65de752665c4a06528af6759955eecf60ba73ae7442d35349963a09c8031cd71"
 dependencies = [
  "ahash",
  "bytecount",
@@ -4354,23 +4354,24 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.60.0"
+version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99991ee391af622bda42f01a8727e12fcddbc5ace6f116eef766f060242a36a0"
+checksum = "6f8a848331614144c03e815fb931f238c9e342bd7ab501b29e35d647e7cd5688"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.60.0"
+version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31581ee58bb3f9a56c0413dd8560d4bdda6b05be0751fa6a533d5b609beb1aae"
+checksum = "5a5a947ef798eeacacb43edf29b1d0ab64bdf5e2c9fbcaad10ee8663d922b544"
 dependencies = [
  "ahash",
  "bytecount",
  "fraction",
  "getrandom 0.3.4",
+ "memchr",
  "num-cmp",
  "num-traits",
  "serde_json",
@@ -7763,9 +7764,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.60.0"
+version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd75db0e860de35f9b7fb4b05fe13ba057f2548db080178009067f9ea9751d32"
+checksum = "922268812b6f9e20b4ab0f1efe8e07036958eed7346ceddb31c777b5531fd11f"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -8729,9 +8730,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.16.3"
+version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
+checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "smawk"

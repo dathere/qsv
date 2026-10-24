@@ -114,6 +114,8 @@ Schema options:
                                This option is only available if the `polars` feature is enabled.
                                The generated Polars schema will be written to a file with the
                                `.pschema.json` suffix appended to the input filename.
+                               Requires an input file (stdin is not supported), and
+                               cannot be combined with the --stdout option.
 
 Common options:
     -h, --help                 Display this message
@@ -163,6 +165,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     #[cfg(feature = "polars")]
     if args.flag_polars {
+        if args.flag_stdout {
+            return fail_incorrectusage_clierror!(
+                "--stdout is not supported with --polars. Use --output instead."
+            );
+        }
         if let Some(input) = args.arg_input {
             let input_path = Path::new(&input);
             let schema_file = if let Some(output) = args.flag_output {
@@ -784,10 +791,11 @@ impl EnvVarGuard {
         let prev = std::env::var_os(key);
         // safety: ENV_VAR_LOCK is held for the entire lifetime of this guard,
         // serializing the set/restore against any other EnvVarGuard user.
-        // Rayon worker threads (e.g. from `parallel_ftables` or `par_sort_unstable`
-        // inside this function) do not exist at the point this is called and
-        // are joined before Drop runs, so no Rayon thread reads env vars while
-        // the mutation is in flight.
+        // The global Rayon pool may already exist (the earlier stats pass uses it),
+        // but its threads are idle here: no parallel work runs while the var is
+        // being set, and the frequency workers spawned in get_unique_values only
+        // start after this returns and are joined before Drop restores the var.
+        // So no thread reads the environment while it is being mutated.
         unsafe { std::env::set_var(key, value) };
         Self {
             key,
@@ -801,8 +809,8 @@ impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         // safety: same as EnvVarGuard::set — ENV_VAR_LOCK is still held via
         // self._lock, so restoring/removing the env var is serialized against
-        // other EnvVarGuard users; Rayon workers spawned in get_unique_values
-        // have already joined by the time this runs.
+        // other EnvVarGuard users; the frequency workers spawned in
+        // get_unique_values have already joined by the time this runs.
         unsafe {
             match self.prev.take() {
                 Some(v) => std::env::set_var(self.key, v),

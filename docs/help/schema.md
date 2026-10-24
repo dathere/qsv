@@ -97,7 +97,7 @@ qsv schema --help
 | &nbsp;`‑‑stdout`&nbsp; | flag | Send generated JSON schema file to stdout instead. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | string | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of using the default filename. For JSON Schema, the default is <input>.schema.json. For Polars schema, the default is <input>.pschema.json. |  |
-| &nbsp;`‑‑polars`&nbsp; | flag | Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename. |  |
+| &nbsp;`‑‑polars`&nbsp; | flag | Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename. Requires an input file (stdin is not supported), and cannot be combined with the --stdout option. |  |
 
 <a name="common-options"></a>
 

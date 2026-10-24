@@ -64,7 +64,7 @@
       {
         "flag": "--polars",
         "type": "flag",
-        "description": "Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename."
+        "description": "Infer a Polars schema instead of a JSON Schema. This option is only available if the `polars` feature is enabled. The generated Polars schema will be written to a file with the `.pschema.json` suffix appended to the input filename. Requires an input file (stdin is not supported), and cannot be combined with the --stdout option."
       },
       {
         "flag": "--prefer-dmy",

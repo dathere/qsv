@@ -1309,3 +1309,23 @@ fn generate_schema_input_without_file_name() {
         "stderr: {stderr}"
     );
 }
+
+#[cfg(feature = "polars")]
+#[test]
+#[file_serial]
+fn generate_schema_polars_rejects_stdout() {
+    // --stdout was silently ignored with --polars; it must be a usage error
+    let wrk = Workdir::new("generate_schema_polars_rejects_stdout");
+    wrk.create_from_string("data.csv", "a,b\n1,x\n2,y\n");
+
+    let mut cmd = wrk.command("schema");
+    cmd.args(["data.csv", "--polars", "--stdout"]);
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(2), "stderr: {stderr}");
+    assert!(
+        stderr.contains("--stdout is not supported with --polars"),
+        "stderr: {stderr}"
+    );
+    assert!(!Path::new(&wrk.path("data.csv.pschema.json")).exists());
+}

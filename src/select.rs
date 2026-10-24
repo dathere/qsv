@@ -26,6 +26,12 @@ impl SelectColumns {
         })
     }
 
+    /// True for the empty selector a missing select option deserializes to, which
+    /// `selection` expands to every column.
+    pub const fn is_unspecified(&self) -> bool {
+        self.selectors.is_empty() && !self.invert
+    }
+
     pub fn selection(
         &self,
         first_record: &csv::ByteRecord,

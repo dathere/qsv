@@ -82,7 +82,9 @@ Schema options:
                                When enabled, String fields are checked against
                                email, hostname, IPv4, and IPv6 formats. Format
                                constraints are only added if ALL unique values
-                               in the field match the detected format.
+                               in the field match the detected format. Hostnames
+                               must contain a dot (e.g. "example.com"), so columns
+                               of single words are not mistaken for hostnames.
     --pattern-columns <args>   Select columns to derive regex pattern constraints.
                                That is, this will create a regular expression
                                that matches all values for each specified column.
@@ -112,6 +114,8 @@ Schema options:
                                This option is only available if the `polars` feature is enabled.
                                The generated Polars schema will be written to a file with the
                                `.pschema.json` suffix appended to the input filename.
+                               Requires an input file (stdin is not supported), and
+                               cannot be combined with the --stdout option.
 
 Common options:
     -h, --help                 Display this message
@@ -161,6 +165,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     #[cfg(feature = "polars")]
     if args.flag_polars {
+        if args.flag_stdout {
+            return fail_incorrectusage_clierror!(
+                "--stdout is not supported with --polars. Use --output instead."
+            );
+        }
         if let Some(input) = args.arg_input {
             let input_path = Path::new(&input);
             let schema_file = if let Some(output) = args.flag_output {
@@ -197,11 +206,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // so the name of the generated schema.json file is readable and predictable
     // (stdin.csv.schema.json)
     let (input_path, input_filename) = if let Some(ref input) = args.arg_input {
-        let filename = Path::new(&input)
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+        let Some(filename) = Path::new(&input).file_name() else {
+            return fail_incorrectusage_clierror!("<input> must be a file path: {input}");
+        };
+        let filename = filename.to_string_lossy().to_string();
         (input.clone(), filename)
     } else {
         let mut stdin_file = File::create(STDIN_CSV)?;
@@ -348,9 +356,9 @@ pub fn infer_schema_from_stats(
         }
     }
 
-    // amortize memory allocation
-    let mut low_cardinality_column_indices: Vec<u64> =
-        Vec::with_capacity(args.flag_enum_threshold as usize);
+    // amortize memory allocation (sized by column count, never by the user-supplied
+    // --enum-threshold, which can be arbitrarily large)
+    let mut low_cardinality_column_indices: Vec<u64> = Vec::with_capacity(csv_stats.len());
     let mut const_column_indices: Vec<u64> = Vec::new();
 
     // build column selector arg to invoke cmd::frequency with
@@ -385,7 +393,7 @@ pub fn infer_schema_from_stats(
     // amortize memory allocations
     let mut field_map: Map<String, Value> = Map::with_capacity(10);
     let mut type_list: Vec<Value> = Vec::with_capacity(4);
-    let mut enum_list: Vec<Value> = Vec::with_capacity(args.flag_enum_threshold as usize);
+    let mut enum_list: Vec<Value> = Vec::new();
     let mut const_value: Value;
     let mut header_string;
     let mut col_null_count;
@@ -783,10 +791,11 @@ impl EnvVarGuard {
         let prev = std::env::var_os(key);
         // safety: ENV_VAR_LOCK is held for the entire lifetime of this guard,
         // serializing the set/restore against any other EnvVarGuard user.
-        // Rayon worker threads (e.g. from `parallel_ftables` or `par_sort_unstable`
-        // inside this function) do not exist at the point this is called and
-        // are joined before Drop runs, so no Rayon thread reads env vars while
-        // the mutation is in flight.
+        // The global Rayon pool may already exist (the earlier stats pass uses it),
+        // but its threads are idle here: no parallel work runs while the var is
+        // being set, and the frequency workers spawned in get_unique_values only
+        // start after this returns and are joined before Drop restores the var.
+        // So no thread reads the environment while it is being mutated.
         unsafe { std::env::set_var(key, value) };
         Self {
             key,
@@ -800,8 +809,8 @@ impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         // safety: same as EnvVarGuard::set — ENV_VAR_LOCK is still held via
         // self._lock, so restoring/removing the env var is serialized against
-        // other EnvVarGuard users; Rayon workers spawned in get_unique_values
-        // have already joined by the time this runs.
+        // other EnvVarGuard users; the frequency workers spawned in
+        // get_unique_values have already joined by the time this runs.
         unsafe {
             match self.prev.take() {
                 Some(v) => std::env::set_var(self.key, v),
@@ -934,10 +943,12 @@ fn is_email(value: &str) -> bool {
     email_re.is_match(value)
 }
 
-/// Check if a string is a valid hostname
+/// Check if a string is a valid, dotted hostname.
+/// A dot is required: any single word ("Alice", "red") is a valid RFC 1123 label,
+/// so without it plain-word columns would be constrained to `format: hostname`.
 #[inline]
 fn is_hostname(value: &str) -> bool {
-    if value.is_empty() {
+    if !value.contains('.') {
         return false;
     }
     hostname_validator::is_valid(value)
@@ -1034,6 +1045,12 @@ fn generate_string_patterns(
     args: &util::SchemaArgs,
     properties_map: &Map<String, Value>,
 ) -> CliResult<HashMap<String, String>> {
+    let mut pattern_map: HashMap<String, String> = HashMap::new();
+    if args.flag_pattern_columns.is_unspecified() {
+        debug!("no pattern columns selected");
+        return Ok(pattern_map);
+    }
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
@@ -1044,13 +1061,7 @@ fn generate_string_patterns(
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
 
-    let mut pattern_map: HashMap<String, String> = HashMap::new();
-
-    // return empty pattern map when:
-    //  * no columns are selected
-    //  * all columns are selected (by default, all columns are selected when no columns are
-    //    explicitly specified)
-    if sel.is_empty() || sel.len() == headers.len() {
+    if sel.is_empty() {
         debug!("no pattern columns selected");
         return Ok(pattern_map);
     }

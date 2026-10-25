@@ -1012,3 +1012,42 @@ fn join_right_anti_different_fields_issue_2437() {
     let expected = vec![svec!["id", "PA", "PB"], svec!["4", "105", "0101"]];
     assert_eq!(got, expected);
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn join_sniff_preamble_seeks_within_the_data() {
+    // join seeks the second file to rows it recorded, which must be relative to where its
+    // reader starts (past the preamble), not to the start of the file
+    let wrk = Workdir::new("join_sniff_preamble_seeks_within_the_data");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    wrk.create_from_string("q.csv", &preamble_csv());
+    let mut cmd = wrk.command("join");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["id", "p.csv", "id", "q.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 41);
+    assert_eq!(got[1], svec!["1", "n1", "10", "1", "n1", "10"]);
+    assert_eq!(got[40], svec!["40", "n40", "400", "40", "n40", "400"]);
+}
+
+#[test]
+fn join_cross_sniff_preamble_rewinds_to_the_header() {
+    let wrk = Workdir::new("join_cross_sniff_preamble_rewinds_to_the_header");
+    wrk.create_from_string("two.csv", "x\n1\n2\n");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("join");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["--cross", "x", "two.csv", "id", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 81);
+    assert_eq!(got[0], svec!["x", "id", "name", "amount"]);
+    assert_eq!(got[41], svec!["2", "1", "n1", "10"]);
+}

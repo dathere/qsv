@@ -3580,3 +3580,30 @@ fn joinp_sniff_preamble_skips_preamble_rows() {
         svec!["id", "name", "amount", "name_right", "amount_right"]
     );
 }
+
+#[test]
+fn joinp_sniff_preamble_allstring_schema() {
+    // --cache-schema -1/-2 build an all-string schema from the headers, which must be read
+    // past the preamble too
+    for mode in ["-1", "-2"] {
+        let wrk = Workdir::new(&format!("joinp_sniff_preamble_allstring_schema{mode}"));
+        wrk.create_from_string("p.csv", &preamble_csv());
+        wrk.create_from_string("q.csv", &preamble_csv());
+        let mut cmd = wrk.command("joinp");
+        cmd.env("QSV_SNIFF_PREAMBLE", "1").args([
+            "--cache-schema",
+            mode,
+            "id",
+            "p.csv",
+            "id",
+            "q.csv",
+        ]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got.len(), 41, "{mode}");
+        assert_eq!(
+            got[0],
+            svec!["id", "name", "amount", "name_right", "amount_right"],
+            "{mode}"
+        );
+    }
+}

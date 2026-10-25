@@ -1080,9 +1080,14 @@ impl Args {
                     // get the headers from the input file, honoring the resolved delimiter
                     // (so TSV / SSV / --delimiter inputs don't come back as a single
                     // mashed-together field and produce a garbage all-string schema).
+                    // and starting past any sniffed preamble rows, as the Polars reader does
+                    let input_file = crate::config::Config::new(Some(
+                        &input_path.to_string_lossy().into_owned(),
+                    ))
+                    .open_past_preamble(input_path)?;
                     let mut rdr = csv::ReaderBuilder::new()
                         .delimiter(tsvssv_delim(input_path, delim))
-                        .from_path(input_path)?;
+                        .from_reader(input_file);
                     let csv_fields = rdr.byte_headers()?.clone();
                     drop(rdr);
 

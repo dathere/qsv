@@ -63,6 +63,45 @@ pub fn sniffed_preamble_rows(path: &Path) -> usize {
     Config::new(Some(&path.to_string_lossy().into_owned())).preamble_rows as usize
 }
 
+/// A file read from byte `base` (past sniffed preamble rows) on, with seeks and positions
+/// relative to `base`, so a reader can record positions and seek back to them, or rewind to
+/// byte 0 and land on the header rather than the preamble.
+pub struct HeaderStart {
+    file: fs::File,
+    base: u64,
+}
+
+impl HeaderStart {
+    fn new(mut file: fs::File, base: u64) -> io::Result<Self> {
+        io::Seek::seek(&mut file, io::SeekFrom::Start(base))?;
+        Ok(Self { file, base })
+    }
+}
+
+impl io::Read for HeaderStart {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        io::Read::read(&mut self.file, buf)
+    }
+}
+
+impl io::Seek for HeaderStart {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        let pos = match pos {
+            io::SeekFrom::Start(n) => io::SeekFrom::Start(self.base.saturating_add(n)),
+            relative => relative,
+        };
+        let abs = io::Seek::seek(&mut self.file, pos)?;
+        if abs < self.base {
+            io::Seek::seek(&mut self.file, io::SeekFrom::Start(self.base))?;
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "seek before the header row",
+            ));
+        }
+        Ok(abs - self.base)
+    }
+}
+
 /// Whether `path` is the stdin spool (`stdin_spool`). Compared canonicalized, as some commands
 /// canonicalize their input and macOS temp dirs are symlinked, but only for files named like
 /// the spool.
@@ -846,8 +885,11 @@ impl Config {
         Ok(len)
     }
 
-    /// Open `path` positioned past any sniffed preamble rows.
-    fn open_past_preamble(&self, path: &Path) -> io::Result<fs::File> {
+    /// Open `path` positioned past any sniffed preamble rows. A reader of it reports byte
+    /// positions relative to that start, but seeking the file is absolute: only use it where
+    /// nothing seeks by a recorded position (with a preamble, `index_files` gives no index).
+    /// `reader_file_stdin`'s readers, which `join` seeks, use [`HeaderStart`] instead.
+    pub(crate) fn open_past_preamble(&self, path: &Path) -> io::Result<fs::File> {
         let mut file = fs::File::open(path)?;
         let skip = self.preamble_len(path)?;
         if skip > 0 {
@@ -875,7 +917,8 @@ impl Config {
                         self.format_error.clone().unwrap(),
                     ));
                 }
-                self.from_reader(Box::new(self.open_past_preamble(p)?))
+                let base = self.preamble_len(p)?;
+                self.from_reader(Box::new(HeaderStart::new(fs::File::open(p)?, base)?))
             },
         })
     }

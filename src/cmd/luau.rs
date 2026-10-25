@@ -262,13 +262,12 @@ Common options:
 
 use std::{
     cell::RefCell,
-    fs, io,
+    fs,
     io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicI8, AtomicU16, Ordering},
 };
 
-use csv_index::RandomAccessSimple;
 use foldhash::{HashMap, HashMapExt};
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -1478,15 +1477,10 @@ fn create_index(arg_input: Option<&String>) -> Result<bool, CliError> {
     debug!("Creating index file {} for {input:?}., ", pidx.display());
 
     let rconfig = Config::new(Some((*input).to_string()).as_ref());
-    let mut rdr = rconfig.reader_file()?;
-    let mut wtr =
-        io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, fs::File::create(pidx)?);
-    if RandomAccessSimple::create(&mut rdr, &mut wtr).is_err() {
-        drop(wtr);
-        return Ok(false);
-    }
-    if io::Write::flush(&mut wtr).is_err() {
-        drop(wtr);
+    // the index must describe the file as stored, not past any sniffed preamble rows
+    let mut rdr = rconfig.index_reader()?;
+    // built beside it and renamed into place, so a failed build leaves no partial index
+    if util::write_index_atomically(&mut rdr, &pidx).is_err() {
         return Ok(false);
     }
 

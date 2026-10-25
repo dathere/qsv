@@ -532,8 +532,8 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 [patch.crates-io]
 # polars-readstat-rs depends on these directly; redirect them onto the same git polars
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io.
-polars-core  = { git = "https://github.com/pola-rs/polars", rev = "7f902bd3ffd27ff82d14278a09a295ff2f7aed92" }
-polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "7f902bd3ffd27ff82d14278a09a295ff2f7aed92" }
+polars-core  = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0" }
 # Polars (since py-2.0.0) calls HashTable::prefetch_{get,insert}, which exist only in its
 # hashbrown fork (https://github.com/rust-lang/hashbrown/pull/727). Polars' own workspace
 # [patch] doesn't propagate to dependents, so mirror it here; keep the rev in sync with the
@@ -595,9 +595,9 @@ webdriver-downloader = { git = "https://github.com/jqnatividad/webdriver-downloa
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-2.1.0:7f902bd
-# polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "7f902bd3ffd27ff82d14278a09a295ff2f7aed92", optional = true }
+# QSV_POLARS_REV=py-2.1.0
+# polars = { git = "https://github.com/pola-rs/polars", rev = "7f902bd3ffd27ff82d14278a09a295ff2f7aed92", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

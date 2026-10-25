@@ -591,7 +591,7 @@ impl Config {
     /// When the flag is `true` (explicitly passed), it sets `no_headers = true`.
     /// Also respects `QSV_TOGGLE_HEADERS` to flip the flag value.
     pub fn no_headers_flag(mut self, mut yes: bool) -> Config {
-        if env::var("QSV_TOGGLE_HEADERS").unwrap_or_else(|_| "0".to_owned()) == "1" {
+        if util::get_envvar_flag("QSV_TOGGLE_HEADERS") {
             yes = !yes;
         }
         self.no_headers = self.no_headers || yes;

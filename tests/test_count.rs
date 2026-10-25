@@ -979,3 +979,17 @@ fn count_sniff_preamble_with_a_blank_line() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "40");
 }
+
+#[test]
+fn count_toggle_headers_accepts_boolean_values() {
+    // QSV_TOGGLE_HEADERS reads like the other boolean env vars (dotenv.template sets True/False),
+    // not only "1": toggled, the header row counts as a record
+    let wrk = Workdir::new("count_toggle_headers_accepts_boolean_values");
+    wrk.create_from_string("in.csv", "h\na\nb\n");
+    for (value, expected) in [("1", "3"), ("true", "3"), ("YES", "3"), ("false", "2")] {
+        let mut cmd = wrk.command("count");
+        cmd.env("QSV_TOGGLE_HEADERS", value).arg("in.csv");
+        let got: String = wrk.stdout(&mut cmd);
+        assert_eq!(got, expected, "QSV_TOGGLE_HEADERS={value}");
+    }
+}

@@ -1511,12 +1511,14 @@ mod tests {
     fn index_newer_than_its_data_is_not_rebuilt() {
         let dir = tempfile::tempdir().unwrap();
         let csv_path = dir.path().join("fresh.csv");
-        let idx_mtime = filetime::FileTime::from_unix_time(1_700_000_000, 2);
+        // whole seconds, well apart: Windows keeps 100 ns ticks and FAT 2 s, so stamps a few
+        // nanoseconds apart would collapse to equal there (and equal means stale)
+        let idx_mtime = filetime::FileTime::from_unix_time(1_700_000_004, 0);
         let config = rewritten_after_index(
             &csv_path,
             25,
             25,
-            filetime::FileTime::from_unix_time(1_700_000_000, 1),
+            filetime::FileTime::from_unix_time(1_700_000_000, 0),
             idx_mtime,
         );
         assert_eq!(config.indexed().unwrap().expect("index").count(), 25);

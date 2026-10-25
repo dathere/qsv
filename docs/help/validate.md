@@ -119,6 +119,10 @@ uniqueCombinedWith = [1, 2]
 // Validate that the combinations of named and indexed columns are unique
 uniqueCombinedWith = ["name", 2]
 
+Every listed column must exist: a name missing from the CSV header, or an index past its last
+column, stops validation with an error. So does an index whose header name a later column
+repeats, as the row then holds only the later column's value.
+
 When a duplicate combination is found, the validation will fail and the error message will indicate
 which columns had duplicate combinations (named columns first, then indexed columns). The invalid
 records will be written to the .invalid file, while valid records will be written to the .valid file.

@@ -4310,3 +4310,101 @@ fn validate_ref_beside_a_definition_named_id() {
         ["1\tn\t\"x\" is not of type \"integer\""]
     );
 }
+
+/// Run `validate data.csv schema.json`, expecting it to fail, and return its stderr.
+fn validate_stderr(wrk: &Workdir, csv: &str, schema: &str) -> String {
+    wrk.create_from_string("data.csv", csv);
+    wrk.create_from_string("schema.json", schema);
+    let mut cmd = wrk.command("validate");
+    cmd.args(["data.csv", "schema.json"]);
+    let output = wrk.output(&mut cmd);
+    assert!(!output.status.success(), "{output:?}");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn validate_unique_combined_with_rejects_unknown_columns() {
+    // a misspelled name or a bad index was skipped silently, narrowing the uniqueness check
+    let wrk = Workdir::new("validate_unique_combined_with_rejects_unknown_columns");
+    let csv = "name,email\na,x\nb,y\n";
+    let schema = |cols: &str| {
+        format!(
+            r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{{}},"uniqueCombinedWith":{cols}}}"#
+        )
+    };
+
+    let stderr = validate_stderr(&wrk, csv, &schema(r#"["name", "emial"]"#));
+    assert!(
+        stderr.contains(r#"'uniqueCombinedWith' column "emial" is not in the CSV header"#),
+        "{stderr}"
+    );
+    let stderr = validate_stderr(&wrk, csv, &schema("[0, 2]"));
+    assert!(
+        stderr
+            .contains("'uniqueCombinedWith' column index 2 is out of range: the CSV has 2 columns"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn validate_unique_combined_with_index_past_duplicate_headers() {
+    // index N walked the row's members, one per distinct header name, so with an earlier
+    // header repeated it read the wrong field (here, none: every row then "duplicated" the
+    // empty combination)
+    let wrk = Workdir::new("validate_unique_combined_with_index_past_duplicate_headers");
+    let schema = |cols: &str| {
+        format!(
+            r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{{}},"uniqueCombinedWith":{cols}}}"#
+        )
+    };
+
+    assert!(validation_errors(&wrk, "a,a,b\n1,2,x\n1,3,y\n1,4,z\n", &schema("[2]")).is_empty());
+    assert_eq!(
+        validation_errors(&wrk, "a,a,b\n1,2,x\n1,3,x\n", &schema("[2]")),
+        ["2\t\tCombination of values for columns 2 is not unique"]
+    );
+
+    // index 0 is a header that column 1 repeats: its values are not in the row, so say so
+    let stderr = validate_stderr(&wrk, "a,a,b\n1,2,x\n", &schema("[0]"));
+    assert!(
+        stderr.contains(r#"column index 0 is "a", a header name that a later column repeats"#),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn validate_dynamicenum_column_index_out_of_range() {
+    // an index past the lookup table's last column left the set empty, failing every row
+    let wrk = Workdir::new("validate_dynamicenum_column_index_out_of_range");
+    wrk.create_from_string("lookup.csv", "code\nx\n");
+    let stderr = validate_stderr(
+        &wrk,
+        "name\nx\n",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"name":{"type":"string","dynamicEnum":"lookup.csv|3"}}}"#,
+    );
+    assert!(
+        stderr.contains(
+            "dynamicEnum column index 3 is out of range: the lookup table has 1 column(s)"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn validate_schema_url_without_json_extension_is_a_schema() {
+    // a schema URL whose path doesn't end in `.json` (a query string here) fell back to
+    // RFC 4180 mode without a word; it must be fetched as the schema (unreachable here)
+    let wrk = Workdir::new("validate_schema_url_without_json_extension_is_a_schema");
+    wrk.create_from_string("data.csv", "a\n1\n");
+    let mut cmd = wrk.command("validate");
+    cmd.args([
+        "data.csv",
+        "http://127.0.0.1:1/schema.json?raw=1",
+        "--timeout",
+        "2",
+    ]);
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{output:?}");
+    assert!(stderr.contains("Unable to retrieve JSONschema"), "{stderr}");
+}

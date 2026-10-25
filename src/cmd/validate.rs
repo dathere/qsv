@@ -105,6 +105,10 @@ are unique. It can be used with either column names or column indices (0-based).
     // Validate that the combinations of named and indexed columns are unique
     uniqueCombinedWith = ["name", 2]
 
+Every listed column must exist: a name missing from the CSV header, or an index past its last
+column, stops validation with an error. So does an index whose header name a later column
+repeats, as the row then holds only the later column's value.
+
 When a duplicate combination is found, the validation will fail and the error message will indicate
 which columns had duplicate combinations (named columns first, then indexed columns). The invalid
 records will be written to the .invalid file, while valid records will be written to the .valid file.
@@ -396,6 +400,8 @@ static CKAN_API: OnceLock<String> = OnceLock::new();
 #[cfg(not(feature = "lite"))]
 static CKAN_TOKEN: OnceLock<Option<String>> = OnceLock::new();
 static DELIMITER: OnceLock<Option<Delimiter>> = OnceLock::new();
+/// The CSV header, for `uniqueCombinedWith` to check and resolve its columns when compiled.
+static UNIQUE_COMBINED_HEADERS: OnceLock<Vec<String>> = OnceLock::new();
 
 /// write to stderr and `log::error`, using `ValidationError`
 macro_rules! fail_validation_error {
@@ -1055,13 +1061,14 @@ struct UniqueCombinedWithValidator<F: Json> {
 }
 
 impl<F: Json> UniqueCombinedWithValidator<F> {
-    fn new(column_names: Vec<String>, column_indices: Vec<usize>) -> Self {
+    /// `columns` are (label for the error message, header name to look up) pairs.
+    fn new(columns: Vec<(String, String)>, column_indices: Vec<usize>) -> Self {
         Self {
-            columns: column_names
+            columns: columns
                 .into_iter()
-                .map(|name| {
+                .map(|(label, name)| {
                     let key = F::prepare_key(&name);
-                    (name, key)
+                    (label, key)
                 })
                 .collect(),
             column_indices,
@@ -1171,9 +1178,46 @@ fn unique_combined_with_validator_factory<'a, F: Json>(
         ));
     }
 
+    // With the CSV header known, check every column now (a misspelled name or bad index used
+    // to be skipped silently, narrowing the uniqueness check), and look indices up by name:
+    // the row object has one member per distinct header name, so walking its members put
+    // index N on the wrong field whenever an earlier header was repeated.
+    let Some(headers) = UNIQUE_COMBINED_HEADERS.get() else {
+        let columns = column_names.into_iter().map(|n| (n.clone(), n)).collect();
+        return Ok(Box::new(UniqueCombinedWithValidator::<F>::new(
+            columns,
+            column_indices,
+        )));
+    };
+    let mut columns = Vec::with_capacity(col_len);
+    for name in column_names {
+        if !headers.contains(&name) {
+            return Err(ValidationError::custom(format!(
+                "'uniqueCombinedWith' column \"{name}\" is not in the CSV header"
+            )));
+        }
+        columns.push((name.clone(), name));
+    }
+    for idx in column_indices {
+        let Some(name) = headers.get(idx) else {
+            return Err(ValidationError::custom(format!(
+                "'uniqueCombinedWith' column index {idx} is out of range: the CSV has {} columns \
+                 (indices are 0-based)",
+                headers.len()
+            )));
+        };
+        if headers[idx + 1..].contains(name) {
+            return Err(ValidationError::custom(format!(
+                "'uniqueCombinedWith' column index {idx} is \"{name}\", a header name that a \
+                 later column repeats; give the columns distinct names"
+            )));
+        }
+        columns.push((idx.to_string(), name.clone()));
+    }
+
     Ok(Box::new(UniqueCombinedWithValidator::<F>::new(
-        column_names,
-        column_indices,
+        columns,
+        Vec::new(),
     )))
 }
 
@@ -1454,6 +1498,17 @@ fn load_dynenum_set<'a>(
     } else {
         0
     };
+    // an index past the last column used to leave the set empty, failing every row
+    let width = match rdr.byte_headers() {
+        Ok(headers) => headers.len(),
+        Err(e) => return fail_validation_error!("Error reading headers: {e}"),
+    };
+    if column_idx >= width {
+        return fail_validation_error!(
+            "dynamicEnum column index {column_idx} is out of range: the lookup table has {width} \
+             column(s) (indices are 0-based)"
+        );
+    }
 
     let mut enum_set = HashSet::with_capacity(initial_capacity);
     for result in rdr.records() {
@@ -1855,25 +1910,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // Check if the last argument is a JSON schema file
-    let has_json_schema = if let Some(last_input) = args.arg_input.last() {
-        last_input
-            .extension()
-            .and_then(std::ffi::OsStr::to_str)
-            .is_some_and(|ext| ext.to_lowercase() == "json")
-    } else {
-        false
-    };
+    let has_json_schema = args.arg_input.last().is_some_and(|p| is_schema_arg(p));
 
     // if no JSON Schema supplied, only let csv reader RFC4180-validate csv file
     if !has_json_schema && args.arg_json_schema.is_none() {
         // Warn when a .json file appears earlier in the input list — schema detection
         // only looks at the last positional, so a misordered argument silently falls
         // into RFC 4180 mode.
-        if args.arg_input.iter().rev().skip(1).any(|p| {
-            p.extension()
-                .and_then(std::ffi::OsStr::to_str)
-                .is_some_and(|ext| ext.to_lowercase() == "json")
-        }) {
+        if args
+            .arg_input
+            .iter()
+            .rev()
+            .skip(1)
+            .any(|p| is_schema_arg(p))
+        {
             wwarn!(
                 "A .json file is present in the input list but is not the last argument. Falling \
                  back to RFC 4180 validation. Move the schema file to the end if you intended \
@@ -2066,6 +2116,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         }
 
                         if has_unique_combined {
+                            // first call wins, as for the statics above
+                            let _ = UNIQUE_COMBINED_HEADERS.set(
+                                headers.iter().map(|h| String::from_utf8_lossy(h).into_owned()).collect(),
+                            );
                             validator_options = validator_options.with_keyword("uniqueCombinedWith", unique_combined_with_validator_factory::<CsvJson>);
                         }
 
@@ -3197,6 +3251,16 @@ fn resolve_in_resource<'s>(resource: &'s Value, pointer: &str) -> Option<&'s Val
 /// `properties` map can hold a schema *named* "$id", whose value is an object.
 fn declares_id(schema: &Value) -> bool {
     schema.get("$id").is_some_and(Value::is_string)
+}
+
+/// Whether a positional argument is a JSON Schema: a `.json` file, or any http(s) URL (data
+/// inputs cannot be URLs, and a schema URL's path may have a query string or no `.json` at all,
+/// e.g. `.../schema.json?raw=1`, which used to fall back to RFC 4180 mode without a word).
+fn is_schema_arg(path: &Path) -> bool {
+    path.extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        || path.to_str().is_some_and(is_http_url)
 }
 
 /// Whether `uri` is an http(s) URL. A bare `starts_with("http")` also matched local files such

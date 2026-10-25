@@ -926,3 +926,36 @@ fn index_under_sniff_preamble_does_not_index_the_skipped_view() {
     wrk.assert_err(&mut cmd);
     assert!(!wrk.path("p.csv.idx").exists());
 }
+
+#[test]
+fn count_index_rewritten_within_the_same_second() {
+    // index staleness compared whole-second mtimes, so data rewritten in the same second the
+    // index was built looked current, and `count` reported the index's old row count
+    let wrk = Workdir::new("count_index_rewritten_within_the_same_second");
+    let mut csv = String::from("a,b\n");
+    for i in 0..1_000 {
+        csv.push_str(&format!("{i},x\n"));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("index");
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    wrk.create_from_string("data.csv", "a,b\n1,y\n2,y\n3,y\n");
+    // the data is half a second newer than its index, within the same second
+    filetime::set_file_mtime(
+        wrk.path("data.csv.idx"),
+        filetime::FileTime::from_unix_time(1_700_000_000, 100),
+    )
+    .unwrap();
+    filetime::set_file_mtime(
+        wrk.path("data.csv"),
+        filetime::FileTime::from_unix_time(1_700_000_000, 500_000_000),
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("count");
+    cmd.arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "3");
+}

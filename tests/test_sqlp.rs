@@ -7493,3 +7493,23 @@ fn sqlp_explain_uses_polars_default_optimizations() {
     let plan: String = wrk.stdout_on_success(&mut cmd);
     assert_eq!(plan.matches("SORT BY").count(), 1, "{plan}");
 }
+
+// A qsv subprocess (e.g. one describegpt runs) gets the parent's stdin spool in
+// QSV_STDIN_SPOOL; sqlp must read that file with stdin's delimiter, not the comma its `.csv`
+// name implies (roborev 5829).
+#[test]
+fn sqlp_inherited_stdin_spool_default_delimiter_env() {
+    let wrk = Workdir::new("sqlp_inherited_stdin_spool_default_delimiter_env");
+    std::fs::create_dir_all(wrk.path("spool")).unwrap();
+    let spool = wrk.path("spool").join("stdin.csv");
+    std::fs::write(&spool, "a|b\n1|x\n").unwrap();
+    let spool = spool.canonicalize().unwrap();
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_STDIN_SPOOL", &spool)
+        .env("QSV_DEFAULT_DELIMITER", "|")
+        .arg(&spool)
+        .arg("select b from stdin");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "b\nx");
+}

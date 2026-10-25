@@ -718,3 +718,27 @@ fn scoresql_sentinel_text_literal_is_not_a_match() {
         );
     }
 }
+
+// As for sqlp: a stdin spool passed down in QSV_STDIN_SPOOL is read with stdin's delimiter
+// (roborev 5829). Read with a comma, column `b` did not exist.
+#[test]
+fn scoresql_inherited_stdin_spool_default_delimiter_env() {
+    let wrk = Workdir::new("scoresql_inherited_stdin_spool_default_delimiter_env");
+    std::fs::create_dir_all(wrk.path("spool")).unwrap();
+    let spool = wrk.path("spool").join("stdin.csv");
+    std::fs::write(&spool, "a|b\n1|x\n2|y\n").unwrap();
+    let spool = spool.canonicalize().unwrap();
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_STDIN_SPOOL", &spool)
+        .env("QSV_DEFAULT_DELIMITER", "|")
+        .arg(&spool)
+        .arg("select b from stdin");
+    let output = wrk.output(&mut cmd);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "stderr: {stderr}");
+    assert!(
+        !stderr.contains("unable to find column"),
+        "stderr: {stderr}"
+    );
+}

@@ -268,7 +268,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .arg_input
         .iter()
         .map(|p| {
-            if stdin_input.as_ref() == Some(p) {
+            // also a stdin spool a parent qsv passed down (e.g. describegpt running scoresql)
+            if stdin_input.as_ref() == Some(p) || crate::config::is_stdin_spool(p) {
                 delim
             } else {
                 path_delim(p, args.flag_delimiter, delim)

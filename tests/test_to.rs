@@ -1748,3 +1748,61 @@ fn to_parquet_stdin_default_delimiter_env() {
         ["city", "pop"]
     );
 }
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_table_rename_stdin_default_delimiter_env() {
+    // --table copies piped stdin to `<table>.csv` before the delimiter was looked up, so the
+    // copy no longer counted as stdin and was read with a comma (roborev 5829)
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_table_rename_stdin_default_delimiter_env");
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .args(["--table", "mydata", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"city|pop\nBoston|685000\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("mydata.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_compressed_tsv_without_delimiter_flag() {
+    // a compressed input's delimiter comes from its inner extension, worked out from the name
+    // (it used to be learned by decompressing the whole file to a temp copy)
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_compressed_tsv_without_delimiter_flag");
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(b"city\tpop\nBoston\t685000\n").unwrap();
+    std::fs::write(wrk.path("data.tsv.gz"), gz.finish().unwrap()).unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.tsv.gz");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.tsv.parquet")),
+        ["city", "pop"]
+    );
+}

@@ -1051,3 +1051,29 @@ fn join_cross_sniff_preamble_rewinds_to_the_header() {
     assert_eq!(got[0], svec!["x", "id", "name", "amount"]);
     assert_eq!(got[41], svec!["2", "1", "n1", "10"]);
 }
+
+#[test]
+#[cfg(unix)]
+fn join_reads_a_fifo_first_input() {
+    // the first input is only read sequentially, so a FIFO (which can't seek) works
+    let wrk = Workdir::new("join_reads_a_fifo_first_input");
+    wrk.create_from_string("w.csv", "id,w\n1,x\n");
+    let fifo = wrk.path("f.csv");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let writer = {
+        let fifo = fifo.clone();
+        std::thread::spawn(move || std::fs::write(fifo, "id,v\n1,a\n2,b\n"))
+    };
+    let mut cmd = wrk.command("join");
+    cmd.args(["id", "f.csv", "id", "w.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    writer.join().unwrap().unwrap();
+    assert_eq!(
+        got,
+        vec![svec!["id", "v", "id", "w"], svec!["1", "a", "1", "x"]]
+    );
+}

@@ -73,7 +73,10 @@ pub struct HeaderStart {
 
 impl HeaderStart {
     fn new(mut file: fs::File, base: u64) -> io::Result<Self> {
-        io::Seek::seek(&mut file, io::SeekFrom::Start(base))?;
+        // no seek without a preamble: a FIFO can't seek, but reads fine sequentially
+        if base > 0 {
+            io::Seek::seek(&mut file, io::SeekFrom::Start(base))?;
+        }
         Ok(Self { file, base })
     }
 }

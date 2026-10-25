@@ -1115,7 +1115,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // finish() only builds the scan plan; the file is read (and any CSV error
             // raised) when the query is collected.
             let reader = LazyCsvReader::new(PlRefPath::new(&*table.to_string_lossy()))
-                .with_skip_lines(crate::config::sniffed_preamble_rows(table))
+                .with_skip_lines(crate::config::sniffed_preamble_lines(table))
                 .with_has_header(true)
                 .with_missing_is_null(true)
                 .with_comment_prefix(comment_char.clone())

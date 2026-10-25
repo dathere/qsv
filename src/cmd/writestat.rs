@@ -1358,7 +1358,7 @@ fn merge_string_sentinels(
 
 fn csv_reader(input: &Path, delim: u8) -> LazyCsvReader {
     LazyCsvReader::new(PlRefPath::new(input.to_string_lossy().as_ref()))
-        .with_skip_lines(crate::config::sniffed_preamble_rows(input))
+        .with_skip_lines(crate::config::sniffed_preamble_lines(input))
         .with_has_header(true)
         .with_separator(delim)
 }

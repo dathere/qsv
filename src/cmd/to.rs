@@ -730,7 +730,7 @@ fn to_parquet(
         // Use LazyFrame for optimized query planning and efficient column casting
         let input_path_str = input_path.to_string_lossy();
         let mut lazy_csv_reader = LazyCsvReader::new(PlRefPath::new(&*input_path_str))
-            .with_skip_lines(crate::config::sniffed_preamble_rows(&input_path))
+            .with_skip_lines(crate::config::sniffed_preamble_lines(&input_path))
             .with_has_header(true)
             .with_separator(delimiter);
 

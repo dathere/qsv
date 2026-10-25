@@ -959,3 +959,23 @@ fn count_index_rewritten_within_the_same_second() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "3");
 }
+
+// a preamble with a blank line in it: the sniffer counts 2 rows (as the CSV reader skips empty
+// lines), but they take up 3 lines
+fn blank_line_preamble_csv() -> String {
+    let mut csv = String::from("Report\n\nNotes here\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn count_sniff_preamble_with_a_blank_line() {
+    let wrk = Workdir::new("count_sniff_preamble_with_a_blank_line");
+    wrk.create_from_string("p.csv", &blank_line_preamble_csv());
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "40");
+}

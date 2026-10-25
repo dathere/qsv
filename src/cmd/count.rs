@@ -545,6 +545,7 @@ pub fn polars_count_input(conf: &Config) -> CliResult<u64> {
         };
 
         let delimiter = read_conf.get_delimiter();
+        let preamble_lines = read_conf.preamble_lines()?;
 
         {
             // First, try to read the first row to check if the file is empty
@@ -555,7 +556,7 @@ pub fn polars_count_input(conf: &Config) -> CliResult<u64> {
             let schema_df = LazyCsvReader::new(PlRefPath::new(&*filepath.to_string_lossy()))
                 .with_separator(delimiter)
                 .with_comment_prefix(comment_prefix.clone())
-                .with_skip_lines(read_conf.preamble_rows as usize)
+                .with_skip_lines(preamble_lines)
                 .with_n_rows(Some(1))
                 .with_ignore_errors(true)
                 .finish()?
@@ -587,7 +588,7 @@ pub fn polars_count_input(conf: &Config) -> CliResult<u64> {
             .with_comment_prefix(comment_prefix)
             // sniffed preamble rows (QSV_SNIFF_PREAMBLE) sit above the header; skipped as raw
             // lines, as the Config readers skip them
-            .with_skip_lines(read_conf.preamble_rows as usize)
+            .with_skip_lines(preamble_lines)
             .with_ignore_errors(true)
             .finish()?;
 

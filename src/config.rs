@@ -52,15 +52,17 @@ pub fn stdin_spool() -> Option<&'static PathBuf> {
     })
 }
 
-/// The preamble rows `QSV_SNIFF_PREAMBLE` finds above `path`'s header, for the Polars readers
-/// (which open files themselves) to skip with `with_skip_lines`, as the `Config` readers skip
-/// them. 0 when the env var is unset, so the sniff only runs when it matters.
-#[cfg(feature = "polars")]
-pub fn sniffed_preamble_rows(path: &Path) -> usize {
+/// The raw lines of the preamble `QSV_SNIFF_PREAMBLE` finds above `path`'s header, for the
+/// readers that open files themselves (Polars' `with_skip_lines`, `DuckDB`'s `skip`) to skip,
+/// as the `Config` readers skip them. 0 when the env var is unset, so the sniff only runs
+/// when it matters.
+pub fn sniffed_preamble_lines(path: &Path) -> usize {
     if !util::get_envvar_flag("QSV_SNIFF_PREAMBLE") {
         return 0;
     }
-    Config::new(Some(&path.to_string_lossy().into_owned())).preamble_rows as usize
+    Config::new(Some(&path.to_string_lossy().into_owned()))
+        .preamble_lines()
+        .unwrap_or(0)
 }
 
 /// A file read from byte `base` (past sniffed preamble rows) on, with seeks and positions
@@ -102,6 +104,15 @@ impl io::Seek for HeaderStart {
             ));
         }
         Ok(abs - self.base)
+    }
+}
+
+/// The `, skip=N` argument for `DuckDB`'s `read_csv_auto` that skips `path`'s sniffed preamble
+/// lines (see [`sniffed_preamble_lines`]), or "" when there are none.
+pub fn duckdb_skip_arg(path: &Path) -> String {
+    match sniffed_preamble_lines(path) {
+        0 => String::new(),
+        n => format!(", skip={n}"),
     }
 }
 
@@ -868,24 +879,44 @@ impl Config {
         raw.reader_file()
     }
 
-    /// Byte length of the first `preamble_rows` lines of `path` (the rows `QSV_SNIFF_PREAMBLE`
-    /// found above the header), so readers can start past them.
-    fn preamble_len(&self, path: &Path) -> io::Result<u64> {
-        let mut len = 0_u64;
+    /// The bytes and raw lines that the `preamble_rows` rows `QSV_SNIFF_PREAMBLE` found above
+    /// the header take up at the start of `path`. The sniffer counts rows as the CSV reader
+    /// does, skipping empty lines, so a blank line inside the preamble isn't a row but is a
+    /// line to skip.
+    fn preamble_span(&self, path: &Path) -> io::Result<(u64, u64)> {
+        let (mut bytes, mut lines, mut rows) = (0_u64, 0_u64, 0_u64);
         if self.preamble_rows == 0 {
-            return Ok(len);
+            return Ok((bytes, lines));
         }
         let mut rdr = io::BufReader::new(fs::File::open(path)?);
         let mut line = Vec::new();
-        for _ in 0..self.preamble_rows {
+        while rows < self.preamble_rows {
             line.clear();
             let n = io::BufRead::read_until(&mut rdr, b'\n', &mut line)?;
             if n == 0 {
                 break;
             }
-            len += n as u64;
+            bytes += n as u64;
+            lines += 1;
+            if !line.iter().all(|&b| b == b'\n' || b == b'\r') {
+                rows += 1;
+            }
         }
-        Ok(len)
+        Ok((bytes, lines))
+    }
+
+    /// Byte length of the sniffed preamble, so readers can start past it.
+    fn preamble_len(&self, path: &Path) -> io::Result<u64> {
+        Ok(self.preamble_span(path)?.0)
+    }
+
+    /// Raw lines the sniffed preamble takes up, for readers that skip lines rather than rows
+    /// (Polars' `with_skip_lines`, `DuckDB`'s `skip`). 0 for stdin.
+    pub fn preamble_lines(&self) -> io::Result<usize> {
+        match self.path {
+            Some(ref p) => Ok(self.preamble_span(p)?.1 as usize),
+            None => Ok(0),
+        }
     }
 
     /// Open `path` positioned past any sniffed preamble rows. A reader of it reports byte

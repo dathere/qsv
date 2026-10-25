@@ -4731,7 +4731,10 @@ fn format_phase_markdown(
                 READ_CSV_AUTO_REGEX
                     .replace_all(
                         &formatted_output,
-                        format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                        format!(
+                            "read_csv_auto('{escaped_path}', strict_mode=false{})",
+                            crate::config::duckdb_skip_arg(Path::new(input_path))
+                        ),
                     )
                     .into_owned()
             } else {
@@ -5757,14 +5760,20 @@ fn execute_sql_query_phase(
             sql_query = READ_CSV_AUTO_REGEX
                 .replace_all(
                     &sql_query,
-                    format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                    format!(
+                        "read_csv_auto('{escaped_path}', strict_mode=false{})",
+                        crate::config::duckdb_skip_arg(Path::new(input_path))
+                    ),
                 )
                 .into_owned();
         } else {
             // Fallback: replace {INPUT_TABLE_NAME} directly
             sql_query = sql_query.replace(
                 INPUT_TABLE_NAME,
-                &format!("read_csv_auto('{escaped_path}', strict_mode=false)"),
+                &format!(
+                    "read_csv_auto('{escaped_path}', strict_mode=false{})",
+                    crate::config::duckdb_skip_arg(Path::new(input_path))
+                ),
             );
         }
         log::debug!("DuckDB SQL query:\n{sql_query}");

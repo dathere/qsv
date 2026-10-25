@@ -63,7 +63,7 @@ impl SqlBackend {
         let path_str = self.csv_path.to_string_lossy();
         let plpath = PlRefPath::new(&*path_str);
         let lf = LazyCsvReader::new(plpath)
-            .with_skip_lines(crate::config::sniffed_preamble_rows(&self.csv_path))
+            .with_skip_lines(crate::config::sniffed_preamble_lines(&self.csv_path))
             .with_separator(self.delimiter)
             .with_has_header(self.has_header)
             .finish()

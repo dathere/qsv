@@ -7534,3 +7534,25 @@ fn sqlp_sniff_preamble_skips_preamble_rows() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "n,total\n40,8200");
 }
+
+// a preamble with a blank line in it: the sniffer counts 2 rows (as the CSV reader skips empty
+// lines), but they take up 3 lines
+fn blank_line_preamble_csv() -> String {
+    let mut csv = String::from("Report\n\nNotes here\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn sqlp_sniff_preamble_with_a_blank_line() {
+    let wrk = Workdir::new("sqlp_sniff_preamble_with_a_blank_line");
+    wrk.create_from_string("p.csv", &blank_line_preamble_csv());
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .arg("p.csv")
+        .arg("select count(*) as n, sum(amount) as total from p");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "n,total\n40,8200");
+}

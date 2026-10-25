@@ -1041,7 +1041,7 @@ fn get_polars_plan(
         let table_plpath = PlRefPath::new(&*table.to_string_lossy());
 
         let lf = LazyCsvReader::new(table_plpath)
-            .with_skip_lines(crate::config::sniffed_preamble_rows(Path::new(table)))
+            .with_skip_lines(crate::config::sniffed_preamble_lines(Path::new(table)))
             .with_has_header(true)
             .with_missing_is_null(true)
             .with_separator(separator)
@@ -1124,7 +1124,8 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         let alias = format!("_t_{}", idx + 1);
         let table_name = &table_names[idx];
         let escaped = input.to_string_lossy().replace('\'', "''");
-        let read_csv = format!("read_csv_auto('{escaped}')");
+        let skip = crate::config::duckdb_skip_arg(input);
+        let read_csv = format!("read_csv_auto('{escaped}'{skip})");
         replacements.push((alias, read_csv.clone()));
         // Only add table_name replacement if it differs from the alias
         if *table_name != format!("_t_{}", idx + 1) {

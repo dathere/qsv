@@ -511,15 +511,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_parquet {
         debug!("converting to Parquet");
         arg_input = process_input(arg_input, &tmpdir, "")?;
-        // Each input's delimiter, as other commands read it: --delimiter, else from its name
-        // (spooled stdin and unrecognized extensions take QSV_DEFAULT_DELIMITER). Resolved
-        // before --table renames the input, which would hide that it is spooled stdin, and
-        // from the name alone, so a compressed input isn't decompressed just to learn it.
+        // Each input's delimiter, as other commands read it: --delimiter, else Config's
+        // (QSV_SNIFF_DELIMITER, extension, or QSV_DEFAULT_DELIMITER for spooled stdin and other
+        // files). Resolved before --table renames the input, which would hide that it is
+        // spooled stdin. A compressed (special-format) input is resolved from its name alone:
+        // Config would decompress it to a temp copy just to learn its delimiter.
         let delimiters: Vec<u8> = arg_input
             .iter()
             .map(|path| {
-                args.flag_delimiter
-                    .map_or_else(|| config::read_delimiter(path), Delimiter::as_byte)
+                args.flag_delimiter.map_or_else(
+                    || {
+                        if config::get_special_format(path) == config::SpecialFormat::Unknown {
+                            config::Config::new(Some(&path.to_string_lossy().into_owned()))
+                                .get_delimiter()
+                        } else {
+                            config::read_delimiter(path)
+                        }
+                    },
+                    Delimiter::as_byte,
+                )
             })
             .collect();
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;

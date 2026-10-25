@@ -1806,3 +1806,29 @@ fn to_parquet_compressed_tsv_without_delimiter_flag() {
         ["city", "pop"]
     );
 }
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_honors_sniff_delimiter() {
+    // QSV_SNIFF_DELIMITER detects a semicolon-delimited `.csv`, as for other commands
+    // (roborev 5831)
+    let wrk = Workdir::new("to_parquet_honors_sniff_delimiter");
+    let mut csv = String::from("city;pop;state\n");
+    for i in 0..30 {
+        csv.push_str(&format!("C{i};{};NY\n", i * 100));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.parquet")),
+        ["city", "pop", "state"]
+    );
+}

@@ -2142,6 +2142,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             // narrower request, including a plain `qsv stats`.
                             && existing_stats_args_json.flag_flexible
                                 == current_stats_args.flag_flexible
+                            // stats of the rows past a QSV_SNIFF_PREAMBLE-skipped preamble
+                            // have another header than stats of the file as stored
+                            && existing_stats_args_json.preamble_rows
+                                == current_stats_args.preamble_rows
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
                             && existing_stats_args_json.flag_weight
                                 == current_stats_args.flag_weight

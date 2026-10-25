@@ -379,10 +379,15 @@ fn handle_pschema(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathB
     if serde_json::from_str::<Value>(&text).is_err() {
         return;
     }
-    let Some(base) = full.strip_suffix(".pschema.json").map(strip_skip_suffix) else {
+    let Some(base) = full.strip_suffix(".pschema.json") else {
         return;
     };
-    let source = PathBuf::from(base);
+    // a source can itself be named like `x.skip2` (under QSV_SKIP_FORMAT_CHECK)
+    let source = if Path::new(base).exists() {
+        PathBuf::from(base)
+    } else {
+        PathBuf::from(strip_skip_suffix(base))
+    };
     if stale && !stale_or_orphaned(path, Some(&source)) {
         return;
     }

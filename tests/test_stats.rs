@@ -10364,3 +10364,20 @@ fn stats_cache_not_reused_across_sniff_preamble() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got[1][0], "Report generated 2026-10-24");
 }
+
+#[test]
+fn stats_everything_cache_not_reused_across_sniff_preamble() {
+    // an --everything cache is served to narrower requests; not across the preamble toggle
+    let wrk = Workdir::new("stats_everything_cache_not_reused_across_sniff_preamble");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--flexible", "--everything", "--stats-jsonl", "p.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["--flexible", "--stats-jsonl", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let fields: Vec<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(fields, ["id", "name", "amount"]);
+}

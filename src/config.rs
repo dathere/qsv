@@ -107,6 +107,15 @@ impl io::Seek for HeaderStart {
     }
 }
 
+/// The preamble rows (as the sniffer counts them) `QSV_SNIFF_PREAMBLE` finds above `path`'s
+/// header, as `Config::preamble_rows` records them; 0 when the env var is unset.
+pub fn sniffed_preamble_rows(path: &Path) -> u64 {
+    if !util::get_envvar_flag("QSV_SNIFF_PREAMBLE") {
+        return 0;
+    }
+    Config::new(Some(&path.to_string_lossy().into_owned())).preamble_rows
+}
+
 /// The `, skip=N` argument for `DuckDB`'s `read_csv_auto` that skips `path`'s sniffed preamble
 /// lines (see [`sniffed_preamble_lines`]), or "" when there are none.
 pub fn duckdb_skip_arg(path: &Path) -> String {

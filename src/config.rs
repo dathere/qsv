@@ -252,6 +252,9 @@ pub struct Config {
     idx_path:              Option<PathBuf>,
     select_columns:        Option<SelectColumns>,
     delimiter:             u8,
+    // the delimiter writers use: as `delimiter`, but never sniffed (QSV_SNIFF_DELIMITER sniffs
+    // the path, which for an output is the old file about to be replaced)
+    write_delimiter:       u8,
     // The detected special input format (Parquet/Avro/Arrow/JSON/JSONL, compressed
     // CSV, or zip). Conversion to a delimited temp file is deferred to the read
     // path (see `prepared_for_read`), so a Config used only for writing never
@@ -477,6 +480,7 @@ impl Config {
             .ok()
             .and_then(|s| s.as_bytes().first().copied());
         let no_headers = util::get_envvar_flag("QSV_NO_HEADERS");
+        let write_delimiter = delim;
         let mut preamble = 0_u64;
         // a snappy file's bytes are compressed, so sniffing them finds no real dialect
         if let (true, Some(sniff_path_buf)) = (sniff && !snappy, path.as_ref()) {
@@ -519,6 +523,7 @@ impl Config {
             idx_path: None,
             select_columns: None,
             delimiter: delim,
+            write_delimiter,
             special_format,
             read_input: Arc::new(OnceLock::new()),
             no_headers,
@@ -551,6 +556,7 @@ impl Config {
     pub const fn delimiter(mut self, d: Option<Delimiter>) -> Config {
         if let Some(d) = d {
             self.delimiter = d.as_byte();
+            self.write_delimiter = d.as_byte();
         }
         self
     }
@@ -1312,7 +1318,7 @@ impl Config {
 
         csv::WriterBuilder::new()
             .flexible(self.flexible)
-            .delimiter(self.delimiter)
+            .delimiter(self.write_delimiter)
             .terminator(self.terminator)
             .quote(self.quote)
             .quote_style(self.quote_style)

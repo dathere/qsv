@@ -522,3 +522,24 @@ fn select_sniff_preamble_skips_preamble_rows() {
     assert_eq!(got.len(), 41);
     assert_eq!(got[..2], [svec!["name"], svec!["n1"]]);
 }
+
+#[test]
+fn select_sniff_delimiter_ignores_the_old_output_file() {
+    // QSV_SNIFF_DELIMITER sniffs input files; the output path's Config must not sniff the old
+    // file about to be replaced and write with ITS delimiter
+    let wrk = Workdir::new("select_sniff_delimiter_ignores_the_old_output_file");
+    let mut input = String::from("a,b\n");
+    let mut old_output = String::from("p;q;r\n");
+    for i in 0..30 {
+        input.push_str(&format!("{i},x{i}\n"));
+        old_output.push_str(&format!("{i};y;z\n"));
+    }
+    wrk.create_from_string("in.csv", &input);
+    wrk.create_from_string("out.csv", &old_output);
+    let mut cmd = wrk.command("select");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .args(["a,b", "in.csv", "-o", "out.csv"]);
+    wrk.assert_success(&mut cmd);
+    let got = std::fs::read_to_string(wrk.path("out.csv")).unwrap();
+    assert!(got.starts_with("a,b\n0,x0\n"), "{got}");
+}

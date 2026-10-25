@@ -3218,3 +3218,26 @@ fn pivotp_values_overlapping_on_or_index_columns() {
         );
     }
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn pivotp_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("pivotp_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("pivotp");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").args([
+        "name", "--index", "id", "--values", "amount", "--agg", "sum", "p.csv",
+    ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 41);
+    assert_eq!(got[0][..3], svec!["id", "n1", "n2"]);
+    assert_eq!(got[1][..3], svec!["1", "10", "0"]);
+}

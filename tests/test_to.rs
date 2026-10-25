@@ -1832,3 +1832,30 @@ fn to_parquet_honors_sniff_delimiter() {
         ["city", "pop", "state"]
     );
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("to_parquet_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("p.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        parquet_columns(&output_dir.join("p.parquet")),
+        ["id", "name", "amount"]
+    );
+}

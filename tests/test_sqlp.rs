@@ -7513,3 +7513,24 @@ fn sqlp_inherited_stdin_spool_default_delimiter_env() {
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "b\nx");
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn sqlp_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("sqlp_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .arg("p.csv")
+        .arg("select count(*) as n, sum(amount) as total from p");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "n,total\n40,8200");
+}

@@ -52,6 +52,17 @@ pub fn stdin_spool() -> Option<&'static PathBuf> {
     })
 }
 
+/// The preamble rows `QSV_SNIFF_PREAMBLE` finds above `path`'s header, for the Polars readers
+/// (which open files themselves) to skip with `with_skip_lines`, as the `Config` readers skip
+/// them. 0 when the env var is unset, so the sniff only runs when it matters.
+#[cfg(feature = "polars")]
+pub fn sniffed_preamble_rows(path: &Path) -> usize {
+    if !util::get_envvar_flag("QSV_SNIFF_PREAMBLE") {
+        return 0;
+    }
+    Config::new(Some(&path.to_string_lossy().into_owned())).preamble_rows as usize
+}
+
 /// Whether `path` is the stdin spool (`stdin_spool`). Compared canonicalized, as some commands
 /// canonicalize their input and macOS temp dirs are symlinked, but only for files named like
 /// the spool.
@@ -241,8 +252,8 @@ impl Config {
     ///   to stdin and to paths without a recognized extension - a .csv, .tsv/.tab or .ssv extension
     ///   (incl. .sz) always wins, and `--delimiter` overrides both.
     /// - Determines delimiter and Snappy compression based on file extension.
-    /// - Supports sniffing delimiter and preamble rows if `QSV_SNIFF_DELIMITER` or
-    ///   `QSV_SNIFF_PREAMBLE` is set.
+    /// - Sniffs the delimiter if `QSV_SNIFF_DELIMITER` or `QSV_SNIFF_PREAMBLE` is set, and the
+    ///   preamble rows above the header (which the readers then skip) if `QSV_SNIFF_PREAMBLE` is.
     /// - Sets comment character from `QSV_COMMENT_CHAR` environment variable.
     /// - Sets headers behavior based on `QSV_NO_HEADERS` environment variable.
     /// - Configures various other settings from environment variables.
@@ -250,8 +261,8 @@ impl Config {
     /// # Environment Variables
     ///
     /// - `QSV_DEFAULT_DELIMITER`: Sets the default delimiter.
-    /// - `QSV_SNIFF_DELIMITER` or `QSV_SNIFF_PREAMBLE`: Enables sniffing of delimiter and preamble
-    ///   rows.
+    /// - `QSV_SNIFF_DELIMITER`: Enables sniffing of the delimiter.
+    /// - `QSV_SNIFF_PREAMBLE`: Also sniffs preamble rows, which the readers skip.
     /// - `QSV_COMMENT_CHAR`: Sets the comment character.
     /// - `QSV_NO_HEADERS`: Determines if the file has headers.
     /// - `QSV_AUTOINDEX_SIZE`: Sets the auto-index size.
@@ -405,7 +416,8 @@ impl Config {
             .and_then(|s| s.as_bytes().first().copied());
         let no_headers = util::get_envvar_flag("QSV_NO_HEADERS");
         let mut preamble = 0_u64;
-        if let (true, Some(sniff_path_buf)) = (sniff, path.as_ref()) {
+        // a snappy file's bytes are compressed, so sniffing them finds no real dialect
+        if let (true, Some(sniff_path_buf)) = (sniff && !snappy, path.as_ref()) {
             if let Some(sniff_path) = sniff_path_buf.to_str() {
                 match Sniffer::new()
                     .sample_size(SampleSize::Records(DEFAULT_SNIFFER_SAMPLE))
@@ -413,7 +425,11 @@ impl Config {
                 {
                     Ok(metadata) => {
                         delim = metadata.dialect.delimiter;
-                        preamble = metadata.dialect.header.num_preamble_rows as u64;
+                        // only QSV_SNIFF_PREAMBLE skips preamble rows; QSV_SNIFF_DELIMITER
+                        // alone just detects the delimiter
+                        if util::get_envvar_flag("QSV_SNIFF_PREAMBLE") {
+                            preamble = metadata.dialect.header.num_preamble_rows as u64;
+                        }
                         info!(
                             "sniffed delimiter {} and {preamble} preamble rows",
                             delim as char
@@ -796,10 +812,48 @@ impl Config {
                         self.format_error.clone().unwrap(),
                     ))
                 } else {
-                    fs::File::open(p).map(|f| self.from_reader(f))
+                    self.open_past_preamble(p).map(|f| self.from_reader(f))
                 }
             },
         }
+    }
+
+    /// A reader of the file as stored, for building its index: unlike `reader_file`, it never
+    /// skips sniffed preamble rows, as an index's byte offsets must describe the whole file.
+    pub fn index_reader(&self) -> io::Result<csv::Reader<fs::File>> {
+        let mut raw = self.clone();
+        raw.preamble_rows = 0;
+        raw.reader_file()
+    }
+
+    /// Byte length of the first `preamble_rows` lines of `path` (the rows `QSV_SNIFF_PREAMBLE`
+    /// found above the header), so readers can start past them.
+    fn preamble_len(&self, path: &Path) -> io::Result<u64> {
+        let mut len = 0_u64;
+        if self.preamble_rows == 0 {
+            return Ok(len);
+        }
+        let mut rdr = io::BufReader::new(fs::File::open(path)?);
+        let mut line = Vec::new();
+        for _ in 0..self.preamble_rows {
+            line.clear();
+            let n = io::BufRead::read_until(&mut rdr, b'\n', &mut line)?;
+            if n == 0 {
+                break;
+            }
+            len += n as u64;
+        }
+        Ok(len)
+    }
+
+    /// Open `path` positioned past any sniffed preamble rows.
+    fn open_past_preamble(&self, path: &Path) -> io::Result<fs::File> {
+        let mut file = fs::File::open(path)?;
+        let skip = self.preamble_len(path)?;
+        if skip > 0 {
+            io::Seek::seek(&mut file, io::SeekFrom::Start(skip))?;
+        }
+        Ok(file)
     }
 
     pub fn reader_file_stdin(&self) -> io::Result<csv::Reader<Box<dyn SeekRead + 'static>>> {
@@ -821,7 +875,7 @@ impl Config {
                         self.format_error.clone().unwrap(),
                     ));
                 }
-                self.from_reader(Box::new(fs::File::open(p)?))
+                self.from_reader(Box::new(self.open_past_preamble(p)?))
             },
         })
     }
@@ -860,7 +914,7 @@ impl Config {
 
         let pidx = util::idx_path(Path::new(path_buf));
 
-        let Ok(mut rdr) = self.reader_file() else {
+        let Ok(mut rdr) = self.index_reader() else {
             return false;
         };
 
@@ -886,6 +940,16 @@ impl Config {
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
         if self.special_format != SpecialFormat::Unknown {
             return self.prepared_for_read()?.index_files();
+        }
+        // An index's offsets describe the whole file, but with sniffed preamble rows the
+        // readers start past them, so seeking with it would land on the wrong records. Read
+        // sequentially instead (and don't autoindex).
+        if self.preamble_rows > 0 {
+            debug!(
+                "not using an index: {} preamble rows are skipped",
+                self.preamble_rows
+            );
+            return Ok(None);
         }
         // Track the data file's mtime and the resolved index path *only* on the
         // path that may need a staleness recheck. For the explicit-(path, idx_path)
@@ -1055,7 +1119,8 @@ impl Config {
         }
         Ok(match self.path {
             None => Box::new(io::stdin()),
-            Some(ref p) => match fs::File::open(p) {
+            // a snappy file is never sniffed, so it has no preamble rows to skip
+            Some(ref p) => match self.open_past_preamble(p) {
                 Ok(x) => {
                     if self.snappy {
                         // Validate that the file is actually a snappy-compressed file

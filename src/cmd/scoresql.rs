@@ -1041,6 +1041,7 @@ fn get_polars_plan(
         let table_plpath = PlRefPath::new(&*table.to_string_lossy());
 
         let lf = LazyCsvReader::new(table_plpath)
+            .with_skip_lines(crate::config::sniffed_preamble_rows(Path::new(table)))
             .with_has_header(true)
             .with_missing_is_null(true)
             .with_separator(separator)

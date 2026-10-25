@@ -136,7 +136,7 @@ pub fn create_index_for_file(path: &Path, rconfig: &Config) -> CliResult<()> {
     let pidx = idx_path(path);
     log::info!("Auto-creating index file: {}", pidx.display());
 
-    let mut rdr = rconfig.reader_file()?;
+    let mut rdr = rconfig.index_reader()?;
     write_index_atomically(&mut rdr, &pidx)?;
 
     log::info!("Successfully created index file: {}", pidx.display());

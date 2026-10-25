@@ -452,3 +452,35 @@ fn headers_stdin_default_delimiter_env() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "a\nbb");
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn headers_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("headers_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["--just-names", "p.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "id\nname\namount");
+}
+
+#[test]
+fn headers_sniff_delimiter_alone_keeps_preamble_rows() {
+    // only QSV_SNIFF_PREAMBLE skips preamble rows; QSV_SNIFF_DELIMITER just sniffs the delimiter
+    let wrk = Workdir::new("headers_sniff_delimiter_alone_keeps_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("headers");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .args(["--just-names", "p.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "Report generated 2026-10-24");
+}

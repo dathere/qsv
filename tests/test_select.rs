@@ -502,3 +502,23 @@ fn test_select_robustness() {
     let expected = vec![svec!["h2"], svec!["b"]];
     assert_eq!(got, expected);
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn select_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("select_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("select");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").args(["name", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 41);
+    assert_eq!(got[..2], [svec!["name"], svec!["n1"]]);
+}

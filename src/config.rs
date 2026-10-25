@@ -1027,6 +1027,17 @@ impl Config {
         if self.special_format != SpecialFormat::Unknown {
             return self.prepared_for_read()?.index_files();
         }
+        // the readers' check: a format error (e.g. a `dc:` entry that isn't cached) says more
+        // than the ENOENT/garbage the index lookup below would hit
+        if self.path.is_some()
+            && !self.skip_format_check
+            && let Some(ref format_error) = self.format_error
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format_error.clone(),
+            ));
+        }
         // An index's offsets describe the whole file, but with sniffed preamble rows the
         // readers start past them, so seeking with it would land on the wrong records. Read
         // sequentially instead (and don't autoindex).

@@ -3016,3 +3016,23 @@ fn viz_dc_title_names_the_data_not_the_cache_handle() {
     let html = std::fs::read_to_string(&out).unwrap();
     assert!(html.contains("<title>Housing</title>"), "custom title");
 }
+
+#[test]
+fn get_dc_missing_entry_message_in_index_using_commands() {
+    // count and frequency look for an index before reading, which hit the missing path's ENOENT
+    // instead of the dc: resolution error every reader reports
+    let wrk = Workdir::new("get_dc_missing_entry_message_in_index_using_commands");
+    let cache_dir = wrk.path("qsvcache");
+    for command in ["count", "frequency"] {
+        let mut cmd = wrk.command(command);
+        cmd.env("QSV_CACHE_DIR", &cache_dir)
+            .arg("dc:no-such-entry.csv");
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{command}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("dc: cache entry 'no-such-entry.csv' not found"),
+            "{command}: {stderr}"
+        );
+    }
+}

@@ -946,6 +946,7 @@ fn run_profile_validation(
         return Vec::new();
     };
     let mut cmd = std::process::Command::new(qsv_path);
+    crate::util::pass_stdin_spool(&mut cmd);
     cmd.arg("validate").arg(input_path);
     if no_headers {
         cmd.arg("--no-headers");

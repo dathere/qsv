@@ -38,6 +38,20 @@ pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// extension implies.
 pub static STDIN_SPOOL: OnceLock<PathBuf> = OnceLock::new();
 
+/// Env var a qsv process sets on the qsv subprocesses it runs (`util::pass_stdin_spool`), so
+/// they also recognize its stdin spool; grandchildren inherit it.
+pub const STDIN_SPOOL_ENV: &str = "QSV_STDIN_SPOOL";
+
+/// This process's stdin spool, or the one a parent qsv passed down in `QSV_STDIN_SPOOL`.
+pub fn stdin_spool() -> Option<&'static PathBuf> {
+    static INHERITED: OnceLock<Option<PathBuf>> = OnceLock::new();
+    STDIN_SPOOL.get().or_else(|| {
+        INHERITED
+            .get_or_init(|| env::var_os(STDIN_SPOOL_ENV).map(PathBuf::from))
+            .as_ref()
+    })
+}
+
 // Index paths this process has already rebuilt because they looked stale.
 //
 // Several parallel workers call `index_files()` on the same input and can all observe the
@@ -332,8 +346,7 @@ impl Config {
                 // canonicalized (some commands canonicalize their input, and macOS temp dirs
                 // are symlinked), but only for files named like the spool.
                 let delim = if path.file_name().is_some_and(|name| name == "stdin.csv")
-                    && STDIN_SPOOL
-                        .get()
+                    && stdin_spool()
                         .is_some_and(|spool| path.canonicalize().is_ok_and(|p| p == *spool))
                 {
                     default_delim

@@ -1680,3 +1680,71 @@ fn to_parquet_try_parse_dates() {
         "date column should be Date type with --try-parse-dates"
     );
 }
+
+/// Column names of a Parquet file.
+#[cfg(feature = "polars")]
+fn parquet_columns(path: &std::path::Path) -> Vec<String> {
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(path.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    df.get_column_names()
+        .iter()
+        .map(|name| name.to_string())
+        .collect()
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_tsv_without_delimiter_flag() {
+    // without --delimiter every input was read with a comma, so a .tsv became one column
+    let wrk = Workdir::new("to_parquet_tsv_without_delimiter_flag");
+    wrk.create_from_string("data.tsv", "city\tpop\nBoston\t685000\n");
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.tsv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_stdin_default_delimiter_env() {
+    // piped stdin is read with QSV_DEFAULT_DELIMITER, as other commands read it
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_stdin_default_delimiter_env");
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"city|pop\nBoston|685000\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("stdin.parquet")),
+        ["city", "pop"]
+    );
+}

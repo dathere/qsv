@@ -686,9 +686,16 @@ fn to_parquet(
         },
     };
 
-    let delimiter = flag_delimiter.map_or(b',', config::Delimiter::as_byte);
-
     for input_path in arg_input {
+        // per input, as other commands read it: --delimiter, else its extension (or, for
+        // spooled stdin, QSV_DEFAULT_DELIMITER). A fixed comma read a `.tsv` as one column.
+        let delimiter = flag_delimiter.map_or_else(
+            || {
+                config::Config::new(Some(&input_path.to_string_lossy().into_owned()))
+                    .get_delimiter()
+            },
+            config::Delimiter::as_byte,
+        );
         let filestem = input_path
             .file_stem()
             .and_then(|s| s.to_str())

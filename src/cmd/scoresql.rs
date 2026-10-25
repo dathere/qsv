@@ -970,6 +970,7 @@ fn load_freq_cache(freq_path: &Path) -> CliResult<Vec<FreqEntry>> {
 fn generate_stats_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let qsv_bin = env::current_exe()?;
     let mut cmd = Command::new(&qsv_bin);
+    crate::util::pass_stdin_spool(&mut cmd);
     cmd.args(["stats", "--everything", "--stats-jsonl"]);
     if delim != b',' {
         // Safety: qsv's --delimiter only accepts single-byte ASCII delimiters
@@ -991,6 +992,7 @@ fn generate_stats_cache(input_path: &Path, delim: u8) -> CliResult<()> {
 fn generate_freq_cache(input_path: &Path, delim: u8) -> CliResult<()> {
     let qsv_bin = env::current_exe()?;
     let mut cmd = Command::new(&qsv_bin);
+    crate::util::pass_stdin_spool(&mut cmd);
     cmd.args(["frequency", "--frequency-jsonl"]);
     if delim != b',' {
         // Safety: qsv's --delimiter only accepts single-byte ASCII delimiters

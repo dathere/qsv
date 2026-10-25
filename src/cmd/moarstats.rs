@@ -805,6 +805,7 @@ fn join_datasets_internal(
         // Construct join command directly since it doesn't fit run_qsv_cmd pattern
         // (join takes two input files, not one)
         let mut cmd = Command::new(&qsv_path);
+        crate::util::pass_stdin_spool(&mut cmd);
         cmd.arg("join")
             .args(&args)
             .stdout(Stdio::from(join_out_for_child))
@@ -5095,6 +5096,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             lower_percentile.zip(upper_percentile),
         );
         let mut cmd = Command::new(&qsv_path);
+        crate::util::pass_stdin_spool(&mut cmd);
         cmd.arg("stats")
             .args(&stats_args_vec)
             .arg(&actual_input_path_str);

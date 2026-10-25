@@ -3,6 +3,15 @@ use std::{path::Path, process::Command, time::Instant};
 use super::{QSV_PATH, QUIET_FLAG, current_exe};
 use crate::{CliError, CliResult};
 
+/// Pass this process's stdin spool on to a qsv subprocess, so the child also reads that temp
+/// `stdin.csv` with stdin's delimiter (`QSV_DEFAULT_DELIMITER`) rather than a comma: the child
+/// cannot see the parent's `config::STDIN_SPOOL`. Grandchildren inherit the env var.
+pub fn pass_stdin_spool(cmd: &mut Command) {
+    if let Some(spool) = crate::config::stdin_spool() {
+        cmd.env(crate::config::STDIN_SPOOL_ENV, spool);
+    }
+}
+
 /// BLAKE3 hash of a file optimized for maximum performance
 /// Uses memory mapping and multithreading for fast hashing of files of any size
 // consumed by describegpt and viz, both excluded from qsvlite
@@ -64,6 +73,7 @@ pub fn run_qsv_cmd(
     // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
+    pass_stdin_spool(&mut cmd);
 
     // sample takes a positional <sample-size> argument *before* the input path
     // (e.g. `qsv sample 1000 input.csv`), so for sample we order args before
@@ -122,6 +132,7 @@ pub fn run_qsv_cmd_streaming(
     // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
+    pass_stdin_spool(&mut cmd);
 
     if command == "sample" {
         cmd.arg(command).args(args).arg(input_path);

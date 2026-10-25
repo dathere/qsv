@@ -1680,3 +1680,155 @@ fn to_parquet_try_parse_dates() {
         "date column should be Date type with --try-parse-dates"
     );
 }
+
+/// Column names of a Parquet file.
+#[cfg(feature = "polars")]
+fn parquet_columns(path: &std::path::Path) -> Vec<String> {
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(path.to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    df.get_column_names()
+        .iter()
+        .map(|name| name.to_string())
+        .collect()
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_tsv_without_delimiter_flag() {
+    // without --delimiter every input was read with a comma, so a .tsv became one column
+    let wrk = Workdir::new("to_parquet_tsv_without_delimiter_flag");
+    wrk.create_from_string("data.tsv", "city\tpop\nBoston\t685000\n");
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.tsv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_stdin_default_delimiter_env() {
+    // piped stdin is read with QSV_DEFAULT_DELIMITER, as other commands read it
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_stdin_default_delimiter_env");
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("-")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"city|pop\nBoston|685000\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("stdin.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_table_rename_stdin_default_delimiter_env() {
+    // --table copies piped stdin to `<table>.csv` before the delimiter was looked up, so the
+    // copy no longer counted as stdin and was read with a comma (roborev 5829)
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_table_rename_stdin_default_delimiter_env");
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .args(["--table", "mydata", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"city|pop\nBoston|685000\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("mydata.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_compressed_tsv_without_delimiter_flag() {
+    // a compressed input's delimiter comes from its inner extension, worked out from the name
+    // (it used to be learned by decompressing the whole file to a temp copy)
+    use std::io::Write;
+
+    let wrk = Workdir::new("to_parquet_compressed_tsv_without_delimiter_flag");
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gz.write_all(b"city\tpop\nBoston\t685000\n").unwrap();
+    std::fs::write(wrk.path("data.tsv.gz"), gz.finish().unwrap()).unwrap();
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.tsv.gz");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.tsv.parquet")),
+        ["city", "pop"]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn to_parquet_honors_sniff_delimiter() {
+    // QSV_SNIFF_DELIMITER detects a semicolon-delimited `.csv`, as for other commands
+    // (roborev 5831)
+    let wrk = Workdir::new("to_parquet_honors_sniff_delimiter");
+    let mut csv = String::from("city;pop;state\n");
+    for i in 0..30 {
+        csv.push_str(&format!("C{i};{};NY\n", i * 100));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    let output_dir = wrk.path("parquet_out");
+    let mut cmd = wrk.command("to");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .arg("parquet")
+        .arg(output_dir.to_string_lossy().as_ref())
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(
+        parquet_columns(&output_dir.join("data.parquet")),
+        ["city", "pop", "state"]
+    );
+}

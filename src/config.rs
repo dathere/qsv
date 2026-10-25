@@ -38,6 +38,58 @@ pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 /// extension implies.
 pub static STDIN_SPOOL: OnceLock<PathBuf> = OnceLock::new();
 
+/// Env var a qsv process sets on the qsv subprocesses it runs (`util::pass_stdin_spool`), so
+/// they also recognize its stdin spool; grandchildren inherit it.
+pub const STDIN_SPOOL_ENV: &str = "QSV_STDIN_SPOOL";
+
+/// This process's stdin spool, or the one a parent qsv passed down in `QSV_STDIN_SPOOL`.
+pub fn stdin_spool() -> Option<&'static PathBuf> {
+    static INHERITED: OnceLock<Option<PathBuf>> = OnceLock::new();
+    STDIN_SPOOL.get().or_else(|| {
+        INHERITED
+            .get_or_init(|| env::var_os(STDIN_SPOOL_ENV).map(PathBuf::from))
+            .as_ref()
+    })
+}
+
+/// Whether `path` is the stdin spool (`stdin_spool`). Compared canonicalized, as some commands
+/// canonicalize their input and macOS temp dirs are symlinked, but only for files named like
+/// the spool.
+pub fn is_stdin_spool(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "stdin.csv")
+        && stdin_spool().is_some_and(|spool| path.canonicalize().is_ok_and(|p| p == *spool))
+}
+
+/// `QSV_DEFAULT_DELIMITER`, or `,` when it is unset or invalid.
+pub fn default_delimiter() -> u8 {
+    match env::var("QSV_DEFAULT_DELIMITER") {
+        Ok(delim) => match Delimiter::decode_delimiter(&delim) {
+            Ok(d) => d.as_byte(),
+            Err(e) => {
+                warn!("invalid QSV_DEFAULT_DELIMITER {delim:?} ({e}); using ','");
+                b','
+            },
+        },
+        _ => b',',
+    }
+}
+
+/// The delimiter `path` is read with when no `--delimiter` is given, worked out from its name
+/// alone (no reading, decompressing or converting): spooled stdin and unrecognized extensions
+/// take `QSV_DEFAULT_DELIMITER`; a compressed CSV/TSV/SSV takes its inner extension's.
+pub fn read_delimiter(path: &Path) -> u8 {
+    let default = default_delimiter();
+    if is_stdin_spool(path) {
+        return default;
+    }
+    match get_special_format(path) {
+        SpecialFormat::CompressedCsv => b',',
+        SpecialFormat::CompressedTsv => b'\t',
+        SpecialFormat::CompressedSsv => b';',
+        _ => get_delim_by_extension(path, default).1,
+    }
+}
+
 // Index paths this process has already rebuilt because they looked stale.
 //
 // Several parallel workers call `index_files()` on the same input and can all observe the
@@ -255,16 +307,7 @@ impl Config {
         #[cfg(feature = "get")]
         let path: Option<&String> = dc_resolved.as_ref().or(path);
 
-        let default_delim = match env::var("QSV_DEFAULT_DELIMITER") {
-            Ok(delim) => match Delimiter::decode_delimiter(&delim) {
-                Ok(d) => d.as_byte(),
-                Err(e) => {
-                    warn!("invalid QSV_DEFAULT_DELIMITER {delim:?} ({e}); using ','");
-                    b','
-                },
-            },
-            _ => b',',
-        };
+        let default_delim = default_delimiter();
         let mut sniff = util::get_envvar_flag("QSV_SNIFF_DELIMITER")
             || util::get_envvar_flag("QSV_SNIFF_PREAMBLE");
         let mut skip_format_check = true;
@@ -328,14 +371,8 @@ impl Config {
                 // formats this is the write/fallback delimiter; the read delimiter
                 // is re-derived from the converted temp in `prepared_for_read`.
                 let (file_extension, delim, snappy) = get_delim_by_extension(&path, default_delim);
-                // spooled stdin takes stdin's delimiter, as `-` does above. Compared
-                // canonicalized (some commands canonicalize their input, and macOS temp dirs
-                // are symlinked), but only for files named like the spool.
-                let delim = if path.file_name().is_some_and(|name| name == "stdin.csv")
-                    && STDIN_SPOOL
-                        .get()
-                        .is_some_and(|spool| path.canonicalize().is_ok_and(|p| p == *spool))
-                {
+                // spooled stdin takes stdin's delimiter, as `-` does above
+                let delim = if is_stdin_spool(&path) {
                     default_delim
                 } else {
                     delim

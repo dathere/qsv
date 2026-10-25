@@ -995,7 +995,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     let flag_delimiter = args.flag_delimiter;
     let input_delim = |table: &Path| -> u8 {
-        if stdin_input.as_deref() == Some(table) {
+        // also a stdin spool a parent qsv passed down (e.g. describegpt running sqlp on it)
+        if stdin_input.as_deref() == Some(table) || crate::config::is_stdin_spool(table) {
             delim
         } else {
             path_delim(table, flag_delimiter, delim)

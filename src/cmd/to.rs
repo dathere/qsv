@@ -511,11 +511,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else if args.cmd_parquet {
         debug!("converting to Parquet");
         arg_input = process_input(arg_input, &tmpdir, "")?;
+        // Each input's delimiter, as other commands read it: --delimiter, else Config's
+        // (QSV_SNIFF_DELIMITER, extension, or QSV_DEFAULT_DELIMITER for spooled stdin and other
+        // files). Resolved before --table renames the input, which would hide that it is
+        // spooled stdin. A compressed (special-format) input is resolved from its name alone:
+        // Config would decompress it to a temp copy just to learn its delimiter.
+        let delimiters: Vec<u8> = arg_input
+            .iter()
+            .map(|path| {
+                args.flag_delimiter.map_or_else(
+                    || {
+                        if config::get_special_format(path) == config::SpecialFormat::Unknown {
+                            config::Config::new(Some(&path.to_string_lossy().into_owned()))
+                                .get_delimiter()
+                        } else {
+                            config::read_delimiter(path)
+                        }
+                    },
+                    Delimiter::as_byte,
+                )
+            })
+            .collect();
         apply_table_rename(args.flag_table.as_ref(), &mut arg_input, &tmpdir)?;
         return to_parquet(
             args.arg_destination.as_ref().expect("checked above"),
             arg_input,
-            args.flag_delimiter,
+            delimiters,
             args.flag_compression,
             args.flag_compress_level,
             args.flag_all_strings,
@@ -638,7 +659,7 @@ fn apply_table_rename(
 fn to_parquet(
     destination: &str,
     arg_input: Vec<PathBuf>,
-    flag_delimiter: Option<Delimiter>,
+    delimiters: Vec<u8>,
     flag_compression: Option<String>,
     flag_compress_level: Option<i32>,
     flag_all_strings: bool,
@@ -686,9 +707,7 @@ fn to_parquet(
         },
     };
 
-    let delimiter = flag_delimiter.map_or(b',', config::Delimiter::as_byte);
-
-    for input_path in arg_input {
+    for (input_path, delimiter) in arg_input.into_iter().zip(delimiters) {
         let filestem = input_path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -771,7 +790,7 @@ fn to_parquet(
 fn to_parquet(
     _destination: &str,
     _arg_input: Vec<PathBuf>,
-    _flag_delimiter: Option<Delimiter>,
+    _delimiters: Vec<u8>,
     _flag_compression: Option<String>,
     _flag_compress_level: Option<i32>,
     _flag_all_strings: bool,

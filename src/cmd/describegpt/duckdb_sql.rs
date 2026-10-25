@@ -160,6 +160,7 @@ pub(super) fn score_sql_query(
 ) -> CliResult<(u32, String, String)> {
     let qsv_path = std::env::current_exe()?;
     let mut cmd = Command::new(qsv_path);
+    crate::util::pass_stdin_spool(&mut cmd);
     cmd.arg("scoresql").arg(input_path).arg("--json").arg("-q");
     if use_duckdb {
         cmd.arg("--duckdb");

@@ -4843,3 +4843,40 @@ fn describegpt_money_content_type_coerces_role_and_keeps_currency() {
         "the column naming the currency is a dimension, not an amount"
     );
 }
+
+// describegpt computes its context in qsv subprocesses (stats, frequency...), which could not
+// tell that the temp `stdin.csv` holds piped stdin, so they read it with a comma and saw one
+// merged `a|b` column. Uses --prepare-context so no LLM is needed.
+#[test]
+fn describegpt_stdin_default_delimiter_env() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("describegpt_stdin_default_delimiter_env");
+    let mut cmd = wrk.command("describegpt");
+    cmd.env("QSV_DEFAULT_DELIMITER", "|")
+        .args(["-", "--dictionary", "--prepare-context", "--no-cache"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a|b\n1|x\n2|y\n3|z\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let got = String::from_utf8_lossy(&output.stdout);
+    // the summary statistics in the prompt hold one row per real column
+    assert!(got.contains(r"\na,Integer"), "column `a` missing: {got}");
+    assert!(got.contains(r"\nb,String"), "column `b` missing: {got}");
+    assert!(
+        !got.contains("a|b,"),
+        "stdin was read as one merged column: {got}"
+    );
+}

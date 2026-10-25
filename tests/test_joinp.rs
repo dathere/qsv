@@ -3555,3 +3555,55 @@ fn joinp_cache_schema_iso_dates_keep_datetime() {
         "dates Polars can parse keep a temporal type: {schema}"
     );
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn joinp_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("joinp_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    wrk.create_from_string("q.csv", &preamble_csv());
+    let mut cmd = wrk.command("joinp");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["id", "p.csv", "id", "q.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 41);
+    assert_eq!(
+        got[0],
+        svec!["id", "name", "amount", "name_right", "amount_right"]
+    );
+}
+
+#[test]
+fn joinp_sniff_preamble_allstring_schema() {
+    // --cache-schema -1/-2 build an all-string schema from the headers, which must be read
+    // past the preamble too
+    for mode in ["-1", "-2"] {
+        let wrk = Workdir::new(&format!("joinp_sniff_preamble_allstring_schema{mode}"));
+        wrk.create_from_string("p.csv", &preamble_csv());
+        wrk.create_from_string("q.csv", &preamble_csv());
+        let mut cmd = wrk.command("joinp");
+        cmd.env("QSV_SNIFF_PREAMBLE", "1").args([
+            "--cache-schema",
+            mode,
+            "id",
+            "p.csv",
+            "id",
+            "q.csv",
+        ]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(got.len(), 41, "{mode}");
+        assert_eq!(
+            got[0],
+            svec!["id", "name", "amount", "name_right", "amount_right"],
+            "{mode}"
+        );
+    }
+}

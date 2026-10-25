@@ -153,6 +153,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .quote(args.flag_quote.as_byte())
         .comment(comment_char)
         .trim(trim_setting);
+    // --auto-skip skips the sniffed preamble below as CSV records, so the Config readers
+    // (including --skip-lastlines' row count) must not skip it as raw lines as well
+    let sniffed_preamble_rows = rconfig.preamble_rows;
+    rconfig.preamble_rows = 0;
     if args.flag_auto_skip {
         // safety: we are in single-threaded code.
         unsafe { std::env::remove_var("QSV_SNIFF_PREAMBLE") };
@@ -179,7 +183,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     });
 
-    if args.flag_auto_skip || args.flag_skip_lines.is_some() || args.flag_skip_lastlines.is_some() {
+    if args.flag_auto_skip
+        || args.flag_skip_lines.is_some()
+        || args.flag_skip_lastlines.is_some()
+        || sniffed_preamble_rows > 0
+    {
         rconfig = rconfig.flexible(true);
     }
 
@@ -206,12 +214,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let preamble_rows: u64 = if args.flag_auto_skip {
         info!("auto-skip on...");
-        rconfig.preamble_rows
+        sniffed_preamble_rows
     } else if args.flag_skip_lines.is_some() {
         // safety: we already checked that skip_lines is some
         args.flag_skip_lines.unwrap()
     } else {
-        0
+        // QSV_SNIFF_PREAMBLE set without --auto-skip: skip as every other command does
+        sniffed_preamble_rows
     };
 
     if preamble_rows > 0 {

@@ -61,7 +61,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     let rconfig = Config::new(Some(args.arg_input).as_ref());
-    let mut rdr = rconfig.reader_file()?;
+    let mut rdr = rconfig.index_reader()?;
 
     // build into a temp beside `pidx` and rename into place only once the index is complete.
     // Writing straight to `pidx` destroyed a pre-existing good index and left a partial one

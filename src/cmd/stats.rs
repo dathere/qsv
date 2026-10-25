@@ -576,6 +576,11 @@ struct StatsArgs {
     // run's stats (or vice versa) since raggedness changes the counts.
     #[serde(default)]
     flag_flexible: bool,
+    // the preamble rows QSV_SNIFF_PREAMBLE skipped: stats computed past them describe other
+    // rows (and another header) than stats of the file as stored. serde(default) so an older
+    // cache reads as 0 and still matches runs without the env var.
+    #[serde(default)]
+    preamble_rows: u64,
     flag_output_snappy: bool,
     canonical_input_path: String,
     canonical_stats_path: String,
@@ -669,6 +674,7 @@ impl StatsArgs {
             flag_no_headers: get_bool("flag_no_headers"),
             flag_delimiter: get_str("flag_delimiter"),
             flag_flexible: get_bool("flag_flexible"),
+            preamble_rows: get_u64("preamble_rows"),
             flag_output_snappy: get_bool("flag_output_snappy"),
             canonical_input_path: get_str("canonical_input_path"),
             canonical_stats_path: get_str("canonical_stats_path"),
@@ -1802,6 +1808,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .map(|d| (d.as_byte() as char).to_string())
             .unwrap_or_default(),
         flag_flexible: args.flag_flexible,
+        // set from the resolved rconfig below
+        preamble_rows: 0,
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
@@ -1852,6 +1860,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if let Some(format_error) = rconfig.format_error {
         return fail_incorrectusage_clierror!("{format_error}");
     }
+    current_stats_args.preamble_rows = rconfig.preamble_rows;
 
     // INVARIANT (issue #4462): `rconfig` below is the one and only resolved Config for this
     // run's input, and every stats path SHARES it - `sequential_stats` and `parallel_stats`
@@ -2133,6 +2142,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             // narrower request, including a plain `qsv stats`.
                             && existing_stats_args_json.flag_flexible
                                 == current_stats_args.flag_flexible
+                            // stats of the rows past a QSV_SNIFF_PREAMBLE-skipped preamble
+                            // have another header than stats of the file as stored
+                            && existing_stats_args_json.preamble_rows
+                                == current_stats_args.preamble_rows
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
                             && existing_stats_args_json.flag_weight
                                 == current_stats_args.flag_weight

@@ -865,6 +865,68 @@ fn count_low_memory_flag_removed() {
     wrk.assert_err(&mut cmd);
 }
 
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn count_sniff_preamble_skips_preamble_rows() {
+    let wrk = Workdir::new("count_sniff_preamble_skips_preamble_rows");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "40");
+}
+
+#[test]
+fn count_sniff_preamble_ignores_an_index() {
+    // an index's offsets describe the raw file, so with skipped preamble rows it isn't used:
+    // a (fresh) index planted beside the file, of a 1000-row one, must not be trusted
+    let wrk = Workdir::new("count_sniff_preamble_ignores_an_index");
+    let mut big = String::from("id\n");
+    for i in 0..1000 {
+        big.push_str(&format!("{i}\n"));
+    }
+    wrk.create_from_string("big.csv", &big);
+    let mut cmd = wrk.command("index");
+    cmd.arg("big.csv");
+    wrk.assert_success(&mut cmd);
+    wrk.create_from_string("p.csv", &preamble_csv());
+    std::fs::rename(wrk.path("big.csv.idx"), wrk.path("p.csv.idx")).unwrap();
+    let later = filetime::FileTime::from_unix_time(
+        filetime::FileTime::from_last_modification_time(
+            &std::fs::metadata(wrk.path("p.csv")).unwrap(),
+        )
+        .unix_seconds()
+            + 4,
+        0,
+    );
+    filetime::set_file_mtime(wrk.path("p.csv.idx"), later).unwrap();
+
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "40");
+}
+
+#[test]
+fn index_under_sniff_preamble_does_not_index_the_skipped_view() {
+    // an index must describe the file as stored, whatever the env var, as runs without it
+    // trust it. A detected preamble makes the stored file ragged, so it can't be indexed.
+    let wrk = Workdir::new("index_under_sniff_preamble_does_not_index_the_skipped_view");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("index");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("p.csv.idx").exists());
+}
+
 #[test]
 fn count_index_rewritten_within_the_same_second() {
     // index staleness compared whole-second mtimes, so data rewritten in the same second the
@@ -896,4 +958,38 @@ fn count_index_rewritten_within_the_same_second() {
     cmd.arg("data.csv");
     let got: String = wrk.stdout(&mut cmd);
     assert_eq!(got, "3");
+}
+
+// a preamble with a blank line in it: the sniffer counts 2 rows (as the CSV reader skips empty
+// lines), but they take up 3 lines
+fn blank_line_preamble_csv() -> String {
+    let mut csv = String::from("Report\n\nNotes here\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn count_sniff_preamble_with_a_blank_line() {
+    let wrk = Workdir::new("count_sniff_preamble_with_a_blank_line");
+    wrk.create_from_string("p.csv", &blank_line_preamble_csv());
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "40");
+}
+
+#[test]
+fn count_toggle_headers_accepts_boolean_values() {
+    // QSV_TOGGLE_HEADERS reads like the other boolean env vars (dotenv.template sets True/False),
+    // not only "1": toggled, the header row counts as a record
+    let wrk = Workdir::new("count_toggle_headers_accepts_boolean_values");
+    wrk.create_from_string("in.csv", "h\na\nb\n");
+    for (value, expected) in [("1", "3"), ("true", "3"), ("YES", "3"), ("false", "2")] {
+        let mut cmd = wrk.command("count");
+        cmd.env("QSV_TOGGLE_HEADERS", value).arg("in.csv");
+        let got: String = wrk.stdout(&mut cmd);
+        assert_eq!(got, expected, "QSV_TOGGLE_HEADERS={value}");
+    }
 }

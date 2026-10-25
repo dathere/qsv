@@ -1363,3 +1363,31 @@ fn generate_schema_reuses_stats_cache_with_default_delimiter_env() {
         "the stats cache was regenerated on an identical second run"
     );
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn schema_polars_ignores_a_stats_cache_of_the_other_preamble_mode() {
+    // a stats cache of the rows past the preamble has another header than the file as stored:
+    // without the env var it must not be used (here strict stats of the ragged stored file
+    // fail, so no schema is written - not an empty one from mismatched stats)
+    let wrk = Workdir::new("schema_polars_ignores_a_stats_cache_of_the_other_preamble_mode");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["--cardinality", "--stats-jsonl", "p.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = wrk.command("schema");
+    cmd.args(["--polars", "p.csv"]);
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("p.csv.pschema.json").exists());
+}

@@ -553,3 +553,42 @@ fn input_autoskip_rejects_stdin_dash() {
     let got_stderr = wrk.output_stderr(&mut cmd);
     assert!(got_stderr.contains("--auto-skip does not work with <stdin>"));
 }
+
+#[test]
+fn test_input_autoskip_with_skip_lastlines() {
+    // --auto-skip skips the sniffed preamble once, both for the output and for
+    // --skip-lastlines' row count
+    let wrk = Workdir::new("input_autoskip_with_skip_lastlines");
+    let test_file = wrk.load_test_file("snifftest.csv");
+
+    let mut cmd = wrk.command("input");
+    cmd.args(["--auto-skip", "--skip-lastlines", "1"])
+        .arg(test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["abcdefg", "1", "a", "3.14"],
+        svec!["a", "2", "z", "1.2020569"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_input_sniff_preamble_without_autoskip() {
+    // QSV_SNIFF_PREAMBLE skips the preamble in `input` too, as in every other command
+    let wrk = Workdir::new("input_sniff_preamble_without_autoskip");
+    let test_file = wrk.load_test_file("snifftest.csv");
+
+    let mut cmd = wrk.command("input");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").arg(test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["abcdefg", "1", "a", "3.14"],
+        svec!["a", "2", "z", "1.2020569"],
+        svec!["c", "42", "x", "1.0"],
+    ];
+    assert_eq!(got, expected);
+}

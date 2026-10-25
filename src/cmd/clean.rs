@@ -382,11 +382,25 @@ fn handle_pschema(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathB
     let Some(base) = full.strip_suffix(".pschema.json") else {
         return;
     };
-    let source = PathBuf::from(base);
+    // a source can itself be named like `x.skip2` (under QSV_SKIP_FORMAT_CHECK)
+    let source = if Path::new(base).exists() {
+        PathBuf::from(base)
+    } else {
+        PathBuf::from(strip_skip_suffix(base))
+    };
     if stale && !stale_or_orphaned(path, Some(&source)) {
         return;
     }
     push_if_exists(victims, path.to_path_buf());
+}
+
+/// `<source>.skip<N>` -> `<source>`: a polars schema of the rows past `N` preamble lines that
+/// `QSV_SNIFF_PREAMBLE` skipped (see `util::pschema_path`).
+fn strip_skip_suffix(base: &str) -> &str {
+    match base.rsplit_once(".skip") {
+        Some((source, n)) if !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()) => source,
+        _ => base,
+    }
 }
 
 fn handle_moarstats(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf, u64)>) {
@@ -496,6 +510,27 @@ fn candidate_anchors(src: &Path) -> Vec<PathBuf> {
     let full = src.to_string_lossy();
     v.push(PathBuf::from(format!("{full}.schema.json")));
     v.push(PathBuf::from(format!("{full}.pschema.json")));
+    // and its `<source>.skip<N>.pschema.json` variants (see `strip_skip_suffix`)
+    // a bare file name's parent is "", which read_dir rejects
+    let dir = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    if let (Some(name), Ok(entries)) = (src.file_name(), fs::read_dir(dir)) {
+        let prefix = format!("{}.skip", name.to_string_lossy());
+        for entry in entries.flatten() {
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            if file_name
+                .strip_prefix(&prefix)
+                .and_then(|rest| rest.strip_suffix(".pschema.json"))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            {
+                v.push(parent.join(&*file_name));
+            }
+        }
+    }
     v.push(PathBuf::from(format!("{full}.valid")));
     v.push(PathBuf::from(format!("{full}.invalid")));
     v.push(PathBuf::from(format!("{full}.validation-errors.tsv")));

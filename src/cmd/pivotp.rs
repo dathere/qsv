@@ -1270,6 +1270,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .ok()
         .map(PlSmallStr::from_string);
     let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&reader_path))
+        .with_skip_lines(crate::config::sniffed_preamble_lines(Path::new(
+            &reader_path,
+        )))
         .with_has_header(true)
         .with_missing_is_null(true)
         .with_comment_prefix(comment_prefix)

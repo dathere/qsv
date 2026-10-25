@@ -1358,6 +1358,7 @@ fn merge_string_sentinels(
 
 fn csv_reader(input: &Path, delim: u8) -> LazyCsvReader {
     LazyCsvReader::new(PlRefPath::new(input.to_string_lossy().as_ref()))
+        .with_skip_lines(crate::config::sniffed_preamble_lines(input))
         .with_has_header(true)
         .with_separator(delim)
 }
@@ -1411,7 +1412,7 @@ fn stats_dtypes(input: &Path, delim: u8) -> Option<Vec<DataType>> {
     if std::env::var_os("QSV_COMMENT_CHAR").is_some()
         || util::get_envvar_flag("QSV_SNIFF_PREAMBLE")
         || util::get_envvar_flag("QSV_NO_HEADERS")
-        || std::env::var("QSV_TOGGLE_HEADERS").is_ok_and(|v| v == "1")
+        || util::get_envvar_flag("QSV_TOGGLE_HEADERS")
     {
         log::info!("writestat: the stats engine would read other rows, so polars infers the types");
         return None;

@@ -40,7 +40,8 @@
 # Note that this does not work with stdin.
 QSV_SNIFF_DELIMITER = False
 
-# if true, qsv will attempt to sniff the number of preamble rows.
+# if true, qsv sniffs the preamble rows above the header (and the delimiter)
+# and skips them, so the header is the first row read. Does not work with stdin.
 # QSV_SNIFF_PREAMBLE = False
 
 # if true, the first row will **NOT** be interpreted as headers.

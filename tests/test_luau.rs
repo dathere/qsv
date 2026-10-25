@@ -3477,3 +3477,32 @@ fn luau_random_access_lastrow_no_headers() {
     // only the row at _LASTROW (index 2, value "3") is processed before _INDEX = -1
     assert_eq!(got, vec![svec!["3", "2/3"]]);
 }
+
+// a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+fn preamble_csv() -> String {
+    let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    csv
+}
+
+#[test]
+fn luau_autoindex_sniff_preamble_does_not_index_the_skipped_view() {
+    // qsv_autoindex() must index the file as stored, which runs without the env var trust.
+    // A detected preamble makes it ragged, so no index is written (not even a partial one),
+    // and random access mode, which needs one, fails.
+    let wrk = Workdir::new("luau_autoindex_sniff_preamble_does_not_index_the_skipped_view");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("luau");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1").args([
+        "map",
+        "ok",
+        "--begin",
+        "qsv_autoindex()",
+        "_INDEX = -1; return 1",
+        "p.csv",
+    ]);
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("p.csv.idx").exists());
+}

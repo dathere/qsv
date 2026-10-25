@@ -52,7 +52,7 @@ pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
 fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std::error::Error>> {
     // Append .pschema.json to the full filename (including extension)
     // e.g. data.csv -> data.csv.pschema.json, data.tsv.gz -> data.tsv.gz.pschema.json
-    let schema_file = PathBuf::from(format!("{}.pschema.json", path.display()));
+    let schema_file = pschema_path(path);
 
     if schema_file.exists() {
         // Load the schema from the pschema.json file
@@ -450,9 +450,16 @@ pub fn convert_special_format(
 
 /// The `.pschema.json` sidecar path for a CANONICAL input path: `<canonical>.pschema.json`.
 /// Built on the `OsStr`, not through string formatting, so non-UTF-8 paths round-trip.
+/// When `QSV_SNIFF_PREAMBLE` skips preamble lines it is `<canonical>.skip<N>.pschema.json`:
+/// that schema describes the rows past the preamble, under another header than the file as
+/// stored, so each mode keeps its own.
 #[cfg(feature = "polars")]
 pub fn pschema_path(canonical_input: &Path) -> PathBuf {
     let mut schema_path = canonical_input.as_os_str().to_os_string();
+    let skip = crate::config::sniffed_preamble_lines(canonical_input);
+    if skip > 0 {
+        schema_path.push(format!(".skip{skip}"));
+    }
     schema_path.push(".pschema.json");
     PathBuf::from(schema_path)
 }

@@ -175,7 +175,7 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `tests/test_stats.rs` (~9,319 lines)
+- Test cases: `tests/test_stats.rs` (~10,383 lines)
 
 ## Quick Debugging
 
@@ -204,7 +204,7 @@ cat file.stats.csv.data.jsonl | jq . | head
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (~9,319 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~10,383 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

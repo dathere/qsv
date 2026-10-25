@@ -101,6 +101,18 @@ pub(super) fn stats_cache_parsing_opts_match(
         return false;
     }
 
+    // A cache of the rows past a preamble QSV_SNIFF_PREAMBLE skipped has another header (and
+    // rows) than one of the file as stored, so the skipped rows must match the consumer's.
+    // Caches written before this was recorded read as 0.
+    if metadata
+        .get("preamble_rows")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0)
+        != crate::config::sniffed_preamble_rows(input_path)
+    {
+        return false;
+    }
+
     // --no-headers determines whether the header row is part of the data (and therefore whether
     // field names are real or positional), so it must match the consuming command.
     if metadata

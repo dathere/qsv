@@ -742,3 +742,31 @@ fn scoresql_inherited_stdin_spool_default_delimiter_env() {
         "stderr: {stderr}"
     );
 }
+
+#[test]
+fn scoresql_duckdb_sniff_preamble_skips_preamble_lines() {
+    // DuckDB's own sniffer reads this preamble's first line as the header; with
+    // QSV_SNIFF_PREAMBLE, qsv passes its sniffed preamble to read_csv_auto as skip=
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_sniff_preamble_skips_preamble_lines");
+    let mut csv = String::from("a,b,c,d\nSource\nid,name,amount\n");
+    for i in 1..=40 {
+        csv.push_str(&format!("{i},n{i},{}\n", i * 10));
+    }
+    wrk.create_from_string("p.csv", &csv);
+    let mut cmd = wrk.command("scoresql");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .env_remove("QSV_DUCKDB_PATH")
+        .args(["--duckdb", "--json", "p.csv"])
+        .arg("SELECT name FROM p WHERE amount > 100");
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value = serde_json::from_str(&got).unwrap();
+    assert!(json["score"].as_u64().is_some(), "{got}");
+}

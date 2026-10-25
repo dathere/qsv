@@ -890,7 +890,7 @@ impl Config {
         // Track the data file's mtime and the resolved index path *only* on the
         // path that may need a staleness recheck. For the explicit-(path, idx_path)
         // branch, staleness is not re-checked, so these stay at their default values.
-        let mut data_modified = 0_u64;
+        let mut data_modified = filetime::FileTime::zero();
         let data_fsize;
         let mut idx_path_work: Option<PathBuf> = None;
 
@@ -921,7 +921,9 @@ impl Config {
                 // We generally don't want to report an error here, since we're
                 // passively trying to find an index.
 
-                (data_modified, data_fsize) = util::file_metadata(&p.metadata()?);
+                let data_md = p.metadata()?;
+                data_modified = filetime::FileTime::from_last_modification_time(&data_md);
+                data_fsize = data_md.len();
                 let idx_path = util::idx_path(p);
                 let idx_file = match fs::File::open(&idx_path) {
                     Err(_) => {
@@ -969,8 +971,15 @@ impl Config {
         // modified, recreate the stale index automatically. Only checked when
         // we resolved the index path ourselves (idx_path_work is Some).
         if let Some(idx_path) = &idx_path_work {
-            let (idx_modified, _) = util::file_metadata(&idx_file.metadata()?);
-            if data_modified > idx_modified {
+            let idx_modified =
+                filetime::FileTime::from_last_modification_time(&idx_file.metadata()?);
+            // Full (sub-second) precision, and `>=`. Compared in whole seconds with `>`, data
+            // rewritten in the same second the index was built looked current, and the old
+            // index was trusted - `qsv count` reported the old row count at exit 0. An index
+            // written after its data is strictly newer at nanosecond precision, so equal
+            // mtimes only arise on coarse-timestamp filesystems (or mtimes copied from an
+            // archive), where the order is unknowable: rebuild rather than guess.
+            if data_modified >= idx_modified {
                 // Rebuild AT MOST ONCE per path per process, and never concurrently - see
                 // `AUTOINDEXED_STALE`. Late arrivals block here until the rebuild finishes,
                 // then fall through and re-open the completed index.
@@ -1440,6 +1449,81 @@ mod tests {
         assert_eq!(ext, "tsv");
         assert_eq!(delim, b'\t');
         assert!(snappy);
+    }
+
+    /// Write `rows` data rows to `path`, index it, then rewrite it with `new_rows` rows and
+    /// stamp the data and index mtimes, so staleness depends only on those stamps.
+    fn rewritten_after_index(
+        path: &Path,
+        rows: usize,
+        new_rows: usize,
+        data_mtime: filetime::FileTime,
+        idx_mtime: filetime::FileTime,
+    ) -> Config {
+        use std::io::Write;
+
+        let write = |n: usize| {
+            let mut f = std::fs::File::create(path).unwrap();
+            writeln!(f, "letter,number").unwrap();
+            for i in 0..n {
+                writeln!(f, "x,{i}").unwrap();
+            }
+            f.sync_all().unwrap();
+        };
+        write(rows);
+        let config = Config::new(Some(&path.to_string_lossy().to_string()));
+        crate::util::create_index_for_file(path, &config).unwrap();
+        write(new_rows);
+        filetime::set_file_mtime(path, data_mtime).unwrap();
+        filetime::set_file_mtime(crate::util::idx_path(path), idx_mtime).unwrap();
+        config
+    }
+
+    /// Data rewritten later in the same second its index was built must make the index
+    /// stale. Compared in whole seconds, it looked current and its old row count was trusted.
+    #[test]
+    fn index_older_by_less_than_a_second_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = rewritten_after_index(
+            &dir.path().join("subsecond.csv"),
+            1_000,
+            10,
+            filetime::FileTime::from_unix_time(1_700_000_000, 500_000_000),
+            filetime::FileTime::from_unix_time(1_700_000_000, 100),
+        );
+        let idx = config.indexed().unwrap().expect("rebuilt index");
+        assert_eq!(idx.count(), 10, "the stale index's row count was trusted");
+    }
+
+    /// Equal mtimes (a coarse-timestamp filesystem, or mtimes copied from an archive) leave
+    /// the order unknowable, so the index is rebuilt rather than trusted.
+    #[test]
+    fn index_with_the_same_mtime_as_its_data_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let same = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+        let config = rewritten_after_index(&dir.path().join("same.csv"), 1_000, 10, same, same);
+        let idx = config.indexed().unwrap().expect("rebuilt index");
+        assert_eq!(idx.count(), 10, "the stale index's row count was trusted");
+    }
+
+    /// An index strictly newer than its data is current: it is used as is, not rebuilt.
+    #[test]
+    fn index_newer_than_its_data_is_not_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let csv_path = dir.path().join("fresh.csv");
+        let idx_mtime = filetime::FileTime::from_unix_time(1_700_000_000, 2);
+        let config = rewritten_after_index(
+            &csv_path,
+            25,
+            25,
+            filetime::FileTime::from_unix_time(1_700_000_000, 1),
+            idx_mtime,
+        );
+        assert_eq!(config.indexed().unwrap().expect("index").count(), 25);
+        let after = filetime::FileTime::from_last_modification_time(
+            &std::fs::metadata(crate::util::idx_path(&csv_path)).unwrap(),
+        );
+        assert_eq!(after, idx_mtime, "a current index was rebuilt");
     }
 
     /// A STALE index must be rebuilt AT MOST ONCE per process, and never concurrently.

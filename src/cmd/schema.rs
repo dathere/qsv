@@ -175,7 +175,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let schema_file = if let Some(output) = args.flag_output {
                 PathBuf::from(output)
             } else {
-                PathBuf::from(format!("{}.pschema.json", input_path.display()))
+                util::pschema_path(input_path)
             };
             if util::infer_polars_schema(
                 args.flag_delimiter,

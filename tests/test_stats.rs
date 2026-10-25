@@ -10340,3 +10340,27 @@ fn stats_sniff_preamble_skips_preamble_rows() {
         ]
     );
 }
+
+#[test]
+fn stats_cache_not_reused_across_sniff_preamble() {
+    // a cache of the file as stored (title line as the header) must not be reused once
+    // QSV_SNIFF_PREAMBLE skips that line, and vice versa
+    let wrk = Workdir::new("stats_cache_not_reused_across_sniff_preamble");
+    wrk.create_from_string("p.csv", &preamble_csv());
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--flexible", "--stats-jsonl", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][0], "Report generated 2026-10-24");
+
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SNIFF_PREAMBLE", "1")
+        .args(["--flexible", "--stats-jsonl", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let fields: Vec<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(fields, ["id", "name", "amount"]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--flexible", "--stats-jsonl", "p.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][0], "Report generated 2026-10-24");
+}

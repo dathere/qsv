@@ -408,3 +408,25 @@ fn clean_single_file_input() {
     assert!(wrk.path("b.csv.idx").exists());
     assert!(wrk.path("b.stats.csv.json").exists());
 }
+
+#[test]
+fn clean_sniff_preamble_schema_variant() {
+    // `<source>.skip<N>.pschema.json` (a polars schema of the rows past a sniffed preamble)
+    // belongs to `<source>`: fresh, --stale keeps it; asked for, it is removed
+    let wrk = Workdir::new("clean_sniff_preamble_schema_variant");
+    wrk.create("a.csv", vec![svec!["h1", "h2"], svec!["x", "1"]]);
+    wrk.create_from_string(
+        "a.csv.skip2.pschema.json",
+        r#"{"fields": {"h1": "String"}, "metadata": null}"#,
+    );
+
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--schema", "--stale", "--force", "."]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("a.csv.skip2.pschema.json").exists());
+
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--schema", "--force", "a.csv"]);
+    wrk.assert_success(&mut cmd);
+    assert!(!wrk.path("a.csv.skip2.pschema.json").exists());
+}

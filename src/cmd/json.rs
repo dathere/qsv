@@ -333,13 +333,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // we need to do this so we can use qsv select to reorder headers to first dict's keys order
     // as the order of the headers in the CSV file is not guaranteed to be the same as the order of
     // the keys in the JSON object
+    // Write through the tempfile's own (0600) handle rather than re-creating the file by name.
     let temp_dir = env::temp_dir();
-    let intermediate_csv = tempfile::Builder::new()
+    let mut intermediate_tmp = tempfile::Builder::new()
         .suffix(".csv")
-        .tempfile_in(&temp_dir)?
-        .into_temp_path()
-        .to_string_lossy()
-        .into_owned();
+        .tempfile_in(&temp_dir)?;
 
     // convert JSON to CSV
     // its inside a block so all the unneeded resources are freed & flushed after the block ends
@@ -355,9 +353,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         let intermediate_csv_writer = csv::WriterBuilder::new()
             .has_headers(true)
-            .from_path(intermediate_csv.clone())?;
+            .from_writer(intermediate_tmp.as_file_mut());
         json_objects_to_csv(values, intermediate_csv_writer)?;
     }
+    // Close the write handle before the file is re-opened for reading (Windows), but keep the
+    // TempPath bound until `run` returns: dropping it deletes the file on every exit path.
+    let intermediate_path = intermediate_tmp.into_temp_path();
+    let intermediate_csv = intermediate_path.to_string_lossy().into_owned();
 
     // STEP 2: select the columns to use in the final output
     // Read the intermediate CSV to get the actual headers (which, since we preserve key order,

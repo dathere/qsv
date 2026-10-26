@@ -18173,6 +18173,10 @@ fn viz_smart_data_viewer_disabled_at_zero() {
     assert!(!html.contains("qsv-data-rows"));
     assert!(!html.contains("qsv-data-drawer"));
     assert!(!html.contains("DataTables 3."));
+    // the live bridge stays, without the loader it hands rows to: it falls back to a plain
+    // table and skips reading whole stored drill-downs
+    assert!(html.contains(r#"id="qsv-daemon-bridge""#));
+    assert!(!html.contains("window.qsvEnsureDataTables = "));
 }
 
 // Column types come from the whole-dataset stats, not client-side detection: numeric columns get
@@ -23768,7 +23772,12 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains("order: [], pageLength: 50, lengthChange: false, scrollX: true,"));
     assert!(html.contains(".qsv-live-grid .dt-scroll-body { overscroll-behavior: contain; }"));
     assert!(html.contains(".qsv-live-out.qsv-live-grid { max-height: none; overflow: visible; }"));
-    assert!(bridge.contains("if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX) {"));
+    // ...but only when there is DataTables to hand them to: without the data viewer
+    // (--preview-threshold 0) the plain table shows PLAIN_MAX rows, so reading more is waste
+    assert!(bridge.contains(
+        "if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX &&\n        typeof \
+         window.qsvEnsureDataTables === \"function\") {"
+    ));
     assert!(
         bridge
             .contains(r#"{ result: res.id, start: all.length, length: DRILL_LIMIT, search: "" }"#)

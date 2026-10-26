@@ -740,7 +740,10 @@ const BRIDGE_JS: &str = r#"
       showTable(headers, rows, label + ": " + res.total + " row(s)", res);
     }
     if (res && !(j.offset > 0) && rows.length >= res.total) return inPage(rows);
-    if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX) {
+    // without the data viewer (--preview-threshold 0) there is no DataTables to give the rows
+    // to, only the plain table's first PLAIN_MAX
+    if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX &&
+        typeof window.qsvEnsureDataTables === "function") {
       var r = live.req, all = rows.slice();
       var next = function () {
         if (r !== live.req) return;

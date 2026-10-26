@@ -621,9 +621,25 @@ const BRIDGE_JS: &str = r#"
   // embeds, when it has one (not with --preview-threshold 0); else a plain table.
   var PLAIN_MAX = 500;
   var DRILL_LIMIT = 500;  // qsv-clientd's /rows maximum
+  // The data viewer's export: every filtered row, not the page, with the CSV-injection guard
+  // restated (supplying exportOptions replaces csvHtml5's own default). The Select extension is
+  // not in the bundle, so nothing narrows the export to selected rows.
+  function exportButton(name) {
+    name = String(name || "rows").replace(/[^\p{L}\p{N}._-]+/gu, "_")
+      .replace(/^[._]+|_+$/g, "").slice(0, 80) || "rows";
+    return {
+      extend: "csv",
+      text: "Export CSV",
+      filename: "qsv-live-" + name,
+      // scrollX gives the table an empty tfoot, written as a blank line at the end of the file
+      footer: false,
+      exportOptions: { escapeExcelFormula: true }
+    };
+  }
   // With a stored result (qsv-clientd kept output too big to send whole), every page, search
   // and column sort is asked of the daemon, which runs qsv on the stored file.
-  function showTable(headers, rows, note, result) {
+  // exportName: the export file's name, for rows held in the page
+  function showTable(headers, rows, note, result, exportName) {
     dropTable();
     var gen = live.gen;
     live.out.textContent = "";
@@ -686,6 +702,14 @@ const BRIDGE_JS: &str = r#"
       } else {
         opts.data = rows;
         opts.deferRender = true;
+        // Rows held in the page get the data viewer's Advanced Filter and CSV export. A stored
+        // result has neither: both would act on the one page in hand, not the whole result.
+        opts.language = {
+          searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
+        };
+        opts.layout = {
+          topStart: { buttons: [{ extend: "searchBuilder" }, exportButton(exportName)] }
+        };
       }
       live.table = new DT(table, opts);
     }, plain);
@@ -698,7 +722,7 @@ const BRIDGE_JS: &str = r#"
       return;
     }
     showTable(j.headers || [], rows, label + ": " + rows.length + " row(s)" +
-      (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""));
+      (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);
   }
   function splitArgs(s) {
     var out = [], cur = "", quoted = false, has = false;
@@ -843,7 +867,8 @@ const BRIDGE_JS: &str = r#"
           showTable(j.result.headers || j.headers || [], j.rows || [],
             "qsv " + cmd + ": " + j.result.total + " row(s)", j.result);
         } else if (j.headers && j.rows) {
-          showTable(j.headers, j.rows, "qsv " + cmd + ": " + j.rows.length + " row(s)" + cut);
+          showTable(j.headers, j.rows, "qsv " + cmd + ": " + j.rows.length + " row(s)" + cut, null,
+            cmd);
         } else {
           showText(j.stdout || "", "qsv " + cmd + cut);
         }

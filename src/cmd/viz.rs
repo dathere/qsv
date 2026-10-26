@@ -25561,6 +25561,8 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           text: "__QSVDATAEXPORTTEXT__",
           // substituted as a complete JS string literal: the stem is a user-supplied file name
           filename: __QSVDATAEXPORTNAME__,
+          // the table has an empty tfoot, which csvHtml5 writes as a blank last line
+          footer: false,
           // Columns and orthogonal are deliberately left at their defaults, because the two
           // overrides that look obviously right are both wrong. columns=":visible" already
           // means every column. orthogonal="display" is the fidelity-preserving

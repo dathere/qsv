@@ -17829,6 +17829,13 @@ fn viz_smart_data_viewer_csv_export_button() {
     // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
     // guard has to be restated rather than inherited
     assert!(html.contains("escapeExcelFormula: true"));
+    // the table's empty tfoot would be written as a blank last line (the daemon bridge, which
+    // has its own export, comes after the drawer)
+    let drawer = &html[..html
+        .find(r#"<script id="qsv-daemon-bridge">"#)
+        .unwrap_or(html.len())];
+    assert!(drawer.contains("customizeData: function (d) {"));
+    assert!(drawer.contains("footer: false,"));
 }
 
 // The controls row carries three buttons in a fixed left-to-right order: the SearchBuilder
@@ -23714,6 +23721,25 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains(r#"call("POST", dsPath("/page"), body)"#));
     // the daemon sorts by one column, so no shift-click multi-column sort
     assert!(bridge.contains("opts.orderMulti = false;"));
+    // rows held in the page get the data viewer's Advanced Filter and CSV export, keeping the
+    // CSV-injection guard; a stored result gets neither (both would act on one page only)
+    let in_page = bridge.find("opts.data = rows;").unwrap();
+    let layout = bridge.find("opts.layout = {").unwrap();
+    assert!(layout > in_page && layout < bridge.find("live.table = new DT(table, opts);").unwrap());
+    assert!(layout > bridge.find("opts.serverSide = true;").unwrap());
+    assert_eq!(bridge.matches("opts.layout = {").count(), 1);
+    assert!(bridge.contains(
+        r#"topStart: { buttons: [{ extend: "searchBuilder" }, exportButton(exportName)] }"#
+    ));
+    assert!(bridge.contains(r#"extend: "csv","#));
+    assert!(bridge.contains("exportOptions: { escapeExcelFormula: true }"));
+    assert!(bridge.contains(r#"filename: "qsv-live-" + name,"#));
+    assert!(bridge.contains("footer: false,"));
+    // drill-downs are named for their column = value, queries for their command
+    assert!(bridge.contains(
+        r#"(rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);"#
+    ));
+    assert!(bridge.contains("\" row(s)\" + cut, null,\n            cmd);"));
     // a page answer for a table since replaced is dropped, status untouched
     assert!(bridge.contains("live.gen++;"));
     assert_eq!(bridge.matches("if (gen !== live.gen) return;").count(), 2);

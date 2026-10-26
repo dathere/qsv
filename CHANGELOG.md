@@ -10,7 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <TBD> commits since 26.0.0, and the banner feature is **Live Data Schematics**.
 
-- **Live Data Schematics.** A `viz smart` Data Schematic opened from disk can pair with [qsv-clientd](https://github.com/dathere/qsv-client) to drill into the rows behind a bar, refresh its stats, fetch the latest data, re-render itself and run read-only queries, with large results paged from the daemon. Published schematics never contact the viewer's machine.
+Until now, a [Data Schematic](https://dathere.github.io/qsv/gallery.html) was a snapshot: a self-contained HTML page describing the data as it was when `viz smart` rendered it. A question the page didn't anticipate sent you back to the terminal, and new data meant rendering it again.
+
+In 27.0.0, a schematic can stay connected to its data. Open it from disk with [qsv-clientd](https://github.com/dathere/qsv-client) running, approve a one-time pairing code in your shell, and the page itself can drill into the rows behind a frequency bar, refresh its stats, fetch the latest copy of the data, re-render itself and run read-only queries, with results of any size paged from the daemon. qsv-clientd is a small, optional per-user daemon from [qsv-client](https://github.com/dathere/qsv-client); without it, schematics work exactly as before. The bridge stays inert unless the page was opened from disk or is served from loopback, so a schematic published on the web never contacts its viewers' machines.
+
+Public [CKAN](https://ckan.org) data is one command away: point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. The schematic records where its data came from, so it can fetch the latest version later.
+
+Also in this release:
+
 - **Polars 2.1.0, streamed.** `sqlp --streaming` and `joinp --streaming` now write results batch by batch, Polars' query optimizations apply again, and `pivotp` handles wide pivots with a fraction of the memory. `sqlp` gains recursive CTEs, and has one breaking change: a `FROM` subquery alias can no longer be read as a table.
 - **A correctness sweep across `validate`, `stats`, `frequency`, `schema` and `viz`.** `validate` now reads piped stdin, follows local `$ref`s, honors every `type` in a type array and fixes `dynamicEnum` on numeric and nullable columns; `stats` fixes weighted quantiles and modes; `frequency` stops collapsing columns to `<ALL_UNIQUE>` when it shouldn't.
 - **Inputs read as written.** Compressed CSVs are decompressed byte-for-byte (leading zeros and `1.50` survive), and `QSV_SNIFF_PREAMBLE` now actually skips the title lines it finds.

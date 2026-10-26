@@ -25189,6 +25189,29 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   }
   // for qsv-clientd's live bridge, which shows query results with the same library
   window.qsvEnsureDataTables = ensureLib;
+  // SearchBuilder's date conditions compare the whole cell text with the picker's YYYY-MM-DD, so
+  // a timestamp such as 2026-03-01T09:15:00 never equals its own date, and Before/After/Between
+  // treat it as later than that day. They compare an ISO timestamp's date part instead; display,
+  // export and the global search keep the full value. Passed in the SearchBuilder button's
+  // `config` (a table-level `searchBuilder` option is not read when the button creates it).
+  function sbConditions() {
+    var base = window.DataTable && window.DataTable.Criteria &&
+      window.DataTable.Criteria.dateConditions;
+    if (!base) return {};
+    var date = {};
+    Object.keys(base).forEach(function (k) {
+      var c = base[k];
+      date[k] = Object.assign({}, c, {
+        search: function (value, comparison) {
+          var m = typeof value === "string" ? /^(\d{4}-\d{2}-\d{2})[T ]\d/.exec(value) : null;
+          return c.search.call(this, m ? m[1] : value, comparison);
+        }
+      });
+    });
+    return { date: date };
+  }
+  // shared with the live bridge, like ensureLib
+  window.qsvSbConditions = sbConditions;
   function payloadText(el) {
     return el.getAttribute("type") === "application/gzip-b64"
       ? window.__qsvGunzip(el).then(function (s) { el.textContent = ""; return s; })
@@ -25507,10 +25530,13 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
           // stock button never uses this hook — it re-reads the count itself on draw — so
           // taking it clobbers nothing. It fires on criteria edits that do not redraw
           // (adding or deleting a still-incomplete row), which draw-only recounting misses.
-          config: { filterChanged: function (n) {
-            sbCount = n;
-            if (updateClearFilters) updateClearFilters();
-          } }
+          config: {
+            conditions: sbConditions(),
+            filterChanged: function (n) {
+              sbCount = n;
+              if (updateClearFilters) updateClearFilters();
+            }
+          }
         }, {
           text: __QSVI18N_CLEAR_FILTERS__,
           className: "qsv-clear-filters",

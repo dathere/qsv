@@ -361,6 +361,8 @@ const BRIDGE_CSS: &str = r"
 .qsv-live-cmd { display: block; user-select: all; -webkit-user-select: all; font: 13px ui-monospace, Menlo, Consolas, monospace; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.15); margin: 6px 0; }
 .qsv-live-note { font-size: 12px; opacity: .85; }
 .qsv-live-toast { right: 12px; bottom: 56px; max-width: min(420px, calc(100vw - 24px)); padding: 8px 12px; border-color: #c0392b; }
+/* DateTime mounts the Advanced Filter's date picker on body at z-index 2050: lift it over the panel */
+div.dt-datetime { --dt-datetime_zindex: 2147482001; }
 ";
 
 const BRIDGE_JS: &str = r#"
@@ -708,7 +710,11 @@ const BRIDGE_JS: &str = r#"
           searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
         };
         opts.layout = {
-          topStart: { buttons: [{ extend: "searchBuilder" }, exportButton(exportName)] }
+          topStart: { buttons: [{
+            extend: "searchBuilder",
+            // the drawer's date conditions (timestamps compare by their date part)
+            config: { conditions: window.qsvSbConditions ? window.qsvSbConditions() : {} }
+          }, exportButton(exportName)] }
         };
       }
       live.table = new DT(table, opts);

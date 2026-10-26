@@ -17913,7 +17913,10 @@ fn viz_smart_data_viewer_clear_filters_enablement_and_count() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     // SearchBuilder's share arrives through the filterChanged config hook
-    assert!(html.contains("config: { filterChanged: function (n) {"));
+    assert!(html.contains(
+        "config: {\n            conditions: sbConditions(),\n            filterChanged: function \
+         (n) {"
+    ));
     assert!(html.contains("sbCount = n;"));
     // ColumnControl's share is read off the named fixed searches its widgets apply
     assert!(html.contains(r#"this.search.fixed("dtcc") || this.search.fixed("dtcc-list")"#));
@@ -23728,13 +23731,22 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(layout > in_page && layout < bridge.find("live.table = new DT(table, opts);").unwrap());
     assert!(layout > bridge.find("opts.serverSide = true;").unwrap());
     assert_eq!(bridge.matches("opts.layout = {").count(), 1);
-    assert!(bridge.contains(
-        r#"topStart: { buttons: [{ extend: "searchBuilder" }, exportButton(exportName)] }"#
-    ));
+    assert!(bridge.contains("topStart: { buttons: [{\n            extend: \"searchBuilder\","));
+    assert!(bridge.contains("}, exportButton(exportName)] }"));
     assert!(bridge.contains(r#"extend: "csv","#));
     assert!(bridge.contains("exportOptions: { escapeExcelFormula: true }"));
     assert!(bridge.contains(r#"filename: "qsv-live-" + name,"#));
     assert!(bridge.contains("footer: false,"));
+    // SearchBuilder date conditions compare an ISO timestamp by its date part, in the drawer and
+    // the bridge alike; they go in the button's config, which is the only place it reads them
+    assert!(html.contains("window.qsvSbConditions = sbConditions;"));
+    assert!(html.contains("conditions: sbConditions(),"));
+    assert!(html.contains(r#"/^(\d{4}-\d{2}-\d{2})[T ]\d/.exec(value)"#));
+    assert!(bridge.contains(
+        "config: { conditions: window.qsvSbConditions ? window.qsvSbConditions() : {} }"
+    ));
+    // the date picker mounts on body under the live panel's z-index unless lifted
+    assert!(html.contains("div.dt-datetime { --dt-datetime_zindex: 2147482001; }"));
     // a stored drill-down whose first page holds every match is held in the page, with both
     let whole = bridge
         .find("if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {")

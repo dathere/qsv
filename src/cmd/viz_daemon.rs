@@ -716,6 +716,13 @@ const BRIDGE_JS: &str = r#"
   }
   function showRows(j, label) {
     var rows = j.rows || [];
+    // A stored result whose first page already holds every match is held in the page, so it
+    // gets the Advanced Filter and the CSV export; a larger one is paged by qsv-clientd.
+    if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {
+      showTable(j.result.headers || j.headers || [], rows,
+        label + ": " + rows.length + " row(s)", null, label);
+      return;
+    }
     if (j.result) {
       showTable(j.result.headers || j.headers || [], rows,
         label + ": " + j.result.total + " row(s)", j.result);

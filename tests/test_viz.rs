@@ -23735,6 +23735,15 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains("exportOptions: { escapeExcelFormula: true }"));
     assert!(bridge.contains(r#"filename: "qsv-live-" + name,"#));
     assert!(bridge.contains("footer: false,"));
+    // a stored drill-down whose first page holds every match is held in the page, with both
+    let whole = bridge
+        .find("if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {")
+        .unwrap();
+    assert!(bridge[whole..].starts_with(
+        "if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {\n      \
+         showTable(j.result.headers || j.headers || [], rows,\n        label + \": \" + \
+         rows.length + \" row(s)\", null, label);"
+    ));
     // drill-downs are named for their column = value, queries for their command
     assert!(bridge.contains(
         r#"(rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);"#

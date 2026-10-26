@@ -539,11 +539,6 @@ polars-arrow = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0" }
 # [patch] doesn't propagate to dependents, so mirror it here; keep the rev in sync with the
 # [patch.crates-io] section of the pinned polars rev's Cargo.toml. Drop once #727 is released.
 hashbrown = { git = "https://github.com/pola-rs/hashbrown", rev = "d76a6f81abd8f388676aff15068236a8d21c7e1a" }
-# Luau 0.744 (luau0-src 0.22.1) emits bytecode version 14, above the LBC_VERSION_MAX = 11 that
-# the released mlua-sys 0.13.0 accepts, so every qsv command panicked at startup. mlua main has
-# the fix (mlua-rs/mlua@bca1afe, "Bump Luau to 0.744"); its own mlua-sys and mlua_derive come
-# along from the same checkout. Drop once an mlua release contains bca1afe.
-mlua = { git = "https://github.com/mlua-rs/mlua", rev = "ff96ed786295cae96f43ef1372bd22be0fbf7866" }
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # for details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks

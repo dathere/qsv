@@ -23751,14 +23751,32 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     // the date picker mounts on body under the live panel's z-index unless lifted
     assert!(html.contains("div.dt-datetime { --dt-datetime_zindex: 2147482001; }"));
     // a stored drill-down whose first page holds every match is held in the page, with both
-    let whole = bridge
-        .find("if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {")
-        .unwrap();
-    assert!(bridge[whole..].starts_with(
-        "if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {\n      \
-         showTable(j.result.headers || j.headers || [], rows,\n        label + \": \" + \
-         rows.length + \" row(s)\", null, label);"
+    assert!(
+        bridge.contains(
+            "if (res && !(j.offset > 0) && rows.length >= res.total) return inPage(rows);"
+        )
+    );
+    assert!(bridge.contains(
+        r#"showTable(headers, all, label + ": " + all.length + " row(s)", null, label);"#
     ));
+    // one of up to READ_ALL_MAX rows is read whole, DRILL_LIMIT rows a /page request, and
+    // dropped if a newer query or drill started meanwhile; past the cap it stays paged
+    assert!(bridge.contains("var READ_ALL_MAX = 10000;"));
+    // the rows scroll inside the panel (10 a page always fit, so the wheel moved the page), and
+    // at the ends of that scroller the wheel stops rather than moving the page
+    assert!(bridge.contains(r#"scrollY: "30vh", scrollCollapse: true"#));
+    assert!(bridge.contains("order: [], pageLength: 50, lengthChange: false, scrollX: true,"));
+    assert!(html.contains(".qsv-live-grid .dt-scroll-body { overscroll-behavior: contain; }"));
+    assert!(html.contains(".qsv-live-out.qsv-live-grid { max-height: none; overflow: visible; }"));
+    assert!(bridge.contains("if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX) {"));
+    assert!(
+        bridge
+            .contains(r#"{ result: res.id, start: all.length, length: DRILL_LIMIT, search: "" }"#)
+    );
+    assert!(bridge.contains("if (all.length >= res.total) return inPage(all);"));
+    assert_eq!(bridge.matches("if (r !== live.req) return;").count(), 2);
+    assert!(bridge.contains("if (r === live.req) paged();"));
+    assert!(bridge.contains("if (res) return paged();"));
     // drill-downs are named for their column = value, queries for their command
     assert!(bridge.contains(
         r#"(rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);"#

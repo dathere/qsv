@@ -355,6 +355,9 @@ const BRIDGE_CSS: &str = r"
 .qsv-live-out table { border-collapse: collapse; }
 .qsv-live-out th, .qsv-live-out td { border: 1px solid rgba(127,127,127,.35); padding: 1px 6px; text-align: left; vertical-align: top; }
 .qsv-live-grid { white-space: normal; font: 12px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+/* DataTables' scrollY body is the one scroller; at its ends the wheel stops instead of moving the page */
+.qsv-live-out.qsv-live-grid { max-height: none; overflow: visible; }
+.qsv-live-grid .dt-scroll-body { overscroll-behavior: contain; }
 .qsv-live-grid td { white-space: pre; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .qsv-live-dialog { left: 50%; top: 20%; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); padding: 14px 16px; }
 .qsv-live-code { font: 600 22px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; text-align: center; margin: 6px 0; }
@@ -676,7 +679,9 @@ const BRIDGE_JS: &str = r#"
       var opts = {
         // render.text(): cells are data, never markup
         columns: headers.map(function () { return { render: DT.render.text(), defaultContent: "" }; }),
-        order: [], pageLength: 10, lengthChange: false, scrollX: true
+        order: [], pageLength: 50, lengthChange: false, scrollX: true,
+        // the rows scroll in the panel; 10 a page always fit, so the wheel scrolled the page
+        scrollY: "30vh", scrollCollapse: true
       };
       if (result) {
         opts.serverSide = true;
@@ -720,20 +725,43 @@ const BRIDGE_JS: &str = r#"
       live.table = new DT(table, opts);
     }, plain);
   }
+  // A stored drill-down of up to READ_ALL_MAX rows is read whole into the page, DRILL_LIMIT rows a
+  // /page request, so it gets the Advanced Filter and the CSV export; a larger one is paged by
+  // qsv-clientd. A newer query or drill (or a disconnect) stops the reading.
+  var READ_ALL_MAX = 10000;
   function showRows(j, label) {
     var rows = j.rows || [];
-    // A stored result whose first page already holds every match is held in the page, so it
-    // gets the Advanced Filter and the CSV export; a larger one is paged by qsv-clientd.
-    if (j.result && !(j.offset > 0) && rows.length >= j.result.total) {
-      showTable(j.result.headers || j.headers || [], rows,
-        label + ": " + rows.length + " row(s)", null, label);
-      return;
+    var res = j.result;
+    var headers = (res && res.headers) || j.headers || [];
+    function inPage(all) {
+      showTable(headers, all, label + ": " + all.length + " row(s)", null, label);
     }
-    if (j.result) {
-      showTable(j.result.headers || j.headers || [], rows,
-        label + ": " + j.result.total + " row(s)", j.result);
-      return;
+    function paged() {
+      showTable(headers, rows, label + ": " + res.total + " row(s)", res);
     }
+    if (res && !(j.offset > 0) && rows.length >= res.total) return inPage(rows);
+    if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX) {
+      var r = live.req, all = rows.slice();
+      var next = function () {
+        if (r !== live.req) return;
+        setStatus(label + ": reading " + all.length + " of " + res.total + " row(s)…");
+        call("POST", dsPath("/page"),
+          { result: res.id, start: all.length, length: DRILL_LIMIT, search: "" }
+        ).then(function (p) {
+          if (r !== live.req) return;
+          var got = (p && p.rows) || [];
+          all = all.concat(got);
+          if (all.length >= res.total) return inPage(all);
+          if (got.length) return next();
+          paged();  // the result came up short: let qsv-clientd page it
+        }, function () {
+          // replaced, or the data changed: the paged table reports it from qsv-clientd
+          if (r === live.req) paged();
+        });
+      };
+      return next();
+    }
+    if (res) return paged();
     showTable(j.headers || [], rows, label + ": " + rows.length + " row(s)" +
       (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);
   }

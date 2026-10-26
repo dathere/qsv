@@ -146,7 +146,9 @@ fn datefmt_tz_inout() {
         svec!["2012-09-17T23:09:00+08:00"],
         svec!["2021-06-02T14:31:39+08:00"],
         svec!["2009-01-20T18:00:00+08:00"],
-        svec!["2005-07-05T08:00:00+08:00"],
+        // a date-only value is midnight UTC on the written date; it used to land on
+        // July 5 for every --input-tz west of UTC (qsv-dateparser 0.20.0)
+        svec!["2005-07-04T08:00:00+08:00"],
         svec!["2021-05-01T09:17:02.604456+08:00"],
         svec!["This is not a date and it will not be reformatted"],
         svec!["2017-11-26T06:22:26+08:00"],
@@ -193,6 +195,43 @@ fn datefmt_input_tz() {
         svec!["2022-12-22T01:43:46.123456768+00:00"],
     ];
     assert_eq!(got, expected);
+}
+
+#[test]
+fn datefmt_date_only_input_tz_keeps_the_written_date() {
+    // A date-only value is midnight UTC on the written date, whatever --input-tz is
+    // and whatever day the test runs. It used to land on the next day for every zone
+    // west of UTC, and to shift by an hour (Athens in July went to the previous day)
+    // once today's offset differed from the date's.
+    let wrk = Workdir::new("datefmt_date_only_input_tz_keeps_the_written_date");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["d"],
+            svec!["July 4, 2005"],
+            svec!["2005-07-04"],
+            svec!["2005/07/04"],
+            svec!["07/04/2005"],
+            svec!["4 July 2005"],
+            svec!["January 15, 2005"],
+        ],
+    );
+    for tz in ["America/Los_Angeles", "Europe/Athens", "Pacific/Auckland"] {
+        let mut cmd = wrk.command("datefmt");
+        cmd.arg("d").args(["--input-tz", tz]).arg("data.csv");
+
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let expected = vec![
+            svec!["d"],
+            svec!["2005-07-04"],
+            svec!["2005-07-04"],
+            svec!["2005-07-04"],
+            svec!["2005-07-04"],
+            svec!["2005-07-04"],
+            svec!["2005-01-15"],
+        ];
+        assert_eq!(got, expected, "--input-tz {tz}");
+    }
 }
 
 #[test]

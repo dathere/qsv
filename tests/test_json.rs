@@ -539,3 +539,59 @@ fn json_jaq_runtime_error_surfaced() {
         "stderr did not surface the underlying runtime error: {got_stderr}"
     );
 }
+
+fn json_tempdir_cmd(wrk: &Workdir, tmpdir: &std::path::Path) -> std::process::Command {
+    let mut cmd = wrk.command("json");
+    // std::env::temp_dir() reads TMPDIR on Unix and TMP/TEMP on Windows
+    cmd.env("TMPDIR", tmpdir)
+        .env("TMP", tmpdir)
+        .env("TEMP", tmpdir);
+    cmd
+}
+
+fn leftover_files(tmpdir: &std::path::Path) -> Vec<String> {
+    std::fs::read_dir(tmpdir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
+// https://github.com/dathere/qsv/issues/4924
+#[test]
+#[serial]
+fn json_no_leftover_tempfile() {
+    let wrk = Workdir::new("json_no_leftover_tempfile");
+    wrk.create_from_string(
+        "x.json",
+        r#"{"name": "John", "age": 30, "city": "New York"}"#,
+    );
+    let tmpdir = wrk.path("tmp");
+    std::fs::create_dir_all(&tmpdir).unwrap();
+
+    let mut cmd = json_tempdir_cmd(&wrk, &tmpdir);
+    cmd.arg("x.json");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "age", "city"],
+            svec!["John", "30", "New York"]
+        ]
+    );
+    assert_eq!(leftover_files(&tmpdir), Vec::<String>::new());
+}
+
+// the intermediate CSV is also removed when `run` fails after creating it
+#[test]
+#[serial]
+fn json_no_leftover_tempfile_on_error() {
+    let wrk = Workdir::new("json_no_leftover_tempfile_on_error");
+    wrk.create_from_string("x.json", r#"[{"a": 1, "b": 2}]"#);
+    let tmpdir = wrk.path("tmp");
+    std::fs::create_dir_all(&tmpdir).unwrap();
+
+    let mut cmd = json_tempdir_cmd(&wrk, &tmpdir);
+    cmd.arg("x.json").args(["--select", "nosuchcolumn"]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(leftover_files(&tmpdir), Vec::<String>::new());
+}

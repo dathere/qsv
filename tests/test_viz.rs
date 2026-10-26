@@ -23741,7 +23741,10 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     // the bridge alike; they go in the button's config, which is the only place it reads them
     assert!(html.contains("window.qsvSbConditions = sbConditions;"));
     assert!(html.contains("conditions: sbConditions(),"));
-    assert!(html.contains(r#"/^(\d{4}-\d{2}-\d{2})[T ]\d/.exec(value)"#));
+    assert!(html.contains(r#"/^(\d{4}-\d{2}-\d{2})(?:[T ]\d|$)/.exec(value)"#));
+    // other forms DataTables types as dates (03/01/26) go through the parser that typed them
+    assert!(html.contains("var t = Date.parse(value);"));
+    assert!(html.contains("return c.search.call(this, sbDate(value), comparison);"));
     assert!(bridge.contains(
         "config: { conditions: window.qsvSbConditions ? window.qsvSbConditions() : {} }"
     ));

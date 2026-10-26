@@ -25189,11 +25189,25 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   }
   // for qsv-clientd's live bridge, which shows query results with the same library
   window.qsvEnsureDataTables = ensureLib;
-  // SearchBuilder's date conditions compare the whole cell text with the picker's YYYY-MM-DD, so
-  // a timestamp such as 2026-03-01T09:15:00 never equals its own date, and Before/After/Between
-  // treat it as later than that day. They compare an ISO timestamp's date part instead; display,
-  // export and the global search keep the full value. Passed in the SearchBuilder button's
-  // `config` (a table-level `searchBuilder` option is not read when the button creates it).
+  // SearchBuilder's date conditions compare the cell text with the picker's YYYY-MM-DD, so a
+  // timestamp such as 2026-03-01T09:15:00 never equals its own date, Before/After/Between treat it
+  // as later than that day, and other forms DataTables types as dates (03/01/26) compare as
+  // unrelated strings. They compare the cell's calendar date instead; display, export and the
+  // global search keep the full value. Passed in the SearchBuilder button's `config` (a
+  // table-level `searchBuilder` option is not read when the button creates it).
+  //
+  // The cell's calendar date as YYYY-MM-DD: an ISO date or timestamp's date part as written;
+  // otherwise the local date Date.parse reads, the parser that typed and sorts the column.
+  function sbDate(value) {
+    if (typeof value !== "string") return value;
+    var m = /^(\d{4}-\d{2}-\d{2})(?:[T ]\d|$)/.exec(value);
+    if (m) return m[1];
+    var t = Date.parse(value);
+    if (isNaN(t)) return value;
+    var d = new Date(t);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" +
+      ("0" + d.getDate()).slice(-2);
+  }
   function sbConditions() {
     var base = window.DataTable && window.DataTable.Criteria &&
       window.DataTable.Criteria.dateConditions;
@@ -25203,8 +25217,7 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       var c = base[k];
       date[k] = Object.assign({}, c, {
         search: function (value, comparison) {
-          var m = typeof value === "string" ? /^(\d{4}-\d{2}-\d{2})[T ]\d/.exec(value) : null;
-          return c.search.call(this, m ? m[1] : value, comparison);
+          return c.search.call(this, sbDate(value), comparison);
         }
       });
     });

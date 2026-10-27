@@ -14830,6 +14830,10 @@ fn fullscreen_script() -> String {
             "__QSVI18N_CLICK_ZOOM__",
             &js_string_literal(&t!("viz.map.cluster_click_to_zoom")),
         )
+        .replace(
+            "__QSVI18N_SANDBOX_MAP__",
+            &js_string_literal(&t!("viz.map.sandboxed_notice")),
+        )
 }
 
 const FULLSCREEN_SCRIPT: &str = r#"<script>
@@ -15187,6 +15191,25 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
+  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
+  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
+  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
+  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
+  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
+  function sandboxNotice(gd) {
+    if (window.origin !== "null" || location.protocol === "file:") return;
+    var lay = (gd && gd.layout) || {};
+    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
+    var host = gd.parentNode;
+    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
+    var note = document.createElement("div");
+    note.className = "qsv-sandbox-map-note";
+    note.setAttribute("role", "note");
+    note.textContent = __QSVI18N_SANDBOX_MAP__;
+    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
+      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
+    host.insertBefore(note, gd);
+  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -15225,6 +15248,8 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
+      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
+      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);
@@ -58875,6 +58900,20 @@ mod tests {
             "a coordinate-column placeholder survived substitution into MAP_SELECT_CHROME"
         );
         assert!(chrome.contains("var LAT_COL = 3, LON_COL = 4;"));
+    }
+
+    #[test]
+    fn fullscreen_script_explains_maps_in_sandboxed_frames() {
+        let js = fullscreen_script();
+        // only an opaque-origin page that is NOT a file:// page gets the note (file:// maps load)
+        assert!(
+            js.contains(
+                r#"if (window.origin !== "null" || location.protocol === "file:") return;"#
+            )
+        );
+        assert!(js.contains("sandboxNotice(gd);"));
+        assert!(js.contains(&js_string_literal(&t!("viz.map.sandboxed_notice"))));
+        assert!(t!("viz.map.sandboxed_notice").contains("sandboxed frame"));
     }
 
     #[test]

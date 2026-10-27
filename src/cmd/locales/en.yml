@@ -53,6 +53,7 @@ viz:
     cluster_point_one: " point"
     cluster_point_many: " points"
     cluster_click_to_zoom: " - click to zoom in"
+    sandboxed_notice: "This map can't load inside a sandboxed frame. Open this Data Schematic in its own browser tab to see it."
     row_not_in_preview: "row not in preview"
     row_is_filtered_out: "row is filtered out"
     selected_row: "selected row"

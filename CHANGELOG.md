@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [27.0.1] - <TBD> 📡 The "Live Data Schematics" Release 📊
+## [27.0.1] - 2026-10-27 📡 The "Live Data Schematics" Release 📊
 
 ### Highlights
 
-~<TBD> commits since 26.0.0, and the banner feature is **Live Data Schematics**.
+~119 commits since 26.0.0, and the banner feature is **Live Data Schematics**.
 
 Until now, a [Data Schematic](https://dathere.github.io/qsv/gallery.html) was a snapshot: a self-contained HTML page describing the data as it was when `viz smart` rendered it. A question the page didn't anticipate sent you back to the terminal, and new data meant rendering it again.
 

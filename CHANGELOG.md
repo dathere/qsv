@@ -24,8 +24,18 @@ Also in this release:
 - **`get` ships in the prebuilt `qsv` binaries**, so `dc:` inputs work out of the box.
 - **Private caches on shared machines.** The `get` cache and the `dc:` copies other commands read are now readable by you only, and so is every file `stats` writes beside a private CSV. Before, other local users could read data `qsv get` had fetched, including private CKAN resources fetched with an API token.
 
-Read **Breaking Changes** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`. The two security fixes at the top of **Fixed** also change behavior: a `get` cache shared with a group on purpose becomes owner-only, and `dc:` inputs stop with an error if another user has taken their temp folder.
+Read **[Breaking Changes](#v27-breaking-changes)** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`. The two security fixes at the top of **Fixed** also change behavior: a `get` cache shared with a group on purpose becomes owner-only, and `dc:` inputs stop with an error if another user has taken their temp folder.
 
+### 🙏 Contributors
+
+Thanks to everyone who made 27.0.1 possible:
+
+- [@slonyik](https://github.com/slonyik) for reporting, with a clear repro, that `json` left a copy of the converted data in the system temp directory ([#4924](https://github.com/dathere/qsv/issues/4924), fixed in [#4925](https://github.com/dathere/qsv/pull/4925))
+
+---
+<a id="v27-changes" name="v27-changes"></a>
+
+<a id="v27-breaking-changes" name="v27-breaking-changes"></a>
 ### Breaking Changes
 - **`sqlp`: the alias of a subquery in `FROM` can no longer be read as a table** ([#4907](https://github.com/dathere/qsv/pull/4907), Polars [#30207](https://github.com/pola-rs/polars/pull/30207)). Some queries that worked in qsv 26.0.0 now fail with `relation '<alias>' was not found`. The alias still qualifies the subquery's columns (`a.x`). Reading it as a table, whether in another subquery or in a later `FROM` item, now fails:
   ```sql

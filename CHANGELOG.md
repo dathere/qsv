@@ -14,7 +14,7 @@ Until now, a [Data Schematic](https://dathere.github.io/qsv/gallery.html) was a 
 
 In 27.0.0, a schematic can stay connected to its data. Open it from disk with [qsv-clientd](https://github.com/dathere/qsv-client) running, approve a one-time pairing code in your shell, and the page itself can drill into the rows behind a frequency bar, refresh its stats, fetch the latest copy of the data, re-render itself and run read-only queries, with results of any size paged from the daemon. Results of up to 10,000 rows get the data viewer's Advanced Filter and an Export CSV button. qsv-clientd is a small, optional per-user daemon from [qsv-client](https://github.com/dathere/qsv-client); without it, schematics work exactly as before. The bridge stays inert unless the page was opened from disk or is served from loopback, so a schematic published on the web never contacts its viewers' machines.
 
-Public [CKAN](https://ckan.org) data is one command away: point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. The schematic records where its data came from, so it can fetch the latest version later.
+Public [CKAN](https://ckan.org) data is one command away: point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. qsv-clientd remembers where the data came from, so Fetch latest gets the current version.
 
 Also in this release:
 

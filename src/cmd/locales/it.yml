@@ -38,6 +38,7 @@ viz:
     cluster_point_one: " punto"
     cluster_point_many: " punti"
     cluster_click_to_zoom: " - clicca per ingrandire"
+    sandboxed_notice: "Questa mappa non può essere caricata in un frame isolato (sandbox). Apri questo Data Schematic in una scheda del browser dedicata per vederla."
     row_not_in_preview: "riga non presente nell'anteprima"
     row_is_filtered_out: "riga esclusa dai filtri"
     selected_row: "riga selezionata"

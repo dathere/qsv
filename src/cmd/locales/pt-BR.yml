@@ -44,6 +44,7 @@ viz:
     cluster_point_one: " ponto"
     cluster_point_many: " pontos"
     cluster_click_to_zoom: " - clique para ampliar"
+    sandboxed_notice: "Este mapa não pode ser carregado dentro de um quadro isolado (sandbox). Abra este Data Schematic em uma aba própria do navegador para vê-lo."
     row_not_in_preview: "linha fora da pré-visualização"
     row_is_filtered_out: "linha excluída pelo filtro"
     selected_row: "linha selecionada"

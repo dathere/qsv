@@ -207,7 +207,7 @@ qsv get --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑‑cache‑dir`&nbsp; | string | The qsv cache directory. If the QSV_CACHE_DIR envvar is set, it will be used instead. | `~/.qsv-cache` |
+| &nbsp;`‑‑cache‑dir`&nbsp; | string | The qsv cache directory. If the QSV_CACHE_DIR envvar is set, it will be used instead. The cache itself (its get/ subdirectory) is readable by you only. | `~/.qsv-cache` |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | For a single <source> (or cache-fetch <name>), write the (decompressed) data to <file> (use `-` for stdout). |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print progress/summary messages to stderr. |  |
 

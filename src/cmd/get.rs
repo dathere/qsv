@@ -147,6 +147,8 @@ Common options:
     -h, --help             Display this message
     --cache-dir <dir>      The qsv cache directory.
                            If the QSV_CACHE_DIR envvar is set, it will be used instead.
+                           The cache itself (its get/ subdirectory) is readable
+                           by you only.
                            [default: ~/.qsv-cache]
     -o, --output <file>    For a single <source> (or cache-fetch <name>), write the
                            (decompressed) data to <file> (use `-` for stdout).

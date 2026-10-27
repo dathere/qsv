@@ -58904,6 +58904,7 @@ mod tests {
 
     #[test]
     fn fullscreen_script_explains_maps_in_sandboxed_frames() {
+        let _locale = english_locale();
         let js = fullscreen_script();
         // only an opaque-origin page that is NOT a file:// page gets the note (file:// maps load)
         assert!(

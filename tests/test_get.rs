@@ -2825,6 +2825,36 @@ fn get_cache_and_dc_copies_are_owner_only() {
     );
 }
 
+// A `get` root relocated by a symlink is tightened at its real directory, so
+// downloads an earlier qsv left there at 0644 aren't readable by others.
+#[cfg(unix)]
+#[test]
+#[serial]
+fn get_symlinked_cache_root_is_made_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let wrk = Workdir::new("get_symlinked_cache_root_is_made_owner_only");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let real_root = wrk.path("relocated_get");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    std::fs::create_dir(&real_root).unwrap();
+    std::fs::set_permissions(&real_root, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&real_root, cache_dir.join("get")).unwrap();
+    wrk.create_from_string("src.csv", "a,b\n1,2\n");
+
+    let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    get.args(["--name", "t.csv", "src.csv"]);
+    wrk.assert_success(&mut get);
+
+    assert_eq!(mode_of(&real_root), 0o700);
+    assert!(
+        std::fs::symlink_metadata(cache_dir.join("get"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
 // The dc: directory's name is predictable, so in a shared /tmp another user
 // could make it first; anything but a directory of this user's is refused,
 // and nothing is written through it.

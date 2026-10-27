@@ -17829,6 +17829,13 @@ fn viz_smart_data_viewer_csv_export_button() {
     // supplying exportOptions replaces csvHtml5's own default object, so the CSV-injection
     // guard has to be restated rather than inherited
     assert!(html.contains("escapeExcelFormula: true"));
+    // the table's empty tfoot would be written as a blank last line (the daemon bridge, which
+    // has its own export, comes after the drawer)
+    let drawer = &html[..html
+        .find(r#"<script id="qsv-daemon-bridge">"#)
+        .unwrap_or(html.len())];
+    assert!(drawer.contains("customizeData: function (d) {"));
+    assert!(drawer.contains("footer: false,"));
 }
 
 // The controls row carries three buttons in a fixed left-to-right order: the SearchBuilder
@@ -17906,7 +17913,10 @@ fn viz_smart_data_viewer_clear_filters_enablement_and_count() {
     let html = String::from_utf8_lossy(&out.stdout);
 
     // SearchBuilder's share arrives through the filterChanged config hook
-    assert!(html.contains("config: { filterChanged: function (n) {"));
+    assert!(html.contains(
+        "config: {\n            conditions: sbConditions(),\n            filterChanged: function \
+         (n) {"
+    ));
     assert!(html.contains("sbCount = n;"));
     // ColumnControl's share is read off the named fixed searches its widgets apply
     assert!(html.contains(r#"this.search.fixed("dtcc") || this.search.fixed("dtcc-list")"#));
@@ -18163,6 +18173,10 @@ fn viz_smart_data_viewer_disabled_at_zero() {
     assert!(!html.contains("qsv-data-rows"));
     assert!(!html.contains("qsv-data-drawer"));
     assert!(!html.contains("DataTables 3."));
+    // the live bridge stays, without the loader it hands rows to: it falls back to a plain
+    // table and skips reading whole stored drill-downs
+    assert!(html.contains(r#"id="qsv-daemon-bridge""#));
+    assert!(!html.contains("window.qsvEnsureDataTables = "));
 }
 
 // Column types come from the whole-dataset stats, not client-side detection: numeric columns get
@@ -23714,6 +23728,69 @@ fn viz_smart_daemon_bridge_tables_and_rerender() {
     assert!(bridge.contains(r#"call("POST", dsPath("/page"), body)"#));
     // the daemon sorts by one column, so no shift-click multi-column sort
     assert!(bridge.contains("opts.orderMulti = false;"));
+    // rows held in the page get the data viewer's Advanced Filter and CSV export, keeping the
+    // CSV-injection guard; a stored result gets neither (both would act on one page only)
+    let in_page = bridge.find("opts.data = rows;").unwrap();
+    let layout = bridge.find("opts.layout = {").unwrap();
+    assert!(layout > in_page && layout < bridge.find("live.table = new DT(table, opts);").unwrap());
+    assert!(layout > bridge.find("opts.serverSide = true;").unwrap());
+    assert_eq!(bridge.matches("opts.layout = {").count(), 1);
+    assert!(bridge.contains("topStart: { buttons: [{\n            extend: \"searchBuilder\","));
+    assert!(bridge.contains("}, exportButton(exportName)] }"));
+    assert!(bridge.contains(r#"extend: "csv","#));
+    assert!(bridge.contains("exportOptions: { escapeExcelFormula: true }"));
+    assert!(bridge.contains(r#"filename: "qsv-live-" + name,"#));
+    assert!(bridge.contains("footer: false,"));
+    // SearchBuilder date conditions compare an ISO timestamp by its date part, in the drawer and
+    // the bridge alike; they go in the button's config, which is the only place it reads them
+    assert!(html.contains("window.qsvSbConditions = sbConditions;"));
+    assert!(html.contains("conditions: sbConditions(),"));
+    assert!(html.contains(r#"/^(\d{4}-\d{2}-\d{2})(?:[T ]\d|$)/.exec(value)"#));
+    // other forms DataTables types as dates (03/01/26) go through the parser that typed them
+    assert!(html.contains("var t = Date.parse(value);"));
+    assert!(html.contains("return c.search.call(this, sbDate(value), comparison);"));
+    assert!(bridge.contains(
+        "config: { conditions: window.qsvSbConditions ? window.qsvSbConditions() : {} }"
+    ));
+    // the date picker mounts on body under the live panel's z-index unless lifted
+    assert!(html.contains("div.dt-datetime { --dt-datetime_zindex: 2147482001; }"));
+    // a stored drill-down whose first page holds every match is held in the page, with both
+    assert!(
+        bridge.contains(
+            "if (res && !(j.offset > 0) && rows.length >= res.total) return inPage(rows);"
+        )
+    );
+    assert!(bridge.contains(
+        r#"showTable(headers, all, label + ": " + all.length + " row(s)", null, label);"#
+    ));
+    // one of up to READ_ALL_MAX rows is read whole, DRILL_LIMIT rows a /page request, and
+    // dropped if a newer query or drill started meanwhile; past the cap it stays paged
+    assert!(bridge.contains("var READ_ALL_MAX = 10000;"));
+    // the rows scroll inside the panel (10 a page always fit, so the wheel moved the page), and
+    // at the ends of that scroller the wheel stops rather than moving the page
+    assert!(bridge.contains(r#"scrollY: "30vh", scrollCollapse: true"#));
+    assert!(bridge.contains("order: [], pageLength: 50, lengthChange: false, scrollX: true,"));
+    assert!(html.contains(".qsv-live-grid .dt-scroll-body { overscroll-behavior: contain; }"));
+    assert!(html.contains(".qsv-live-out.qsv-live-grid { max-height: none; overflow: visible; }"));
+    // ...but only when there is DataTables to hand them to: without the data viewer
+    // (--preview-threshold 0) the plain table shows PLAIN_MAX rows, so reading more is waste
+    assert!(bridge.contains(
+        "if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX &&\n        typeof \
+         window.qsvEnsureDataTables === \"function\") {"
+    ));
+    assert!(
+        bridge
+            .contains(r#"{ result: res.id, start: all.length, length: DRILL_LIMIT, search: "" }"#)
+    );
+    assert!(bridge.contains("if (all.length >= res.total) return inPage(all);"));
+    assert_eq!(bridge.matches("if (r !== live.req) return;").count(), 2);
+    assert!(bridge.contains("if (r === live.req) paged();"));
+    assert!(bridge.contains("if (res) return paged();"));
+    // drill-downs are named for their column = value, queries for their command
+    assert!(bridge.contains(
+        r#"(rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);"#
+    ));
+    assert!(bridge.contains("\" row(s)\" + cut, null,\n            cmd);"));
     // a page answer for a table since replaced is dropped, status untouched
     assert!(bridge.contains("live.gen++;"));
     assert_eq!(bridge.matches("if (gen !== live.gen) return;").count(), 2);

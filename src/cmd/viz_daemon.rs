@@ -355,12 +355,17 @@ const BRIDGE_CSS: &str = r"
 .qsv-live-out table { border-collapse: collapse; }
 .qsv-live-out th, .qsv-live-out td { border: 1px solid rgba(127,127,127,.35); padding: 1px 6px; text-align: left; vertical-align: top; }
 .qsv-live-grid { white-space: normal; font: 12px/1.35 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+/* DataTables' scrollY body is the one scroller; at its ends the wheel stops instead of moving the page */
+.qsv-live-out.qsv-live-grid { max-height: none; overflow: visible; }
+.qsv-live-grid .dt-scroll-body { overscroll-behavior: contain; }
 .qsv-live-grid td { white-space: pre; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .qsv-live-dialog { left: 50%; top: 20%; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); padding: 14px 16px; }
 .qsv-live-code { font: 600 22px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; text-align: center; margin: 6px 0; }
 .qsv-live-cmd { display: block; user-select: all; -webkit-user-select: all; font: 13px ui-monospace, Menlo, Consolas, monospace; padding: 6px 8px; border-radius: 4px; background: rgba(127,127,127,.15); margin: 6px 0; }
 .qsv-live-note { font-size: 12px; opacity: .85; }
 .qsv-live-toast { right: 12px; bottom: 56px; max-width: min(420px, calc(100vw - 24px)); padding: 8px 12px; border-color: #c0392b; }
+/* DateTime mounts the Advanced Filter's date picker on body at z-index 2050: lift it over the panel */
+div.dt-datetime { --dt-datetime_zindex: 2147482001; }
 ";
 
 const BRIDGE_JS: &str = r#"
@@ -621,9 +626,25 @@ const BRIDGE_JS: &str = r#"
   // embeds, when it has one (not with --preview-threshold 0); else a plain table.
   var PLAIN_MAX = 500;
   var DRILL_LIMIT = 500;  // qsv-clientd's /rows maximum
+  // The data viewer's export: every filtered row, not the page, with the CSV-injection guard
+  // restated (supplying exportOptions replaces csvHtml5's own default). The Select extension is
+  // not in the bundle, so nothing narrows the export to selected rows.
+  function exportButton(name) {
+    name = String(name || "rows").replace(/[^\p{L}\p{N}._-]+/gu, "_")
+      .replace(/^[._]+|_+$/g, "").slice(0, 80) || "rows";
+    return {
+      extend: "csv",
+      text: "Export CSV",
+      filename: "qsv-live-" + name,
+      // scrollX gives the table an empty tfoot, written as a blank line at the end of the file
+      footer: false,
+      exportOptions: { escapeExcelFormula: true }
+    };
+  }
   // With a stored result (qsv-clientd kept output too big to send whole), every page, search
   // and column sort is asked of the daemon, which runs qsv on the stored file.
-  function showTable(headers, rows, note, result) {
+  // exportName: the export file's name, for rows held in the page
+  function showTable(headers, rows, note, result, exportName) {
     dropTable();
     var gen = live.gen;
     live.out.textContent = "";
@@ -658,7 +679,9 @@ const BRIDGE_JS: &str = r#"
       var opts = {
         // render.text(): cells are data, never markup
         columns: headers.map(function () { return { render: DT.render.text(), defaultContent: "" }; }),
-        order: [], pageLength: 10, lengthChange: false, scrollX: true
+        order: [], pageLength: 50, lengthChange: false, scrollX: true,
+        // the rows scroll in the panel; 10 a page always fit, so the wheel scrolled the page
+        scrollY: "30vh", scrollCollapse: true
       };
       if (result) {
         opts.serverSide = true;
@@ -686,19 +709,64 @@ const BRIDGE_JS: &str = r#"
       } else {
         opts.data = rows;
         opts.deferRender = true;
+        // Rows held in the page get the data viewer's Advanced Filter and CSV export. A stored
+        // result has neither: both would act on the one page in hand, not the whole result.
+        opts.language = {
+          searchBuilder: { button: { 0: "Advanced Filter", _: "Advanced Filter (%d)" } }
+        };
+        opts.layout = {
+          topStart: { buttons: [{
+            extend: "searchBuilder",
+            // the drawer's date conditions (timestamps compare by their date part)
+            config: { conditions: window.qsvSbConditions ? window.qsvSbConditions() : {} }
+          }, exportButton(exportName)] }
+        };
       }
       live.table = new DT(table, opts);
     }, plain);
   }
+  // A stored drill-down of up to READ_ALL_MAX rows is read whole into the page, DRILL_LIMIT rows a
+  // /page request, so it gets the Advanced Filter and the CSV export; a larger one is paged by
+  // qsv-clientd. A newer query or drill (or a disconnect) stops the reading.
+  var READ_ALL_MAX = 10000;
   function showRows(j, label) {
     var rows = j.rows || [];
-    if (j.result) {
-      showTable(j.result.headers || j.headers || [], rows,
-        label + ": " + j.result.total + " row(s)", j.result);
-      return;
+    var res = j.result;
+    var headers = (res && res.headers) || j.headers || [];
+    function inPage(all) {
+      showTable(headers, all, label + ": " + all.length + " row(s)", null, label);
     }
+    function paged() {
+      showTable(headers, rows, label + ": " + res.total + " row(s)", res);
+    }
+    if (res && !(j.offset > 0) && rows.length >= res.total) return inPage(rows);
+    // without the data viewer (--preview-threshold 0) there is no DataTables to give the rows
+    // to, only the plain table's first PLAIN_MAX
+    if (res && !(j.offset > 0) && res.total <= READ_ALL_MAX &&
+        typeof window.qsvEnsureDataTables === "function") {
+      var r = live.req, all = rows.slice();
+      var next = function () {
+        if (r !== live.req) return;
+        setStatus(label + ": reading " + all.length + " of " + res.total + " row(s)…");
+        call("POST", dsPath("/page"),
+          { result: res.id, start: all.length, length: DRILL_LIMIT, search: "" }
+        ).then(function (p) {
+          if (r !== live.req) return;
+          var got = (p && p.rows) || [];
+          all = all.concat(got);
+          if (all.length >= res.total) return inPage(all);
+          if (got.length) return next();
+          paged();  // the result came up short: let qsv-clientd page it
+        }, function () {
+          // replaced, or the data changed: the paged table reports it from qsv-clientd
+          if (r === live.req) paged();
+        });
+      };
+      return next();
+    }
+    if (res) return paged();
     showTable(j.headers || [], rows, label + ": " + rows.length + " row(s)" +
-      (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""));
+      (rows.length >= DRILL_LIMIT ? " (first " + DRILL_LIMIT + ")" : ""), null, label);
   }
   function splitArgs(s) {
     var out = [], cur = "", quoted = false, has = false;
@@ -843,7 +911,8 @@ const BRIDGE_JS: &str = r#"
           showTable(j.result.headers || j.headers || [], j.rows || [],
             "qsv " + cmd + ": " + j.result.total + " row(s)", j.result);
         } else if (j.headers && j.rows) {
-          showTable(j.headers, j.rows, "qsv " + cmd + ": " + j.rows.length + " row(s)" + cut);
+          showTable(j.headers, j.rows, "qsv " + cmd + ": " + j.rows.length + " row(s)" + cut, null,
+            cmd);
         } else {
           showText(j.stdout || "", "qsv " + cmd + cut);
         }

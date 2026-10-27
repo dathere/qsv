@@ -426,8 +426,7 @@ fn writestat_datetime_precision_refused() {
     );
 }
 
-// Inferred datetimes are microseconds, which the SPSS portable writer would
-// take for milliseconds.
+// Inferred datetimes are microseconds; they come back as written.
 #[test]
 fn writestat_por_inferred_datetime() {
     let wrk = Workdir::new("writestat_por_inferred_datetime");
@@ -438,6 +437,89 @@ fn writestat_por_inferred_datetime() {
     assert_eq!(
         read_back(&wrk, "out.por", &[]),
         "TS\n2024-01-02T03:04:05.000\n"
+    );
+}
+
+// Numbers past a u64 come back as written, not clamped to 1.8e19.
+#[test]
+fn writestat_por_large_numbers() {
+    let wrk = Workdir::new("writestat_por_large_numbers");
+    wrk.create_from_string("in.csv", "x\n2.5e19\n-1e30\n42\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.por"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.por", &[]),
+        "X\n2.5e+19\n-1e+30\n42.0\n"
+    );
+}
+
+// A portable file holds only printable ASCII: other text is refused, naming
+// the column, before the file is created, rather than written as NULs or as
+// a file that can't be read back.
+#[test]
+fn writestat_por_refuses_non_ascii_text() {
+    let wrk = Workdir::new("writestat_por_refuses_non_ascii_text");
+    for (csv, col) in [
+        ("id,name\n1,café\n2,plain\n", "name"),
+        ("id,note\n1,\"line1\nline2\"\n2,ok\n", "note"),
+    ] {
+        wrk.create_from_string("in.csv", csv);
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["in.csv", "-o", "out.por"]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            err.contains(&format!("column '{col}'")) && err.contains("printable ASCII"),
+            "{err}"
+        );
+        assert!(!wrk.path("out.por").exists());
+    }
+}
+
+// A SAS transport file's IBM floats stop at about 7.2e75; the writer would
+// store a larger number as missing.
+#[test]
+fn writestat_xpt_number_out_of_range() {
+    let wrk = Workdir::new("writestat_xpt_number_out_of_range");
+    wrk.create_from_string("in.csv", "x,y\n5,1.5\n-1e80,2.5\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.xpt"]);
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("the numbers in \"x\" beyond ±7.2e75, such as -1e80"),
+        "{err}"
+    );
+    assert!(!err.contains("\"y\""), "{err}");
+    assert!(!wrk.path("out.xpt").exists());
+
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["--lossy", "in.csv", "-o", "out.xpt"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(read_back(&wrk, "out.xpt", &[]), "x,y\n5.0,1.5\n,2.5\n");
+}
+
+// The boundary: the largest IBM float rounds up to 2^252 as a double, which
+// is out of range; the double below it is the largest that fits.
+#[test]
+fn writestat_xpt_number_range_boundary() {
+    let wrk = Workdir::new("writestat_xpt_number_range_boundary");
+    for v in ["7.237005577332262e75", "-7.237005577332262e75"] {
+        wrk.create_from_string("in.csv", &format!("x\n{v}\n1\n"));
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["in.csv", "-o", "out.xpt"]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(err.contains(&format!("such as {v}")), "{v}: {err}");
+    }
+    wrk.create_from_string(
+        "in.csv",
+        "x\n7.2370055773322614e75\n-7.2370055773322614e75\n",
+    );
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.xpt"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.xpt", &[]),
+        "x\n7.2370055773322614e+75\n-7.2370055773322614e+75\n"
     );
 }
 

@@ -9,7 +9,9 @@ Output formats, chosen by the --output file's extension or by --format:
     SPSS    .sav, .por
     Stata   .dta
     SAS     .xpt (transport version 8, or 5 with --format xpt5)
-Compressed SPSS .zsav files & SAS .sas7bdat datasets can't be written.
+Compressed SPSS .zsav files & SAS .sas7bdat datasets can't be written. SPSS
+portable .por files hold only plain printable ASCII text: a value with any
+other character, such as an accented letter or a line break, is an error.
 
 The variable metadata comes from a JSON Schema data dictionary (--dictionary).
 One written by 'qsv readstat --dictionary' brings a converted file back with its
@@ -32,7 +34,9 @@ the label.
 Metadata the output format can't hold is refused rather than dropped silently:
 value labels & missing values in SAS transport & SPSS portable files, missing
 values & file labels in Stata files, labels too long for SAS transport files,
-column names Stata would have to change, and so on. With --lossy, the file is
+column names Stata would have to change, and so on. So are data it would lose,
+such as numbers beyond ±7.2e75 in a SAS transport file, which it writes as
+missing. With --lossy, the file is
 written anyway, and a warning names everything left out. Display settings
 (measure, alignment, width & format) are written where the format has them and
 left out where it doesn't.
@@ -453,6 +457,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         df
     };
     let df = fit_temporal(df, format, &mut losses)?;
+    if matches!(format, Format::Xpt(_)) {
+        xpt_out_of_range(&df, &mut losses)?;
+    }
     let empty = Dictionary::default();
     let dict = dict.as_ref().unwrap_or(&empty);
     // before anything is checked, as a sentinel may be ambiguous
@@ -954,8 +961,7 @@ fn unit_name(step_ns: i64) -> (&'static str, &'static str) {
 
 /// Datetimes & times more precise than the writer keeps are a loss.
 /// Datetimes go to each writer in the unit it reads: microseconds for SAS
-/// transport files, milliseconds for the others - the SPSS portable writer
-/// takes them as milliseconds whatever their unit.
+/// transport files, milliseconds for the others.
 fn fit_temporal(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliResult<DataFrame> {
     let (datetime_step, time_step) = temporal_precision(format);
     let names: Vec<String> = df
@@ -1009,6 +1015,36 @@ fn fit_temporal(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliRe
         }
     }
     Ok(df)
+}
+
+/// SAS transport files store numbers as IBM floats, which reach about 7.2e75:
+/// the writer stores a larger number as missing. (One too small to hold is
+/// stored as zero, which isn't counted: such values are rounding noise far
+/// more often than data.)
+fn xpt_out_of_range(df: &DataFrame, losses: &mut Losses) -> CliResult<()> {
+    // The largest IBM float, (1 - 16^-14) * 16^63 = 2^252 - 2^196, rounds up to
+    // 2^252 as an f64, and 2^252 itself is out of range: the f64s that fit are
+    // those below it.
+    const TOO_LARGE: f64 = f64::from_bits((1023 + 252) << 52); // 2^252
+    for col in df.columns() {
+        if !matches!(col.dtype(), DataType::Float32 | DataType::Float64) {
+            continue;
+        }
+        let values = col.cast(&DataType::Float64)?;
+        if let Some(v) = values
+            .f64()?
+            .iter()
+            .flatten()
+            .find(|v| v.is_finite() && v.abs() >= TOO_LARGE)
+        {
+            losses.add(format!(
+                "the numbers in \"{}\" beyond ±7.2e75, such as {v:e}: a SAS transport file writes \
+                 them as missing",
+                col.name()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Names the format can't hold are an error (or, for Stata, a loss): the

@@ -268,13 +268,21 @@ COPY_JS = (
 # drawer (issue #4283) reserves its space via body margin-bottom while open, and on close the
 # iframe must SHRINK back. Body margins are counted because that reserved drawer space is exactly
 # a body margin; fixed-position chrome (the drawer, theme toggle, logo) is deliberately excluded.
-RESIZE_REPORTER_JS = (
-    "<script>(function(){function r(){var b=document.body,c=getComputedStyle(b);"
+#
+# `qsv viz smart` now reports its own height (its `<script id="qsv-embed-height">`, the same
+# formula), so for those pages only the user-scroll half is injected; the full reporter is kept for
+# pre-generated Data Schematics built before that. Both injected variants are a bare `<script>`
+# with no literal `<` inside, which is what `inject_resize_reporter`'s strip regex relies on, and
+# the native script's id keeps it out of that match.
+NATIVE_HEIGHT_REPORTER = '<script id="qsv-embed-height">'
+_HEIGHT_REPORTER = (
+    "function r(){var b=document.body,c=getComputedStyle(b);"
     "parent.postMessage({qsvVizHeight:Math.ceil(b.offsetHeight+"
     "(parseFloat(c.marginTop)||0)+(parseFloat(c.marginBottom)||0))},\"*\");}"
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
-    "setTimeout(r,200);setTimeout(r,800);"
+    "setTimeout(r,200);setTimeout(r,800);")
+_USER_SCROLL_REPORTER = (
     # a deep-linked Data Schematic fills the viewport, so the reader's scroll input lands INSIDE this
     # iframe, not the parent gallery window. Forward it so the parent's jump stabilizer can tell the
     # reader has taken over and stop re-aligning / cancel its pending on-load re-arm (see JUMP_JS).
@@ -287,7 +295,9 @@ RESIZE_REPORTER_JS = (
     # drawer's reveal scroll after a TOC jump.
     "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
     "[\"wheel\",\"touchstart\",\"keydown\",\"pointerdown\"].forEach(function(t){"
-    "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
+    "addEventListener(t,us,{capture:true,passive:true});});")
+RESIZE_REPORTER_JS = "<script>(function(){" + _HEIGHT_REPORTER + _USER_SCROLL_REPORTER + "})();</script>"
+USER_SCROLL_REPORTER_JS = "<script>(function(){" + _USER_SCROLL_REPORTER + "})();</script>"
 
 # Trace types plotly.js draws with WebGL. Chrome keeps only ~16 live WebGL contexts per page (and
 # same-origin iframes share that budget), dropping the OLDEST when a new one is created — the lost
@@ -1706,14 +1716,19 @@ def inject_resize_reporter(html):
     first-match replace would inject the reporter inside that script string, where it never runs —
     leaving the iframe stuck at its initial height (the Allegheny dog-licenses Data Schematic clipping).
 
-    Idempotent: strip any previously-injected reporter (a <script> containing qsvVizHeight; it has no
-    literal `<` in its body) before re-adding the current one, so re-running against an already-built
+    A Data Schematic that reports its own height (NATIVE_HEIGHT_REPORTER) gets only the user-scroll
+    half; an older one gets the full reporter.
+
+    Idempotent: strip any previously-injected reporter (a bare <script> containing qsvVizHeight or
+    qsvUserScroll; neither has a literal `<` in its body, and the native one carries an id, so it is
+    never matched) before re-adding the current one, so re-running against an already-built
     Data Schematic (e.g. the reused pre-generated ones) refreshes the reporter instead of duplicating it."""
-    html = re.sub(r"<script>[^<]*qsvVizHeight[^<]*</script>\n?", "", html)
+    html = re.sub(r"<script>[^<]*(?:qsvVizHeight|qsvUserScroll)[^<]*</script>\n?", "", html)
+    reporter = USER_SCROLL_REPORTER_JS if NATIVE_HEIGHT_REPORTER in html else RESIZE_REPORTER_JS
     idx = html.rfind("</body>")
     if idx == -1:
-        return html + RESIZE_REPORTER_JS
-    return html[:idx] + RESIZE_REPORTER_JS + "\n" + html[idx:]
+        return html + reporter
+    return html[:idx] + reporter + "\n" + html[idx:]
 
 
 def grid_cols(args):

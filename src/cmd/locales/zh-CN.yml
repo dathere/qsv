@@ -45,6 +45,7 @@ viz:
     cluster_point_one: " 个点"
     cluster_point_many: " 个点"
     cluster_click_to_zoom: " - 点击放大"
+    sandboxed_notice: "此地图无法在沙盒框架中加载。请在单独的浏览器标签页中打开此 Data Schematic 以查看。"
     row_not_in_preview: "该行不在预览范围内"
     row_is_filtered_out: "该行已被筛选排除"
     selected_row: "已选中的行"

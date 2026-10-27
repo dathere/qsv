@@ -14830,6 +14830,10 @@ fn fullscreen_script() -> String {
             "__QSVI18N_CLICK_ZOOM__",
             &js_string_literal(&t!("viz.map.cluster_click_to_zoom")),
         )
+        .replace(
+            "__QSVI18N_SANDBOX_MAP__",
+            &js_string_literal(&t!("viz.map.sandboxed_notice")),
+        )
 }
 
 const FULLSCREEN_SCRIPT: &str = r#"<script>
@@ -15187,6 +15191,25 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
+  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
+  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
+  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
+  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
+  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
+  function sandboxNotice(gd) {
+    if (window.origin !== "null" || location.protocol === "file:") return;
+    var lay = (gd && gd.layout) || {};
+    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
+    var host = gd.parentNode;
+    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
+    var note = document.createElement("div");
+    note.className = "qsv-sandbox-map-note";
+    note.setAttribute("role", "note");
+    note.textContent = __QSVI18N_SANDBOX_MAP__;
+    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
+      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
+    host.insertBefore(note, gd);
+  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -15225,6 +15248,8 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
+      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
+      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);
@@ -15290,6 +15315,45 @@ fn assumed_map_dims_prelude(width_px: f64, height_px: f64) -> String {
         "<script>window.__qsvMapAssumedW={width_px};window.__qsvMapAssumedH={height_px};</script>"
     )
 }
+
+/// Reports the Data Schematic's height to an embedding page (`{qsvVizHeight: px}`), so a host can
+/// size its iframe to the content with no inner scrollbar. Silent unless framed.
+///
+/// The height is content-derived (body border-box + body vertical margins), never
+/// `documentElement.scrollHeight`: that is max(content, viewport), so an iframe that has grown
+/// could never report smaller. The data viewer drawer reserves its space as body margin-bottom
+/// and fires a window resize on open and close, so the iframe grows and SHRINKS with it.
+///
+/// Posted synchronously, never coalesced through `requestAnimationFrame`: browsers suspend rAF
+/// (and throttle `ResizeObserver`) in offscreen cross-origin iframes, so a below-the-fold Data
+/// Schematic would never report. The timers cover a host whose listener is installed after this
+/// page loads, and a `qsvVizViewport` answer proves the host is listening, so it re-reports too.
+/// The host's own change guard absorbs the repeats. targetOrigin is "*": the payload is only a
+/// number, and the host checks `event.source` against its iframe.
+///
+/// The `id` matters: `examples/viz/gen_gallery.py` strips its own injected reporters by matching
+/// a bare `<script>`, and the id keeps this one out of that match.
+const EMBED_HEIGHT_SCRIPT: &str = r#"<script id="qsv-embed-height">
+(function () {
+  if (window.self === window.top) return;
+  function report() {
+    var b = document.body;
+    if (!b) return;
+    var c = getComputedStyle(b);
+    var h = Math.ceil(b.offsetHeight + (parseFloat(c.marginTop) || 0) + (parseFloat(c.marginBottom) || 0));
+    try { window.parent.postMessage({ qsvVizHeight: h }, "*"); } catch (e) {}
+  }
+  addEventListener("load", report);
+  addEventListener("resize", report);
+  addEventListener("message", function (ev) {
+    if (ev.source === window.parent && ev.data && typeof ev.data.qsvVizViewport === "number") report();
+  });
+  if (window.ResizeObserver) new ResizeObserver(report).observe(document.body);
+  report();
+  setTimeout(report, 200);
+  setTimeout(report, 800);
+})();
+</script>"#;
 
 /// Re-wrap `viz smart` KPI tile labels against their MEASURED pixel width, on every resize.
 ///
@@ -16988,6 +17052,7 @@ fn smart_html_page(
 {script}
 {daemon_chrome}
 <div class="qsv-page-foot">{tp_footer}<div class="qsv-page-foot-right">{button}{logo}</div></div>
+{EMBED_HEIGHT_SCRIPT}
 </body>
 </html>
 "#
@@ -25290,6 +25355,8 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
   }
   if (window.self !== window.top) {
     addEventListener("message", function (ev) {
+      // only the embedding page knows its viewport; any other frame's answer is ignored
+      if (ev.source !== window.parent) return;
       var d = ev.data;
       if (!d || typeof d.qsvVizViewport !== "number" || !(d.qsvVizViewport > 0)) return;
       parentVh = d.qsvVizViewport;
@@ -58875,6 +58942,21 @@ mod tests {
             "a coordinate-column placeholder survived substitution into MAP_SELECT_CHROME"
         );
         assert!(chrome.contains("var LAT_COL = 3, LON_COL = 4;"));
+    }
+
+    #[test]
+    fn fullscreen_script_explains_maps_in_sandboxed_frames() {
+        let _locale = english_locale();
+        let js = fullscreen_script();
+        // only an opaque-origin page that is NOT a file:// page gets the note (file:// maps load)
+        assert!(
+            js.contains(
+                r#"if (window.origin !== "null" || location.protocol === "file:") return;"#
+            )
+        );
+        assert!(js.contains("sandboxNotice(gd);"));
+        assert!(js.contains(&js_string_literal(&t!("viz.map.sandboxed_notice"))));
+        assert!(t!("viz.map.sandboxed_notice").contains("sandboxed frame"));
     }
 
     #[test]

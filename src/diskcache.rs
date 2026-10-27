@@ -54,10 +54,29 @@ pub fn set_qsv_cache_dir(cache_dir: &str) -> Result<String, CliError> {
     } else {
         cache_dir.to_string()
     };
+    // owner-only when qsv creates it; an existing directory keeps its mode, as
+    // it may be shared on purpose (the `get` cache inside it is made private)
     if !Path::new(&qsv_cache_dir).exists() {
-        fs::create_dir_all(&qsv_cache_dir)?;
+        create_private_dir_all(Path::new(&qsv_cache_dir))?;
     }
     Ok(qsv_cache_dir)
+}
+
+/// `fs::create_dir_all`, but every directory it creates is owner-only (0700)
+/// on Unix. Directories that already exist keep their mode.
+pub(crate) fn create_private_dir_all(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
+    }
 }
 
 /// The outcome of resolving a source URI's scheme prefix.
@@ -679,7 +698,46 @@ mod rich {
     }
 
     fn get_root(cache_dir: &str) -> PathBuf {
-        Path::new(cache_dir).join("get")
+        let root = Path::new(cache_dir).join("get");
+        make_private(&root);
+        root
+    }
+
+    /// The `get` cache holds downloaded data, some fetched with credentials, so
+    /// its root is owner-only (0700) on Unix: that keeps other local users out
+    /// of everything below it. A root made by an earlier qsv with the default
+    /// 0755 is tightened. Best-effort: the cache still works if it can't be.
+    fn make_private(root: &Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::symlink_metadata(root)
+                && meta.is_dir()
+                && meta.permissions().mode() & 0o077 != 0
+                && let Err(e) = fs::set_permissions(root, fs::Permissions::from_mode(0o700))
+            {
+                log::warn!(
+                    "get: could not make the cache directory {} owner-only: {e}",
+                    root.display()
+                );
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = root;
+    }
+
+    /// Create a new file readable & writable by its owner only (0600) on Unix.
+    /// Every cache file is first written under a unique temp name and renamed
+    /// into place, and the rename keeps this mode.
+    fn create_private_file(path: &Path) -> std::io::Result<fs::File> {
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        opts.open(path)
     }
 
     fn blob_dir(root: &Path, b3: &str) -> PathBuf {
@@ -762,18 +820,14 @@ mod rich {
         format!("{}-{n}", std::process::id())
     }
 
-    /// Atomically write `bytes` to `path` (write to a unique temp sibling, then
-    /// rename). The temp name is process+call-unique so concurrent writers to
-    /// the same target don't clobber each other's temp file. `fs::rename`
-    /// replaces an existing destination on both Unix and Windows.
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            super::create_private_dir_all(parent)?;
         }
         let tmp = path.with_extension(format!("tmp-{}", unique_token()));
-        fs::write(&tmp, bytes)?;
-        if let Err(e) = fs::rename(&tmp, path) {
-            // Best-effort cleanup so a failed rename doesn't leave temp litter.
+        let written = create_private_file(&tmp).and_then(|mut f| f.write_all(bytes));
+        if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
+            // Best-effort cleanup so a failed write or rename doesn't leave temp litter.
             let _ = fs::remove_file(&tmp);
             return Err(e);
         }
@@ -793,12 +847,12 @@ mod rich {
         destination: &Path,
     ) -> std::io::Result<()> {
         if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent)?;
+            super::create_private_dir_all(parent)?;
         }
         let tmp = destination.with_extension(format!("tmp-{}", unique_token()));
         let result = (|| {
             let input = fs::File::open(blob_path(root, b3, compression))?;
-            let mut output = BufWriter::with_capacity(1024 * 1024, fs::File::create(&tmp)?);
+            let mut output = BufWriter::with_capacity(1024 * 1024, create_private_file(&tmp)?);
             match compression {
                 Compression::Zstd => {
                     let mut decoder = zstd::stream::read::Decoder::new(input)?;
@@ -869,9 +923,9 @@ mod rich {
     impl BlobSink {
         fn new(root: &Path, compression: Compression) -> CliResult<Self> {
             let blobs = root.join("blobs");
-            fs::create_dir_all(&blobs)?;
+            super::create_private_dir_all(&blobs)?;
             let tmp = blobs.join(format!("ingest-{}.tmp", unique_token()));
-            let buf = BufWriter::new(fs::File::create(&tmp)?);
+            let buf = BufWriter::new(create_private_file(&tmp)?);
             let writer = match compression {
                 Compression::Zstd => {
                     BlobSinkWriter::Zstd(zstd::stream::write::Encoder::new(buf, ZSTD_LEVEL)?)
@@ -926,7 +980,7 @@ mod rich {
                 let size_compressed = fs::metadata(&self.tmp)?.len();
                 let dest = blob_path(root, &b3, self.compression);
                 if let Some(parent) = dest.parent() {
-                    fs::create_dir_all(parent)?;
+                    super::create_private_dir_all(parent)?;
                 }
                 fs::rename(&self.tmp, &dest)?;
                 Ok((b3, size_compressed, self.uncompressed))
@@ -1390,16 +1444,22 @@ mod rich {
             return Ok(());
         }
 
-        let tmp_dir = std::env::temp_dir().join("qsv-getidx");
-        fs::create_dir_all(&tmp_dir)?;
-        // Unique temp name per call so concurrent `get`s of the same content
-        // don't race on the same temp CSV (and its sibling .idx).
-        let tmp_csv = tmp_dir.join(format!(
-            "{}-{}.csv",
-            &entry.meta.blake3[..16],
-            unique_token()
-        ));
-        fs::write(&tmp_csv, &body)?;
+        // A private (0700), randomly named directory per call: the temp CSV is a
+        // copy of the cached data, and concurrent `get`s of the same content
+        // mustn't race on it (or its sibling .idx). Dropping it removes both.
+        let mut builder = tempfile::Builder::new();
+        builder.prefix("qsv-getidx-");
+        // tempfile leaves a directory's mode to the umask unless told otherwise
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(fs::Permissions::from_mode(0o700));
+        }
+        let tmp_dir = builder.tempdir()?;
+        let tmp_csv = tmp_dir
+            .path()
+            .join(format!("{}.csv", &entry.meta.blake3[..16]));
+        create_private_file(&tmp_csv)?.write_all(&body)?;
 
         let tmp_csv_str = tmp_csv.to_string_lossy().to_string();
         let rconf = Config::new(Some(&tmp_csv_str)).no_headers(false);
@@ -1415,7 +1475,6 @@ mod rich {
                     atomic_write(&idx_blob_path(root, &entry.meta.blake3), &idx_zst)?;
                     entry.meta.indexed = true;
                 }
-                let _ = fs::remove_file(&idx_src);
                 Some(count)
             },
             Err(e) => {
@@ -1423,7 +1482,7 @@ mod rich {
                 None
             },
         };
-        let _ = fs::remove_file(&tmp_csv);
+        drop(tmp_dir);
 
         entry.meta.record_count = record_count;
         write_entry(root, entry)?;
@@ -2218,9 +2277,9 @@ mod rich {
     /// Fetch (or revalidate) `opts.source` into the cache, returning its metadata.
     pub fn get_resource(opts: &GetOptions) -> CliResult<CacheEntry> {
         let root = get_root(&opts.cache_dir);
-        fs::create_dir_all(root.join("entries"))?;
-        fs::create_dir_all(root.join("aliases"))?;
-        fs::create_dir_all(root.join("blobs"))?;
+        super::create_private_dir_all(&root.join("entries"))?;
+        super::create_private_dir_all(&root.join("aliases"))?;
+        super::create_private_dir_all(&root.join("blobs"))?;
 
         let resolved = resolve_uri_prefix(&opts.source, opts.ckan_api_url.as_deref());
         let is_http = resolved.url.to_ascii_lowercase().starts_with("http");
@@ -3182,11 +3241,8 @@ mod rich {
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| "csv".to_string());
-        let dir = std::env::temp_dir()
-            .join("qsv-dc")
-            .join(&entry.meta.blake3)
-            .join(&ext);
-        fs::create_dir_all(&dir)?;
+        let dir = dc_scratch_dir()?.join(&entry.meta.blake3).join(&ext);
+        super::create_private_dir_all(&dir)?;
         let csv_path = dir.join(&temp_name);
 
         let need_write = !csv_path.exists()
@@ -3296,6 +3352,45 @@ mod rich {
                 &sidecar,
                 filetime::FileTime::from_system_time(SystemTime::now()),
             );
+        }
+    }
+
+    /// Where `dc:` entries are materialized for other commands to read: the system
+    /// temp dir, so the OS can reclaim the copies (the cache keeps the blobs).
+    /// The copies are the data itself, so on Unix the directory is per user
+    /// (`qsv-dc-<uid>`) and owner-only. Its name is predictable, so in a shared
+    /// `/tmp` another user could create it first: one that isn't a directory
+    /// owned by this user (a symlink, say) is refused rather than written into.
+    fn dc_scratch_dir() -> CliResult<PathBuf> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+
+            // SAFETY: geteuid has no preconditions and cannot fail.
+            let euid = unsafe { libc::geteuid() };
+            let dir = std::env::temp_dir().join(format!("qsv-dc-{euid}"));
+            match fs::DirBuilder::new().mode(0o700).create(&dir) {
+                Ok(()) => return Ok(dir),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
+                Err(e) => return Err(e.into()),
+            }
+            let meta = fs::symlink_metadata(&dir)?;
+            if !meta.is_dir() || meta.uid() != euid {
+                return fail_clierror!(
+                    "{} is not a directory owned by you, so qsv won't put the data of dc: entries \
+                     in it. Remove it, or set TMPDIR to a private directory.",
+                    dir.display()
+                );
+            }
+            if meta.permissions().mode() & 0o077 != 0 {
+                fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+            }
+            Ok(dir)
+        }
+        #[cfg(not(unix))]
+        {
+            // the temp dir is already per user on Windows
+            Ok(std::env::temp_dir().join("qsv-dc"))
         }
     }
 

@@ -2362,7 +2362,22 @@ fn frequency_materialization(tmp_dir: &Path, blob: &Path) -> std::path::PathBuf 
     let mut parts = name.split('.');
     let hash = parts.next().expect("frequency blob hash");
     let ext = parts.next().expect("frequency blob extension");
-    tmp_dir.join("qsv-dc").join(hash).join(ext)
+    dc_scratch(tmp_dir).join(hash).join(ext)
+}
+
+// Where dc: entries are materialized under `tmp_dir`: per user on Unix.
+fn dc_scratch(tmp_dir: &Path) -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        // the test made tmp_dir, so its owner is the user qsv runs as
+        let uid = std::fs::metadata(tmp_dir).unwrap().uid();
+        tmp_dir.join(format!("qsv-dc-{uid}"))
+    }
+    #[cfg(not(unix))]
+    {
+        tmp_dir.join("qsv-dc")
+    }
 }
 
 fn private_qsv_tmp(wrk: &Workdir) -> std::path::PathBuf {
@@ -2734,6 +2749,110 @@ fn find_file_with_suffix(dir: &Path, suffix: &str) -> Option<std::path::PathBuf>
     None
 }
 
+// Every directory & file below `dir`, with its permission bits.
+#[cfg(unix)]
+fn modes_below(dir: &Path) -> Vec<(std::path::PathBuf, u32)> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = entry.path();
+        let mode = std::fs::symlink_metadata(&p).unwrap().permissions().mode() & 0o777;
+        if p.is_dir() {
+            out.extend(modes_below(&p));
+        }
+        out.push((p, mode));
+    }
+    out
+}
+
+#[cfg(unix)]
+fn mode_of(p: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::symlink_metadata(p).unwrap().permissions().mode() & 0o777
+}
+
+// The get cache & the dc: copies are the data itself, some fetched with
+// credentials: other local users can't read them. A cache made by an earlier
+// qsv (0755) is tightened; the QSV_CACHE_DIR around it keeps its mode, as it
+// may be shared on purpose.
+#[cfg(unix)]
+#[test]
+#[serial]
+fn get_cache_and_dc_copies_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let wrk = Workdir::new("get_cache_and_dc_copies_are_owner_only");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let open = std::fs::Permissions::from_mode(0o755);
+    std::fs::create_dir_all(cache_dir.join("get")).unwrap();
+    std::fs::set_permissions(&cache_dir, open.clone()).unwrap();
+    std::fs::set_permissions(cache_dir.join("get"), open.clone()).unwrap();
+    // a dc: directory this user made loose is tightened too
+    std::fs::create_dir(dc_scratch(&tmp_dir)).unwrap();
+    std::fs::set_permissions(dc_scratch(&tmp_dir), open).unwrap();
+    wrk.create_from_string("src.csv", "a,b\n1,2\n3,4\n");
+
+    let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    get.args(["--name", "t.csv", "src.csv"]);
+    wrk.assert_success(&mut get);
+    let mut stats = dc_command(&wrk, "stats", &cache_dir, &tmp_dir);
+    stats.arg("dc:t.csv");
+    wrk.assert_success(&mut stats);
+
+    assert_eq!(mode_of(&cache_dir), 0o755);
+    for root in [cache_dir.join("get"), dc_scratch(&tmp_dir)] {
+        assert_eq!(mode_of(&root), 0o700, "{}", root.display());
+        let below = modes_below(&root);
+        assert!(below.iter().any(|(p, _)| p.is_file()), "{}", root.display());
+        for (p, mode) in below {
+            let want = if p.is_dir() { 0o700 } else { 0o600 };
+            assert_eq!(mode, want, "{}", p.display());
+        }
+    }
+    // nothing is left in a shared, predictable place
+    let names: Vec<String> = std::fs::read_dir(&tmp_dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [dc_scratch(&tmp_dir)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()]
+    );
+}
+
+// The dc: directory's name is predictable, so in a shared /tmp another user
+// could make it first; anything but a directory of this user's is refused,
+// and nothing is written through it.
+#[cfg(unix)]
+#[test]
+#[serial]
+fn get_dc_refuses_a_scratch_dir_it_does_not_own() {
+    let wrk = Workdir::new("get_dc_refuses_a_scratch_dir_it_does_not_own");
+    let cache_dir = wrk.path("qsvcache");
+    let tmp_dir = private_qsv_tmp(&wrk);
+    let elsewhere = wrk.path("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, dc_scratch(&tmp_dir)).unwrap();
+    wrk.create_from_string("src.csv", "a,b\n1,2\n");
+
+    let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    get.args(["--name", "t.csv", "src.csv"]);
+    wrk.assert_success(&mut get);
+    let mut count = dc_command(&wrk, "count", &cache_dir, &tmp_dir);
+    count.arg("dc:t.csv");
+    let err = wrk.stderr_on_error(&mut count);
+    assert!(
+        err.contains("is not a directory owned by you") && err.contains("TMPDIR"),
+        "{err}"
+    );
+    assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0);
+}
+
 // Seed a unique-content dc:cats.csv (the workdir path is in the bytes) and write its
 // frequency cache through the dc: path, so exactly one durable frequency blob exists.
 fn seed_dc_frequency_cache(wrk: &Workdir, cache_dir: &Path, tmp_dir: &Path) -> std::path::PathBuf {
@@ -2860,7 +2979,7 @@ fn get_dc_frequency_cache_captures_out_of_band_sidecar() {
     let mut materialize = dc_command(&wrk, "count", &cache_dir, &tmp_dir);
     materialize.arg("dc:cats.csv");
     wrk.assert_success(&mut materialize);
-    let csv = find_file_with_suffix(&tmp_dir.join("qsv-dc"), "cats.csv")
+    let csv = find_file_with_suffix(&dc_scratch(&tmp_dir), "cats.csv")
         .expect("dc materialization under the private TMPDIR");
 
     let mut direct = dc_command(&wrk, "frequency", &cache_dir, &tmp_dir);

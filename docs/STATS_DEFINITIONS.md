@@ -1,6 +1,6 @@
 # qsv Stats Definitions
 
-> **Applies to qsv 26.0.0.** This file is **hand-maintained** — it is not generated from the
+> **Applies to qsv 27.0.0.** This file is **hand-maintained** — it is not generated from the
 > source, so it can drift silently when a statistic's behavior or output changes. If you are
 > reading it against a newer qsv, treat the column *set* as authoritative only up to the
 > version above, and check `qsv stats --help` for anything that looks off.
@@ -199,6 +199,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 - `zero_padded_numeric` surfaces both so such columns are not mistakenly re-typed/cast as numeric when loaded into SQL, SPSS, SAS, Stata, or other tools.
 - Detection is strict: a column with any non-numeric value (e.g. `"N/A"`, `"Main St"`) is **not** flagged, matching the "only if all values are numeric" intent.
 - The zero-padded decimal-code rule mirrors the integer one: a `0` in the integer part immediately followed by another digit (`007.1`, `05.10`, `0601.10`). This deliberately **excludes** ordinary fractions like `0.5`/`0.25` (a single `0` before the decimal point) — those infer as `Float` and are never flagged. Pure trailing-zero codes (`7.10` → `7.1`) are likewise **not** flagged: with no leading zero the column infers as `Float`, and trailing padding is indistinguishable from a rounded measurement without the original string anyway. Multi-dot codes like `0601.10.00` are neither all-digit nor parseable floats, so they disqualify the column (they count as non-numeric values) and it is never flagged — even though qsv does keep such columns as `String`.
+- A value of only zeros, signed or not (`00`, `000`, `+00`), is the number 0, not a zero-padded code, wherever it falls in the column: `1.5`,`00` types as `Float` and `00`,`1` as `Integer`.
 
 **Date and DateTime Type Inference:**
 - See the **Date/DateTime Statistics** section for full details on how date columns are selected, the default `--dates-whitelist`, example column names that do and do not trigger inference, and the list of supported date formats.
@@ -206,7 +207,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 **Boolean Type Inference:**
 - Boolean type is inferred when `--infer-boolean` is enabled
-- A column is inferred as Boolean when its cardinality is 2 and the two values match the boolean patterns specified by `--boolean-patterns` (default: `1:0,t*:f*,y*:n*`)
+- A column is inferred as Boolean when its cardinality is 2 and the two values match the boolean patterns specified by `--boolean-patterns` (default: `1:0,t*:f*,y*:n*`): one value must match a "true" pattern and the other a "false" pattern. Two values matching the same side (`Yes`/`Y`, `true`/`TRUE`, or `Fiona`/`Frank`, both `f*`) make the column `String`.
 - Boolean inference automatically enables `--cardinality` computation
 - Patterns are case-insensitive and support prefix matching with `*` wildcards
 - **Example:** With the default patterns `"t*:f*,y*:n*"`, a column is inferred as Boolean only when it contains exactly two distinct values—one matching a "true" pattern (for example, "true", "truthy", "Truth") and one matching a "false" pattern (for example, "false", "f", "no"); any additional distinct values (such as "falsified" or "falseness") would increase the cardinality above 2 and therefore prevent Boolean inference.
@@ -215,7 +216,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums that overflow/underflow show `*OVERFLOW*` or `*UNDERFLOW*`. For Floats, returns NaN as the string "NaN", positive infinity as "inf", and negative infinity as "-inf". |
+| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. For Floats, returns NaN as the string "NaN", positive infinity as "inf", and negative infinity as "-inf". |
 | `min` | Variable | Minimum value found. | Tracks minimum value during the scan. |
 | `max` | Variable | Maximum value found. | Tracks maximum value during the scan. |
 | `range` | Variable | Difference between Max and Min. | `max - min`. |
@@ -301,12 +302,12 @@ Multiple modes/antimodes are separated by the `QSV_STATS_SEPARATOR` environment 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `cardinality` | Variable | Count of unique values. | Count of distinct entries in the column. Weighted: count of unique values (weights are not considered for uniqueness). Use `--cardinality-method approx` for a HyperLogLog estimate (~1.5% RSE, fixed ~5KB memory, clamped to the row count; used only where no exact mode tracker survives) — see [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in). When `--mode-cardinality-cap <n>` fires under exact mode, this column emits the sentinel `>=<n>`. |
+| `cardinality` | Variable | Count of unique values. | Count of distinct entries in the column. Weighted: count of unique values with a positive weight (the weight's size is not considered for uniqueness). Use `--cardinality-method approx` for a HyperLogLog estimate (~1.5% RSE, fixed ~5KB memory, clamped to the row count; used only where no exact mode tracker survives) — see [Approximate Algorithms (Opt-In)](#approximate-algorithms-opt-in). When `--mode-cardinality-cap <n>` fires under exact mode, this column emits the sentinel `>=<n>`. |
 | `uniqueness_ratio` | Variable | Ratio of unique values to total records. | `cardinality / record_count`. **Interpretation:** 1.0 = All unique values (e.g., primary keys). Close to 1.0 = Mostly unique values (e.g., user IDs, timestamps). Close to 0.0 = Many repeated values (e.g., categorical labels like "Male/Female" or "Yes/No"). |
-| `mode` | Variable | The most frequent value(s) in the column. | Value(s) with the highest frequency count. Weighted: value(s) with the highest weight. Multimodal-aware. If there are multiple modes, they are separated by `QSV_STATS_SEPARATOR`. |
+| `mode` | Variable | The most frequent value(s) in the column. | Value(s) with the highest frequency count. Weighted: value(s) with the highest weight, counting only positive weights. Multimodal-aware. If there are multiple modes, they are separated by `QSV_STATS_SEPARATOR`. Empty cells count as a value, shown as `NULL`. |
 | `mode_count` | Variable | Number of modes found. | Count of values tied for highest frequency. |
 | `mode_occurrences` | Variable | Frequency count of the mode. | Number of times the mode(s) appear. Weighted: maximum weight (rounded). |
-| `antimode` | Variable | The least frequent non-zero/non-null value(s) in the column. | Value(s) with the lowest frequency count (non-zero). Returns `*ALL` if all values are unique. Limited to first 10 values, truncating after 100 characters (configurable with `QSV_ANTIMODES_LEN`). If truncated, includes `*PREVIEW:` prefix. Weighted: value(s) with the lowest weight. If there are multiple antimodes, they are separated by `QSV_STATS_SEPARATOR`. |
+| `antimode` | Variable | The least frequent value(s) in the column. | Value(s) with the lowest frequency count (non-zero). Empty cells count as a value, shown as `NULL`. Returns `*ALL` if all values are unique and `cardinality` is computed too (`--cardinality` or `--everything`; with `--mode` alone the values are listed). Weighted, `*ALL` needs every value to have the same weight, which is then its `antimode_occurrences`; otherwise the heaviest value is the mode. Limited to first 10 values, truncating after 100 characters (configurable with `QSV_ANTIMODES_LEN`). If truncated, includes `*PREVIEW:` prefix. Weighted: value(s) with the lowest weight. If there are multiple antimodes, they are separated by `QSV_STATS_SEPARATOR`. |
 | `antimode_count` | Variable | Number of antimodes found. | Count of values tied for lowest frequency. |
 | `antimode_occurrences` | Variable | Frequency count of the antimode. | Number of times the antimode(s) appear. Weighted: minimum weight (rounded). |
 

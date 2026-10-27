@@ -46,6 +46,57 @@ ignore = [
     # askama main already swapped it for `toml` (askama-rs/askama#594); clears on
     # the next askama release (0.16.1 is still the latest). See dathere/qsv#4860.
     "RUSTSEC-2026-0374",
+
+    # ---------------------------------------------------------------------
+    # "unsound" advisories in zstd 0.13.3 / zstd-safe 7.3.0 (2026-10-16)
+    # ---------------------------------------------------------------------
+    #   qsv -> polars (py-2.1.0) -> polars-io / polars-utils -> zstd 0.13.3
+    #       -> zstd-safe 7.3.0
+    # polars requires `zstd = "0.13"` and the fixes exist only in zstd >= 0.14.3
+    # / zstd-safe >= 8.2.0, so no [patch] or `cargo update` can resolve them.
+    # qsv's own zstd dependency is already 0.14.3 (patched).
+    # DROP ALL OF THESE once the polars pin includes pola-rs/polars#30316
+    # (zstd 0.13 -> 0.14). See dathere/qsv#4930-#4942.
+    #
+    # What polars py-2.1.0 calls: zstd::{read::Decoder::with_buffer,
+    # write::Encoder::new} (each makes its own fresh context), and, on a
+    # thread-local CCtx/DCtx (polars-utils/src/compression/zstd.rs):
+    # set_parameter(CompressionLevel), compress2, one-shot decompress, and
+    # reset(SessionOnly) + decompress_stream. No dictionaries, no `experimental`,
+    # `seekable` or `zstdmt` features.
+
+    # RUSTSEC-2026-0391 (zstd): stream data leaks across a reused context.
+    # Affects only raw::{Encoder,Decoder}::with_context; polars never calls it.
+    "RUSTSEC-2026-0391",
+    # RUSTSEC-2026-0395: UAF with CParameter::StableInBuffer (`experimental`).
+    # polars only sets CompressionLevel; the `experimental` feature is off.
+    "RUSTSEC-2026-0395",
+    # RUSTSEC-2026-0396 / -0398 / -0405: `seekable` API. Feature not enabled.
+    "RUSTSEC-2026-0396",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0405",
+    # RUSTSEC-2026-0397: OutBuffer::around_pos. Never called (polars uses around).
+    "RUSTSEC-2026-0397",
+    # RUSTSEC-2026-0399 / -0400: dictionary use-after-free (init_using_cdict/
+    # ddict; one-shot decompress with a dictionary on an open stream). polars
+    # never attaches a dictionary to its contexts.
+    "RUSTSEC-2026-0399",
+    "RUSTSEC-2026-0400",
+    # RUSTSEC-2026-0401: train_from_buffer. Never called.
+    "RUSTSEC-2026-0401",
+    # RUSTSEC-2026-0402 / -0404: CCtx/DCtx::try_clone (`experimental`). Never called.
+    "RUSTSEC-2026-0402",
+    "RUSTSEC-2026-0404",
+    # RUSTSEC-2026-0403: a failed decompress_stream on a corrupt legacy frame
+    # extends the output Vec over uninitialized memory. REACHABLE but not
+    # exploitable as used: polars' IPC reader (read_basic.rs
+    # read_compressed_buffer -> decompress_prefix) decompresses into a fresh
+    # local Vec and propagates the Err, dropping the Vec unread. zstd's
+    # read::Decoder (polars-io's CSV/NDJSON path) is not affected.
+    "RUSTSEC-2026-0403",
+    # RUSTSEC-2026-0406: UAF when changing a *multithreaded* context with an
+    # unfinished frame. `zstdmt` is off and polars only compresses one-shot.
+    "RUSTSEC-2026-0406",
 ]
 
 [yanked]

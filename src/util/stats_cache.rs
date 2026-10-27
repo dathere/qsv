@@ -449,8 +449,11 @@ pub fn sync_stats_cache_to_canonical(input_path: &Path, canonical_input_path: &P
             }
         })
         .and_then(|()| {
-            std::fs::copy(&given_metadata, &canonical_metadata)?;
-            Ok(())
+            // a derived artifact too: it records the input's path, size and hash
+            let mut installed =
+                DerivedFile::create(canonical_input_path, &canonical_metadata, "statsargs")?;
+            std::io::copy(&mut File::open(&given_metadata)?, &mut installed)?;
+            installed.install()
         });
     if let Err(e) = synced {
         log::warn!(

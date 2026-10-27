@@ -4842,6 +4842,47 @@ fn stats_weighted_stats_jsonl_does_not_write_unweighted_cache() {
     );
 }
 
+// A run through a symlink also writes the cache beside the target (#4697); those copies are
+// derived from the target too, so a 0600 target gets no readable copy there either (#4619).
+#[cfg(unix)]
+#[test]
+fn stats_symlink_run_canonical_cache_never_out_permissions_its_target() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let wrk = Workdir::new("stats_symlink_run_canonical_cache_never_out_permissions_its_target");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    wrk.create_from_string("sub/target.csv", "h1,h2\n1,2\n3,4\n5,6\n");
+    std::fs::set_permissions(
+        wrk.path("sub/target.csv"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--stats-jsonl", "--cache-threshold", "1", "link.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    for artifact in [
+        "sub/target.stats.csv",
+        "sub/target.stats.csv.data.jsonl",
+        "sub/target.stats.csv.json",
+        "link.stats.csv.json",
+    ] {
+        let mode = std::fs::metadata(wrk.path(artifact))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "{artifact} derived from a 0600 target must not be group- or world-readable (got \
+             {mode:o})"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn stats_symlink_run_does_not_pair_canonical_cache_with_foreign_metadata() {
@@ -9820,7 +9861,11 @@ fn stats_cache_never_out_permissions_its_source_csv() {
     cmd.args(["--stats-jsonl", "--cache-threshold", "1", "in.csv"]);
     wrk.assert_success(&mut cmd);
 
-    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+    for artifact in [
+        "in.stats.csv",
+        "in.stats.csv.data.jsonl",
+        "in.stats.csv.json",
+    ] {
         let path = wrk.path(artifact);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         // the security property, and it holds under ANY umask: 0600 & anything is within 0600
@@ -9830,11 +9875,17 @@ fn stats_cache_never_out_permissions_its_source_csv() {
             "{artifact} derived from a 0600 CSV must not be group- or world-readable (got \
              {mode:o})"
         );
-        // and it really does carry the source values, which is why the mode matters
+        // and it really does carry the source values (the args sidecar: the input's path and
+        // content hash), which is why the mode matters
         let body = std::fs::read_to_string(&path).unwrap();
+        let marker = if artifact.ends_with(".json") {
+            "BLAKE3"
+        } else {
+            "measles"
+        };
         assert!(
-            body.contains("measles"),
-            "sanity: {artifact} should contain source values, else this test proves nothing"
+            body.contains(marker),
+            "sanity: {artifact} should contain {marker}, else this test proves nothing"
         );
     }
 
@@ -9846,7 +9897,7 @@ fn stats_cache_never_out_permissions_its_source_csv() {
     let mut group_cmd = wrk.command("stats");
     group_cmd.args(["--stats-jsonl", "--cache-threshold", "1", "g.csv"]);
     wrk.assert_success(&mut group_cmd);
-    for artifact in ["g.stats.csv", "g.stats.csv.data.jsonl"] {
+    for artifact in ["g.stats.csv", "g.stats.csv.data.jsonl", "g.stats.csv.json"] {
         let mode = std::fs::metadata(wrk.path(artifact))
             .unwrap()
             .permissions()
@@ -9889,7 +9940,11 @@ fn stats_new_cache_has_umask_default_permissions() {
     cmd.args(["--stats-jsonl", "--cache-threshold", "1", "in.csv"]);
     wrk.assert_success(&mut cmd);
 
-    for artifact in ["in.stats.csv", "in.stats.csv.data.jsonl"] {
+    for artifact in [
+        "in.stats.csv",
+        "in.stats.csv.data.jsonl",
+        "in.stats.csv.json",
+    ] {
         let mode = std::fs::metadata(wrk.path(artifact))
             .unwrap()
             .permissions()

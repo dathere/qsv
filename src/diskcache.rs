@@ -852,6 +852,9 @@ mod rich {
     /// Write a file the user asked for (`--output`) atomically, with the
     /// umask's mode, like every other qsv writer. Only the cache's own files are
     /// owner-only: where an export goes, and who may read it, is the user's call.
+    /// Overwriting an existing file keeps its mode, as `File::create` would: the
+    /// temp gets that mode while still empty, so a file the user locked down is
+    /// never replaced by a more readable one.
     fn write_user_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -860,7 +863,13 @@ mod rich {
             |t| path.with_extension(format!("tmp-{t}")),
             |p| fs::OpenOptions::new().write(true).create_new(true).open(p),
         )?;
-        let written = file.write_all(bytes);
+        let written = (|| {
+            #[cfg(unix)]
+            if let Ok(existing) = fs::metadata(path) {
+                file.set_permissions(existing.permissions())?;
+            }
+            file.write_all(bytes)
+        })();
         drop(file);
         if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
             let _ = fs::remove_file(&tmp);

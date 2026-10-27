@@ -2857,38 +2857,57 @@ fn get_symlinked_cache_root_is_made_owner_only() {
 
 // The cache is owner-only, but a file the user asks for with --output is not:
 // it gets the umask's mode, as every other qsv writer's output does, and so do
-// the directories created for it. Compared with a file and directory made here
-// under the same umask, as the umask is process-wide and can't be set per test.
+// the directories created for it. Overwriting an existing file keeps that
+// file's mode instead. qsv runs under a fixed umask (022), so the expected
+// modes don't depend on the umask the test suite happens to run with.
 #[cfg(unix)]
 #[test]
 #[serial]
 fn get_output_and_cache_fetch_output_follow_the_umask() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+    fn umask_022(cmd: &mut std::process::Command) {
+        // SAFETY: umask is async-signal-safe and touches only the child.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::umask(0o022);
+                Ok(())
+            });
+        }
+    }
     let wrk = Workdir::new("get_output_and_cache_fetch_output_follow_the_umask");
     let cache_dir = wrk.path("qsvcache");
     let tmp_dir = private_qsv_tmp(&wrk);
     wrk.create_from_string("src.csv", "a,b\n1,2\n");
-    let ref_dir = wrk.path("ref_dir");
-    std::fs::create_dir(&ref_dir).unwrap();
-    let ref_file = wrk.path("ref.csv");
-    std::fs::write(&ref_file, "x").unwrap();
-    let (want_dir, want_file) = (mode_of(&ref_dir), mode_of(&ref_file));
-    assert_ne!(
-        want_file, 0o600,
-        "umask 077 can't tell a umask-mode file from an owner-only one"
-    );
+    // an existing file the user locked down
+    wrk.create_from_string("locked.csv", "old\n");
+    std::fs::set_permissions(
+        wrk.path("locked.csv"),
+        std::fs::Permissions::from_mode(0o600),
+    )
+    .unwrap();
 
     let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
     get.args(["--name", "t.csv", "src.csv", "--output", "dl/sub/got.csv"]);
+    umask_022(&mut get);
     wrk.assert_success(&mut get);
     let mut fetch = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
     fetch.args(["cache-fetch", "t.csv", "--output", "cf/fetched.csv"]);
+    umask_022(&mut fetch);
     wrk.assert_success(&mut fetch);
+    let mut over = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    over.args(["cache-fetch", "t.csv", "--output", "locked.csv"]);
+    umask_022(&mut over);
+    wrk.assert_success(&mut over);
 
     for dir in ["dl", "dl/sub", "cf"] {
-        assert_eq!(mode_of(&wrk.path(dir)), want_dir, "{dir}");
+        assert_eq!(mode_of(&wrk.path(dir)), 0o755, "{dir}");
     }
-    for file in ["dl/sub/got.csv", "cf/fetched.csv"] {
-        assert_eq!(mode_of(&wrk.path(file)), want_file, "{file}");
+    for (file, want) in [
+        ("dl/sub/got.csv", 0o644),
+        ("cf/fetched.csv", 0o644),
+        ("locked.csv", 0o600),
+    ] {
+        assert_eq!(mode_of(&wrk.path(file)), want, "{file}");
         assert_eq!(
             std::fs::read_to_string(wrk.path(file)).unwrap(),
             "a,b\n1,2\n"

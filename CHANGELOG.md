@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Highlights
 
-~108 commits since 26.0.0, and the banner feature is **Live Data Schematics**.
+~109 commits since 26.0.0, and the banner feature is **Live Data Schematics**.
 
 Until now, a [Data Schematic](https://dathere.github.io/qsv/gallery.html) was a snapshot: a self-contained HTML page describing the data as it was when `viz smart` rendered it. A question the page didn't anticipate sent you back to the terminal, and new data meant rendering it again.
 

@@ -14,7 +14,7 @@ Until now, a [Data Schematic](https://dathere.github.io/qsv/gallery.html) was a 
 
 In 27.0.0, a schematic can stay connected to its data. Open it from disk with [qsv-clientd](https://github.com/dathere/qsv-client) running, approve a one-time pairing code in your shell, and the page itself can drill into the rows behind a frequency bar, refresh its stats, fetch the latest copy of the data, re-render itself and run read-only queries, with results of any size paged from the daemon. Results of up to 10,000 rows get the data viewer's Advanced Filter and an Export CSV button. qsv-clientd is a small, optional per-user daemon from [qsv-client](https://github.com/dathere/qsv-client); without it, schematics work exactly as before. The bridge stays inert unless the page was opened from disk or is served from loopback, so a schematic published on the web never contacts its viewers' machines.
 
-Public [CKAN](https://ckan.org) data is one command away: point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. qsv-clientd remembers where the data came from, so Fetch latest gets the current version.
+Public [CKAN](https://ckan.org) data is one command away: with [qsv-client 0.6.0](https://github.com/dathere/qsv-client/releases/tag/0.6.0) or later, point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. qsv-clientd remembers where the data came from, so Fetch latest gets the current version.
 
 Also in this release:
 
@@ -22,8 +22,9 @@ Also in this release:
 - **A correctness sweep across `validate`, `stats`, `frequency`, `schema`, `viz` and `writestat`.** `validate` now reads piped stdin, follows local `$ref`s, honors every `type` in a type array and fixes `dynamicEnum` on numeric and nullable columns; `stats` fixes weighted quantiles and modes; `frequency` stops collapsing columns to `<ALL_UNIQUE>` when it shouldn't; `writestat` no longer writes wrong data to SPSS portable files, or numbers too large for SAS transport files as missing values.
 - **Inputs read as written.** Compressed CSVs are decompressed byte-for-byte (leading zeros and `1.50` survive), and `QSV_SNIFF_PREAMBLE` now actually skips the title lines it finds.
 - **`get` ships in the prebuilt `qsv` binaries**, so `dc:` inputs work out of the box.
+- **Private caches on shared machines.** The `get` cache and the `dc:` copies other commands read are now readable by you only, and so is every file `stats` writes beside a private CSV. Before, other local users could read data `qsv get` had fetched, including private CKAN resources fetched with an API token.
 
-Read **Breaking Changes** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`.
+Read **Breaking Changes** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`. The two security fixes at the top of **Fixed** also change behavior: a `get` cache shared with a group on purpose becomes owner-only, and `dc:` inputs stop with an error if another user has taken their temp folder.
 
 ### Breaking Changes
 - **`sqlp`: the alias of a subquery in `FROM` can no longer be read as a table** ([#4907](https://github.com/dathere/qsv/pull/4907), Polars [#30207](https://github.com/pola-rs/polars/pull/30207)). Some queries that worked in qsv 26.0.0 now fail with `relation '<alias>' was not found`. The alias still qualifies the subquery's columns (`a.x`). Reading it as a table, whether in another subquery or in a later `FROM` item, now fails:

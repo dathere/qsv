@@ -824,21 +824,49 @@ mod rich {
         format!("{}-{n}", std::process::id())
     }
 
-    /// Create an owner-only temp file at `make(token)`, moving on to the next
+    /// Create an owner-only (0600) temp file for the cache; see `create_temp`.
+    fn create_private_temp(make: impl Fn(&str) -> PathBuf) -> std::io::Result<(PathBuf, fs::File)> {
+        create_temp(make, create_private_file)
+    }
+
+    /// Create a temp file at `make(token)` with `open`, moving on to the next
     /// token if that name is taken. A crashed run leaves its temps behind, and
     /// a later process that gets the same pid (routine in containers, where
     /// qsv often has the same low pid every run) would otherwise hit them.
-    fn create_private_temp(make: impl Fn(&str) -> PathBuf) -> std::io::Result<(PathBuf, fs::File)> {
+    fn create_temp(
+        make: impl Fn(&str) -> PathBuf,
+        open: impl Fn(&Path) -> std::io::Result<fs::File>,
+    ) -> std::io::Result<(PathBuf, fs::File)> {
         let mut last_err = None;
         for _ in 0..16 {
             let tmp = make(&unique_token());
-            match create_private_file(&tmp) {
+            match open(&tmp) {
                 Ok(file) => return Ok((tmp, file)),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
                 Err(e) => return Err(e),
             }
         }
         Err(last_err.unwrap_or_else(|| std::io::Error::other("no free temp filename")))
+    }
+
+    /// Write a file the user asked for (`--output`) atomically, with the
+    /// umask's mode, like every other qsv writer. Only the cache's own files are
+    /// owner-only: where an export goes, and who may read it, is the user's call.
+    fn write_user_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let (tmp, mut file) = create_temp(
+            |t| path.with_extension(format!("tmp-{t}")),
+            |p| fs::OpenOptions::new().write(true).create_new(true).open(p),
+        )?;
+        let written = file.write_all(bytes);
+        drop(file);
+        if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
+            let _ = fs::remove_file(&tmp);
+            return Err(e);
+        }
+        Ok(())
     }
 
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -3444,7 +3472,7 @@ mod rich {
             .ok_or_else(|| CliError::Other(format!("get: no cached entry named '{name}'")))?;
         let body = read_blob(&root, &entry.meta.blake3, entry.meta.compression)?;
         match output {
-            Some(p) if p != "-" => atomic_write(Path::new(p), &body)?,
+            Some(p) if p != "-" => write_user_file(Path::new(p), &body)?,
             _ => {
                 use std::io::Write;
                 std::io::stdout().write_all(&body)?;

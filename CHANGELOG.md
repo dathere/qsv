@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`viz smart`: a map in a sandboxed iframe now says why it's blank** ([#4947](https://github.com/dathere/qsv/pull/4947), [#4946](https://github.com/dathere/qsv/issues/4946)). Embedded in an `<iframe sandbox>` without `allow-same-origin` (the CKAN Webpage view the wiki recommends), every MapLibre map panel stayed empty with no error: the map library bundled with plotly.js 3.x rejects its own worker's messages when the page's origin is `null`. The schematic now shows a note above each such map telling the viewer to open it in its own tab. Pages opened from a file aren't affected. Rendering the maps there needs a plotly.js upgrade; #4946 tracks it.
+- `get`: overwriting an existing file with `--output` (`get`, `get cache-fetch`) no longer briefly exposes the new contents: the temp file that replaces it is owner-only (`0600`) while the data is written, and takes the old file's mode only afterwards. It also keeps the old file's group, so a group-readable file isn't handed to a different group; where the group can't be kept, the new file isn't group-readable, and other users get no access the old file denied its group. Setuid/setgid bits aren't carried over, as an in-place overwrite would have cleared them. Follow-up to [#4945](https://github.com/dathere/qsv/pull/4945). ([#4948](https://github.com/dathere/qsv/pull/4948))
 
 ## [27.0.1] - 2026-10-27 📡 The "Live Data Schematics" Release 📊
 
@@ -29,8 +30,18 @@ Also in this release:
 - **`get` ships in the prebuilt `qsv` binaries**, so `dc:` inputs work out of the box.
 - **Private caches on shared machines.** The `get` cache and the `dc:` copies other commands read are now readable by you only, and so is every file `stats` writes beside a private CSV. Before, other local users could read data `qsv get` had fetched, including private CKAN resources fetched with an API token.
 
-Read **Breaking Changes** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`. The two security fixes at the top of **Fixed** also change behavior: a `get` cache shared with a group on purpose becomes owner-only, and `dc:` inputs stop with an error if another user has taken their temp folder.
+Read **[Breaking Changes](#v27-breaking-changes)** before upgrading: `sqlp` subquery aliases, three `validate` schema behaviors, and `QSV_SNIFF_PREAMBLE`. `--low-memory` is gone from `sqlp`, `joinp` and `count`. The two security fixes at the top of **Fixed** also change behavior: a `get` cache shared with a group on purpose becomes owner-only, and `dc:` inputs stop with an error if another user has taken their temp folder.
 
+### 🙏 Contributors
+
+Thanks to everyone who made 27.0.1 possible:
+
+- [@slonyik](https://github.com/slonyik) for reporting, with a clear repro, that `json` left a copy of the converted data in the system temp directory ([#4924](https://github.com/dathere/qsv/issues/4924), fixed in [#4925](https://github.com/dathere/qsv/pull/4925))
+
+---
+<a id="v27-changes" name="v27-changes"></a>
+
+<a id="v27-breaking-changes" name="v27-breaking-changes"></a>
 ### Breaking Changes
 - **`sqlp`: the alias of a subquery in `FROM` can no longer be read as a table** ([#4907](https://github.com/dathere/qsv/pull/4907), Polars [#30207](https://github.com/pola-rs/polars/pull/30207)). Some queries that worked in qsv 26.0.0 now fail with `relation '<alias>' was not found`. The alias still qualifies the subquery's columns (`a.x`). Reading it as a table, whether in another subquery or in a later `FROM` item, now fails:
   ```sql

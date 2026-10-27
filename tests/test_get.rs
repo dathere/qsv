@@ -2858,7 +2858,7 @@ fn get_symlinked_cache_root_is_made_owner_only() {
 // The cache is owner-only, but a file the user asks for with --output is not:
 // it gets the umask's mode, as every other qsv writer's output does, and so do
 // the directories created for it. Overwriting an existing file keeps that
-// file's mode instead. qsv runs under a fixed umask (022), so the expected
+// file's mode and group instead. qsv runs under a fixed umask (022), so the expected
 // modes don't depend on the umask the test suite happens to run with.
 #[cfg(unix)]
 #[test]
@@ -2885,6 +2885,13 @@ fn get_output_and_cache_fetch_output_follow_the_umask() {
         std::fs::Permissions::from_mode(0o600),
     )
     .unwrap();
+    // and one shared with its group, which an overwrite must keep sharing
+    wrk.create_from_string("shared.csv", "old\n");
+    std::fs::set_permissions(
+        wrk.path("shared.csv"),
+        std::fs::Permissions::from_mode(0o640),
+    )
+    .unwrap();
 
     let mut get = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
     get.args(["--name", "t.csv", "src.csv", "--output", "dl/sub/got.csv"]);
@@ -2898,6 +2905,10 @@ fn get_output_and_cache_fetch_output_follow_the_umask() {
     over.args(["cache-fetch", "t.csv", "--output", "locked.csv"]);
     umask_022(&mut over);
     wrk.assert_success(&mut over);
+    let mut shared = dc_command(&wrk, "get", &cache_dir, &tmp_dir);
+    shared.args(["cache-fetch", "t.csv", "--output", "shared.csv"]);
+    umask_022(&mut shared);
+    wrk.assert_success(&mut shared);
 
     for dir in ["dl", "dl/sub", "cf"] {
         assert_eq!(mode_of(&wrk.path(dir)), 0o755, "{dir}");
@@ -2906,6 +2917,7 @@ fn get_output_and_cache_fetch_output_follow_the_umask() {
         ("dl/sub/got.csv", 0o644),
         ("cf/fetched.csv", 0o644),
         ("locked.csv", 0o600),
+        ("shared.csv", 0o640),
     ] {
         assert_eq!(mode_of(&wrk.path(file)), want, "{file}");
         assert_eq!(

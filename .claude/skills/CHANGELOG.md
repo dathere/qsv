@@ -5,7 +5,8 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [27.0.1] - 2026-10-27
+Companion release to qsv 27.0.1, "The Live Data Schematics Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 27.0.1 because the regenerated skill JSONs advertise options that only exist in the new binary (`qsv-viz --no-daemon-bridge`, `qsv-validate --offline`, `qsv-pivotp --no-moarstats`) and no longer offer `--low-memory` on `qsv-sqlp`, `qsv-joinp` and `qsv-count`, which the new binary rejects. The skill count stays at **57**. Update your qsv binary first.
 
 ### Added
 - **`qsv-viz` gains `--no-daemon-bridge`** ([#4848](https://github.com/dathere/qsv/pull/4848), [#4902](https://github.com/dathere/qsv/pull/4902)): it leaves the qsv-clientd bridge script out of a `smart` Data Schematic. The description explains what the bridge does by default (one "hello" request to 127.0.0.1, a "Live data" chip only if a qsv-clientd daemon answers) and that the recorded arguments omit the source URL of a `dc:` input.

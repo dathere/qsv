@@ -903,10 +903,18 @@ mod rich {
         fs::Permissions::from_mode(overwrite_mode(existing.mode(), group_kept))
     }
 
+    /// Only the permission bits carry over: an in-place write would have cleared
+    /// setuid/setgid. When the group couldn't be kept, the destination's group
+    /// members now count as "other", so other keeps only what that group had,
+    /// as `DerivedFile` does.
     #[cfg(unix)]
     const fn overwrite_mode(existing_mode: u32, group_kept: bool) -> u32 {
-        let mode = existing_mode & 0o7777;
-        if group_kept { mode } else { mode & !0o070 }
+        let mode = existing_mode & 0o777;
+        if group_kept {
+            mode
+        } else {
+            (mode & 0o700) | (mode & 0o007 & ((mode & 0o070) >> 3))
+        }
     }
 
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -3714,6 +3722,13 @@ mod rich {
             assert_eq!(super::overwrite_mode(0o100640, false), 0o600);
             assert_eq!(super::overwrite_mode(0o100664, false), 0o604);
             assert_eq!(super::overwrite_mode(0o100600, false), 0o600);
+            // other never gains what the destination denied its group
+            assert_eq!(super::overwrite_mode(0o100604, false), 0o600);
+            assert_eq!(super::overwrite_mode(0o100604, true), 0o604);
+            // setuid/setgid/sticky never carry over
+            assert_eq!(super::overwrite_mode(0o104755, true), 0o755);
+            assert_eq!(super::overwrite_mode(0o102755, false), 0o705);
+            assert_eq!(super::overwrite_mode(0o101777, true), 0o777);
         }
 
         // Overwriting a file that belongs to another of the user's groups moves

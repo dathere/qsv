@@ -3740,23 +3740,28 @@ mod rich {
             let mut groups = vec![0 as libc::gid_t; 256];
             // SAFETY: the buffer holds `groups.len()` gids.
             let n = unsafe { libc::getgroups(groups.len() as libc::c_int, groups.as_mut_ptr()) };
-            let own = unsafe { libc::getegid() };
-            let Some(other) = groups[..n.max(0) as usize]
-                .iter()
-                .copied()
-                .find(|&g| g != own)
-            else {
-                eprintln!("skipped: the user belongs to no second group");
-                return;
-            };
             let dir = tempfile::tempdir().unwrap();
             let dest = dir.path().join("shared.csv");
             std::fs::write(&dest, b"old").unwrap();
+            // A new file's group is the directory's on BSD/macOS or in a setgid
+            // directory, not necessarily the egid: compare against the temp's own.
+            let (tmp, file) = super::open_user_temp(&dest, true).unwrap();
+            let initial = file.metadata().unwrap().gid();
+            let Some(other) = groups[..n.max(0) as usize]
+                .iter()
+                .copied()
+                .find(|&g| g != initial)
+            else {
+                drop(file);
+                std::fs::remove_file(tmp).unwrap();
+                eprintln!("skipped: the user belongs to no second group");
+                return;
+            };
             std::os::unix::fs::chown(&dest, None, Some(other)).unwrap();
             std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o640)).unwrap();
             let existing = std::fs::metadata(&dest).unwrap();
+            assert_ne!(existing.gid(), initial);
 
-            let (tmp, file) = super::open_user_temp(&dest, true).unwrap();
             let perms = super::overwrite_permissions(&file, &existing);
             let gid = file.metadata().unwrap().gid();
             drop(file);

@@ -25,7 +25,9 @@ Stata   .dta
 SAS     .xpt (transport version 8, or 5 with --format xpt5)
 ```
 
-Compressed SPSS .zsav files & SAS .sas7bdat datasets can't be written.
+Compressed SPSS .zsav files & SAS .sas7bdat datasets can't be written. SPSS
+portable .por files hold only plain printable ASCII text: a value with any
+other character, such as an accented letter or a line break, is an error.
 
 The variable metadata comes from a JSON Schema data dictionary (--dictionary).
 One written by 'qsv readstat --dictionary' brings a converted file back with its
@@ -48,7 +50,9 @@ the label.
 Metadata the output format can't hold is refused rather than dropped silently:  
 value labels & missing values in SAS transport & SPSS portable files, missing
 values & file labels in Stata files, labels too long for SAS transport files,
-column names Stata would have to change, and so on. With --lossy, the file is
+column names Stata would have to change, and so on. So are data it would lose,
+such as numbers beyond ±7.2e75 in a SAS transport file, which it writes as
+missing. With --lossy, the file is
 written anyway, and a warning names everything left out. Display settings
 (measure, alignment, width & format) are written where the format has them and
 left out where it doesn't.

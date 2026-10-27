@@ -333,7 +333,7 @@ plotly = { version = "0.15", default-features = false, optional = true }
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
 rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
-polars-readstat-rs = { version = "0.26", optional = true }
+polars-readstat-rs = { version = "0.27", optional = true }
 # only for `default_ipc_fields`, which `sqlp --streaming --format arrow` needs to build a
 # batched IPC writer; it resolves to the same patched git rev as polars itself.
 polars-arrow = { version = "0.55", optional = true }

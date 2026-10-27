@@ -16,7 +16,7 @@
 
         <script type="module">
             const graph_div = document.getElementById("plotly-html-element");
-            await Plotly.newPlot(graph_div, {"data":[{"type":"heatmap","colorscale":"Viridis","x":["16.0.0","16.1.0","17.0.0","18.0.0","19.0.0","19.1.0","20.0.0","20.1.0","21.0.0","21.1.0","22.0.1","23.0.1","24.0.0","25.0.0","26.0.0"],"y":["searchset","stats","count","frequency","search"],"z":[[0.6318607562195442,0.6601396931244702,0.6035804033145729,0.6059050033889601,0.5937108829987483,0.6043535393393132,0.6880466940174942,0.7065868546107793,0.7055305185769766,0.7217125670948021,0.9477911343293163,0.9652353108875299,0.9516129184516134,0.9792532393361036,1.0],[0.83177559613085,0.7772924707074325,0.7091633324302801,0.732510166469146,0.7235772372195121,0.7177418637096834,0.7772924707074325,0.767241345551727,0.751054738911402,0.9780218078461681,1.0,0.9888888849333337,0.8476190188000025,0.9621620091783912,0.9944132924692834],[1.0,0.3030303,0.90909091,1.0,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,1.0,0.90909091,1.0,0.90909091],[0.2383143301961726,0.228508499941221,0.24741450143277705,0.24373039533699029,0.24939868148436573,0.24880000646880016,0.32702428350263135,0.3226139923879638,0.5418117740871061,0.5935114824312986,0.5553570684392838,0.6195219681075712,0.9201184039230785,0.9967948339166657,1.0],[0.6666666666666666,0.6845637898791932,0.6144577649638583,0.5619834592727277,0.5284974727461113,0.5326370405639702,0.7846153814769232,0.7527675148782293,0.7906976412093037,0.9532709460560784,0.9902912324271858,0.9488372102511627,0.9400921386359459,0.9622640816603804,1.0]]}],"layout":{"title":{"text":"Relative throughput vs each command\u0027s recent peak"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"version"}},"yaxis":{"title":{"text":"name"}}},"config":{"responsive":true},"frames":null});
+            await Plotly.newPlot(graph_div, {"data":[{"type":"heatmap","colorscale":"Viridis","x":["16.1.0","17.0.0","18.0.0","19.0.0","19.1.0","20.0.0","20.1.0","21.0.0","21.1.0","22.0.1","23.0.1","24.0.0","25.0.0","26.0.0","27.0.1"],"y":["count","frequency","search","searchset","stats"],"z":[[0.3030303,0.90909091,1.0,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,0.90909091,1.0,0.90909091,1.0,0.90909091,1.0],[0.22777377188832806,0.24661898452665784,0.24294672401254136,0.24859678480354988,0.24800003472000487,0.3259727956361914,0.3215766850207359,0.5400696756097546,0.5916031528244414,0.5535714174999985,0.6175300064542009,0.91715992840239,0.9935898191025747,0.9967846795498552,1.0],[0.6845637898791932,0.6144577649638583,0.5619834592727277,0.5284974727461113,0.5326370405639702,0.7846153814769232,0.7527675148782293,0.7906976412093037,0.9532709460560784,0.9902912324271858,0.9488372102511627,0.9400921386359459,0.9622640816603804,1.0,0.9807691248461585],[0.6573423385315323,0.6010227197954561,0.6033374693325061,0.5911950217609957,0.601792579641484,0.6851310829737834,0.7035926792814642,0.7025408194918361,0.7186542962691408,0.9437748512450298,0.9611451077709784,0.9475804404839119,0.975103634979273,0.9957624808475039,1.0],[0.7772924707074325,0.7091633324302801,0.732510166469146,0.7235772372195121,0.7177418637096834,0.7772924707074325,0.767241345551727,0.751054738911402,0.9780218078461681,1.0,0.9888888849333337,0.8476190188000025,0.9621620091783912,0.9944132924692834,0.9673912927391314]]}],"layout":{"title":{"text":"Relative throughput vs each command\u0027s recent peak"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"version"},"type":"category"},"yaxis":{"title":{"text":"name"},"type":"category"}},"config":{"responsive":true},"frames":null});
         </script>
     </div>
 <style>
@@ -378,6 +378,25 @@
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
+  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
+  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
+  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
+  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
+  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
+  function sandboxNotice(gd) {
+    if (window.origin !== "null" || location.protocol === "file:") return;
+    var lay = (gd && gd.layout) || {};
+    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
+    var host = gd.parentNode;
+    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
+    var note = document.createElement("div");
+    note.className = "qsv-sandbox-map-note";
+    note.setAttribute("role", "note");
+    note.textContent = "This map can't load inside a sandboxed frame. Open this Data Schematic in its own browser tab to see it.";
+    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
+      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
+    host.insertBefore(note, gd);
+  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -416,6 +435,8 @@
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
+      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
+      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);

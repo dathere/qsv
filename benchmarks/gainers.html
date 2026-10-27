@@ -16,7 +16,7 @@
 
         <script type="module">
             const graph_div = document.getElementById("plotly-html-element");
-            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","mode":"markers","x":["tojsonl_index","writestat_sav","writestat_xpt","writestat_dta","split_index","tojsonl_batchall","tojsonl","tojsonl_no_boolean","tojsonl_trim","tojsonl_index_j1","tojsonl_j1","tojsonl_trim_j1","snappy_compress","count_flexible","sortcheck_sorted"],"y":[28.64,26.81,24.33,23.94,22.83,22.07,21.7,20.44,19.25,16.28,14.69,13.2,12.08,11.28,11.06],"hovertext":["name: tojsonl_index\u003cbr\u003edelta (%): 28.64\u003cbr\u003edelta (%): 28.64\u003cbr\u003edelta (%): 28.64","name: writestat_sav\u003cbr\u003edelta (%): 26.81\u003cbr\u003edelta (%): 26.81\u003cbr\u003edelta (%): 26.81","name: writestat_xpt\u003cbr\u003edelta (%): 24.33\u003cbr\u003edelta (%): 24.33\u003cbr\u003edelta (%): 24.33","name: writestat_dta\u003cbr\u003edelta (%): 23.94\u003cbr\u003edelta (%): 23.94\u003cbr\u003edelta (%): 23.94","name: split_index\u003cbr\u003edelta (%): 22.83\u003cbr\u003edelta (%): 22.83\u003cbr\u003edelta (%): 22.83","name: tojsonl_batchall\u003cbr\u003edelta (%): 22.07\u003cbr\u003edelta (%): 22.07\u003cbr\u003edelta (%): 22.07","name: tojsonl\u003cbr\u003edelta (%): 21.7\u003cbr\u003edelta (%): 21.7\u003cbr\u003edelta (%): 21.7","name: tojsonl_no_boolean\u003cbr\u003edelta (%): 20.44\u003cbr\u003edelta (%): 20.44\u003cbr\u003edelta (%): 20.44","name: tojsonl_trim\u003cbr\u003edelta (%): 19.25\u003cbr\u003edelta (%): 19.25\u003cbr\u003edelta (%): 19.25","name: tojsonl_index_j1\u003cbr\u003edelta (%): 16.28\u003cbr\u003edelta (%): 16.28\u003cbr\u003edelta (%): 16.28","name: tojsonl_j1\u003cbr\u003edelta (%): 14.69\u003cbr\u003edelta (%): 14.69\u003cbr\u003edelta (%): 14.69","name: tojsonl_trim_j1\u003cbr\u003edelta (%): 13.2\u003cbr\u003edelta (%): 13.2\u003cbr\u003edelta (%): 13.2","name: snappy_compress\u003cbr\u003edelta (%): 12.08\u003cbr\u003edelta (%): 12.08\u003cbr\u003edelta (%): 12.08","name: count_flexible\u003cbr\u003edelta (%): 11.28\u003cbr\u003edelta (%): 11.28\u003cbr\u003edelta (%): 11.28","name: sortcheck_sorted\u003cbr\u003edelta (%): 11.06\u003cbr\u003edelta (%): 11.06\u003cbr\u003edelta (%): 11.06"],"hoverinfo":"text","marker":{"size":[40,36,32,31,29,27,27,24,22,16,13,10,8,6,6],"color":[28.64,26.81,24.33,23.94,22.83,22.07,21.7,20.44,19.25,16.28,14.69,13.2,12.08,11.28,11.06],"colorscale":"Viridis","showscale":true,"colorbar":{"title":{"text":"delta (%)"}}}}],"layout":{"title":{"text":"Biggest speedups this release"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"% faster vs previous version"}}},"config":{"responsive":true},"frames":null});
+            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","mode":"markers","x":["schema_index","extsort_spill","extsort","pivotp_smart","pivotp_basic","partition","pivotp_dates_rows","split_chunks","split","extdedup","snappy_compress","sqlp_format_arrow","excel_metadata_short","frequency_sketch_index","readstat_dta_select"],"y":[76.48,48.25,42.29,36.87,36.1,26.13,24.62,17.62,16.42,16.1,16.05,15.91,12.32,11.52,10.04],"hovertext":["name: schema_index\u003cbr\u003edelta (%): 76.48\u003cbr\u003edelta (%): 76.48\u003cbr\u003edelta (%): 76.48","name: extsort_spill\u003cbr\u003edelta (%): 48.25\u003cbr\u003edelta (%): 48.25\u003cbr\u003edelta (%): 48.25","name: extsort\u003cbr\u003edelta (%): 42.29\u003cbr\u003edelta (%): 42.29\u003cbr\u003edelta (%): 42.29","name: pivotp_smart\u003cbr\u003edelta (%): 36.87\u003cbr\u003edelta (%): 36.87\u003cbr\u003edelta (%): 36.87","name: pivotp_basic\u003cbr\u003edelta (%): 36.1\u003cbr\u003edelta (%): 36.1\u003cbr\u003edelta (%): 36.1","name: partition\u003cbr\u003edelta (%): 26.13\u003cbr\u003edelta (%): 26.13\u003cbr\u003edelta (%): 26.13","name: pivotp_dates_rows\u003cbr\u003edelta (%): 24.62\u003cbr\u003edelta (%): 24.62\u003cbr\u003edelta (%): 24.62","name: split_chunks\u003cbr\u003edelta (%): 17.62\u003cbr\u003edelta (%): 17.62\u003cbr\u003edelta (%): 17.62","name: split\u003cbr\u003edelta (%): 16.42\u003cbr\u003edelta (%): 16.42\u003cbr\u003edelta (%): 16.42","name: extdedup\u003cbr\u003edelta (%): 16.1\u003cbr\u003edelta (%): 16.1\u003cbr\u003edelta (%): 16.1","name: snappy_compress\u003cbr\u003edelta (%): 16.05\u003cbr\u003edelta (%): 16.05\u003cbr\u003edelta (%): 16.05","name: sqlp_format_arrow\u003cbr\u003edelta (%): 15.91\u003cbr\u003edelta (%): 15.91\u003cbr\u003edelta (%): 15.91","name: excel_metadata_short\u003cbr\u003edelta (%): 12.32\u003cbr\u003edelta (%): 12.32\u003cbr\u003edelta (%): 12.32","name: frequency_sketch_index\u003cbr\u003edelta (%): 11.52\u003cbr\u003edelta (%): 11.52\u003cbr\u003edelta (%): 11.52","name: readstat_dta_select\u003cbr\u003edelta (%): 10.04\u003cbr\u003edelta (%): 10.04\u003cbr\u003edelta (%): 10.04"],"hoverinfo":"text","marker":{"size":[40,26,23,20,19,14,13,10,9,9,9,9,7,7,6],"color":[76.48,48.25,42.29,36.87,36.1,26.13,24.62,17.62,16.42,16.1,16.05,15.91,12.32,11.52,10.04],"colorscale":"Viridis","showscale":true,"colorbar":{"title":{"text":"delta (%)"}}}}],"layout":{"title":{"text":"Biggest speedups this release"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"% faster vs previous version"}}},"config":{"responsive":true},"frames":null});
         </script>
     </div>
 <style>
@@ -378,6 +378,25 @@
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
+  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
+  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
+  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
+  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
+  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
+  function sandboxNotice(gd) {
+    if (window.origin !== "null" || location.protocol === "file:") return;
+    var lay = (gd && gd.layout) || {};
+    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
+    var host = gd.parentNode;
+    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
+    var note = document.createElement("div");
+    note.className = "qsv-sandbox-map-note";
+    note.setAttribute("role", "note");
+    note.textContent = "This map can't load inside a sandboxed frame. Open this Data Schematic in its own browser tab to see it.";
+    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
+      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
+    host.insertBefore(note, gd);
+  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -416,6 +435,8 @@
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
+      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
+      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);

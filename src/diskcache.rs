@@ -3716,6 +3716,40 @@ mod rich {
             assert_eq!(super::overwrite_mode(0o100600, false), 0o600);
         }
 
+        // Overwriting a file that belongs to another of the user's groups moves
+        // the temp to that group, so group access goes where it went before.
+        #[cfg(unix)]
+        #[test]
+        fn overwrite_temp_takes_the_destination_group() {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            let mut groups = vec![0 as libc::gid_t; 256];
+            // SAFETY: the buffer holds `groups.len()` gids.
+            let n = unsafe { libc::getgroups(groups.len() as libc::c_int, groups.as_mut_ptr()) };
+            let own = unsafe { libc::getegid() };
+            let Some(other) = groups[..n.max(0) as usize]
+                .iter()
+                .copied()
+                .find(|&g| g != own)
+            else {
+                eprintln!("skipped: the user belongs to no second group");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let dest = dir.path().join("shared.csv");
+            std::fs::write(&dest, b"old").unwrap();
+            std::os::unix::fs::chown(&dest, None, Some(other)).unwrap();
+            std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o640)).unwrap();
+            let existing = std::fs::metadata(&dest).unwrap();
+
+            let (tmp, file) = super::open_user_temp(&dest, true).unwrap();
+            let perms = super::overwrite_permissions(&file, &existing);
+            let gid = file.metadata().unwrap().gid();
+            drop(file);
+            std::fs::remove_file(tmp).unwrap();
+            assert_eq!(gid, other);
+            assert_eq!(perms.mode() & 0o777, 0o640);
+        }
+
         #[cfg(feature = "viz")]
         #[test]
         fn dc_entry_meta_describes_the_entry_as_this_run_resolved_it() {

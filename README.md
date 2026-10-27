@@ -541,7 +541,7 @@ It can process well-formed CSVs in _any_ language so long as its UTF-8 encoded. 
 Finally, though the default Geonames index of the `geocode` command is English-only, the index can be rebuilt with the `geocode index-update` subcommand with the `--languages` option to return place names in multiple languages ([with support for 254 languages](http://download.geonames.org/export/dump/alternatenames/)).
 
 ## Testing
-qsv has 6,804 tests: 6,067 for the qsv binaries (4,738 integration in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory + 1,329 unit across `src/` modules), plus 737 for the MCP server & Cowork plugin (in [`.claude/skills/tests`](https://github.com/dathere/qsv/tree/master/.claude/skills/tests)).
+qsv has 6,807 tests: 6,070 for the qsv binaries (4,740 integration in the [tests](https://github.com/dathere/qsv/tree/master/tests) directory + 1,330 unit across `src/` modules), plus 737 for the MCP server & Cowork plugin (in [`.claude/skills/tests`](https://github.com/dathere/qsv/tree/master/.claude/skills/tests)).
 Most commands have their own test suite in a separate file with the convention `test_<COMMAND>.rs`.
 Apart from preventing regressions, the tests also serve as good illustrative examples, and are often linked from the usage text of each corresponding command.
 

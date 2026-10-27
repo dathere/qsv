@@ -18023,6 +18023,8 @@ fn viz_smart_data_viewer_asks_parent_for_viewport() {
     // both halves of the handshake
     assert!(html.contains("qsvVizWantViewport"));
     assert!(html.contains("qsvVizViewport"));
+    // only the embedding page's answer counts, not any other frame's
+    assert!(html.contains("if (ev.source !== window.parent) return;"));
     // the default must sit on :root, never on body — a body declaration would beat the
     // inherited value the handshake writes to documentElement and pin every page to 1vh
     assert!(html.contains(":root { --qsv-data-vh: 1vh; }"));
@@ -18037,6 +18039,42 @@ fn viz_smart_data_viewer_asks_parent_for_viewport() {
     // dropped answer has no other recovery
     assert!(html.contains("function askViewport()"));
     assert!(html.contains("askViewport();"));
+}
+
+// A framed Data Schematic reports its own height, so a host (the gallery, CKAN) can auto-size
+// the iframe without injecting a script into the page.
+#[test]
+fn viz_smart_reports_its_height_when_framed() {
+    let wrk = Workdir::new("viz_smart_reports_its_height_when_framed");
+    data_viewer_csv(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dv.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the id is load-bearing: gen_gallery.py strips its own injected reporters by matching a
+    // bare `<script>`, and must never strip this one
+    let tag = r#"<script id="qsv-embed-height">"#;
+    assert_eq!(html.matches(tag).count(), 1);
+    let start = html.find(tag).unwrap();
+    let script = &html[start..start + html[start..].find("</script>").unwrap()];
+    // silent standalone; content-derived height, so the iframe can shrink when the drawer closes
+    assert!(script.contains("if (window.self === window.top) return;"));
+    assert!(script.contains("postMessage({ qsvVizHeight: h }, \"*\")"));
+    assert!(script.contains("b.offsetHeight + (parseFloat(c.marginTop)"));
+    assert!(!script.contains("scrollHeight"));
+    // synchronous posts: rAF is suspended in offscreen cross-origin iframes
+    assert!(!script.contains("requestAnimationFrame"));
+    assert!(script.contains("new ResizeObserver(report).observe(document.body)"));
+    assert!(script.contains("addEventListener(\"resize\", report)"));
+    // a re-report on the host's viewport answer is accepted only from the host
+    assert!(script.contains("ev.source === window.parent"));
+    // inside <body>, after the page content it measures
+    assert!(start > html.find("<div class=\"qsv-page-foot\">").unwrap());
+    assert!(start < html.rfind("</body>").unwrap());
 }
 
 // DataTables orders its "date" type through the browser's Date.parse, which rejects day-first

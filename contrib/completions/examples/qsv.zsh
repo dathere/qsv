@@ -2957,6 +2957,7 @@ _arguments "${_arguments_options[@]}" : \
 '--grand-total[]' \
 '--ignore-errors[]' \
 '--maintain-order[]' \
+'--no-moarstats[]' \
 '-q[]' \
 '--quiet[]' \
 '--sort-columns[]' \
@@ -4263,6 +4264,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-format-validation[]' \
 '-n[]' \
 '--no-headers[]' \
+'--offline[]' \
 '--pretty-json[]' \
 '-p[]' \
 '--progressbar[]' \
@@ -4310,6 +4312,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-format-validation[]' \
 '-n[]' \
 '--no-headers[]' \
+'--offline[]' \
 '--pretty-json[]' \
 '-p[]' \
 '--progressbar[]' \

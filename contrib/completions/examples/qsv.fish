@@ -1817,6 +1817,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l decimal-comma
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l grand-total
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l ignore-errors
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l maintain-order
+complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l no-moarstats
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -s q -l quiet
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l sort-columns
 complete -c qsv -n "__fish_qsv_using_subcommand pivotp" -l subtotal
@@ -2460,6 +2461,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_su
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l no-format-validation
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l offline
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s q -l quiet
@@ -2490,6 +2492,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcom
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l no-format-validation
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l offline
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l pretty-json
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s p -l progressbar
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s q -l quiet

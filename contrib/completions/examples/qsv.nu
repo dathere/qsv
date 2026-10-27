@@ -2030,6 +2030,7 @@ module completions {
     --infer-len: string
     --maintain-order
     --max-columns: string
+    --no-moarstats
     --output(-o): string
     --quiet(-q)
     --sort-columns
@@ -2848,6 +2849,7 @@ module completions {
     --json
     --no-format-validation
     --no-headers(-n)
+    --offline
     --pretty-json
     --progressbar(-p)
     --quiet(-q)
@@ -2879,6 +2881,7 @@ module completions {
     --json
     --no-format-validation
     --no-headers(-n)
+    --offline
     --pretty-json
     --progressbar(-p)
     --quiet(-q)

@@ -11615,7 +11615,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__pivotp)
-            opts="-a -d -i -o -q -v -h --agg --col-separator --decimal-comma --delimiter --grand-total --ignore-errors --index --infer-len --maintain-order --max-columns --output --quiet --sort-columns --subtotal --total-label --try-parsedates --validate --values --help"
+            opts="-a -d -i -o -q -v -h --agg --col-separator --decimal-comma --delimiter --grand-total --ignore-errors --index --infer-len --maintain-order --max-columns --no-moarstats --output --quiet --sort-columns --subtotal --total-label --try-parsedates --validate --values --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -14395,7 +14395,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__validate)
-            opts="-b -d -j -n -p -q -h --backtrack-limit --batch --cache-dir --ckan-api --ckan-token --delimiter --dfa-size-limit --email-display-text --email-domain-literal --email-min-subdomains --email-required-tld --fail-fast --fancy-regex --invalid --jobs --json --no-format-validation --no-headers --pretty-json --progressbar --quiet --size-limit --split-ragged --timeout --trim --valid --valid-output --help schema help"
+            opts="-b -d -j -n -p -q -h --backtrack-limit --batch --cache-dir --ckan-api --ckan-token --delimiter --dfa-size-limit --email-display-text --email-domain-literal --email-min-subdomains --email-required-tld --fail-fast --fancy-regex --invalid --jobs --json --no-format-validation --no-headers --offline --pretty-json --progressbar --quiet --size-limit --split-ragged --timeout --trim --valid --valid-output --help schema help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -14519,7 +14519,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__validate__subcmd__schema)
-            opts="-b -d -j -n -p -q -h --backtrack-limit --batch --cache-dir --ckan-api --ckan-token --delimiter --dfa-size-limit --email-display-text --email-domain-literal --email-min-subdomains --email-required-tld --fail-fast --fancy-regex --invalid --jobs --json --no-format-validation --no-headers --pretty-json --progressbar --quiet --size-limit --split-ragged --timeout --trim --valid --valid-output --help"
+            opts="-b -d -j -n -p -q -h --backtrack-limit --batch --cache-dir --ckan-api --ckan-token --delimiter --dfa-size-limit --email-display-text --email-domain-literal --email-min-subdomains --email-required-tld --fail-fast --fancy-regex --invalid --jobs --json --no-format-validation --no-headers --offline --pretty-json --progressbar --quiet --size-limit --split-ragged --timeout --trim --valid --valid-output --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

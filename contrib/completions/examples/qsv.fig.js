@@ -11143,6 +11143,9 @@ const completion: Fig.Spec = {
           name: "--maintain-order",
         },
         {
+          name: "--no-moarstats",
+        },
+        {
           name: ["-q", "--quiet"],
         },
         {
@@ -14868,6 +14871,9 @@ const completion: Fig.Spec = {
               name: ["-n", "--no-headers"],
             },
             {
+              name: "--offline",
+            },
+            {
               name: "--pretty-json",
             },
             {
@@ -15038,6 +15044,9 @@ const completion: Fig.Spec = {
         },
         {
           name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--offline",
         },
         {
           name: "--pretty-json",

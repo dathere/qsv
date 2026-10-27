@@ -498,6 +498,31 @@ fn writestat_xpt_number_out_of_range() {
     assert_eq!(read_back(&wrk, "out.xpt", &[]), "x,y\n5.0,1.5\n,2.5\n");
 }
 
+// The boundary: the largest IBM float rounds up to 2^252 as a double, which
+// is out of range; the double below it is the largest that fits.
+#[test]
+fn writestat_xpt_number_range_boundary() {
+    let wrk = Workdir::new("writestat_xpt_number_range_boundary");
+    for v in ["7.237005577332262e75", "-7.237005577332262e75"] {
+        wrk.create_from_string("in.csv", &format!("x\n{v}\n1\n"));
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["in.csv", "-o", "out.xpt"]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(err.contains(&format!("such as {v}")), "{v}: {err}");
+    }
+    wrk.create_from_string(
+        "in.csv",
+        "x\n7.2370055773322614e75\n-7.2370055773322614e75\n",
+    );
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.xpt"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.xpt", &[]),
+        "x\n7.2370055773322614e+75\n-7.2370055773322614e+75\n"
+    );
+}
+
 // A 60-byte SPSS name is valid, though its <name>_null column's 65 bytes
 // aren't: that column becomes the variable's missing values, not a variable.
 #[test]

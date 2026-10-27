@@ -1022,8 +1022,10 @@ fn fit_temporal(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliRe
 /// stored as zero, which isn't counted: such values are rounding noise far
 /// more often than data.)
 fn xpt_out_of_range(df: &DataFrame, losses: &mut Losses) -> CliResult<()> {
-    // (1 - 16^-14) * 16^63
-    const LARGEST: f64 = 7.237_005_577_332_262e75;
+    // The largest IBM float, (1 - 16^-14) * 16^63 = 2^252 - 2^196, rounds up to
+    // 2^252 as an f64, and 2^252 itself is out of range: the f64s that fit are
+    // those below it.
+    const TOO_LARGE: f64 = f64::from_bits((1023 + 252) << 52); // 2^252
     for col in df.columns() {
         if !matches!(col.dtype(), DataType::Float32 | DataType::Float64) {
             continue;
@@ -1033,7 +1035,7 @@ fn xpt_out_of_range(df: &DataFrame, losses: &mut Losses) -> CliResult<()> {
             .f64()?
             .iter()
             .flatten()
-            .find(|v| v.is_finite() && v.abs() > LARGEST)
+            .find(|v| v.is_finite() && v.abs() >= TOO_LARGE)
         {
             losses.add(format!(
                 "the numbers in \"{}\" beyond ±7.2e75, such as {v:e}: a SAS transport file writes \

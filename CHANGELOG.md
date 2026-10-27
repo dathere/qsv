@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+* `get`: a temp file left behind by a crashed download no longer makes later downloads fail with "File exists" when a new process gets the same process ID, which is routine in containers. A regression from the private caches in 27.0.0 (#4928).
+* `get`: a cache directory relocated with a symlink (`<cache>/get` → elsewhere) is now made owner-only at its real location, like an ordinary one.
+
 ## [27.0.0] - 2026-10-27 📡 The "Live Data Schematics" Release 📊
 
 ### Highlights

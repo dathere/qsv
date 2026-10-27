@@ -711,7 +711,11 @@ mod rich {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = fs::symlink_metadata(root)
+            // `metadata` follows a symlinked root, so a cache relocated by a
+            // symlink gets its real directory tightened too. Following adds no
+            // exposure: every cache read and write already goes through the link,
+            // and chmod only succeeds on a directory the user owns.
+            if let Ok(meta) = fs::metadata(root)
                 && meta.is_dir()
                 && meta.permissions().mode() & 0o077 != 0
                 && let Err(e) = fs::set_permissions(root, fs::Permissions::from_mode(0o700))
@@ -820,12 +824,30 @@ mod rich {
         format!("{}-{n}", std::process::id())
     }
 
+    /// Create an owner-only temp file at `make(token)`, moving on to the next
+    /// token if that name is taken. A crashed run leaves its temps behind, and
+    /// a later process that gets the same pid (routine in containers, where
+    /// qsv often has the same low pid every run) would otherwise hit them.
+    fn create_private_temp(make: impl Fn(&str) -> PathBuf) -> std::io::Result<(PathBuf, fs::File)> {
+        let mut last_err = None;
+        for _ in 0..16 {
+            let tmp = make(&unique_token());
+            match create_private_file(&tmp) {
+                Ok(file) => return Ok((tmp, file)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| std::io::Error::other("no free temp filename")))
+    }
+
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             super::create_private_dir_all(parent)?;
         }
-        let tmp = path.with_extension(format!("tmp-{}", unique_token()));
-        let written = create_private_file(&tmp).and_then(|mut f| f.write_all(bytes));
+        let (tmp, mut file) = create_private_temp(|t| path.with_extension(format!("tmp-{t}")))?;
+        let written = file.write_all(bytes);
+        drop(file);
         if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
             // Best-effort cleanup so a failed write or rename doesn't leave temp litter.
             let _ = fs::remove_file(&tmp);
@@ -849,10 +871,10 @@ mod rich {
         if let Some(parent) = destination.parent() {
             super::create_private_dir_all(parent)?;
         }
-        let tmp = destination.with_extension(format!("tmp-{}", unique_token()));
+        let input = fs::File::open(blob_path(root, b3, compression))?;
+        let (tmp, file) = create_private_temp(|t| destination.with_extension(format!("tmp-{t}")))?;
         let result = (|| {
-            let input = fs::File::open(blob_path(root, b3, compression))?;
-            let mut output = BufWriter::with_capacity(1024 * 1024, create_private_file(&tmp)?);
+            let mut output = BufWriter::with_capacity(1024 * 1024, file);
             match compression {
                 Compression::Zstd => {
                     let mut decoder = zstd::stream::read::Decoder::new(input)?;
@@ -924,8 +946,8 @@ mod rich {
         fn new(root: &Path, compression: Compression) -> CliResult<Self> {
             let blobs = root.join("blobs");
             super::create_private_dir_all(&blobs)?;
-            let tmp = blobs.join(format!("ingest-{}.tmp", unique_token()));
-            let buf = BufWriter::new(create_private_file(&tmp)?);
+            let (tmp, file) = create_private_temp(|t| blobs.join(format!("ingest-{t}.tmp")))?;
+            let buf = BufWriter::new(file);
             let writer = match compression {
                 Compression::Zstd => {
                     BlobSinkWriter::Zstd(zstd::stream::write::Encoder::new(buf, ZSTD_LEVEL)?)
@@ -3575,6 +3597,29 @@ mod rich {
                 ttl_secs,
                 refresh_policy,
                 ..Default::default()
+            }
+        }
+
+        // A crashed run leaves `<name>.tmp-<pid>-<n>` behind; a later process
+        // with the same pid (routine in containers) must step past it, not fail.
+        #[test]
+        fn atomic_write_steps_past_stale_temps_from_a_reused_pid() {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("entry.json");
+            let current = super::unique_token();
+            let (pid, n) = current.rsplit_once('-').unwrap();
+            let n: u64 = n.parse().unwrap();
+            for k in n + 1..=n + 8 {
+                std::fs::write(path.with_extension(format!("tmp-{pid}-{k}")), b"stale").unwrap();
+            }
+
+            super::atomic_write(&path, b"fresh").unwrap();
+
+            assert_eq!(std::fs::read(&path).unwrap(), b"fresh");
+            // the stale temps are left alone, never overwritten or renamed in
+            for k in n + 1..=n + 8 {
+                let stale = path.with_extension(format!("tmp-{pid}-{k}"));
+                assert_eq!(std::fs::read(stale).unwrap(), b"stale");
             }
         }
 

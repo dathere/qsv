@@ -2599,7 +2599,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 target_endian = "little" => simd_json::to_string_pretty(&current_stats_args)?,
                 _ => serde_json::to_string_pretty(&current_stats_args)?,
             };
-            std::fs::write(stats_pathbuf.clone(), json_string)?;
+            // Installed as a derived artifact like the stats CSV above: it records the input's
+            // canonical path, size, record count and BLAKE3 hash, so it must not be readable by
+            // anyone the input is not readable by (#4619). The empty placeholder it replaces holds
+            // nothing; installing over it intersects its mode with the input's.
+            let mut sidecar = util::DerivedFile::create(&path, &stats_pathbuf, "statsargs")?;
+            sidecar.write_all(json_string.as_bytes())?;
+            sidecar.install()?;
 
             // save the stats data to "<FILESTEM>.stats.csv.data.jsonl"
             if write_stats_jsonl {

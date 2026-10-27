@@ -852,23 +852,22 @@ mod rich {
     /// Write a file the user asked for (`--output`) atomically, with the
     /// umask's mode, like every other qsv writer. Only the cache's own files are
     /// owner-only: where an export goes, and who may read it, is the user's call.
-    /// Overwriting an existing file keeps its mode, as `File::create` would: the
-    /// temp gets that mode while still empty, so a file the user locked down is
-    /// never replaced by a more readable one.
+    /// Overwriting an existing file keeps its mode and group, as `File::create`
+    /// would, so a file the user locked down is never replaced by a more
+    /// readable one.
     fn write_user_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let (tmp, mut file) = create_temp(
-            |t| path.with_extension(format!("tmp-{t}")),
-            |p| fs::OpenOptions::new().write(true).create_new(true).open(p),
-        )?;
+        let existing = fs::metadata(path).ok();
+        let (tmp, mut file) = open_user_temp(path, existing.is_some())?;
         let written = (|| {
+            file.write_all(bytes)?;
             #[cfg(unix)]
-            if let Ok(existing) = fs::metadata(path) {
-                file.set_permissions(existing.permissions())?;
+            if let Some(existing) = &existing {
+                file.set_permissions(overwrite_permissions(&file, existing))?;
             }
-            file.write_all(bytes)
+            Ok(())
         })();
         drop(file);
         if let Err(e) = written.and_then(|()| fs::rename(&tmp, path)) {
@@ -876,6 +875,38 @@ mod rich {
             return Err(e);
         }
         Ok(())
+    }
+
+    /// The temp for `write_user_file`. An overwrite's temp starts owner-only and
+    /// takes the destination's mode only once written: permissions are checked at
+    /// open, so anyone who opened a briefly-readable temp would keep reading it
+    /// after a chmod.
+    fn open_user_temp(path: &Path, overwrite: bool) -> std::io::Result<(PathBuf, fs::File)> {
+        let make = |t: &str| path.with_extension(format!("tmp-{t}"));
+        if overwrite {
+            create_private_temp(make)
+        } else {
+            create_temp(make, |p| {
+                fs::OpenOptions::new().write(true).create_new(true).open(p)
+            })
+        }
+    }
+
+    /// The mode an overwrite's temp takes before it replaces `existing`. The temp
+    /// gets the process's (or a setgid directory's) group, not the destination's,
+    /// so its group is moved to the destination's first; where that isn't allowed,
+    /// group access is dropped rather than granted to a different group.
+    #[cfg(unix)]
+    fn overwrite_permissions(file: &fs::File, existing: &fs::Metadata) -> fs::Permissions {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt, fchown};
+        let group_kept = fchown(file, None, Some(existing.gid())).is_ok();
+        fs::Permissions::from_mode(overwrite_mode(existing.mode(), group_kept))
+    }
+
+    #[cfg(unix)]
+    const fn overwrite_mode(existing_mode: u32, group_kept: bool) -> u32 {
+        let mode = existing_mode & 0o7777;
+        if group_kept { mode } else { mode & !0o070 }
     }
 
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -3658,6 +3689,31 @@ mod rich {
                 let stale = path.with_extension(format!("tmp-{pid}-{k}"));
                 assert_eq!(std::fs::read(stale).unwrap(), b"stale");
             }
+        }
+
+        // An overwrite's temp must never be more readable than owner-only while
+        // the data goes in, whatever the umask.
+        #[cfg(unix)]
+        #[test]
+        fn overwrite_temp_starts_owner_only() {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("out.csv");
+            let (tmp, file) = super::open_user_temp(&path, true).unwrap();
+            let mode = file.metadata().unwrap().permissions().mode() & 0o777;
+            drop(file);
+            std::fs::remove_file(tmp).unwrap();
+            assert_eq!(mode, 0o600);
+        }
+
+        // Group access survives only when the destination's group could be kept.
+        #[cfg(unix)]
+        #[test]
+        fn overwrite_mode_drops_group_bits_when_group_not_kept() {
+            assert_eq!(super::overwrite_mode(0o100640, true), 0o640);
+            assert_eq!(super::overwrite_mode(0o100640, false), 0o600);
+            assert_eq!(super::overwrite_mode(0o100664, false), 0o604);
+            assert_eq!(super::overwrite_mode(0o100600, false), 0o600);
         }
 
         #[cfg(feature = "viz")]

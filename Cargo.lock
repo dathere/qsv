@@ -2511,9 +2511,6 @@ name = "either"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "email_address"
@@ -6213,7 +6210,6 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-utils",
- "serde",
  "strum_macros 0.28.0",
 ]
 
@@ -6554,8 +6550,6 @@ dependencies = [
  "rayon",
  "recursive",
  "regex",
- "serde",
- "serde_json",
  "sha2 0.11.1",
  "slotmap",
  "strum_macros 0.28.0",
@@ -6711,7 +6705,6 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
- "serde",
  "strum_macros 0.28.0",
 ]
 
@@ -8715,7 +8708,6 @@ version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdd58c3c93c3d278ca835519292445cb4b0d4dc59ccfdf7ceadaab3f8aeb4038"
 dependencies = [
- "serde",
  "version_check",
 ]
 

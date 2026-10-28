@@ -400,7 +400,12 @@ polars = { version = "0.55", features = [
     # "'ROWS <n> PRECEDING' window frames require the 'rolling_window' feature".
     "rolling_window",
     "semi_anti_join",
-    "serde-lazy",
+    # "serde" (not "serde-lazy"): qsv only serializes polars Schema/DataType
+    # (the .pschema.json cache in util/special_format.rs), which polars-core
+    # derives under either feature. "serde-lazy" also turned on serde for
+    # polars-plan/lazy/ops/time (the whole DSL/IR), which qsv never serializes,
+    # and cost ~16% of the CPU time of a clean all_features build.
+    "serde",
     "strings",
     "string_normalize",
     # "string_pad",

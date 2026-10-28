@@ -370,19 +370,38 @@ _LIVE_INTRO = (
     "It runs on your machine through <a href=\"https://github.com/dathere/qsv-client\">"
     "qsv-clientd</a>, so it works only on a copy opened from your disk &mdash; on this site "
     "the page never contacts your computer. You need qsv 27.0.1 or later.")
-_LIVE_OPEN = (
-    "Open the downloaded page in your browser (from disk, e.g. by double-clicking it), click "
-    "<b>Live data</b> in its bottom-left corner, and approve the code it shows:",
-    ["qsv-clientd approve <CODE>"])
+_LIVE_OPEN = [
+    ("Open the downloaded page in your browser (from disk, e.g. by double-clicking it), click "
+     "<b>Live data</b> in its bottom-left corner, and approve the code it shows. In a shell:",
+     ["qsv-clientd approve <CODE>"]),
+    ("Or, with the tray: its dot turns magenta when a page asks to pair; open "
+     "<b>Approve&hellip;</b> in its menu and pick the code the page shows (the other three "
+     "are decoys, and picking one denies the request).", []),
+]
+
+
+def _live_start(env):
+    """Step 1, shell or tray: start the daemon with `env` (the variable Re-render needs) set."""
+    return [
+        ("Install qsv-client and start the daemon in a shell:",
+         ["pip install qsv-client", f"{env} qsv-clientd serve"]),
+        ("Or install the tray app instead, which runs the daemon behind an icon in the menu bar "
+         "(macOS) or notification area (Windows, Linux) and approves pairings from its menu. "
+         "Start it from a shell the first time, so the daemon it runs gets the variable above "
+         "(a tray started at login doesn't):",
+         ["pipx install 'qsv-client[tray]'", f"{env} qsv-clientd-tray"]),
+    ]
+
+
 LIVE = {
     "smart_wpa_211_requests.html": {
         "intro": _LIVE_INTRO,
         "steps": [
-            ("Install qsv-client and start the daemon. Re-render fetches the county population "
-             "from the Census Data API, so give it a free "
-             "<a href=\"https://api.census.gov/data/key_signup.html\">Census API key</a>:",
-             ["pip install qsv-client",
-              "QSV_CENSUS_API_KEY=<your-key> qsv-clientd serve"]),
+            [("Re-render fetches the county population from the Census Data API, so the "
+              "daemon needs a free "
+              "<a href=\"https://api.census.gov/data/key_signup.html\">Census API key</a> "
+              "in <code>QSV_CENSUS_API_KEY</code>.", [])]
+            + _live_start("QSV_CENSUS_API_KEY=<your-key>"),
             ("In another shell, download the page, its data dictionary, and the exact file it "
              "was rendered from: the WPRDC resource, byte for byte, attached to the qsv 27.0.1 "
              "release:",
@@ -406,10 +425,9 @@ LIVE = {
     "smart_boston_311_2025.html": {
         "intro": _LIVE_INTRO,
         "steps": [
-            ("Install qsv-client and start the daemon. This page plots every point, which "
-             "takes a higher point cap than the default, so set it for Re-render too:",
-             ["pip install qsv-client",
-              "QSV_VIZ_MAX_POINTS=300000 qsv-clientd serve"]),
+            [("This page plots every point, which takes a higher point cap than the default, "
+              "so the daemon needs <code>QSV_VIZ_MAX_POINTS</code> set for Re-render too.", [])]
+            + _live_start("QSV_VIZ_MAX_POINTS=300000"),
             ("In another shell, download the page, its data dictionary and neighborhood "
              "boundaries, and the exact file it was rendered from (attached to the qsv 27.0.1 "
              "release; 34&nbsp;MB, 153&nbsp;MB unpacked):",
@@ -1600,14 +1618,19 @@ def command_block_html(tokens):
 def live_block_html(page):
     """The collapsible "Make it live" how-to for a Data Schematic in LIVE, or "" when `page` (its
     standalone .html filename) has none. Each step is prose plus optional copy-pasteable command
-    lines, rendered with the same command block as the figure's own command."""
+    lines, rendered with the same command block as the figure's own command; a step that offers
+    alternatives (shell or tray) is a list of such (prose, commands) parts."""
     live = LIVE.get(page)
     if not live:
         return ""
     steps = []
-    for text, cmds in live["steps"]:
-        blocks = "".join(command_block_html(shlex.split(c, posix=False)) for c in cmds)
-        steps.append(f"<li>{text}{blocks}</li>")
+    for step in live["steps"]:
+        parts = step if isinstance(step, list) else [step]
+        body = ""
+        for i, (text, cmds) in enumerate(parts):
+            blocks = "".join(command_block_html(shlex.split(c, posix=False)) for c in cmds)
+            body += (f"<p>{text}</p>" if i else text) + blocks
+        steps.append(f"<li>{body}</li>")
     return (f'<details class="live"><summary>Make it a Live Data Schematic</summary>'
             f'<p>{live["intro"]}</p><ol>{"".join(steps)}</ol>'
             f'<p>{live["outro"]}</p></details>')

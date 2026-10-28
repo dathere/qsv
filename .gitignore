@@ -103,3 +103,9 @@ examples/viz/__pycache__/
 
 # Session summaries appended by the qsv Claude plugin's SessionEnd hook (see docs/Logging.md)
 .qsv-session-log.md
+
+# Gallery inputs too large to commit, attached to the qsv 27.0.1 GitHub release instead.
+# examples/viz/gen_wpa_211_requests.py re-downloads the WPRDC one and checks its bytes.
+examples/viz/wpa_211_requests.csv
+examples/viz/boston311-2025.tsv
+examples/viz/boston311-2025.tsv.gz

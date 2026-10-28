@@ -2,12 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "wpa_211_requests",
   "type": "object",
-  "description": "REAL 2-1-1 helpline requests across the 25 Western Pennsylvania counties served by the United Way of Southwestern Pennsylvania, one row per request, the upstream resource entire (2023-09-22 .. 2025-08-27, no window and no sample - see gen_wpa_211_requests.py). Used to demonstrate a denominator-aware region map on a real service log rather than a synthetic one. No population column is carried on purpose: the rate panel's denominator is FETCHED by --denominator census@2024, and the county boundaries by --geojson auto, which also canonicalizes the county NAMES below to Census GEOIDs so the fetched population keys onto them.",
+  "description": "REAL 2-1-1 helpline requests across the 25 Western Pennsylvania counties served by the United Way of Southwestern Pennsylvania, one row per request: the WPRDC resource verbatim, all 13 columns, the upstream resource entire (2023-09-22 .. 2025-08-27, no window and no sample - see gen_wpa_211_requests.py). Used to demonstrate a denominator-aware region map on a real service log rather than a synthetic one. No population column is carried on purpose: the rate panel's denominator is FETCHED by --denominator census@2024, and the county boundaries by --geojson auto, which also canonicalizes the county NAMES below to Census GEOIDs so the fetched population keys onto them.",
   "x-qsv": {
     "grain": "one row = one 2-1-1 request",
     "grain_unit": "request"
   },
   "properties": {
+    "_id": {
+      "type": "integer",
+      "title": "Row ID",
+      "description": "The WPRDC datastore's row number for the request.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "cardinality": 279464,
+        "null_count": 0,
+        "content_type": "unique_id",
+        "role": "identifier",
+        "concept": "id.surrogate_key"
+      }
+    },
     "contact_date": {
       "type": "string",
       "title": "Contact Date",
@@ -19,33 +32,6 @@
         "content_type": "date:%Y-%m-%d",
         "role": "timestamp",
         "concept": "time.event_timestamp"
-      }
-    },
-    "county": {
-      "type": "string",
-      "title": "County",
-      "description": "County of the caller, normalized to the '<Name> County' spelling by the generator (the upstream 2020-2023 and 2023-2025 resources disagree on the suffix). The ONLY region concept in this dictionary, deliberately: the upstream feed also carries a zip_code, and tagging it geo.* would create a competing choropleth candidate scoring against a county-keyed map. All 25 names are Pennsylvania counties and are unique within the state, so - unlike tristate_county_incidents - they need no state qualifier to stop the frequency bar silently summing namesakes.",
-      "x-qsv": {
-        "qsv_type": "String",
-        "cardinality": 25,
-        "null_count": 0,
-        "content_type": "category",
-        "role": "dimension",
-        "concept": "geo.county"
-      }
-    },
-    "state": {
-      "type": "string",
-      "title": "State",
-      "description": "Constant by construction - this is the Western Pennsylvania 2-1-1 region. Carried so --geojson auto scopes its boundary fetch to one state rather than probing the nation.",
-      "const": "PA",
-      "x-qsv": {
-        "qsv_type": "String",
-        "cardinality": 1,
-        "null_count": 0,
-        "content_type": "state_abbr",
-        "role": "dimension",
-        "concept": "geo.state"
       }
     },
     "gender": {
@@ -80,13 +66,110 @@
         "concept": "category.type"
       }
     },
+    "zip_code": {
+      "type": "integer",
+      "title": "ZIP Code",
+      "description": "The ZIP code the request came from. Deliberately not tagged as a geography: county is the one region this schematic maps, and a second geo concept would compete with it for the choropleth.",
+      "x-qsv": {
+        "qsv_type": "Integer",
+        "cardinality": 726,
+        "null_count": 0,
+        "content_type": "unknown",
+        "role": "identifier",
+        "concept": "unknown"
+      }
+    },
+    "county": {
+      "type": "string",
+      "title": "County",
+      "description": "County of the caller, as the portal spells it (\"Allegheny\", without \"County\"). The ONLY region concept in this dictionary, deliberately: tagging zip_code geo.* as well would create a competing choropleth candidate. --geojson auto resolves these names to Census GEOIDs, qualified by state.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 25,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "geo.county"
+      }
+    },
+    "state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "title": "State",
+      "description": "Pennsylvania on every row that has a state; 65 rows have none. Tagged geo.state so --geojson auto qualifies each county name by it (Erie, Crawford and Westmoreland are also county names in other states).",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 2,
+        "null_count": 65,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "geo.state"
+      }
+    },
+    "needs_category": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "title": "Need Category",
+      "description": "The specific need the caller asked about.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 973,
+        "null_count": 4002,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "taxonomy_name": {
+      "type": "string",
+      "title": "Taxonomy Name",
+      "description": "The 2-1-1 taxonomy term the request was coded to.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 1037,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "needs_code": {
+      "type": "string",
+      "title": "Taxonomy Code",
+      "description": "The 2-1-1 taxonomy code for Taxonomy Name.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 1037,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "identifier",
+        "concept": "unknown"
+      }
+    },
     "level_1_classification": {
       "type": "string",
       "title": "Need Group",
-      "description": "Top level of the AIRS/211 taxonomy for the need behind the request - Basic Needs, Income Support and Employment, and so on. The feed's finer taxonomy levels are dropped by the generator: level_2_classification has 66 values and needs_category 826, both past the point where a frequency bar reads.",
+      "description": "Top level of the AIRS/211 taxonomy for the need behind the request - Basic Needs, Income Support and Employment, and so on. The finer levels are level_2_classification (69 values), needs_category (973) and taxonomy_name (1,037).",
       "x-qsv": {
         "qsv_type": "String",
         "cardinality": 11,
+        "null_count": 0,
+        "content_type": "category",
+        "role": "dimension",
+        "concept": "category.type"
+      }
+    },
+    "level_2_classification": {
+      "type": "string",
+      "title": "Need Subgroup",
+      "description": "The need's second-level classification, within Need Group.",
+      "x-qsv": {
+        "qsv_type": "String",
+        "cardinality": 69,
         "null_count": 0,
         "content_type": "category",
         "role": "dimension",

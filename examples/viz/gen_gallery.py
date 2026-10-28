@@ -117,6 +117,12 @@ POPOUT_CSS = ("figcaption a.popout{font-weight:400;font-size:12px;margin-left:8p
               "color:#3056d3;text-decoration:none}"
               "figcaption a.popout:hover{text-decoration:underline}")
 
+# The collapsible "Make it live" how-to under a Live-Data-Schematic-ready entry (see LIVE).
+LIVE_CSS = ("figure details.live{margin:8px 4px 0;font-size:13px;line-height:1.45}"
+            "figure details.live summary{cursor:pointer;font-weight:600;color:#3056d3}"
+            "figure details.live ol{margin:6px 0 0;padding-left:20px}"
+            "figure details.live li{margin:6px 0}")
+
 # GitHub-style copy icons (Octicons, 16x16, fill=currentColor). The button shows the "copy" icon
 # (two overlapping squares) and swaps to a green "check" on success — both are present in the
 # button and toggled by the `.ok` class (no innerHTML churn, no SVG strings in JS).
@@ -348,6 +354,89 @@ LAZY_GL_JS = (
     "return function(id,render){var el=document.getElementById(id);"
     "if(!io||!el){render();return;}reg.set(el,{render:render,live:false});io.observe(el);};"
     "})();")
+
+
+# Data Schematics a visitor can turn into a LIVE Data Schematic with qsv-clientd (qsv-client on
+# PyPI): the page plus the exact file it was rendered from, registered with the daemon. Keyed by
+# the standalone page's filename; rendered by live_block_html() as a collapsible how-to under
+# the entry. The data files too large to commit are assets of the qsv 27.0.1 GitHub release;
+# everything else is served from this site. Re-render reuses the arguments given after `--`,
+# from the daemon's working directory, so file arguments must be absolute ("$PWD/...").
+SITE = "https://dathere.github.io/qsv"
+RELEASE_DATA = "https://github.com/dathere/qsv/releases/download/27.0.1"
+_LIVE_INTRO = (
+    "A Live Data Schematic stays connected to its data: click a bar to see its rows, run "
+    "read-only queries, fetch the latest copy from the portal and re-render the page from it. "
+    "It runs on your machine through <a href=\"https://github.com/dathere/qsv-client\">"
+    "qsv-clientd</a>, so it works only on a copy opened from your disk &mdash; on this site "
+    "the page never contacts your computer. You need qsv 27.0.1 or later.")
+_LIVE_OPEN = (
+    "Open the downloaded page in your browser (from disk, e.g. by double-clicking it), click "
+    "<b>Live data</b> in its bottom-left corner, and approve the code it shows:",
+    ["qsv-clientd approve <CODE>"])
+LIVE = {
+    "smart_wpa_211_requests.html": {
+        "intro": _LIVE_INTRO,
+        "steps": [
+            ("Install qsv-client and start the daemon. Re-render fetches the county population "
+             "from the Census Data API, so give it a free "
+             "<a href=\"https://api.census.gov/data/key_signup.html\">Census API key</a>:",
+             ["pip install qsv-client",
+              "QSV_CENSUS_API_KEY=<your-key> qsv-clientd serve"]),
+            ("In another shell, download the page, its data dictionary, and the exact file it "
+             "was rendered from: the WPRDC resource, byte for byte, attached to the qsv 27.0.1 "
+             "release:",
+             [f"curl -LO {SITE}/smart_wpa_211_requests.html",
+              f"curl -LO {SITE}/wpa_211_requests_dict.schema.json",
+              f"curl -LO {RELEASE_DATA}/wpa_211_requests.csv"]),
+            ("Register the data with the page, passing the arguments it was rendered with:",
+             ['qsv-clientd register wpa_211_requests.csv --schematic smart_wpa_211_requests.html '
+              '-- --smarter --bivariate --dict-info '
+              '--dictionary "$PWD/wpa_211_requests_dict.schema.json" --geojson auto '
+              '--denominator census@2024 --theme plotly_white '
+              '--dataset-pid https://data.wprdc.org/dataset/211-requests/resource/'
+              '0ce22487-5707-4e64-8e59-5b189cfc69cb --preview-threshold 500']),
+            _LIVE_OPEN,
+        ],
+        "outro": ("<b>Fetch latest</b> downloads the resource again from the WPRDC, through the "
+                  "page's citation link. Its last request is dated 2025-08-27 and the WPRDC last "
+                  "updated it on 2026-05-01, so today that returns the same file; a revision "
+                  "would arrive in the same 13-column shape this page was built from."),
+    },
+    "smart_boston_311_2025.html": {
+        "intro": _LIVE_INTRO,
+        "steps": [
+            ("Install qsv-client and start the daemon. This page plots every point, which "
+             "takes a higher point cap than the default, so set it for Re-render too:",
+             ["pip install qsv-client",
+              "QSV_VIZ_MAX_POINTS=300000 qsv-clientd serve"]),
+            ("In another shell, download the page, its data dictionary and neighborhood "
+             "boundaries, and the exact file it was rendered from (attached to the qsv 27.0.1 "
+             "release; 34&nbsp;MB, 153&nbsp;MB unpacked):",
+             [f"curl -LO {SITE}/smart_boston_311_2025.html",
+              f"curl -LO {SITE}/boston311.schema.json",
+              f"curl -LO {SITE}/boston_neighborhood_boundaries.json",
+              f"curl -LO {RELEASE_DATA}/boston311-2025.tsv.gz",
+              "gunzip boston311-2025.tsv.gz"]),
+            ("Register the data with the page, passing the arguments it was rendered with. "
+             "<code>--source-url</code> is the City of Boston's datastore export, the same "
+             "shape as this file (the portal's download link leaves out the <code>_id</code> "
+             "column, so Fetch latest would refuse it):",
+             ['qsv-clientd register boston311-2025.tsv --schematic smart_boston_311_2025.html '
+              '--source-url "https://data.boston.gov/datastore/dump/'
+              '9d7c2214-4709-478a-a2e8-fb2020a5bb94?bom=True" '
+              '-- --smarter --dictionary "$PWD/boston311.schema.json" --dict-info --bivariate '
+              '--photos --geojson "$PWD/boston_neighborhood_boundaries.json" '
+              '--feature-id-key properties.name '
+              '--dataset-pid https://data.boston.gov/dataset/311-service-requests/resource/'
+              '9d7c2214-4709-478a-a2e8-fb2020a5bb94']),
+            _LIVE_OPEN,
+        ],
+        "outro": ("<b>Fetch latest</b> then downloads the current 2025 file from the City of "
+                  "Boston, which is still adding requests, and <b>Re-render</b> redraws every "
+                  "panel from it."),
+    },
+}
 
 
 def uses_webgl(fig):
@@ -1069,7 +1158,9 @@ FIGURES = [
      "where the rate map <b>refuses to invert</b> \u2014 and that is exactly why it is here. "
      "<b>279,464 2-1-1 helpline requests</b> across the <b>25 Western Pennsylvania counties</b> "
      "served by the United Way of Southwestern Pennsylvania, one row per request, the upstream "
-     "resource <b>entire</b> (2023-09-22 to 2025-08-27 \u2014 no window, no sample). The "
+     "resource <b>entire</b> (2023-09-22 to 2025-08-27 \u2014 no window, no sample), as the "
+     "WPRDC's own file, all 13 columns, byte for byte \u2014 which is what lets it go live (see "
+     "below). The "
      "<b>count</b> panel is <b>Allegheny County and almost nothing else</b>: 172,035 requests, "
      "<b>61.6% of the whole file</b>, because a raw-count choropleth of any event log is "
      "substantially a population map. The <b>rate</b> panel beside it divides by each county's "
@@ -1092,8 +1183,10 @@ FIGURES = [
      "<b>245 times higher</b>. Nobody believes McKean "
      "County has no hardship; it sits at the edge of <i>this</i> call center's intake, so the "
      "figure is measuring who dials 2-1-1, not who needs it. A per-capita map inherits whatever "
-     "the numerator was actually counting. The upstream feed's <code>zip_code</code> is dropped "
-     "rather than mis-tagged (a second geo concept would create a competing choropleth candidate), "
+     "the numerator was actually counting. The feed's <code>zip_code</code> is kept but tagged an "
+     "identifier, not a geography (a second geo concept would create a competing choropleth "
+     "candidate); <b>11 rows</b> have no state and a county name other states share (Erie, "
+     "Crawford, Westmoreland), so the map can't place them (qsv reports them when it renders); "
      "and the dataset's OLDER 2020-2023 resource is deliberately not concatenated: 5.4% of its "
      "rows carry a pipe-delimited <code>Allegheny County|Westmoreland County</code> multi-county "
      "value, and every way of resolving those changes the map.",
@@ -1102,7 +1195,8 @@ FIGURES = [
             "--geojson", "auto",
             "--denominator", "census@2024",
             "--theme", "plotly_white",
-            "--dataset-pid", "https://data.wprdc.org/dataset/211-requests"]),
+            "--dataset-pid", "https://data.wprdc.org/dataset/211-requests/resource/"
+                             "0ce22487-5707-4e64-8e59-5b189cfc69cb"]),
     ("smart Data Schematic (animated geo, world events)",
      "Auto Data Schematic for world_events_dated: global-extent dated points across six continents "
      "(lon span ~300&deg;, lat span ~99&deg;). Because the extent is continental/global, "
@@ -1503,6 +1597,22 @@ def command_block_html(tokens):
             f'<pre class="cmd"><code>{display}</code></pre></div>')
 
 
+def live_block_html(page):
+    """The collapsible "Make it live" how-to for a Data Schematic in LIVE, or "" when `page` (its
+    standalone .html filename) has none. Each step is prose plus optional copy-pasteable command
+    lines, rendered with the same command block as the figure's own command."""
+    live = LIVE.get(page)
+    if not live:
+        return ""
+    steps = []
+    for text, cmds in live["steps"]:
+        blocks = "".join(command_block_html(shlex.split(c, posix=False)) for c in cmds)
+        steps.append(f"<li>{text}{blocks}</li>")
+    return (f'<details class="live"><summary>Make it a Live Data Schematic</summary>'
+            f'<p>{live["intro"]}</p><ol>{"".join(steps)}</ol>'
+            f'<p>{live["outro"]}</p></details>')
+
+
 def figcaption_html(title, desc, args, popout=None):
     """A figure's `<figcaption>`: title, description, then the runnable command block with a
     Copy button. The displayed command is wrapped for readability; the button copies the
@@ -1523,7 +1633,8 @@ def figcaption_html(title, desc, args, popout=None):
                 f'(open in a new window)</a>')
     return (f'<figcaption><span class="t">{title}</span>{link}'
             f'<span class="d">{desc}</span>'
-            f'{command_block_html(viz_command_tokens(title, args))}</figcaption>')
+            f'{command_block_html(viz_command_tokens(title, args))}'
+            f'{live_block_html(popout) if popout else ""}</figcaption>')
 
 
 def scan_object(html, brace_start):
@@ -2232,6 +2343,11 @@ def check_caption_map_counts():
 
 def main():
     qsv = find_qsv()
+    # wpa_211_requests.csv is too large to commit (see .gitignore); fail up front with the fix
+    # rather than mid-run with a bare qsv "file not found".
+    if not os.path.exists(os.path.join(VIZ_DIR, "wpa_211_requests.csv")):
+        sys.exit("examples/viz/wpa_211_requests.csv is missing: run "
+                 "examples/viz/gen_wpa_211_requests.py to download it")
     # before anything runs qsv: a stale cache from unrelated work would otherwise be reused and
     # silently change a figure (see `cleanup_sidecars`).
     stale = cleanup_sidecars()
@@ -2288,6 +2404,9 @@ def main():
     # (idempotent: drop any prior `figcaption a.popout` rules before re-adding)
     head = re.sub(r"\s*figcaption a\.popout[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + POPOUT_CSS + "\n</style>", 1)
+    # "Make it live" how-to blocks (idempotent: drop any prior `figure details.live` rules)
+    head = re.sub(r"\s*figure details\.live[^{]*\{[^}]*\}", "", head)
+    head = head.replace("</style>", " " + LIVE_CSS + "\n</style>", 1)
     # opaque backdrop when a reconstructed figure is sent fullscreen via its modebar button
     # (idempotent: drop any prior rule before re-adding)
     head = re.sub(r"\s*\.js-plotly-plot:fullscreen\{[^}]*\}", "", head)
@@ -2443,7 +2562,7 @@ def main():
             f'<figure class="cell full" id="{shot_anchor}">{legacy_stub}'
             f'<figcaption><span class="t">{shot["title"]}</span>'
             f'<span class="d">{shot["desc"]}</span>'
-            f'{command_block_html(cmd_tokens)}</figcaption>'
+            f'{command_block_html(cmd_tokens)}{live_block_html(shot["href"])}</figcaption>'
             f'<a class="shot" href="{shot["href"]}" target="_blank" rel="noopener" '
             f'''onclick="window.open(this.href,'{shot["win"]}','popup,width=1280,height=900');'''
             f'''return false;" '''

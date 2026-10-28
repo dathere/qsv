@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Build examples/viz/wpa_211_requests.csv from the WPRDC 2-1-1 Service Requests feed.
+"""Fetch examples/viz/wpa_211_requests.csv: the WPRDC 2-1-1 Service Requests resource, verbatim.
 
-REAL requests on REAL counties -- nothing here is synthesized.
+REAL requests on REAL counties -- nothing here is synthesized, and nothing is reshaped.
+The file is the portal's own datastore dump, byte for byte, so a Live Data Schematic of it
+(qsv-clientd's Fetch latest) gets data of exactly the shape the gallery page was rendered
+from. It is not committed (46 MB): it is attached to the qsv 27.0.1 GitHub release, and
+this script re-downloads it from the portal and checks the bytes.
 
 The gallery's tristate_county_incidents figure teaches the count-vs-rate fallacy with
 SYNTHETIC incidents whose rates were constructed to invert the ranking. This fixture
@@ -25,7 +29,8 @@ Scope: the whole 2023-2025 resource, and why not the 2020-2023 one
 -----------------------------------------------------------------
 This takes the upstream resource ENTIRE -- every row it publishes, 2023-09-22 through
 2025-08-27 -- rather than a window or a sample. Nothing is thinned, so every count on
-the rendered page is the real total for that county over that span.
+the rendered page is the real total for that county over that span, less the 11 rows
+the map cannot place (below).
 
 The WPRDC dataset also carries an OLDER resource, "2-1-1 Requests (2020-2023)"
 (94f52ddb-acf3-4728-93b9-4544988f1d6f). It is deliberately NOT concatenated here, and
@@ -43,6 +48,16 @@ A figure whose whole point is a defensible per-capita denominator should not ope
 an undocumented tie-break, so the clean resource is used whole and the messy one is
 left out rather than quietly reshaped.
 
+The 11 rows the map cannot place
+--------------------------------
+65 rows have no `state`. `--geojson auto` qualifies each county name by the row's state
+(422 US county names belong to more than one state), so a stateless row resolves only
+when its county name is unique nationally. Westmoreland (5 rows), Erie (4) and Crawford
+(2) are not -- there are Erie counties in NY, OH and PA -- so those 11 rows are left off
+the map (`viz smart` reports them on stderr when it renders). Every other stateless row still lands. Filling the blanks
+in with "Pennsylvania" would be true, but it would also make this file stop being the
+portal's file, which is the property the live schematic depends on.
+
 Why no county_fips column
 -------------------------
 An earlier draft added one. It is not needed: `--geojson auto` fetches the county
@@ -56,12 +71,13 @@ county names they are a silent wrong answer (the issue #4417 Part B finding:
 Pittsburgh). refresh_external_dashboards.sh records the same class of trap for
 PennDOT's own county code.
 
-Why zip_code is dropped
------------------------
-The upstream feed carries one. Tagging a second geo concept would create a competing
-choropleth candidate scoring against a county-keyed map -- the same reason
-tristate_county_incidents tags only ONE geography. It is dropped here rather than
-mis-tagged.
+Why zip_code is not tagged as a geography
+-----------------------------------------
+Tagging a second geo concept would create a competing choropleth candidate scoring
+against a county-keyed map -- the same reason tristate_county_incidents tags only ONE
+geography. The column stays in the file (it is the portal's file), and
+wpa_211_requests_dict.schema.json marks it an identifier instead, so the map stays keyed
+on county.
 
 ACS_VINTAGE below is documentation only -- this script makes no Census request. It
 records the release the committed blurb's per-1,000 numbers were computed against, and
@@ -78,6 +94,7 @@ id 0ce22487-5707-4e64-8e59-5b189cfc69cb. Licensed Creative Commons Attribution.
 Usage: gen_wpa_211_requests.py [outdir]   (default: this script's directory)
 """
 import csv
+import hashlib
 import io
 import sys
 import time
@@ -100,19 +117,12 @@ SPAN_LO = "2023-09-22"
 SPAN_HI = "2025-08-27"
 
 # Asserted, not assumed: a silently reshaped upstream feed must fail this script rather
-# than quietly re-cut the figure the committed blurb describes.
+# than quietly re-cut the figure the committed blurb describes. EXPECTED_SHA256 is the
+# strongest of these: the gallery page's input fingerprint, the 27.0.1 release asset and
+# visitors' `qsv-clientd register` all depend on these exact bytes.
 EXPECTED_ROWS = 279464
 EXPECTED_COUNTIES = 25
-
-OUT_COLUMNS = [
-    "contact_date",
-    "county",
-    "state",
-    "gender",
-    "age_range",
-    "level_1_classification",
-    "needs_met",
-]
+EXPECTED_SHA256 = "be2a1b488063e9465e7d23c4c193abe539dea661563cd408d6848344043a666b"
 
 # The portal returns transient failures under load, exactly as api.census.gov does for
 # the tristate fixture. Retry with backoff; a real outage still surfaces after the last
@@ -138,54 +148,12 @@ def fetch(url):
     sys.exit(f"FAILED after {FETCH_ATTEMPTS} attempts: {url}\n  last error: {last}")
 
 
-def normalize_county(raw):
-    """'Allegheny' and 'Allegheny County' both appear upstream -- the 2020-2023 and
-    2023-2025 resources disagree on the suffix. Emit one spelling so the frequency bar
-    cannot split a county across two bars."""
-    name = (raw or "").strip()
-    if not name:
-        return ""
-    if name.lower().endswith(" county"):
-        name = name[: -len(" county")].strip()
-    return f"{name} County" if name else ""
-
-
-def build(raw_bytes):
-    reader = csv.DictReader(io.StringIO(raw_bytes.decode("utf-8")))
-    rows = []
-    for row in reader:
-        date = (row.get("contact_date") or "").strip()
-        if not date:
-            continue
-        county = normalize_county(row.get("county"))
-        if not county:
-            continue
-        rows.append({
-            "contact_date": date,
-            "county": county,
-            # Constant by construction: this is the Western PA 2-1-1 region. Carried so
-            # the dictionary can tag it geo.state, which scopes the boundary fetch to
-            # one state instead of probing the nation.
-            "state": "PA",
-            "gender": (row.get("gender") or "").strip(),
-            "age_range": (row.get("age_range") or "").strip(),
-            "level_1_classification": (row.get("level_1_classification") or "").strip(),
-            "needs_met": (row.get("needs_met") or "").strip(),
-        })
-    # Sort so a re-run is byte-identical regardless of upstream row order.
-    rows.sort(key=lambda r: tuple(r[c] for c in OUT_COLUMNS))
-    return rows
-
-
-def emit(rows, path):
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=OUT_COLUMNS, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+def parse(raw_bytes):
+    return list(csv.DictReader(io.StringIO(raw_bytes.decode("utf-8"))))
 
 
 def report(rows, path):
-    counties = sorted({r["county"] for r in rows})
+    counties = sorted({(r["county"] or "").strip() for r in rows} - {""})
     lo = min(r["contact_date"] for r in rows)
     hi = max(r["contact_date"] for r in rows)
     print(f"{path}: {len(rows):,} rows, {len(counties)} counties, "
@@ -211,10 +179,16 @@ def report(rows, path):
 def main():
     outdir = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).parent)
     print(f"fetching {WPRDC_DUMP}", file=sys.stderr)
-    rows = build(fetch(WPRDC_DUMP))
+    raw = fetch(WPRDC_DUMP)
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != EXPECTED_SHA256:
+        sys.exit(f"FAIL: sha256 {digest}, expected {EXPECTED_SHA256}. The portal's dump "
+                 "changed, so it no longer matches the gallery page's fingerprint or the "
+                 "27.0.1 release asset. Re-check the blurb, re-render the page and replace "
+                 "the asset before bumping EXPECTED_SHA256.")
     path = outdir / "wpa_211_requests.csv"
-    emit(rows, path)
-    report(rows, path)
+    path.write_bytes(raw)
+    report(parse(raw), path)
 
 
 if __name__ == "__main__":

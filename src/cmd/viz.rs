@@ -16736,7 +16736,12 @@ const CHORO_FILTER_CHROME: &str = r##"<script>
   }
   function keyOf(c) { return JSON.stringify(normCrit(c)); }
   function anyOf(title, values) {
-    var mk = function (v) { return { condition: "=", data: title, value: [v] }; };
+    // "" stands for a blank cell (a qualifier the row lacked); SearchBuilder matches blank
+    // cells with its "Empty" condition, not with `=`
+    var mk = function (v) {
+      return v === "" ? { condition: "null", data: title, value: [] }
+                      : { condition: "=", data: title, value: [v] };
+    };
     return values.length === 1 ? mk(values[0]) : { logic: "OR", criteria: values.map(mk) };
   }
   function critFor(title, qtitle, loc) {
@@ -32527,14 +32532,17 @@ fn build_smart_summary_choropleth_panels(
                     variants.push(raw.to_string());
                 }
             }
+            // A BLANK qualifier is recorded too, as "": a row whose region spelling is unique on
+            // its own still matched without one, and the map counts it, so the drawer filter must
+            // keep it (the JS side turns "" into SearchBuilder's "Empty" condition). Without it,
+            // clicking such a region drops those rows — every row, for a region whose rows all
+            // lack a qualifier.
             if let Some(qcol) = qualifier_col {
                 let cell = cell_to_string(record.get(qcol));
                 let cell = cell.trim();
-                if !cell.is_empty() {
-                    let seen = qual_raws_by_cand[ci].entry(k.clone()).or_default();
-                    if !seen.iter().any(|v| v == cell) {
-                        seen.push(cell.to_string());
-                    }
+                let seen = qual_raws_by_cand[ci].entry(k.clone()).or_default();
+                if !seen.iter().any(|v| v == cell) {
+                    seen.push(cell.to_string());
                 }
             }
             match counts[ci].get_mut(&k) {

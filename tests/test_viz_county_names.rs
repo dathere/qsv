@@ -616,6 +616,100 @@ fn viz_smart_county_names_region_filter_is_qualified() {
     });
 }
 
+/// A row with a BLANK qualifier whose region spelling is unique nationally still resolves and is
+/// counted on the map, so the drawer's region filter must keep it: the feature's qualifier
+/// spellings carry "" (the chrome turns it into SearchBuilder's "Empty" condition). Without it,
+/// clicking the region dropped those rows, and every row of a region whose rows all lack a state.
+#[test]
+#[serial]
+fn viz_smart_county_names_region_filter_keeps_blank_qualifier() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "state": { "type": ["string", "null"], "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_region_filter_keeps_blank_qualifier");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nWashington County,PA,10\nWashington County,PA,12\nWashington \
+         County,MD,30\nWashington County,MD,32\nAllegheny County,PA,40\nAllegheny County,,42\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains("var QUAL_COL = 1;"),
+            "region filter was not qualified: {stderr}"
+        );
+        // the blank-state Allegheny row is kept alongside the PA one, in first-seen order
+        assert!(
+            html.contains(r#""42003":["PA",""]"#),
+            "blank qualifier missing for 42003: {stderr}"
+        );
+        // and the chrome maps "" to SearchBuilder's Empty condition
+        assert!(
+            html.contains(r#"condition: "null""#),
+            "blank qualifier has no Empty criterion: {stderr}"
+        );
+    });
+}
+
+/// A WHITESPACE-ONLY qualifier is not an empty cell to the drawer: it keeps the spaces, and
+/// SearchBuilder's "Empty" condition matches only zero-length values. So the filter must carry the
+/// cell as written (an exact `=` match), not trimmed to "" — otherwise a region whose rows all hold
+/// "   " as their state would filter to zero rows.
+#[test]
+#[serial]
+fn viz_smart_county_names_region_filter_keeps_whitespace_qualifier() {
+    const DICT: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "county": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county" } },
+    "state": { "type": ["string", "null"], "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.state" } },
+    "cases": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+  }
+}"#;
+    let wrk = Workdir::new("viz_smart_county_names_region_filter_keeps_whitespace_qualifier");
+    wrk.create_from_string(
+        "c.csv",
+        "county,state,cases\nWashington County,PA,10\nWashington County,PA,12\nWashington \
+         County,MD,30\nWashington County,MD,32\nAllegheny County,   ,40\nAllegheny County,   ,42\n",
+    );
+    wrk.create_from_string("dict.schema.json", DICT);
+    let cache_dir = wrk.path("qsv-cache");
+    std::fs::create_dir_all(&cache_dir).expect("create cache dir");
+    with_mock_tigerweb(|base, _observed| {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "c.csv", "--geojson", "auto", "--dictionary"])
+            .arg(wrk.path("dict.schema.json"))
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env("QSV_CACHE_DIR", &cache_dir);
+        let out = wrk.output(&mut cmd);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(out.status.success(), "smart run failed: {stderr}");
+        let html = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(
+            html.contains(r#""42003":["   "]"#),
+            "whitespace-only qualifier not kept as written for 42003: {stderr}"
+        );
+    });
+}
+
 /// A region-CODE column publishes no aliases, so the drawer filter must stay unqualified — the
 /// qualified path must not leak into the ordinary case.
 #[test]

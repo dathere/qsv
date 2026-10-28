@@ -32532,14 +32532,20 @@ fn build_smart_summary_choropleth_panels(
                     variants.push(raw.to_string());
                 }
             }
-            // A BLANK qualifier is recorded too, as "": a row whose region spelling is unique on
-            // its own still matched without one, and the map counts it, so the drawer filter must
-            // keep it (the JS side turns "" into SearchBuilder's "Empty" condition). Without it,
-            // clicking such a region drops those rows — every row, for a region whose rows all
-            // lack a qualifier.
+            // A BLANK qualifier is recorded too: a row whose region spelling is unique on its own
+            // still matched without one, and the map counts it, so the drawer filter must keep it.
+            // Without it, clicking such a region drops those rows — every row, for a region whose
+            // rows all lack a qualifier. A truly empty cell is recorded as "", which the JS side
+            // turns into SearchBuilder's "Empty" condition; a whitespace-only cell is recorded
+            // as-is, because the drawer keeps the spaces and "Empty" only matches zero length.
             if let Some(qcol) = qualifier_col {
-                let cell = cell_to_string(record.get(qcol));
-                let cell = cell.trim();
+                let full = cell_to_string(record.get(qcol));
+                let trimmed = full.trim();
+                let cell = if trimmed.is_empty() {
+                    full.as_str()
+                } else {
+                    trimmed
+                };
                 let seen = qual_raws_by_cand[ci].entry(k.clone()).or_default();
                 if !seen.iter().any(|v| v == cell) {
                     seen.push(cell.to_string());

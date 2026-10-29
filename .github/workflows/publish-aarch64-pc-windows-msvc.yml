@@ -21,7 +21,7 @@ jobs:
       #▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼#
       - name: Get previous tag
         id: previoustag
-        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+        uses: "WyriHaximus/github-action-get-previous-tag@83f26fea93bc7efcbca2eb5591f5eaaf66b8f206" # v2.1.0
       #▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲#
       # - name: delete git repo
       #   run: rm -rf qsv
@@ -60,7 +60,7 @@ jobs:
 
     steps:
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
       with:
         toolchain: ${{ matrix.rust }}
         target: ${{ matrix.job.target }}
@@ -71,7 +71,7 @@ jobs:
     - name: Install Windows ARM64 GNU-family toolchain
       if: matrix.job.target == 'aarch64-pc-windows-gnullvm'
       id: msys2
-      uses: msys2/setup-msys2@v2
+      uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
       with:
         msystem: CLANGARM64
         update: true
@@ -138,7 +138,7 @@ jobs:
       run: |
         zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key
     - name: Upload zipped binaries to release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip

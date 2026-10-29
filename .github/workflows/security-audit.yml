@@ -13,6 +13,6 @@ jobs:
         run: rustup update 
       # actions-rs/audit-check is archived/Node20-deprecated (qsv #4002);
       # rustsec/audit-check@v2 is the maintained Node24 successor.
-      - uses: rustsec/audit-check@v2
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

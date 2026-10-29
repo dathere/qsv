@@ -47,7 +47,7 @@ jobs:
       - name: Get previous tag
         id: previoustag
         if: ${{ inputs.release_tag == '' }}
-        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+        uses: "WyriHaximus/github-action-get-previous-tag@83f26fea93bc7efcbca2eb5591f5eaaf66b8f206" # v2.1.0
       # This workflow is dispatched from an UNTAGGED master, whereas publish.yml runs with
       # HEAD at the tag - so tag auto-detection is not exercised the same way here, and it
       # has never actually reached the upload step. The repo also carries non-version tags

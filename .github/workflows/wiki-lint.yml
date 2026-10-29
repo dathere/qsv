@@ -109,12 +109,12 @@ jobs:
           sudo apt-get install redis-server
           sudo service redis-server start
       - name: Installing Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
         with:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Build qsv (PR source / nightly latest-master)
         run: |

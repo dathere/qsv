@@ -134,8 +134,8 @@ if [[ "$arg_pat" == "help" ]]; then
   echo "                     historical archive will be preserved."
   echo "          \"clean\": temporary files will be deleted."
   echo "          \"setup\": setup and install all the required tools."
-  echo "         \"accept\": accept <name>... records the named benchmarks that a run quarantined"
-  echo "                     in results/suspect_results.csv, without re-running them."
+  echo "         \"accept\": accept <name>... records the named benchmarks that the LATEST run"
+  echo "                     quarantined in results/suspect_results.csv, without re-running them."
   echo "           \"help\": this help text is displayed."
   echo ""
   echo "Current configuration:"
@@ -793,10 +793,14 @@ if [[ "$arg_pat" == "accept" ]]; then
     >results/suspect_work.csv
   mv results/suspect_work.csv results/suspect_results.csv
 
-  # the run's total_mean now includes the accepted benchmarks: recompute it (as the luau script
-  # does, from means rounded to 3 places) over the run's rows, in both run info files
-  total_mean=$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "mean") c = i; next }
-    { t += sprintf("%.3f", $c) } END { printf "%.3f", t }' results/latest_results.csv)
+  # the run's total_mean now includes the accepted benchmarks: add their means, rounded to 3
+  # places as the luau script does, to the run's recorded total_mean, in both run info files.
+  # (Re-summing latest_results.csv would not do: two runs of a version in the same hour share a
+  # tstamp, so it can also hold the earlier run's rows.)
+  total_mean=$(awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "total_mean") c = i; next }
+    NR == 2 && c { print $c }' results/latest_run_info.tsv)
+  total_mean=$(awk -F, -v base="${total_mean:-0}" 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "mean") c = i; next }
+    { t += sprintf("%.3f", $c) } END { printf "%.3f", base + t }' results/accept_rows.csv)
   for run_info in results/latest_run_info.tsv results/run_info_history.tsv; do
     awk -F'\t' -v OFS='\t' -v lt="$logtime" -v tm="$total_mean" \
       'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "total_mean") c = i; print; next }
@@ -1719,6 +1723,20 @@ now_sec=$(date +"%Y-%m-%d-%H-%M-%S")
 
 # first, run benchmarking without an index
 # each command is run five times. Two warm-up runs & three benchmarked runs.
+# this run will become the latest run, after which the previous run's quarantined results can no
+# longer be accepted (see accept) - so say so if it still has some
+if [ -s results/suspect_results.csv ] && [ -s results/latest_run_info.tsv ]; then
+  prev_logtime=$(awk -F'\t' 'NR == 2 { print $3 }' results/latest_run_info.tsv)
+  prev_suspects=$(awk -F, -v lt="$prev_logtime" 'NR > 1 && $3 == lt { printf "%s ", $4 }' results/suspect_results.csv)
+  if [ -n "$prev_suspects" ]; then
+    echo "> WARNING: the previous run ($prev_logtime) has quarantined results that were not accepted:"
+    echo "    ${prev_suspects% }"
+    echo "  Once this run finishes they can no longer be accepted. To keep any of them, stop this run"
+    echo "  (Ctrl-C, any time before it finishes) and run ./benchmarks.sh accept <name>... first."
+    echo ""
+  fi
+fi
+
 # the rowcount --verify checks compare against (see run)
 export QSVBM_ROWCOUNT=$rowcount
 
@@ -1900,6 +1918,9 @@ if [ "${#suspect_benchmarks[@]}" -gt 0 ]; then
   echo "> WARNING: ${#suspect_benchmarks[@]} benchmark(s) look like they did not do the work, and were"
   echo "  QUARANTINED in results/suspect_results.csv instead of being recorded (its reason column says why):"
   printf "    %s\n" "${suspect_benchmarks[@]}"
-  echo "  Check each one by hand. If its result is real (e.g. a genuine big speedup), record it with:"
+  echo "  Check each one by running its qsv command DIRECTLY, not through benchmarks.sh: only the"
+  echo "  latest run's quarantined results can be accepted, and any benchmarks.sh run (even a"
+  echo "  one-benchmark pattern run) becomes the latest run. If a result is real (e.g. a genuine big"
+  echo "  speedup), record it BEFORE the next benchmarks.sh run with:"
   echo "    ./benchmarks.sh accept ${suspect_benchmarks[*]}"
 fi

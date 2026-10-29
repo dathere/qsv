@@ -202,7 +202,7 @@ jobs:
         }
         try { Add-MpPreference -ExclusionProcess "rustc.exe","cargo.exe","link.exe","lld-link.exe" -ErrorAction Stop } catch { Write-Host "process exclusions unavailable" }
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
       with:
         # NOTE: dtolnay/rust-toolchain does NOT support the actions-rs-style
         # `profile:`/`override:` inputs (they emit "Unexpected input(s)" warnings
@@ -343,7 +343,7 @@ jobs:
     steps:
     - name: Installing Rust toolchain
       # needed for `cargo install zipsign` below
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
       with:
         toolchain: ${{ inputs.rust }}
     - name: Checkout repository
@@ -384,7 +384,7 @@ jobs:
       run: |
         zipsign sign zip qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip qsvpriv.key
     - name: Upload zipped binaries to release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: qsv-${{ inputs.previous_tag }}-${{ inputs.target }}.zip

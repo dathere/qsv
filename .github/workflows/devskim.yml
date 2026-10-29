@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run DevSkim scanner
-        uses: microsoft/DevSkim-Action@v1
+        uses: microsoft/DevSkim-Action@734c6ed89671b1c7a5211ed334c79db261e3f221 # v1
         with:
           # .claude/** : plugin / agent scratch space (not shipped)
           # tests/resources/** : test fixture data (also includes vendored

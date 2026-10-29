@@ -85,6 +85,6 @@ jobs:
           fi
 
       - name: Push
-        uses: ad-m/github-push-action@master
+        uses: ad-m/github-push-action@7fba72704ad2db819788db8f2d9e7d1dfbebe089 # master @ 2026-10-29
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

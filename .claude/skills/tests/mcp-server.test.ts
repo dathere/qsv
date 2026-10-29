@@ -23,7 +23,6 @@ import {
   createGetWorkingDirTool,
   handleConfigTool,
   handleSearchToolsCall,
-  initiateShutdown,
   killAllProcesses,
   getActiveProcessCount,
   getActiveOperationCount,
@@ -35,9 +34,8 @@ import {
   coreToolCount,
 } from "../src/tool-constants.js";
 import { SkillLoader } from "../src/loader.js";
-import { SkillExecutor } from "../src/executor.js";
 import { FilesystemResourceProvider } from "../src/mcp-filesystem.js";
-import type { QsvSkill, McpToolDefinition } from "../src/types.js";
+import type { QsvSkill } from "../src/types.js";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

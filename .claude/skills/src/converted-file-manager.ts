@@ -55,11 +55,6 @@ interface ConvertedFileCacheV0 {
   totalSize: number;
 }
 
-/**
- * Union type for all cache versions
- */
-type ConvertedFileCache = ConvertedFileCacheV1 | ConvertedFileCacheV0;
-
 interface ConvertedFileEntry {
   convertedPath: string;
   sourcePath: string;

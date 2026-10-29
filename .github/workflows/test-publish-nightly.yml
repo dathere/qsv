@@ -57,7 +57,7 @@ jobs:
 
     steps:
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
       with:
         toolchain: ${{ matrix.rust }}
         components: rust-src
@@ -117,7 +117,7 @@ jobs:
         rustup show > qsv_nightly_rust_version_info.txt
         cd ..
     - name: Download latest release zip
-      uses: robinraju/release-downloader@v1.13
+      uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
       with:
         repository: "dathere/qsv"
         latest: true
@@ -128,7 +128,7 @@ jobs:
     - name: add/update nightly files to zip
       run: 7z u -tzip qsv-publish-testing-${{ matrix.job.target }}-testing.zip ./qsv-publish-testing/qsv* ./qsv-publish-testing/LICENSE-MIT ./qsv-publish-testing/COPYING ./qsv-publish-testing/THIRD_PARTY_NOTICES.md -mx=9 -mmt=on
     - name: Upload zipped binaries to release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: qsv-publish-testing-${{ matrix.job.target }}-testing.zip

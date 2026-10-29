@@ -37,6 +37,9 @@ jobs:
       DATA_URL: https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z
       DATA: NYC_311_SR_2010-2020-sample-1M.csv
       HYPERFINE_VERSION: "1.19.0"
+      # Inputs go through env (not ${{ }} in run:) to avoid shell injection.
+      BENCH_RUNS: ${{ github.event.inputs.runs }}
+      BENCH_WARMUP: ${{ github.event.inputs.warmup }}
 
     steps:
       - uses: actions/checkout@v7
@@ -52,13 +55,13 @@ jobs:
           hyperfine --version
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: qsv-stats-alloc-bench
 
@@ -122,7 +125,7 @@ jobs:
       - name: Benchmark — frequency (2x2)
         run: |
           mkdir -p bench-results
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$BENCH_WARMUP" --runs "$BENCH_RUNS" -N \
             --export-markdown bench-results/frequency.md \
             --export-json bench-results/frequency.json \
             -n "050 tuned"  "/tmp/qsv-050 frequency $DATA" \
@@ -132,7 +135,7 @@ jobs:
 
       - name: Benchmark — stats -E (2x2)
         run: |
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$BENCH_WARMUP" --runs "$BENCH_RUNS" -N \
             --export-markdown bench-results/stats-E.md \
             --export-json bench-results/stats-E.json \
             -n "050 tuned"  "/tmp/qsv-050 stats -E -c 0 $DATA" \

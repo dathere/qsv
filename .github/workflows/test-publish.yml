@@ -120,7 +120,7 @@ jobs:
  
     steps:
     - name: Installing Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-29
       with:
         toolchain: ${{ matrix.rust }}
         target: ${{ matrix.job.target }}
@@ -176,7 +176,7 @@ jobs:
     - name: zip up binaries
       run: 7z a -tzip qsv-publish-testing-${{ matrix.job.target }}.zip ./qsv-publish-testing/* -mx=9 -mmt=on
     - name: Upload zipped binaries to release
-      uses: svenstaro/upload-release-action@v2
+      uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         file: qsv-publish-testing-${{ matrix.job.target }}.zip

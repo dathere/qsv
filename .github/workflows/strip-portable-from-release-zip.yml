@@ -81,7 +81,7 @@ jobs:
       - name: Get previous tag
         id: previoustag
         if: ${{ inputs.release_tag == '' }}
-        uses: "WyriHaximus/github-action-get-previous-tag@v2"
+        uses: "WyriHaximus/github-action-get-previous-tag@83f26fea93bc7efcbca2eb5591f5eaaf66b8f206" # v2.1.0
 
       # Same guard as publish-windows.yml: the repo carries non-version tags (`rkyv`), and the
       # upload below runs with overwrite: true, so assert the shape before touching anything.
@@ -122,7 +122,7 @@ jobs:
         run: cargo install zipsign
 
       - name: Download the published zip
-        uses: robinraju/release-downloader@v1.13
+        uses: robinraju/release-downloader@28fc21f50d76778e7023361aa1f863e717d3d56f # v1.13
         with:
           repository: "dathere/qsv"
           tag: ${{ steps.resolve.outputs.tag }}
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload the rewritten zip
         if: ${{ !inputs.dry_run }}
-        uses: svenstaro/upload-release-action@v2
+        uses: svenstaro/upload-release-action@29e53e917877a24fad85510ded594ab3c9ca12de # 2.11.5
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: qsv-${{ steps.resolve.outputs.tag }}-x86_64-unknown-linux-gnu.zip

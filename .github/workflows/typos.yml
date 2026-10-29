@@ -12,6 +12,6 @@ jobs:
       uses: actions/checkout@v7
 
     - name: Check spelling
-      uses: crate-ci/typos@master
+      uses: crate-ci/typos@b41eb62e9a8096c9ba6636e2365d3f56018a203c # master @ 2026-10-29
       with:
         config: ./_typos.toml

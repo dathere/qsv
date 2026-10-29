@@ -1300,7 +1300,7 @@ export async function handleSearchToolsCall(
           regex.test(skill.command.subcommand) ||
           skill.examples?.some((ex) => regex.test(ex.description)),
       );
-    } catch (regexError) {
+    } catch {
       // Invalid regex, fall back to text search (already done above)
     }
   }

@@ -5,10 +5,10 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, realpath, access } from "fs/promises";
-import { realpathSync } from "fs";
-import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "path";
-import { homedir } from "os";
+import { readdir, stat, realpath, access } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "node:path";
+import { homedir } from "node:os";
 import type {
   McpResource,
   FileMetadata,

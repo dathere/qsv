@@ -9,7 +9,7 @@
 
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { CreateMessageResult } from "@modelcontextprotocol/sdk/types.js";
-import { spawn } from "child_process";
+import { spawn } from "node:child_process";
 import { errorResult, successResult, describegptFallbackResult } from "./utils.js";
 
 /** Phase context from --prepare-context output */

@@ -2,9 +2,9 @@
 // Prune historical .mcpb / .plugin bundles, keeping only the current version
 // (read from package.json). Run from .claude/skills/ as `npm run clean:bundles`.
 
-import { readdirSync, readFileSync, statSync, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');

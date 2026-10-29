@@ -10,8 +10,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { handleToolCall, handleConfigTool, isBinaryOutputFormat } from "../src/mcp-tools.js";
 import { config } from "../src/config.js";
 import { SkillLoader } from "../src/loader.js";

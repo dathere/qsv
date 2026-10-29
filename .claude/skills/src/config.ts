@@ -5,10 +5,10 @@
  * Supports both legacy MCP server and Desktop Extension modes.
  */
 
-import { homedir, tmpdir } from "os";
-import { join } from "path";
-import { execFileSync } from "child_process";
-import { statSync } from "fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
 import { compareVersions, getErrorMessage } from "./utils.js";
 import { DEFAULT_MAX_OUTPUT_SIZE, BINARY_VALIDATION_TIMEOUT_MS } from "./tool-constants.js";
 import { resolveProjectRoot, readMinimumQsvVersionFromManifest } from "./version.js";

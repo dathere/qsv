@@ -5,8 +5,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { readFile, stat, access, chmod, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { readFile, stat, access, chmod, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
 import { config } from '../src/config.js';
 import { SkillLoader } from '../src/loader.js';

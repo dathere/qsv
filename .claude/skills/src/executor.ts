@@ -3,7 +3,7 @@
  * Executes qsv skills by spawning qsv processes
  */
 
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import type { QsvSkill, Option, SkillParams, SkillResult } from "./types.js";
 import { config } from "./config.js";
 import { compareVersions } from "./utils.js";

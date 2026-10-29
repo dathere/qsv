@@ -21,9 +21,9 @@
  * The MCP server comes separately from the .mcpb Desktop Extension.
  */
 
-import { createWriteStream, existsSync, readFileSync, rmSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { createWriteStream, existsSync, readFileSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ZipArchive } from 'archiver';
 
 const __filename = fileURLToPath(import.meta.url);

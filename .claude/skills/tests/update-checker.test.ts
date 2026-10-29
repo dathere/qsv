@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { join } from 'path';
+import { join } from 'node:path';
 import { UpdateChecker, getUpdateConfigFromEnv } from '../src/update-checker.js';
 import { config } from '../src/config.js';
 import { QSV_AVAILABLE, createTestDir, cleanupTestDir } from './test-helpers.js';

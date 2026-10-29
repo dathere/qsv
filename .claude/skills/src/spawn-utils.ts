@@ -5,7 +5,7 @@
  * and timer cleanup shared by executor.ts, duckdb.ts, and parquet-bridge.ts.
  */
 
-import { spawn, type ChildProcess, type StdioOptions } from "child_process";
+import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
 import { KILL_GRACE_PERIOD_MS, DEFAULT_MAX_OUTPUT_SIZE } from "./tool-constants.js";
 
 /** Options for {@link spawnWithTimeout}. */

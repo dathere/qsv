@@ -6,10 +6,10 @@
  * for better PostgreSQL compatibility and performance.
  */
 
-import { execFileSync, type ChildProcess } from "child_process";
-import { statSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { execFileSync, type ChildProcess } from "node:child_process";
+import { statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { config } from "./config.js";
 import { spawnWithTimeout } from "./spawn-utils.js";
 

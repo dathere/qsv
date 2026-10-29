@@ -7,10 +7,10 @@
  * - qsv availability check
  */
 
-import { execFileSync } from "child_process";
-import { writeFile, mkdtemp, rm, realpath } from "fs/promises";
-import { join } from "path";
-import { tmpdir } from "os";
+import { execFileSync } from "node:child_process";
+import { writeFile, mkdtemp, rm, realpath } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { config } from "../src/config.js";
 import { detectDuckDb, resetDuckDbState } from "../src/duckdb.js";
 

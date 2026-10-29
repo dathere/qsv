@@ -2,7 +2,7 @@
  * Slot-based concurrency control for MCP tool invocations.
  */
 
-import type { ChildProcess } from "child_process";
+import type { ChildProcess } from "node:child_process";
 import { config } from "./config.js";
 import { KILL_GRACE_PERIOD_MS } from "./tool-constants.js";
 

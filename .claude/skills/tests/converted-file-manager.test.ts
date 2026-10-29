@@ -6,8 +6,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, rm, stat, readFile } from 'fs/promises';
-import { join } from 'path';
+import { writeFile, rm, stat, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ConvertedFileManager } from '../src/converted-file-manager.js';
 import { createTestDir, cleanupTestDir } from './test-helpers.js';
 

@@ -705,7 +705,8 @@ fi
 # quarantine_benchmark) WITHOUT re-running them. A one-benchmark rerun would not do: a pattern
 # run rebuilds latest_results.csv from its own rows only, and tstamp is hour-precise, so the
 # published latest results would shrink to that one benchmark. The quarantined rows keep the
-# version & tstamp of the run that measured them, so finalize_results merges them back into it.
+# version, tstamp & logtime of the run that measured them, so finalize_results merges them back
+# into it.
 if [[ "$arg_pat" == "accept" ]]; then
   shift
   if [ "$#" -eq 0 ]; then
@@ -716,54 +717,95 @@ if [[ "$arg_pat" == "accept" ]]; then
     echo "ERROR: there are no quarantined benchmarks (results/suspect_results.csv is missing or empty)."
     exit 1
   fi
-  accept_in=
   for accept_name in "$@"; do
     if [[ ! "$accept_name" =~ ^[A-Za-z0-9_]+$ ]]; then
       echo "ERROR: \"$accept_name\" is not a benchmark name."
       exit 1
     fi
-    accept_in="${accept_in:+$accept_in, }'$accept_name'"
   done
-  # each name's most recent quarantined row
-  "$qsv_benchmarker_bin" sqlp results/suspect_results.csv -q "
-with picked as (
-  select name, max(tstamp) as tstamp
-  from _t_1
-  where name in ($accept_in)
-  group by name
-)
-select s.* from _t_1 s join picked p on s.name = p.name and s.tstamp = p.tstamp
-order by s.name
-" -o results/accept_rows.csv
+  # only the LATEST run's quarantined rows can be accepted, so latest_results.csv and
+  # latest_run_info.tsv keep describing the same run. A run is identified by its
+  # second-precision logtime (tstamp is only hour-precise), which quarantine_benchmark stores
+  # with each row and run_info records for the run.
+  if [ ! -s results/latest_run_info.tsv ]; then
+    echo "ERROR: results/latest_run_info.tsv is missing, so the latest run is unknown."
+    exit 1
+  fi
+  IFS=$'\t' read -r version now logtime _ < <(sed -n 2p results/latest_run_info.tsv)
+  accept_names=" $* "
+  # suspect_results.csv columns: version,tstamp,logtime,name,rowcount,reason,... - the first
+  # five never contain a comma, so whole lines can be selected by them
+  awk -F, -v lt="$logtime" -v names="$accept_names" \
+    'NR == 1 || ($3 == lt && index(names, " " $4 " "))' results/suspect_results.csv \
+    >results/accept_rows.csv
   for accept_name in "$@"; do
-    if ! awk -F, -v n="$accept_name" 'NR > 1 && $3 == n { found = 1 } END { exit !found }' results/accept_rows.csv; then
-      echo "ERROR: $accept_name is not quarantined in results/suspect_results.csv."
+    if ! awk -F, -v n="$accept_name" 'NR > 1 && $4 == n { found = 1 } END { exit !found }' results/accept_rows.csv; then
+      echo "ERROR: $accept_name was not quarantined by the latest run (qsv $version, $logtime)."
+      echo "  Only the latest run's quarantined results can be accepted."
       rm -f results/accept_rows.csv
       exit 1
     fi
   done
-  accept_runs=$(awk -F, 'NR > 1 { print $1 "," $2 }' results/accept_rows.csv | sort -u)
-  if [ "$(wc -l <<<"$accept_runs")" -ne 1 ]; then
-    echo "ERROR: those benchmarks were quarantined by different runs - accept them one run at a time:"
-    sed 's/^/  /' <<<"$accept_runs"
-    rm -f results/accept_rows.csv
-    exit 1
-  fi
-  version=${accept_runs%%,*}
-  now=${accept_runs#*,}
   # recs_per_sec divides by the rowcount stored with each row (subset benchmarks have their own)
-  bench_rowcounts=$(awk -F, 'NR > 1 { printf "%s=%s;", $3, $4 }' results/accept_rows.csv)
-  rowcount=$(awk -F, 'NR == 2 { print $4 }' results/accept_rows.csv)
+  bench_rowcounts=$(awk -F, 'NR > 1 { printf "%s=%s;", $4, $5 }' results/accept_rows.csv)
+  rowcount=$(awk -F, 'NR == 2 { print $5 }' results/accept_rows.csv)
+  # finalize_results does not stop on errors, and the quarantined rows are the only copy of these
+  # measurements. So back up the files it rewrites, count each name's rows in the archive for this
+  # version & tstamp (hour-precise, so an earlier same-hour row may already be there), and only
+  # keep the result - and drop the rows from quarantine - if every count grew by exactly the rows
+  # accepted for that name. Otherwise restore the backups.
+  finalized_files=(benchmark_results.csv benchmark_results_display.csv latest_results.csv latest_results_display.csv)
+  for f in "${finalized_files[@]}"; do
+    [ -f "results/$f" ] && cp "results/$f" "results/$f.accept_bak"
+  done
+  archive_rows() {
+    awk -F, -v v="$version" -v t="$now" -v n="$1" '$1 == v && $2 == t && $3 == n { c++ } END { print c + 0 }' \
+      results/benchmark_results.csv
+  }
+  # indexed, aligned with "$@": associative arrays need bash 4, and macOS's /bin/bash is 3.2
+  rows_before=()
+  for accept_name in "$@"; do
+    rows_before+=("$(archive_rows "$accept_name")")
+  done
   "$qsv_bin" select 'version,tstamp,name,mean,stddev,median,user,system,min,max,peak_mem_mib' \
     results/accept_rows.csv -o results/latest_results.csv
-  echo "> Accepting $* into the qsv $version run of $now..."
+  echo "> Accepting $* into the qsv $version run of $logtime..."
   finalize_results
-  "$qsv_benchmarker_bin" sqlp results/suspect_results.csv \
-    -q "select * from _t_1 where not (name in ($accept_in) and tstamp = '$now')" \
-    -o results/suspect_work.csv
+  accept_idx=0
+  for accept_name in "$@"; do
+    expected=$((rows_before[accept_idx] + $(awk -F, -v n="$accept_name" 'NR > 1 && $4 == n { c++ } END { print c + 0 }' results/accept_rows.csv)))
+    if [ "$(archive_rows "$accept_name")" -ne "$expected" ]; then
+      echo "ERROR: $accept_name did not reach results/benchmark_results.csv. The results were restored,"
+      echo "  and the quarantined rows were kept. See the errors above."
+      for f in "${finalized_files[@]}"; do
+        [ -f "results/$f.accept_bak" ] && mv "results/$f.accept_bak" "results/$f"
+      done
+      rm -f results/accept_rows.csv
+      exit 1
+    fi
+    ((accept_idx++))
+  done
+  for f in "${finalized_files[@]}"; do
+    rm -f "results/$f.accept_bak"
+  done
+  awk -F, -v lt="$logtime" -v names="$accept_names" \
+    'NR == 1 || !($3 == lt && index(names, " " $4 " "))' results/suspect_results.csv \
+    >results/suspect_work.csv
   mv results/suspect_work.csv results/suspect_results.csv
+
+  # the run's total_mean now includes the accepted benchmarks: recompute it (as the luau script
+  # does, from means rounded to 3 places) over the run's rows, in both run info files
+  total_mean=$(awk -F, 'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "mean") c = i; next }
+    { t += sprintf("%.3f", $c) } END { printf "%.3f", t }' results/latest_results.csv)
+  for run_info in results/latest_run_info.tsv results/run_info_history.tsv; do
+    awk -F'\t' -v OFS='\t' -v lt="$logtime" -v tm="$total_mean" \
+      'NR == 1 { for (i = 1; i <= NF; i++) if ($i == "total_mean") c = i; print; next }
+       $3 == lt && c { $c = tm } { print }' "$run_info" >results/run_info_work.tsv
+    mv results/run_info_work.tsv "$run_info"
+  done
   rm -f results/accept_rows.csv results/results_work.csv total_mean.txt
-  echo "> Done. results/latest_results.csv now holds the qsv $version run of $now, including $*."
+  echo "> Done. results/latest_results.csv now holds the qsv $version run of $logtime, including $*."
+  echo "  Its total mean is now $total_mean."
   exit
 fi
 
@@ -1118,8 +1160,8 @@ function quarantine_benchmark {
   echo "  ??? SUSPECT: $name - ${reason%; }"
   echo "  ??? Its timing is NOT recorded. If it is real, run: ./benchmarks.sh accept $name"
   {
-    echo "version,tstamp,name,rowcount,reason"
-    printf '%s,%s,%s,%s,"%s"\n' "$version" "$now" "$name" "${subset_rowcount:-$rowcount}" "${reason%; }"
+    echo "version,tstamp,logtime,name,rowcount,reason"
+    printf '%s,%s,%s,%s,%s,"%s"\n' "$version" "$now" "$now_sec" "$name" "${subset_rowcount:-$rowcount}" "${reason%; }"
   } >results/suspect_work.csv
   "$qsv_bin" cat columns results/suspect_work.csv results/hf_row.csv -o results/suspect_entry.csv
   if [ -s results/suspect_results.csv ]; then
@@ -1290,6 +1332,7 @@ run cat_rows_flexible "$qsv_bin" cat rows --flexible "$data" data_unsorted.csv
 run cat_rowskey "$qsv_bin" cat rowskey "$data" data_unsorted.csv
 # --verify: count must print the benchmark data's rowcount (--width appends ";<widths>").
 # count printed 0 for 2.0.0-2.1.0 while exiting 0, and was timed as a fast run.
+# shellcheck disable=SC2016 # expanded later, by the bash -c that runs the check
 verify_count='test "$(cut -d";" -f1 "$QSVBM_STDOUT")" = "$QSVBM_ROWCOUNT"'
 run --verify "$verify_count" count "$qsv_bin" count "$data"
 run --verify "$verify_count" count_flexible "$qsv_bin" count --flexible "$data"
@@ -1389,6 +1432,7 @@ run join "$qsv_bin" join \'Community Board\' "$data" community_board communitybo
 run join_casei "$qsv_bin" join \'Community Board\' "$data" community_board --ignore-case communityboards.csv
 # --verify: the join must produce rows. A schema/dtype problem can leave joinp with an empty
 # result while still exiting 0, which times as a big speedup.
+# shellcheck disable=SC2016 # expanded later, by the bash -c that runs the check
 verify_has_rows='test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" -gt 0'
 run --verify "$verify_has_rows" joinp "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv
 run --verify "$verify_has_rows" joinp_streaming "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --streaming

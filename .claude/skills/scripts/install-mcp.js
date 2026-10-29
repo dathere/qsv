@@ -207,7 +207,7 @@ async function getQsvBinaryPath() {
 async function buildTypeScript() {
   try {
     info('Building TypeScript...');
-    const { stdout, stderr } = await execAsync('npm run build', {
+    const { stderr } = await execAsync('npm run build', {
       cwd: SKILLS_DIR,
     });
 
@@ -268,7 +268,7 @@ async function updateClaudeConfig(envVars) {
       const content = await readFile(configPath, 'utf-8');
       config = JSON.parse(content);
       info('Found existing Claude Desktop config');
-    } catch (err) {
+    } catch {
       warning('Could not parse existing config, creating new one');
     }
   } else {

@@ -5,7 +5,7 @@
  * Demonstrates the auto-update checking functionality
  */
 
-import { UpdateChecker, getUpdateConfigFromEnv } from '../dist/update-checker.js';
+import { UpdateChecker } from '../dist/update-checker.js';
 
 async function main() {
   console.log('QSV MCP Server - Update Checker Demo');

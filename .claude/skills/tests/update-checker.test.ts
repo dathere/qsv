@@ -6,7 +6,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
 import { UpdateChecker, getUpdateConfigFromEnv } from '../src/update-checker.js';
 import { config } from '../src/config.js';

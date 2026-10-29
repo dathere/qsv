@@ -5,7 +5,7 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, readFile, realpath, access } from "fs/promises";
+import { readdir, stat, realpath, access } from "fs/promises";
 import { realpathSync } from "fs";
 import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "path";
 import { homedir } from "os";
@@ -343,7 +343,7 @@ export class FilesystemResourceProvider {
     let canonical: string;
     try {
       canonical = await realpath(resolved);
-    } catch (error: unknown) {
+    } catch {
       // If file doesn't exist yet (e.g., output file), use resolved path
       // but still validate the parent directory exists and is allowed
       const parentDir = join(resolved, "..");
@@ -650,7 +650,7 @@ export class FilesystemResourceProvider {
             try {
               await this.resolvePath(relative(this.workingDir, fullPath));
               await this.scanDirectory(fullPath, resources, recursive);
-            } catch (error: unknown) {
+            } catch {
               // Subdirectory is outside allowed directories or inaccessible
               console.error(`Skipping unauthorized directory: ${fullPath}`);
             }

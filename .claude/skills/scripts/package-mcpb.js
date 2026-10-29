@@ -15,7 +15,7 @@
  * - icon.png (if exists)
  */
 
-import { createWriteStream, existsSync, mkdirSync, rmSync, readFileSync, readdirSync } from 'fs';
+import { createWriteStream, existsSync, rmSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { ZipArchive } from 'archiver';
@@ -64,7 +64,7 @@ function buildTypeScript() {
   try {
     execSync('npm run build', { cwd: rootDir, stdio: 'inherit' });
     console.log('✅ TypeScript build successful');
-  } catch (error) {
+  } catch {
     console.error('❌ TypeScript build failed');
     process.exit(1);
   }

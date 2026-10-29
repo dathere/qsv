@@ -146,7 +146,7 @@ export class UpdateChecker {
         if (skill.version) {
           return skill.version;
         }
-      } catch (error: unknown) {
+      } catch {
         // Try next file
         continue;
       }

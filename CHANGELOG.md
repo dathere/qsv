@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The archive gains a `peak_mem_mib` column, the largest peak RSS of a benchmark's timed runs, so memory regressions show up as well as slowdowns.
   - A result that looks like the command didn't do the work is kept out of the published results and quarantined in a local `suspect_results.csv` with the reason:
     - its timed runs differ by more than 3x;
-    - its mean or peak memory falls far below the median of its last three versions;
+    - its mean or peak memory falls far below that benchmark's most recent recorded version;
     - or an opt-in output check fails (`count` must print the row count; the `joinp` benchmarks must produce rows).
   - These are the failure modes that previously had to be found and pruned by hand. A quarantined result that is real, such as a genuine large speedup, is recorded with `./benchmarks.sh accept <name>`.
 - Build: Polars is built with its `serde` feature instead of `serde-lazy`. qsv only serializes Polars schemas (the `.pschema.json` cache), which `serde` covers; `serde-lazy` also generated serialization code for Polars' whole query-plan layer, which qsv never uses. A clean `-F all_features` debug build takes about 16% less CPU time. No behavior change. ([#4951](https://github.com/dathere/qsv/pull/4951))

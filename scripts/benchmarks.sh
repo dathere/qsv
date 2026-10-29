@@ -55,8 +55,8 @@ rank_tie_pct=2
 # record it with `./benchmarks.sh accept <name>` if the result is real.
 #  QSVBM_SPREAD_MAX: max slowest/fastest timed-run ratio. A larger spread is the signature of a
 #   command that only did its work on some runs (to_sqlite timed its own failure this way).
-#  QSVBM_SPEEDUP_PCT: flag a mean below this % of the median of the benchmark's last 3 versions.
-#  QSVBM_MEM_DROP_PCT: flag a peak memory below this % of the same median.
+#  QSVBM_SPEEDUP_PCT: flag a mean below this % of the benchmark's most recent archived version.
+#  QSVBM_MEM_DROP_PCT: flag a peak memory below this % of its most recent archived peak memory.
 # A failed invocation looks like a huge speedup that also skipped the work's memory. These are
 # relative to each benchmark's OWN history: qsv's startup (~9 ms, ~20 MiB) is also the real
 # cost of many cheap benchmarks (count_index, headers, cached stats), so no absolute floor works.
@@ -1126,8 +1126,8 @@ function csv_value {
 
 # suspect_reason <name> prints why the result in results/hf_row.csv looks like a failed or
 # skipped run rather than real work, or nothing when it looks fine (see the thresholds at the
-# top). The history checks compare against results/history_baseline.csv, the median of the
-# benchmark's last 3 archived versions; they are inert for a benchmark without history.
+# top). The history checks compare against results/history_baseline.csv, the benchmark's most
+# recent archived version; they are inert for a benchmark without history.
 function suspect_reason {
   local name="$1"
   local mean min max mem base base_mean base_mem
@@ -1146,9 +1146,9 @@ function suspect_reason {
       if (min > 0 && max / min > spread_max)
         r = r sprintf("timed runs spread %.1fx (slowest/fastest > %s); ", max / min, spread_max)
       if (base_mean != "" && base_mean > 0 && mean < base_mean * speedup_pct / 100)
-        r = r sprintf("mean %.4fs is under %s%% of its recent median %.4fs; ", mean, speedup_pct, base_mean)
+        r = r sprintf("mean %.4fs is under %s%% of the last archived version (%.4fs); ", mean, speedup_pct, base_mean)
       if (mem != "" && base_mem != "" && base_mem > 0 && mem < base_mem * mem_drop_pct / 100)
-        r = r sprintf("peak memory %.1f MiB is under %s%% of its recent median %.1f MiB; ", mem, mem_drop_pct, base_mem)
+        r = r sprintf("peak memory %.1f MiB is under %s%% of the last archived version (%.1f MiB); ", mem, mem_drop_pct, base_mem)
       printf "%s", r
     }'
 }
@@ -1740,9 +1740,12 @@ fi
 # the rowcount --verify checks compare against (see run)
 export QSVBM_ROWCOUNT=$rowcount
 
-# history baseline for suspect_reason: per benchmark, the median mean & peak memory of its last 3
-# archived versions (each version's latest run, its fastest row on an hour-precision tstamp
-# tie, as in the delta computation). Archives from before hyperfine 2.0 have no peak_mem_mib.
+# history baseline for suspect_reason: per benchmark, the mean of its most recent archived version
+# and the peak memory of its most recent version that has one (each version's latest run, its
+# fastest row on an hour-precision tstamp tie, as in the delta computation). The LATEST version,
+# not a median of several: every archived row passed these checks or was accepted by hand, so it
+# is trusted, and a median would keep flagging a real, accepted speedup until it outnumbered the
+# older, slower versions. Archives from before hyperfine 2.0 have no peak_mem_mib.
 peak_mem_expr="null"
 if head -n 1 results/benchmark_results.csv | tr ',' '\n' | grep -qx 'peak_mem_mib'; then
   peak_mem_expr="b.peak_mem_mib"
@@ -1760,14 +1763,20 @@ per_version as (
   group by b.name, b.version, b.tstamp
 ),
 recent as (
-  select name, mean, peak_mem_mib,
+  select name, mean,
          row_number() over (partition by name order by tstamp desc) as rn
   from per_version
+),
+recent_mem as (
+  select name, peak_mem_mib,
+         row_number() over (partition by name order by tstamp desc) as rn
+  from per_version
+  where peak_mem_mib is not null
 )
-select name, median(mean) as base_mean, median(peak_mem_mib) as base_mem
-from recent
-where rn <= 3
-group by name
+select r.name, r.mean as base_mean, m.peak_mem_mib as base_mem
+from recent r
+left join recent_mem m on r.name = m.name and m.rn = 1
+where r.rn = 1
 " -o results/history_baseline.csv
 
 # run_benchmark <name> <command> <expect> <verify> <prepare> <conclude> <cleanup> benchmarks one

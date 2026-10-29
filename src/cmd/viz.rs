@@ -4213,6 +4213,56 @@ fn fit_dims(
     }
 }
 
+/// The error for a `map`/`geo` run that kept no rows. When rows had valid coordinates but each
+/// was dropped for a non-numeric `--color`/`--size` cell (e.g. a categorical `--color Borough`),
+/// blaming --lat/--lon would misdiagnose it, so name the offending encoding column(s) instead.
+/// `encodings` holds `(flag, column index, numeric cells seen among coordinate-valid rows)`.
+fn no_mappable_rows_error<T>(
+    coord_rows: usize,
+    headers: &csv::ByteRecord,
+    no_headers: bool,
+    encodings: &[(&str, Option<usize>, usize)],
+    density: bool,
+) -> CliResult<T> {
+    if coord_rows > 0 {
+        let non_numeric: Vec<String> = encodings
+            .iter()
+            .filter_map(|&(flag, idx, numeric)| match idx {
+                Some(i) if numeric == 0 => Some(format!(
+                    "--{flag} column \"{}\"",
+                    col_label(headers, i, no_headers)
+                )),
+                _ => None,
+            })
+            .collect();
+        if !non_numeric.is_empty() {
+            // --density rejects --series, so only point maps get the categorical-coloring hint
+            let hint = if density {
+                "In density mode, the --color/--size column is the numeric heatmap weight."
+            } else {
+                "For categorical coloring, use the --series option instead."
+            };
+            return fail_incorrectusage_clierror!(
+                "No mappable rows found: {} {} no numeric values. --color and --size need numeric \
+                 columns. {hint}",
+                non_numeric.join(" and "),
+                if non_numeric.len() == 1 {
+                    "has"
+                } else {
+                    "have"
+                }
+            );
+        }
+        return fail_clierror!(
+            "No mappable rows found: no row with valid coordinates has a numeric value in every \
+             --color/--size column."
+        );
+    }
+    fail_clierror!(
+        "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+    )
+}
+
 /// Build the complete `Plot` for `viz map`: a `ScatterMap` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
 /// `DensityMap` heatmap, on a MapLibre tile basemap framed to the data's bounding box.
@@ -4254,6 +4304,7 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let mut sizes: Vec<f64> = Vec::new();
     let mut series: Vec<String> = Vec::new();
     let mut texts: Vec<String> = Vec::new();
+    let (mut coord_rows, mut color_numeric, mut size_numeric) = (0_usize, 0_usize, 0_usize);
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -4265,20 +4316,16 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
             continue;
         }
-        let color = match color_idx {
-            Some(i) => match parse_f64(record.get(i)) {
-                Some(v) => Some(v),
-                None => continue,
-            },
-            None => None,
-        };
-        let size = match size_idx {
-            Some(i) => match parse_f64(record.get(i)) {
-                Some(v) => Some(v),
-                None => continue,
-            },
-            None => None,
-        };
+        coord_rows += 1;
+        // parse both encodings before dropping the row, so each column's numeric count is exact
+        let color = color_idx.map(|i| parse_f64(record.get(i)));
+        let size = size_idx.map(|i| parse_f64(record.get(i)));
+        color_numeric += usize::from(matches!(color, Some(Some(_))));
+        size_numeric += usize::from(matches!(size, Some(Some(_))));
+        if matches!(color, Some(None)) || matches!(size, Some(None)) {
+            continue;
+        }
+        let (color, size) = (color.flatten(), size.flatten());
         lats.push(lat);
         lons.push(lon);
         if let Some(v) = color {
@@ -4297,8 +4344,15 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         }
     }
     if lats.is_empty() {
-        return fail_clierror!(
-            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        return no_mappable_rows_error(
+            coord_rows,
+            &headers,
+            nh,
+            &[
+                ("color", color_idx, color_numeric),
+                ("size", size_idx, size_numeric),
+            ],
+            args.flag_density,
         );
     }
 
@@ -4540,6 +4594,7 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
     let mut sizes: Vec<f64> = Vec::new();
     let mut series: Vec<String> = Vec::new();
     let mut texts: Vec<String> = Vec::new();
+    let (mut coord_rows, mut color_numeric, mut size_numeric) = (0_usize, 0_usize, 0_usize);
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -4551,20 +4606,16 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
             continue;
         }
-        let color = match color_idx {
-            Some(i) => match parse_f64(record.get(i)) {
-                Some(v) => Some(v),
-                None => continue,
-            },
-            None => None,
-        };
-        let size = match size_idx {
-            Some(i) => match parse_f64(record.get(i)) {
-                Some(v) => Some(v),
-                None => continue,
-            },
-            None => None,
-        };
+        coord_rows += 1;
+        // parse both encodings before dropping the row, so each column's numeric count is exact
+        let color = color_idx.map(|i| parse_f64(record.get(i)));
+        let size = size_idx.map(|i| parse_f64(record.get(i)));
+        color_numeric += usize::from(matches!(color, Some(Some(_))));
+        size_numeric += usize::from(matches!(size, Some(Some(_))));
+        if matches!(color, Some(None)) || matches!(size, Some(None)) {
+            continue;
+        }
+        let (color, size) = (color.flatten(), size.flatten());
         lats.push(lat);
         lons.push(lon);
         if let Some(v) = color {
@@ -4583,8 +4634,15 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         }
     }
     if lats.is_empty() {
-        return fail_clierror!(
-            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        return no_mappable_rows_error(
+            coord_rows,
+            &headers,
+            nh,
+            &[
+                ("color", color_idx, color_numeric),
+                ("size", size_idx, size_numeric),
+            ],
+            false,
         );
     }
 

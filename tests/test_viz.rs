@@ -24606,6 +24606,79 @@ fn viz_slider_all_blank_frame_cells_is_an_error() {
 }
 
 #[test]
+fn viz_map_geo_non_numeric_encoding_names_the_column() {
+    // valid coordinates + a categorical --color/--size used to fail with the misleading
+    // "are --lat/--lon numeric ...?" error; the message must name the encoding column instead
+    let wrk = Workdir::new("viz_map_geo_non_numeric_encoding_names_the_column");
+    wrk.create_from_string(
+        "p.csv",
+        "lat,lon,boro,n,a,b\n40.1,-73.9,BROOKLYN,1,1,x\n40.7,-73.98,MANHATTAN,2,y,2\n",
+    );
+    let series_hint = "For categorical coloring, use the --series option instead.";
+    for (args, msgs) in [
+        (
+            vec!["map", "--color", "boro"],
+            vec!["--color column \"boro\" has no numeric values", series_hint],
+        ),
+        (
+            vec!["geo", "--color", "boro"],
+            vec!["--color column \"boro\" has no numeric values", series_hint],
+        ),
+        (
+            vec!["geo", "--size", "boro"],
+            vec!["--size column \"boro\" has no numeric values", series_hint],
+        ),
+        (
+            vec!["map", "--color", "boro", "--size", "boro"],
+            vec![
+                "--color column \"boro\" and --size column \"boro\" have no numeric values",
+                series_hint,
+            ],
+        ),
+        (
+            vec!["map", "--density", "--color", "boro"],
+            vec![
+                "--color column \"boro\" has no numeric values",
+                "In density mode, the --color/--size column is the numeric heatmap weight.",
+            ],
+        ),
+        (
+            // each column is numeric somewhere, but never on the same row
+            vec!["map", "--color", "a", "--size", "b"],
+            vec![
+                "no row with valid coordinates has a numeric value in every --color/--size column",
+            ],
+        ),
+        (
+            // no valid coordinates at all: the original diagnosis still applies
+            vec!["map", "--lat", "boro", "--color", "boro"],
+            vec!["are --lat/--lon numeric and within valid coordinate ranges?"],
+        ),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.arg(args[0]).arg("p.csv");
+        if !args.contains(&"--lat") {
+            cmd.args(["--lat", "lat"]);
+        }
+        cmd.args(["--lon", "lon"]).args(&args[1..]);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        for msg in msgs {
+            assert!(stderr.contains(msg), "{args:?}: {stderr}");
+        }
+        if args.contains(&"--density") {
+            assert!(!stderr.contains(series_hint), "{args:?}: {stderr}");
+        }
+    }
+
+    // a numeric --color still renders
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map", "p.csv", "--lat", "lat", "--lon", "lon", "--color", "n", "-o", "ok.html",
+    ]);
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
 fn viz_pie_rejects_negative_slice_totals() {
     // plotly silently drops a negative slice and recomputes every percentage without it
     let wrk = Workdir::new("viz_pie_rejects_negative_slice_totals");

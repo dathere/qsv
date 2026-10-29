@@ -4,7 +4,7 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert";
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
 import { createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE } from "./test-helpers.js";
 import { config } from "../src/config.js";
 
@@ -32,7 +32,7 @@ describe("describegpt MCP sampling support", () => {
     try {
       const csvFile = await createTestCSV(dir, "test.csv", "name,age,city\nAlice,30,NYC\nBob,25,LA\nCarol,35,Chicago\n");
 
-      const { spawn } = await import("child_process");
+      const { spawn } = await import("node:child_process");
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
         const proc = spawn(config.qsvBinPath, [
           "describegpt",
@@ -83,7 +83,7 @@ describe("describegpt MCP sampling support", () => {
     try {
       const csvFile = await createTestCSV(dir, "test.csv", "name,age\nAlice,30\nBob,25\n");
 
-      const { spawn } = await import("child_process");
+      const { spawn } = await import("node:child_process");
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
         const proc = spawn(config.qsvBinPath, [
           "describegpt",
@@ -121,7 +121,7 @@ describe("describegpt MCP sampling support", () => {
     try {
       const csvFile = await createTestCSV(dir, "test.csv", "name,age,city\nAlice,30,NYC\nBob,25,LA\n");
 
-      const { spawn } = await import("child_process");
+      const { spawn } = await import("node:child_process");
 
       // First, get the prepare-context output so we have valid analysis_results
       const prepResult = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
@@ -199,7 +199,7 @@ describe("describegpt MCP sampling support", () => {
     try {
       const csvFile = await createTestCSV(dir, "test.csv", "a,b\n1,2\n");
 
-      const { spawn } = await import("child_process");
+      const { spawn } = await import("node:child_process");
       const result = await new Promise<{ stdout: string; stderr: string; exitCode: number }>((resolve, reject) => {
         const proc = spawn(config.qsvBinPath, [
           "describegpt",

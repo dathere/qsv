@@ -4,10 +4,10 @@
  * Includes BM25 search integration for intelligent tool discovery
  */
 
-import { readdir, readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import { existsSync } from "fs";
+import { readdir, readFile } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import type { QsvSkill, SkillCategory } from "./types.js";
 import { ToolSearchIndex } from "./bm25-search.js";
 import { getErrorMessage } from "./utils.js";

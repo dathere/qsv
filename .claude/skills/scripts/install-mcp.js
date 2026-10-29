@@ -9,14 +9,14 @@
  * 4. Provides verification steps
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join, dirname, resolve } from 'path';
-import { fileURLToPath } from 'url';
-import { homedir, platform } from 'os';
-import * as readline from 'readline';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { homedir, platform } from 'node:os';
+import * as readline from 'node:readline';
 
 const execAsync = promisify(exec);
 

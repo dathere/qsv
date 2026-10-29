@@ -2,10 +2,10 @@
  * MCP tool dispatch and handler implementations.
  */
 
-import { randomUUID } from "crypto";
-import { stat } from "fs/promises";
-import { basename, dirname, extname, isAbsolute, join } from "path";
-import { tmpdir } from "os";
+import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, join } from "node:path";
+import { tmpdir } from "node:os";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type {
   FilesystemProviderExtended,

@@ -2,10 +2,10 @@
  * File path resolution, format conversion, output formatting, and related utilities.
  */
 
-import { randomUUID } from "crypto";
-import { stat, access, readFile, unlink, rename, copyFile, readdir, mkdir } from "fs/promises";
-import { constants } from "fs";
-import { basename, dirname, isAbsolute, join } from "path";
+import { randomUUID } from "node:crypto";
+import { stat, access, readFile, unlink, rename, copyFile, readdir, mkdir } from "node:fs/promises";
+import { constants } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import type {
   QsvSkill,

@@ -2,8 +2,8 @@
  * Parquet/DuckDB conversion, schema management, and stats cache utilities.
  */
 
-import { readFile, writeFile, open, stat, unlink, mkdir } from "fs/promises";
-import { basename, dirname, join, parse } from "path";
+import { readFile, writeFile, open, stat, unlink, mkdir } from "node:fs/promises";
+import { basename, dirname, join, parse } from "node:path";
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
 import { statOrNull, runQsvWithTimeout, getCurrentWorkingDir } from "./file-operations.js";
 import {

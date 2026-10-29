@@ -8,10 +8,10 @@
  * 4. Auto-regenerating skills when needed
  */
 
-import { spawn } from "child_process";
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compareVersions } from "./utils.js";
 import { VERSION } from "./version.js";
 

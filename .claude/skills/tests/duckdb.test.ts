@@ -4,9 +4,9 @@
 
 import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert";
-import { existsSync, statSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { existsSync, statSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   translateSql,
   isDuckDbEnabled,

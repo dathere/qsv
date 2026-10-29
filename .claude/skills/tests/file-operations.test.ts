@@ -7,8 +7,8 @@
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { writeFile, stat } from "fs/promises";
-import { join } from "path";
+import { writeFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
   buildConversionArgs,
   mapSchemaType,
@@ -126,7 +126,7 @@ describe("autoIndexIfNeeded", () => {
     await writeFile(csvFile + ".idx", "fake index");
     await autoIndexIfNeeded(csvFile, 0);
     // Index should still be the fake one (not overwritten)
-    const { readFile } = await import("fs/promises");
+    const { readFile } = await import("node:fs/promises");
     const content = await readFile(csvFile + ".idx", "utf-8");
     assert.strictEqual(content, "fake index");
   });

@@ -27,12 +27,12 @@ import {
   open,
   realpath,
   chmod,
-} from "fs/promises";
-import type { FileHandle } from "fs/promises";
-import { constants } from "fs";
-import type { Stats } from "fs";
-import { dirname, basename, join, resolve, relative, sep, isAbsolute } from "path";
-import { randomUUID, createHash } from "crypto";
+} from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
+import { constants } from "node:fs";
+import type { Stats } from "node:fs";
+import { dirname, basename, join, resolve, relative, sep, isAbsolute } from "node:path";
+import { randomUUID, createHash } from "node:crypto";
 import { formatBytes, isNodeError } from "./utils.js";
 import { config } from "./config.js";
 

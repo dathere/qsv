@@ -5,11 +5,11 @@
  * Node 20's --test flag doesn't handle globs as well as 22+, so we expand them first
  */
 
-import { spawn } from 'child_process';
-import { readdir } from 'fs/promises';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { spawn } from 'node:child_process';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

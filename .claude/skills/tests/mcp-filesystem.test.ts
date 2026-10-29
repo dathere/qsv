@@ -6,10 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
-import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'fs/promises';
-import { realpathSync } from 'fs';
-import { join } from 'path';
-import { tmpdir, homedir } from 'os';
+import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
 
 test('listFiles enforces file limit', async () => {
   // Create temporary directory
@@ -34,7 +34,7 @@ test('listFiles enforces file limit', async () => {
   } finally {
     // Cleanup
     try {
-      const { readdir } = await import('fs/promises');
+      const { readdir } = await import('node:fs/promises');
       const files = await readdir(tempDir);
       for (const file of files) {
         await unlink(join(tempDir, file));
@@ -136,7 +136,7 @@ test('listFiles excludes converted files with UUID pattern', async () => {
     assert.strictEqual(result.resources[0].name, 'normal.csv');
   } finally {
     try {
-      const { readdir } = await import('fs/promises');
+      const { readdir } = await import('node:fs/promises');
       const files = await readdir(tempDir);
       for (const file of files) {
         await unlink(join(tempDir, file));
@@ -172,7 +172,7 @@ test('listFiles excludes qsv-output temporary files', async () => {
     assert.strictEqual(result.resources[0].name, 'normal.csv');
   } finally {
     try {
-      const { readdir } = await import('fs/promises');
+      const { readdir } = await import('node:fs/promises');
       const files = await readdir(tempDir);
       for (const file of files) {
         await unlink(join(tempDir, file));
@@ -205,7 +205,7 @@ test('listFiles excludes files with .tmp. pattern', async () => {
     assert.strictEqual(result.resources[0].name, 'normal.csv');
   } finally {
     try {
-      const { readdir } = await import('fs/promises');
+      const { readdir } = await import('node:fs/promises');
       const files = await readdir(tempDir);
       for (const file of files) {
         await unlink(join(tempDir, file));

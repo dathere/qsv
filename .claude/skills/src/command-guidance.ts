@@ -5,10 +5,10 @@
  * Call loadCommandGuidance() once at server startup before using getCommandGuidance().
  */
 
-import { readFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import { existsSync } from "fs";
+import { readFile } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import type { QsvSkill } from "./types.js";
 import { config } from "./config.js";

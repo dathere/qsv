@@ -6,7 +6,7 @@
  * Falls back to manual instructions for unsupported platforms.
  */
 
-import { execFileSync } from "child_process";
+import { execFileSync } from "node:child_process";
 import {
   accessSync,
   chmodSync,
@@ -17,9 +17,9 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
-import { homedir, tmpdir } from "os";
+} from "node:fs";
+import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
 
 export interface InstallResult {
   success: boolean;

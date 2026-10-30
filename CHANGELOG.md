@@ -40,6 +40,8 @@ In 27.0.1, a schematic can stay connected to its data. Open it from disk with [q
 
 Public [CKAN](https://ckan.org) data is one command away: with [qsv-client 0.6.0](https://github.com/dathere/qsv-client/releases/tag/0.6.0) or later, point `qsv-clientd viz` at any public CKAN resource or dataset page (or a `ckan://` id) to get a live schematic of it. qsv-clientd remembers where the data came from, so Fetch latest gets the current version.
 
+Rather not keep a terminal open? qsv-client also ships **`qsv-clientd-tray`**, an optional system tray app for macOS, Linux and Windows (`pipx install 'qsv-client[tray]'`). It runs qsv-clientd, or attaches to one that's already running, and announces each pairing request so you can approve it from its menu by picking the code the page shows. It also manages datasets and can start at login.
+
 Also in this release:
 
 - **Polars 2.1.0, streamed.** `sqlp --streaming` and `joinp --streaming` now write results batch by batch, Polars' query optimizations apply again, and `pivotp` handles wide pivots with a fraction of the memory. `sqlp` gains recursive CTEs, and has one breaking change: a `FROM` subquery alias can no longer be read as a table.

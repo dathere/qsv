@@ -7127,6 +7127,79 @@ fn stats_quantile_method_approx_percentiles_empty_numeric_column() {
     );
 }
 
+#[test]
+fn stats_quantile_method_approx_percentiles_keep_requested_order() {
+    // The approx path reads every --percentile-list rank in one
+    // `TDigestMut::quantiles` call. datasketches documents that ranks in any
+    // order are accepted and answered in input order; this locks that in, so an
+    // unsorted list with a duplicate still gets each value under its own label.
+    let wrk = Workdir::new("stats_quantile_method_approx_percentiles_keep_requested_order");
+    let mut rows = vec![svec!["value"]];
+    rows.extend((1..=100).map(|i| vec![i.to_string()]));
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--percentiles")
+        .arg("--percentile-list")
+        .arg("90,10,50,50")
+        .arg("--quantile-method")
+        .arg("approx")
+        .arg("--jobs")
+        .arg("1")
+        .arg("data.csv");
+
+    // Single-invocation capture (see the double-run note in the test above).
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stats command failed: stderr = {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    let headers: Vec<&str> = lines
+        .next()
+        .expect("stats output should have a header row")
+        .split(',')
+        .collect();
+    let row: Vec<&str> = lines
+        .next()
+        .expect("stats output should have at least one data row")
+        .split(',')
+        .collect();
+    let pct_idx = headers
+        .iter()
+        .position(|h| *h == "percentiles")
+        .expect("percentiles column should exist");
+
+    let pairs: Vec<(&str, f64)> = row[pct_idx]
+        .split('|')
+        .map(|cell| {
+            let (label, value) = cell
+                .split_once(": ")
+                .unwrap_or_else(|| panic!("malformed percentile cell: {cell:?}"));
+            let value = value
+                .parse::<f64>()
+                .unwrap_or_else(|_| panic!("non-numeric percentile value: {cell:?}"));
+            (label, value)
+        })
+        .collect();
+    let labels: Vec<&str> = pairs.iter().map(|(label, _)| *label).collect();
+    assert_eq!(labels, ["90", "10", "50", "50"], "cell: {:?}", row[pct_idx]);
+
+    let (p90, p10, p50a, p50b) = (pairs[0].1, pairs[1].1, pairs[2].1, pairs[3].1);
+    assert!(
+        p10 < p50a && p50a < p90,
+        "values must follow their labels, not the input position: {:?}",
+        row[pct_idx]
+    );
+    assert_eq!(
+        p50a, p50b,
+        "duplicate ranks must give the same value: {:?}",
+        row[pct_idx]
+    );
+}
+
 // --- --mode-cardinality-cap tests ---------------------------------------------------
 
 #[test]

@@ -6352,8 +6352,10 @@ impl Stats {
             // engine is allocated).
             match typ {
                 TInteger | TFloat | TDate | TDateTime if self.which.quartiles => {
-                    match (td.quantile(0.25), td.quantile(0.50), td.quantile(0.75)) {
-                        (Some(q1), Some(q2), Some(q3)) => Some((q1, q2, q3)),
+                    // One centroid scan for all three ranks. The ranks are constants in [0, 1],
+                    // so `Err` (invalid rank) is unreachable; `Ok(None)` means an empty digest.
+                    match td.quantiles(&[0.25, 0.50, 0.75]).ok().flatten().as_deref() {
+                        Some(&[q1, q2, q3]) => Some((q1, q2, q3)),
                         _ => None,
                     }
                 },
@@ -6459,7 +6461,7 @@ impl Stats {
                 if let TNull | TString = typ {
                     None
                 } else {
-                    td.quantile(0.50)
+                    td.quantile(0.50).ok().flatten()
                 }
             } else {
                 // Use unweighted exact median
@@ -6575,25 +6577,17 @@ impl Stats {
                             // Use weighted percentiles
                             weighted_percentiles(weighted_data, &percentile_list)
                         } else if let Some(ref mut td) = self.tdigest.0 {
-                            // Approx percentiles via t-digest. Empty-check up front so the
-                            // semantics match the exact path: `Unsorted::custom_percentiles`
-                            // returns None only when there's no data, never partial output.
-                            // For a non-empty digest, `quantile()` returns `Some` for every
-                            // valid rank in [0.0, 1.0], so the loop below cannot land in the
-                            // partial state that would have made the old `all_some` check fire.
-                            if td.is_empty() {
-                                None
-                            } else {
-                                let mut out = Vec::with_capacity(percentile_list.len());
-                                for p in &percentile_list {
-                                    let rank = f64::from(*p) / 100.0;
-                                    // `unwrap_or(f64::NAN)` is defensive only: a non-empty
-                                    // digest should never return None here. If it ever does,
-                                    // a NaN cell propagates through util::round_num cleanly.
-                                    out.push(td.quantile(rank).unwrap_or(f64::NAN));
-                                }
-                                Some(out)
-                            }
+                            // Approx percentiles via t-digest, one centroid scan for all ranks.
+                            // Semantics match the exact path: `Unsorted::custom_percentiles`
+                            // returns None only when there's no data, never partial output, and
+                            // `quantiles` returns `Ok(None)` only for an empty digest. `Err` is
+                            // unreachable: --percentile-list is validated to 1..=100, so every
+                            // rank is in [0.01, 1.0].
+                            let ranks: Vec<f64> = percentile_list
+                                .iter()
+                                .map(|p| f64::from(*p) / 100.0)
+                                .collect();
+                            td.quantiles(&ranks).ok().flatten()
                         } else {
                             // Use unweighted exact percentiles
                             self.unsorted_stats

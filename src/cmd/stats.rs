@@ -4450,7 +4450,8 @@ impl PartialEq for TDigestSlot {
 /// Big-endian fallback for `TDigestSlot`. Apache DataSketches is unavailable on
 /// big-endian targets, so we substitute a tuple-struct wrapping `Option<TDigestStub>`
 /// — the unit-like `TDigestStub` exposes the same no-op method surface used by the
-/// little-endian call sites (`update`, `quantile`, `is_empty`). `Stats::tdigest` is
+/// little-endian call sites (`update`, `quantile`, `quantiles`), with the same
+/// `Result<Option<_>, _>` return shapes as datasketches 0.6. `Stats::tdigest` is
 /// always `Default` (i.e. `Some` is never written) on these targets — the
 /// `--quantile-method approx` codepath is rejected upstream by `run()` — so the
 /// stub methods are never reached at runtime; they exist only so the shared call
@@ -4470,13 +4471,13 @@ impl TDigestStub {
     fn update(&mut self, _value: f64) {}
 
     #[inline]
-    fn quantile(&self, _rank: f64) -> Option<f64> {
-        None
+    fn quantile(&mut self, _rank: f64) -> Result<Option<f64>, std::convert::Infallible> {
+        Ok(None)
     }
 
     #[inline]
-    fn is_empty(&self) -> bool {
-        true
+    fn quantiles(&mut self, _ranks: &[f64]) -> Result<Option<Vec<f64>>, std::convert::Infallible> {
+        Ok(None)
     }
 }
 

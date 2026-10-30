@@ -55,7 +55,7 @@ jobs:
         toolchain: stable
         targets: aarch64-unknown-linux-gnu
     - name: Setup Rust-cache
-      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         key: qsv-linux-arm64-cache
     - name: Run tests

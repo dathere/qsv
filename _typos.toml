@@ -39,6 +39,8 @@ lits          = "lits"
 "sav"         = "sav"
 "missings"    = "missings"
 "emial"       = "emial"
+# ISO 639-3 code for Thai, mapped to 639-1 "th" in profile language detection
+"tha"         = "tha"
 
 [files]
 extend-exclude = [

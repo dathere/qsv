@@ -1017,6 +1017,15 @@ fi
 # The cache lives in its own directory, set through QSV_CACHE_DIR (which overrides --cache-dir),
 # so it never touches the user's ~/.qsv-cache. --cache-ttl 0 keeps its entries from expiring
 # between benchmark runs (the default TTL is 14 days). Non-matches are cached too.
+# QSV_DOTENV_PATH='<NONE>' turns off qsv's .env loading for these commands: a .env file is
+# loaded with OVERRIDE, so one setting QSV_CACHE_DIR or QSV_GEOCLIENT_API_KEY would undo both
+# the cache isolation and the offline guard below.
+# The cached benchmark runs with an INVALID key (QSV_GEOCLIENT_API_KEY=offline-guard): the cache
+# key doesn't include the API key, so cached rows are served as usual, but any row that needs
+# the network fails with a fatal HTTP 401 and the run exits non-zero - so a cached result that
+# made API calls is never recorded. (A self-hosted Geoclient needs no key, so there the guard
+# can't tell; its requests stay local.)
+geoclient_offline_key=offline-guard
 geoclient_params='houseNumber={house_number},street={street},borough={borough}'
 geoclient_cache_dir=geoclient_cache
 geoclient_10k_rowcount=
@@ -1040,16 +1049,30 @@ if [[ "$has_geoclient" -eq 1 ]]; then
   # to 100k API calls. Without it, a cold cache would be timed as a "cached" run. It only runs
   # when the cached benchmark is selected, so a pattern run of other benchmarks never spends the
   # time or the API quota.
+  # Lookups that fail transiently (timeouts, 5xx, 400s) are not cached, and the run still exits
+  # 0 below the circuit breaker's threshold, so after each pass the offline guard checks that
+  # every row is cached. A second pass fetches only the gaps; if that still leaves some, the
+  # cached benchmark is skipped rather than timed with live requests in it.
   if [[ "geocode_geoclient_cache" == *"$arg_pat"* ]]; then
     echo "   priming the geoclient cache (a cold cache takes ~45 minutes and ~100k API calls)..."
     geoclient_prime_start=$SECONDS
-    if env QSV_CACHE_DIR="$geoclient_cache_dir" "$qsv_bin" geocode geoclient address \
-      --endpoint address --params "$geoclient_params" -c geo_latlong --cache-ttl 0 \
-      nyc_addresspoint_100k.csv -o /dev/null; then
-      has_geoclient_cache=1
+    for _ in 1 2; do
+      env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" "$qsv_bin" geocode \
+        geoclient address --endpoint address --params "$geoclient_params" -c geo_latlong \
+        --cache-ttl 0 nyc_addresspoint_100k.csv -o /dev/null
+      if env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" \
+        QSV_GEOCLIENT_API_KEY="$geoclient_offline_key" "$qsv_bin" geocode geoclient address \
+        --endpoint address --params "$geoclient_params" -c geo_latlong --cache-ttl 0 \
+        nyc_addresspoint_100k.csv -o /dev/null 2>/dev/null; then
+        has_geoclient_cache=1
+        break
+      fi
+    done
+    if [[ "$has_geoclient_cache" -eq 1 ]]; then
       echo "   geoclient cache primed in $((SECONDS - geoclient_prime_start))s."
     else
-      echo "NOTE: priming the geoclient cache failed - skipping the geocode_geoclient_cache benchmark."
+      echo "NOTE: the geoclient cache is still missing rows after 2 priming passes - skipping the"
+      echo "      geocode_geoclient_cache benchmark."
     fi
   fi
 fi
@@ -1492,18 +1515,21 @@ run geocode_reverse_batchall "$qsv_bin" geocode reverse Location --new-column ge
 # Online geoclient lookups of real NYC addresses (see the geoclient inputs in the prep section).
 # The two differ only in the cache: _nocache times live API calls on 10k rows - bounded by the
 # API's rate limit as much as by qsv - and _cache times serving all 100k from the primed cache.
+# _cache runs with an invalid key, so a row missing from the cache fails it (see the prep section).
 # A bad key or an exhausted quota makes qsv exit non-zero, but a run whose lookups mostly fail
 # for other reasons still exits 0, so --verify checks that at least 90% of the rows got NYC
 # coordinates (AddressPoint addresses are Geosupport's own, so nearly all should match).
 if [[ "$has_geoclient" -eq 1 ]]; then
   geoclient_geocoded='test "$("$QSVBM_QSV" search -s geo_latlong "^4[01][.][0-9]+, -7[34][.]" "$QSVBM_STDOUT" | "$QSVBM_QSV" count)" -ge '
   run --verify "${geoclient_geocoded}$((geoclient_10k_rowcount * 9 / 10))" geocode_geoclient_nocache \
-    env "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient address --endpoint address \
-    --params "'$geoclient_params'" -c geo_latlong --no-cache geoclient_10k.csv
+    env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
+    address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache geoclient_10k.csv
   if [[ "$has_geoclient_cache" -eq 1 ]]; then
     run --verify "${geoclient_geocoded}$((geoclient_100k_rowcount * 9 / 10))" geocode_geoclient_cache \
-      env "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient address --endpoint address \
-      --params "'$geoclient_params'" -c geo_latlong --cache-ttl 0 nyc_addresspoint_100k.csv
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" \
+      "QSV_GEOCLIENT_API_KEY=$geoclient_offline_key" "$qsv_bin" geocode geoclient address \
+      --endpoint address --params "'$geoclient_params'" -c geo_latlong --cache-ttl 0 \
+      nyc_addresspoint_100k.csv
   fi
 fi
 run geoconvert_csv2geojsonl "$qsv_bin" geoconvert geo_data.csv csv geojsonl -y Latitude -x Longitude

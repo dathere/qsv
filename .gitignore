@@ -65,6 +65,9 @@ tests/resources/profile/golden/*.stats.csv.*
 # viz golden-check fixture (scripts/viz-golden-check.sh); no examples/viz fixture
 # exercises the cyclic-seasonality panel
 !scripts/viz_golden_cyclic_events.csv
+# geoclient benchmark input (scripts/benchmarks.sh) and its primed result cache
+!scripts/nyc_addresspoint_100k.csv.gz
+scripts/geoclient_cache/
 *.log
 *.log.gz
 *.bak

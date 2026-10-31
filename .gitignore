@@ -69,6 +69,7 @@ tests/resources/profile/golden/*.stats.csv.*
 !scripts/nyc_addresspoint_100k.csv.gz
 scripts/geoclient_cache/
 scripts/results/private_*
+scripts/results.restoring/
 *.log
 *.log.gz
 *.bak

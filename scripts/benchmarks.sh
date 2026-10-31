@@ -1849,18 +1849,39 @@ function restore_private_results {
   if [ -z "$results_snapshot" ] || [ ! -d "$results_snapshot" ]; then
     return
   fi
-  local f
+  # keep only what THIS run wrote: a file it never got to (e.g. the display file, on Ctrl-C before
+  # finalize_results) still holds the previous recorded run's data. Older private copies go.
+  local f complete=0
+  rm -f "$results_snapshot"/private_*
   for f in latest_results.csv latest_results_display.csv latest_run_info.tsv; do
-    if [ -f "results/$f" ]; then
+    if [ -f "results/$f" ] && ! cmp -s "results/$f" "$results_snapshot/$f"; then
       cp "results/$f" "$results_snapshot/private_$f"
     fi
   done
-  rm -rf results
-  cp -Rp "$results_snapshot" results
-  rm -rf "$results_snapshot"
-  results_snapshot=
-  echo "> PRIVATE RUN: results/ was restored, so nothing was recorded. This run's results are in"
-  echo "  results/private_latest_results_display.csv (and private_latest_results.csv/_run_info.tsv)."
+  # the run info is written last, so a changed one means the run finished
+  if [ -f "$results_snapshot/private_latest_run_info.tsv" ]; then
+    complete=1
+  fi
+  # restore into a side directory and swap it in only once the copy succeeded, so a failed copy
+  # (e.g. a full disk) never leaves results/ deleted - and the snapshot is kept until then
+  rm -rf results.restoring
+  if cp -Rp "$results_snapshot" results.restoring && rm -rf results &&
+    mv results.restoring results; then
+    rm -rf "$results_snapshot"
+    results_snapshot=
+  else
+    echo "ERROR: could not restore results/ after a private run. The untouched results are in"
+    echo "       $results_snapshot - copy them back to results/ by hand."
+    exit 1
+  fi
+  echo "> PRIVATE RUN: results/ was restored, so nothing was recorded."
+  if [[ "$complete" -eq 1 ]]; then
+    echo "  This run's results are in results/private_latest_results_display.csv"
+    echo "  (and private_latest_results.csv/private_latest_run_info.tsv)."
+  else
+    echo "  The run did not finish: results/private_latest_results.csv holds the benchmarks it"
+    echo "  completed (raw, without delta/rank)."
+  fi
 }
 if [ -n "$QSV_GEOCLIENT_API_URL" ] && [ "${QSVBM_RECORD_SELFHOSTED:-0}" != "1" ]; then
   results_snapshot=$(mktemp -d "${TMPDIR:-/tmp}/qsvbm_results.XXXXXX") &&

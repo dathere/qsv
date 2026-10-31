@@ -25,9 +25,10 @@ use crate::{CliError, CliResult};
 /// passes did. Inexpensive to clone.
 #[derive(Debug, Clone)]
 pub struct SqlBackend {
-    csv_path:   PathBuf,
-    delimiter:  u8,
-    has_header: bool,
+    csv_path:    PathBuf,
+    delimiter:   u8,
+    has_header:  bool,
+    all_strings: bool,
 }
 
 impl SqlBackend {
@@ -35,10 +36,19 @@ impl SqlBackend {
     /// with a header row. Use the `with_*` builders to override.
     pub fn new(csv_path: impl Into<PathBuf>) -> Self {
         Self {
-            csv_path:   csv_path.into(),
-            delimiter:  b',',
-            has_header: true,
+            csv_path:    csv_path.into(),
+            delimiter:   b',',
+            has_header:  true,
+            all_strings: false,
         }
+    }
+
+    /// Read every column as a string instead of inferring types, so
+    /// values compare as the text the file holds (`001` != `1`).
+    #[must_use]
+    pub const fn with_all_strings(mut self) -> Self {
+        self.all_strings = true;
+        self
     }
 
     /// Override the field separator byte (e.g. `b'\t'` for TSV).
@@ -62,10 +72,15 @@ impl SqlBackend {
     pub fn query(&self, sql: &str) -> CliResult<DataFrame> {
         let path_str = self.csv_path.to_string_lossy();
         let plpath = PlRefPath::new(&*path_str);
-        let lf = LazyCsvReader::new(plpath)
+        let mut reader = LazyCsvReader::new(plpath)
             .with_skip_lines(crate::config::sniffed_preamble_lines(&self.csv_path))
             .with_separator(self.delimiter)
-            .with_has_header(self.has_header)
+            .with_has_header(self.has_header);
+        if self.all_strings {
+            // Schema inference over zero rows types every column String.
+            reader = reader.with_infer_schema_length(Some(0));
+        }
+        let lf = reader
             .finish()
             .map_err(|e| CliError::Other(format!("SqlBackend: read CSV: {e}")))?;
         let mut ctx = SQLContext::new();
@@ -147,6 +162,20 @@ mod tests {
             .distinct_sorted_date_strings(r#"foo" UNION SELECT '"#)
             .unwrap_err();
         assert!(err.to_string().contains("invalid date_field"));
+    }
+
+    #[test]
+    fn all_strings_keeps_textual_values_distinct() {
+        let f = write_csv("txt", "z\n001\n1\n");
+        let n = |b: &SqlBackend| {
+            let df = b
+                .query("SELECT COUNT(*) AS n FROM (SELECT DISTINCT * FROM data)")
+                .unwrap();
+            df.column("n").unwrap().get(0).unwrap().to_string()
+        };
+        // Inferred as integers, `001` and `1` collapse; as text they don't.
+        assert_eq!(n(&SqlBackend::new(f.path())), "1");
+        assert_eq!(n(&SqlBackend::new(f.path()).with_all_strings()), "2");
     }
 
     #[test]

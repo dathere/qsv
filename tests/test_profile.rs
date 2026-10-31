@@ -4172,8 +4172,11 @@ fn profile_quality_measurements_and_csvw_constraints() {
     // validity runs, so neither is asserted either way.
     assert!(value_of("Number of rows that exactly duplicate an earlier row.").is_none());
     assert!(
-        value_of("Whether the file is valid RFC 4180 CSV encoded as UTF-8 (qsv validate).")
-            .is_none()
+        value_of(
+            "Whether the file is well-formed delimited text (consistent field counts and quoting) \
+             encoded as UTF-8 (qsv validate)."
+        )
+        .is_none()
     );
 
     let schema = &out["projection"]["distribution"][0]["csvw:tableSchema"];
@@ -4223,6 +4226,59 @@ fn profile_rfc4180_conformance_only_with_validate() {
     assert!(qm.iter().any(|m| m["isMeasurementOf"]["inDimension"]
         == "http://www.w3.org/2016/05/ldqd#conciseness"
         && m["value"] == "0"));
+}
+
+#[test]
+fn profile_tsv_is_not_declared_rfc4180() {
+    let wrk = Workdir::new("profile_tsv_rfc4180");
+    wrk.create_from_string("in.tsv", "id\tname\n1\tAlpha\n2\tBravo\n3\tCharlie\n");
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.tsv", "--validate", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let dist = &out["projection"]["distribution"][0];
+    // Well-formed and UTF-8, but tab-separated: not RFC 4180.
+    assert_eq!(dist["characterEncoding"], json!(["UTF-8"]));
+    assert!(dist.get("conformsTo").is_none(), "{:?}", dist["conformsTo"]);
+    // The SQL backend reads the resolved tab delimiter: 2 columns.
+    assert_eq!(
+        dist["csvw:tableSchema"]["columns"].as_array().map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn profile_no_headers_keeps_column_identities_aligned() {
+    let wrk = Workdir::new("profile_no_headers_align");
+    wrk.create_from_string("in.csv", "red,cat\nblue,dog\nred,dog\n");
+    let out = profile_projection(&wrk, &["--no-headers"]);
+    let cols = out["projection"]["distribution"][0]["csvw:tableSchema"]["columns"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cols[0]["name"], "0");
+    assert_eq!(cols[0]["datatype"]["format"], "^(?:blue|red)$");
+    assert_eq!(cols[1]["name"], "1");
+    assert_eq!(cols[1]["datatype"]["format"], "^(?:cat|dog)$");
+    let desc = out["projection"]["description"].as_str().unwrap();
+    assert!(desc.contains("Columns: 0, 1."), "{desc}");
+}
+
+#[test]
+fn profile_duplicate_rows_compare_text_not_inferred_values() {
+    let wrk = Workdir::new("profile_dupes_text");
+    wrk.create_from_string("in.csv", "code\n001\n1\n01\n");
+    let out = profile_projection(&wrk, &["--validate"]);
+    let qm = out["projection"]["hasQualityMeasurement"]
+        .as_array()
+        .unwrap();
+    let dupes = qm
+        .iter()
+        .find(|m| {
+            m["isMeasurementOf"]["definition"]
+                == "Number of rows that exactly duplicate an earlier row."
+        })
+        .map(|m| m["value"].clone());
+    assert_eq!(dupes, Some(json!("0")));
 }
 
 #[test]
@@ -4314,6 +4370,24 @@ fn profile_monthly_series_uses_calendar_months() {
     // 28-31 day gaps are one calendar step, not "P28D".
     assert_eq!(out["projection"]["temporalResolution"], "P1M");
     assert_eq!(out["projection"]["accrualPeriodicity"], "monthly");
+}
+
+#[test]
+fn profile_irregular_months_report_recording_precision() {
+    // Month-aligned but irregular (1, 4 and 6 month gaps): no step.
+    let wrk = Workdir::new("profile_irregular_months");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["report_date", "n"],
+            svec!["2024-01-01", "1"],
+            svec!["2024-02-01", "2"],
+            svec!["2024-06-01", "3"],
+            svec!["2024-12-01", "4"],
+        ],
+    );
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(out["projection"]["temporalResolution"], "P1D");
 }
 
 #[test]

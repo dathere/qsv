@@ -22,20 +22,36 @@ use super::{
 };
 use crate::{CliError, CliResult};
 
+/// A value a field's inferred-tier `fallback` supplied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferredPath {
+    /// RFC 6901 pointer relative to the block it was projected into
+    /// (no leading `/`), each token escaped: `description`,
+    /// `distribution/0/modified`.
+    pub pointer: String,
+    /// The `ProjectionWarning::field` its review note / notes carry —
+    /// the unescaped logical path (`description`,
+    /// `distribution/0/modified`).
+    pub field:   String,
+}
+
 thread_local! {
-    /// Projection-relative paths (`title`, `distribution/0/language`)
-    /// whose value the last `project` call on this thread took from a
-    /// field's inferred-tier `fallback`. Read via
-    /// `take_inferred_paths` by the discovery merge, which lets
+    /// Values taken from a field's inferred-tier `fallback` by the
+    /// `project` / `wrap_in_catalog_envelope` calls since the last
+    /// `take_inferred_paths` on this thread. The discovery merge lets
     /// discovered publisher metadata replace exactly these.
-    static INFERRED_PATHS: std::cell::RefCell<Vec<String>> =
+    static INFERRED_PATHS: std::cell::RefCell<Vec<InferredPath>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Take (and clear) the inferred paths recorded by the most recent
-/// `project` call on this thread.
-pub fn take_inferred_paths() -> Vec<String> {
+/// Take (and clear) the inferred paths recorded on this thread.
+pub fn take_inferred_paths() -> Vec<InferredPath> {
     INFERRED_PATHS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+}
+
+/// RFC 6901 token escape.
+fn escape_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
 }
 
 // -----------------------------------------------------------------------
@@ -116,7 +132,7 @@ pub fn project(
 
     let mj_ctx = minijinja::Value::from(Serde(ctx));
     let mut warnings: Vec<ProjectionWarning> = Vec::new();
-    let mut inferred: Vec<String> = Vec::new();
+    let mut inferred: Vec<InferredPath> = Vec::new();
 
     // 1. Build the Dataset core. Fields with `on_dataset: false` skip.
     let mut dataset: Map<String, Value> = Map::new();
@@ -132,8 +148,11 @@ pub fn project(
         if !field.on_dataset {
             continue;
         }
-        if emit_field(&env, &mj_ctx, field, &mut dataset, &mut warnings) {
-            inferred.push(field.path.clone());
+        if emit_field(&env, &mj_ctx, field, "", &mut dataset, &mut warnings) {
+            inferred.push(InferredPath {
+                pointer: escape_token(&field.path),
+                field:   field.path.clone(),
+            });
         }
     }
 
@@ -149,9 +168,13 @@ pub fn project(
             .fields
             .iter()
             .chain(profile.dataset.fields.iter().filter(|f| f.on_distribution));
+        let scope = format!("{key}/0/");
         for field in dist_fields {
-            if emit_field(&env, &mj_ctx, field, &mut dist, &mut warnings) {
-                inferred.push(format!("{key}/0/{}", field.path));
+            if emit_field(&env, &mj_ctx, field, &scope, &mut dist, &mut warnings) {
+                inferred.push(InferredPath {
+                    pointer: format!("{}/0/{}", escape_token(key), escape_token(&field.path)),
+                    field:   format!("{scope}{}", field.path),
+                });
             }
         }
         if !dist.is_empty() {
@@ -184,7 +207,7 @@ pub fn project(
         },
     };
 
-    INFERRED_PATHS.with(|p| *p.borrow_mut() = inferred);
+    INFERRED_PATHS.with(|p| p.borrow_mut().extend(inferred));
     Ok((block, warnings))
 }
 
@@ -224,21 +247,28 @@ pub fn wrap_in_catalog_envelope(
 
 /// Render one field into `out`. Returns `true` when the emitted value
 /// came from the field's inferred-tier `fallback` template.
+///
+/// `scope` is the logical path of `out` within the projected block
+/// (`""` for the Dataset or Catalog root, `distribution/0/` for a
+/// Distribution); the review note and helper notes carry
+/// `<scope><path>` so a Distribution `description` note is not
+/// confused with the Dataset's.
 fn emit_field(
     env: &Environment,
     ctx: &minijinja::Value,
     field: &FieldDecl,
+    scope: &str,
     out: &mut Map<String, Value>,
     warnings: &mut Vec<ProjectionWarning>,
 ) -> bool {
     let _ = derive::drain_notes();
-    let inferred = emit_field_inner(env, ctx, field, out, warnings);
+    let inferred = emit_field_inner(env, ctx, field, scope, out, warnings);
     // Observations recorded by stats-derived helpers while this field
     // rendered (excluded coordinates, placeholder dates, a declined
     // schedule) — informational, never fatal under --strict.
     for note in derive::drain_notes() {
         warnings.push(ProjectionWarning {
-            field:    field.path.clone(),
+            field:    format!("{scope}{}", field.path),
             severity: Severity::Info,
             message:  note,
         });
@@ -250,6 +280,7 @@ fn emit_field_inner(
     env: &Environment,
     ctx: &minijinja::Value,
     field: &FieldDecl,
+    scope: &str,
     out: &mut Map<String, Value>,
     warnings: &mut Vec<ProjectionWarning>,
 ) -> bool {
@@ -287,7 +318,7 @@ fn emit_field_inner(
                 out.insert(field.path.clone(), coerce_json_or_string(&s));
                 if let Some(note) = &field.review_note {
                     warnings.push(ProjectionWarning {
-                        field:    field.path.clone(),
+                        field:    format!("{scope}{}", field.path),
                         severity: Severity::Recommended,
                         message:  note.clone(),
                     });
@@ -299,7 +330,7 @@ fn emit_field_inner(
                 // An inferred value is best-effort: a failing fallback
                 // must not escalate to Required and abort --strict.
                 warnings.push(ProjectionWarning {
-                    field:    field.path.clone(),
+                    field:    format!("{scope}{}", field.path),
                     severity: Severity::Info,
                     message:  format!("fallback render error: {e}"),
                 });
@@ -485,7 +516,15 @@ pub fn wrap_as_catalog(
         // the analysis vars (`pkg`, `res`, `stats`, `dpp`) and the
         // rendered Dataset (`inner["..."]`).
         for field in &envelope.fields {
-            let _ = emit_field(env, &mj_with_inner, field, &mut catalog, warnings);
+            // Catalog fields live at the envelope root.
+            if emit_field(env, &mj_with_inner, field, "", &mut catalog, warnings) {
+                INFERRED_PATHS.with(|p| {
+                    p.borrow_mut().push(InferredPath {
+                        pointer: escape_token(&field.path),
+                        field:   field.path.clone(),
+                    });
+                });
+            }
         }
     }
 
@@ -682,6 +721,54 @@ dataset:
       template: "{{ pkg.notes }}"
       required_level: recommended
 "#;
+
+    #[test]
+    fn fallback_review_notes_and_paths_are_scoped_per_block() {
+        let profile = load_from_str(
+            r#"
+name: scoped
+dataset:
+  type: Dataset
+  fields:
+    - path: description
+      template: "{{ pkg.notes }}"
+      fallback: "generated dataset description"
+      review_note: "dataset note"
+distribution:
+  type: Distribution
+  path: distribution
+  fields:
+    - path: description
+      template: "{{ res.description | default('') }}"
+      fallback: "generated distribution description"
+      review_note: "distribution note"
+"#,
+            "t",
+        )
+        .unwrap();
+        let _ = take_inferred_paths();
+        // The Dataset description is supplied; only the Distribution's
+        // is inferred.
+        let ctx = json!({ "pkg": { "notes": "Supplied" }, "res": {} });
+        let (out, warns) = project(&profile, &ctx, ProjectionMode::Dataset).unwrap();
+        assert_eq!(out["description"], "Supplied");
+        assert_eq!(
+            out["distribution"][0]["description"],
+            "generated distribution description"
+        );
+        let notes: Vec<(&str, &str)> = warns
+            .iter()
+            .map(|w| (w.field.as_str(), w.message.as_str()))
+            .collect();
+        assert_eq!(notes, [("distribution/0/description", "distribution note")]);
+        assert_eq!(
+            take_inferred_paths(),
+            [InferredPath {
+                pointer: "distribution/0/description".to_string(),
+                field:   "distribution/0/description".to_string(),
+            }]
+        );
+    }
 
     #[test]
     fn project_emits_known_fields() {

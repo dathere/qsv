@@ -203,6 +203,12 @@ fn coordinate_resolution_in_meters(dpp: Value, stats: Value) -> Value {
 /// (0, 0) "null island" placeholder, and the number of excluded rows is
 /// noted. Without this, a single geocoder-failure row at (0, 0) widens
 /// a Boston dataset's bbox to the Gulf of Guinea.
+///
+/// The out-of-range half of the filter is defensive: through `profile`
+/// today, `context::detect_lat_lon` already rejects a column whose
+/// min/max leaves ±90/±180, so `LAT_FIELD`/`LON_FIELD` never name one.
+/// The (0, 0) half is the one real inputs reach. A custom `dpp` (or a
+/// future, more tolerant detector) still gets correct bounds.
 fn robust_bbox(dpp: Value, stats: Value) -> Value {
     let (dpp, stats) = (to_json(&dpp), to_json(&stats));
     let (Some(lat), Some(lon)) = (dpp_str(&dpp, "LAT_FIELD"), dpp_str(&dpp, "LON_FIELD")) else {
@@ -325,9 +331,9 @@ fn calendar_months(a: NaiveDateTime, b: NaiveDateTime) -> Option<i32> {
 /// date/datetime column as an exact xsd:duration (`PT1M`, `PT15M`,
 /// `P1D`, `P1M`, `P1Y`, ...).
 ///
-///   * A regular series — every consecutive pair a whole number of months apart on the same day
-///     (`P{n}M` / `P{n}Y`, not a day count that varies from 28 to 31), or ≥90% of gaps one exact
-///     interval (`PT15M`, `P1D`, `P7D`) — reports its step.
+///   * A regular series — ≥90% of gaps one calendar step of whole months on the same day (`P{n}M` /
+///     `P{n}Y`, not a day count that varies from 28 to 31), or one exact interval (`PT15M`, `P1D`,
+///     `P7D`) — reports its step.
 ///   * Anything else reports the precision its values are RECORDED at: date-only → `P1D`, whole
 ///     hours → `PT1H`, minutes → `PT1M`, seconds → `PT1S`, milliseconds → `PT0.001S`. For irregular
 ///     events the smallest gap is a sampling accident (two 311 requests 42 s apart), not the
@@ -356,13 +362,25 @@ fn xsd_temporal_resolution(args: Rest<Value>, state: &minijinja::State) -> Value
         .iter()
         .map(|(a, b)| calendar_months(*a, *b))
         .collect::<Option<Vec<i32>>>()
-        .and_then(|m| m.into_iter().min())
     {
-        return Value::from(if months % 12 == 0 {
-            format!("P{}Y", months / 12)
-        } else {
-            format!("P{months}M")
-        });
+        // Month-aligned, but only a regular grid has a step: Jan, Feb,
+        // Jun, Dec are month-aligned with no common interval.
+        let mut counts: HashMap<i32, usize> = HashMap::new();
+        for m in &months {
+            *counts.entry(*m).or_insert(0) += 1;
+        }
+        if let Some((step, count)) = counts
+            .into_iter()
+            .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+            && count as f64 / months.len() as f64 >= PERIODICITY_MIN_SHARE
+        {
+            return Value::from(if step % 12 == 0 {
+                format!("P{}Y", step / 12)
+            } else {
+                format!("P{step}M")
+            });
+        }
+        return Value::from(recording_precision(&dts));
     }
     let gaps: Vec<i64> = pairs
         .iter()
@@ -599,7 +617,11 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
     if validated
         && let Some(d) = dim("conciseness")
         && let Some(distinct) = memo_sql("distinct_rows", |backend| {
+            // Compare the text the file holds: with type inference
+            // `001` and `1` would both read as the integer 1.
             let df = backend
+                .clone()
+                .with_all_strings()
                 .query("SELECT COUNT(*) AS n FROM (SELECT DISTINCT * FROM data)")
                 .ok()?;
             let col = df.column("n").ok()?;
@@ -623,7 +645,8 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
         out.push(measurement(
             d,
             "xsd:boolean",
-            "Whether the file is valid RFC 4180 CSV encoded as UTF-8 (qsv validate).",
+            "Whether the file is well-formed delimited text (consistent field counts and quoting) \
+             encoded as UTF-8 (qsv validate).",
             valid.to_string(),
             "",
         ));
@@ -643,25 +666,35 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
 /// Above this cardinality a column is not described as an enumeration.
 const CSVW_ENUM_MAX: u64 = 10;
 
-/// `build_csvw_schema_rich(stats, freq)` — a CSVW `tableSchema` whose
-/// columns carry machine-checkable constraints derived from stats and
-/// frequency, on top of the `build_csvw_schema` shape:
+/// `build_csvw_schema_rich(stats, freq, headers?, rows?)` — a CSVW
+/// `tableSchema` whose columns carry machine-checkable constraints
+/// derived from stats and frequency, on top of the `build_csvw_schema`
+/// shape:
 ///
 ///   * `required: true` when the column has no empty values;
 ///   * `datatype.minimum` / `maximum` for numbers and dates;
-///   * `datatype.minLength` / `maxLength` for strings;
+///   * `datatype.minLength` / `maxLength` for ASCII string columns (qsv counts bytes, CSVW counts
+///     characters, so non-ASCII columns get none);
 ///   * `datatype.format` — an anchored regex enumerating the values — when a string column has at
 ///     most `CSVW_ENUM_MAX` distinct non-empty values and frequency captured all of them;
-///   * table-level `primaryKey`: the first Integer/String column whose values are all present and
-///     unique.
+///   * table-level `primaryKey`: the first Integer/String column with no empty values whose
+///     cardinality EQUALS `rows` (the rounded `uniqueness_ratio` reads 1.0 for 99,999 distinct
+///     values in 100,000 rows, so it is not evidence). Omitted when `rows` is not given.
 ///
-/// The legacy `qsv:*` per-column extensions are kept so existing
-/// consumers keep working.
-fn build_csvw_schema_rich(stats: Value, freq: Value, headers: Option<Value>) -> Value {
+/// Columns follow `headers` (the file's order) when given. The legacy
+/// `qsv:*` per-column extensions are kept so existing consumers keep
+/// working.
+fn build_csvw_schema_rich(
+    stats: Value,
+    freq: Value,
+    headers: Option<Value>,
+    rows: Option<Value>,
+) -> Value {
     let (stats, freq) = (to_json(&stats), to_json(&freq));
     let Some(cols) = stats.as_object() else {
         return Value::UNDEFINED;
     };
+    let rows: Option<u64> = rows.and_then(|r| to_json(&r).as_u64());
     // CSVW requires schema columns in the same order as the table's.
     // The stats map arrives key-sorted (minijinja maps are ordered by
     // key), so follow `headers` — the file's column order — when given,
@@ -718,9 +751,16 @@ fn build_csvw_schema_rich(stats: Value, freq: Value, headers: Option<Value>) -> 
                 }
             },
             "String" => {
-                for (k, src) in [("minLength", "min_length"), ("maxLength", "max_length")] {
-                    if let Some(v) = s.get(src).and_then(Json::as_u64) {
-                        datatype.insert(k.to_string(), Json::from(v));
+                // qsv's length stats count UTF-8 BYTES; CSVW lengths
+                // count characters. They agree only for ASCII, so a
+                // non-ASCII column gets no length bounds (a `café`
+                // column would otherwise demand minLength 5 of its own
+                // 4-character values).
+                if s.get("is_ascii").and_then(Json::as_bool) == Some(true) {
+                    for (k, src) in [("minLength", "min_length"), ("maxLength", "max_length")] {
+                        if let Some(v) = s.get(src).and_then(Json::as_u64) {
+                            datatype.insert(k.to_string(), Json::from(v));
+                        }
                     }
                 }
                 if let Some(re) = enumeration_regex(&freq, name, cardinality, nullcount) {
@@ -744,15 +784,12 @@ fn build_csvw_schema_rich(stats: Value, freq: Value, headers: Option<Value>) -> 
         }
         columns.push(col);
 
-        let unique = s
-            .get("uniqueness_ratio")
-            .and_then(Json::as_f64)
-            .is_some_and(|r| (r - 1.0).abs() < f64::EPSILON);
         if primary_key.is_none()
-            && unique
             && nullcount == 0
             && matches!(ty, "Integer" | "String")
-            && cardinality.is_some_and(|c| c > 1)
+            && let (Some(c), Some(r)) = (cardinality, rows)
+            && c > 1
+            && c == r
         {
             primary_key = Some(name.clone());
         }
@@ -1074,6 +1111,7 @@ mod tests {
             "id":     {"stats": {"type": "Integer", "min": "1", "max": "4", "nullcount": 0,
                                  "cardinality": 4, "uniqueness_ratio": 1.0}},
             "status": {"stats": {"type": "String", "min": "Closed", "max": "Open",
+                                 "is_ascii": true,
                                  "min_length": 4, "max_length": 6, "nullcount": 1,
                                  "cardinality": 3, "uniqueness_ratio": 0.75}},
             "photo":  {"stats": {"type": "NULL", "nullcount": 4, "cardinality": 1}},
@@ -1155,6 +1193,7 @@ mod tests {
             Value::from(Serde(&stats_fixture())),
             Value::from(Serde(&freq)),
             Some(Value::from(Serde(&headers))),
+            Some(Value::from(4)),
         );
         let j = to_json(&v);
         assert_eq!(j["primaryKey"], "id");
@@ -1183,6 +1222,32 @@ mod tests {
         assert_eq!(id["datatype"]["minimum"], 1);
         assert_eq!(id["datatype"]["maximum"], 4);
         assert!(col("photo").get("required").is_none());
+    }
+
+    #[test]
+    fn csvw_rich_primary_key_needs_exact_cardinality_and_ascii_lengths() {
+        let stats = json!({
+            // 99,999 distinct of 100,000 rows: uniqueness_ratio rounds to 1.0.
+            "id":   {"stats": {"type": "Integer", "nullcount": 0, "cardinality": 99_999,
+                               "uniqueness_ratio": 1.0}},
+            "word": {"stats": {"type": "String", "is_ascii": false, "nullcount": 0,
+                               "min_length": 5, "max_length": 5, "cardinality": 1}},
+        });
+        let v = build_csvw_schema_rich(
+            Value::from(Serde(&stats)),
+            Value::from(Serde(json!({}))),
+            None,
+            Some(Value::from(100_000)),
+        );
+        let j = to_json(&v);
+        assert!(j.get("primaryKey").is_none(), "{j}");
+        let word = j["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == "word")
+            .unwrap();
+        assert!(word["datatype"].get("minLength").is_none(), "{word}");
     }
 
     #[test]

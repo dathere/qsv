@@ -73,7 +73,7 @@ undefined, not an error, when its inputs are absent, so guard with
 | `coordinate_resolution_in_meters(dpp, stats)` | Finest separation the lat/lon decimal precision resolves, in metres (3 significant figures). |
 | `robust_bbox(dpp, stats)` | `[Location]` with a WKT `bbox`, excluding out-of-range and (0, 0) coordinates (Info note with the count dropped). |
 | `quality_measurements(stats, dpp, dims, rfc4180)` | DQV `QualityMeasurement` array; `dims` maps `completeness` / `conciseness` / `syntacticValidity` to dimension IRIs. |
-| `build_csvw_schema_rich(stats, dppf, headers)` | CSVW table schema in file order, with per-column constraints and a `primaryKey`. |
+| `build_csvw_schema_rich(stats, dppf, headers, rows)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). |
 | `detect_data_language(stats, dppf)` | ISO 639-1 code of the text values (needs the `whatlang` feature). |
 
 The projection context also exposes `dppf` (per-column frequency),

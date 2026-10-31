@@ -626,9 +626,11 @@ distribution:
         [{ "@type": "Standard", "identifier": {{ ct | tojson }} }]
         {%- endif -%}
       emit_when: '{{ res.conformsTo is defined and res.conformsTo }}'
-      # Asserted only when `qsv validate` confirmed it.
+      # Asserted only when `qsv validate` confirmed a well-formed,
+      # COMMA-separated file (RFC 4180 is the comma format; a valid TSV
+      # is not RFC 4180).
       fallback: |
-        {%- if rfc4180 and rfc4180.valid -%}
+        {%- if rfc4180 and rfc4180.valid and rfc4180.comma_delimited -%}
         [{ "@type": "Standard",
            "title": "RFC 4180: Common Format and MIME Type for Comma-Separated Values (CSV) Files",
            "identifier": "https://www.rfc-editor.org/rfc/rfc4180" }]
@@ -665,7 +667,7 @@ distribution:
       fallback: '{{ coordinate_resolution_in_meters(dpp, stats) | default("") }}'
 
     - path: "csvw:tableSchema"
-      template: '{{ build_csvw_schema_rich(stats, dppf, headers) | tojson }}'
+      template: '{{ build_csvw_schema_rich(stats, dppf, headers, dpp.RECORD_COUNT) | tojson }}'
       emit_when: '{{ stats is defined and stats }}'
 
 # =========================================================================

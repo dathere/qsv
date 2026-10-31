@@ -356,12 +356,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // the file extension / QSV_DEFAULT_DELIMITER), so a `.tsv` input is
     // not read as one comma-less column. --no-headers maps to
     // has_header=false.
+    let resolved_delimiter = Config::new(Some(&input_path))
+        .delimiter(args.flag_delimiter)
+        .get_delimiter();
     let sql_backend = sql_backend::SqlBackend::new(&input_path)
-        .with_delimiter(
-            Config::new(Some(&input_path))
-                .delimiter(args.flag_delimiter)
-                .get_delimiter(),
-        )
+        .with_delimiter(resolved_delimiter)
         .with_has_header(!args.flag_no_headers);
 
     // --- 3. formula evaluation (minijinja, native Rust) -----------------
@@ -514,12 +513,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // envelope's own fields) and `<dataset_key>/0/` for Dataset fields
     // once wrapped in a Catalog. Consumed after overrides + validation.
     let mut pending_warnings: Vec<(projection::ProjectionWarning, String)> = Vec::new();
-    // `(pointer under the projection root, value)` for every value that
-    // came from a field's inferred-tier `fallback`, as projected —
-    // before discovery merge and overrides. Compared against the final
-    // projection to report provenance and to keep review notes only
-    // while the inferred value actually survives.
-    let mut inferred_snapshot: Vec<(String, Value)> = Vec::new();
+    // Every value that came from a field's inferred-tier `fallback`, as
+    // projected — before discovery merge and overrides. Compared against
+    // the final projection to report provenance and to keep review notes
+    // only while the inferred value actually survives.
+    let mut inferred_snapshot: Vec<InferredValue> = Vec::new();
 
     if !args.flag_no_projection {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
@@ -556,19 +554,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // opt-in `frequency` key above. `rfc4180` carries the `qsv
         // validate` RFC 4180 / UTF-8 result, and `http_last_modified`
         // the URL response's Last-Modified (Zulu), when available.
+        // With --no-headers the three column namings disagree: stats
+        // keys columns 0-based (`0`, `1`), frequency 1-based (`1`, `2`),
+        // and `analysis.headers` holds the first DATA row. Re-key
+        // frequency to the stats identities and use those as the
+        // ordered column names, or helpers attach column 0's values
+        // to column 1 and describe data values as column names.
+        let mut dppf = analysis.context.get("dppf").cloned().unwrap_or(json!({}));
+        let headers: Vec<String> = if args.flag_no_headers {
+            if let Some(obj) = dppf.as_object() {
+                dppf = Value::Object(
+                    obj.iter()
+                        .filter_map(|(k, v)| {
+                            let n = k.parse::<usize>().ok()?.checked_sub(1)?;
+                            Some((n.to_string(), v.clone()))
+                        })
+                        .collect(),
+                );
+            }
+            stats
+                .as_object()
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default()
+        } else {
+            analysis.headers.clone()
+        };
+        // RFC 4180 is the COMMA-separated format: `qsv validate`
+        // passing a TSV proves it well-formed, not RFC 4180.
+        let mut rfc4180 = analysis
+            .context
+            .get("rfc4180")
+            .cloned()
+            .unwrap_or(Value::Null);
+        if let Some(obj) = rfc4180.as_object_mut() {
+            obj.insert(
+                "comma_delimited".to_string(),
+                Value::Bool(resolved_delimiter == b','),
+            );
+        }
         let projection_ctx = json!({
             "pkg":                package,
             "res":                resource,
             "stats":              stats,
             "frequency":          frequency,
-            "dppf":               analysis.context.get("dppf").cloned().unwrap_or(json!({})),
+            "dppf":               dppf,
             // Column names in FILE order. Template maps iterate sorted
             // (minijinja is built without preserve_order), so anything
             // order-sensitive — CSVW columns, the generated
             // description's column list — must iterate this instead.
-            "headers":            &analysis.headers,
+            "headers":            headers,
             "dpp":                dpp,
-            "rfc4180":            analysis.context.get("rfc4180").cloned().unwrap_or(Value::Null),
+            "rfc4180":            rfc4180,
             "http_last_modified": http_last_modified,
             "source_label":       display_input,
             "local_path":         input_path,
@@ -585,18 +621,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Wrapping first would push discovered Dataset metadata onto
         // the outer Catalog (where keys like `dct:contactPoint`
         // shouldn't live) instead of the inner Dataset.
+        let _ = projection::take_inferred_paths(); // discard anything stale
         let (dataset_block, dataset_warnings) = projection::project(
             &profile,
             &projection_ctx,
             projection::ProjectionMode::Dataset,
         )?;
         let inferred_paths = projection::take_inferred_paths();
+        let inferred_pointers: Vec<String> =
+            inferred_paths.iter().map(|p| p.pointer.clone()).collect();
         let merged_dataset = discovery_merge::merge_with_inferred(
             &profile,
             dataset_block.clone(),
             discovered_dcat.as_ref(),
             &analysis.forced_paths,
-            &inferred_paths,
+            &inferred_pointers,
         );
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =
@@ -608,6 +647,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .unwrap_or("dcat:dataset");
             let prefix = format!("{}/0/", dataset_key.replace('~', "~0").replace('/', "~1"));
             inferred_snapshot.extend(inferred_values(&dataset_block, &inferred_paths, &prefix));
+            // Catalog-envelope fields that came from a `fallback`.
+            let catalog_inferred = projection::take_inferred_paths();
+            inferred_snapshot.extend(inferred_values(&catalog_block, &catalog_inferred, ""));
             pending_warnings.extend(dataset_warnings.into_iter().map(|w| (w, prefix.clone())));
             pending_warnings.extend(cat_warnings.into_iter().map(|w| (w, String::new())));
             catalog_block
@@ -673,13 +715,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .is_some_and(|v| v == value)
         };
         let mut provenance = Map::new();
-        for (ptr, value) in &inferred_snapshot {
-            let source = if still_inferred(ptr, value) {
+        for iv in &inferred_snapshot {
+            let source = if still_inferred(&iv.pointer, &iv.value) {
                 "inferred"
             } else {
                 "replaced"
             };
-            provenance.insert(ptr.clone(), Value::String(source.to_string()));
+            provenance.insert(iv.pointer.clone(), Value::String(source.to_string()));
         }
         if !provenance.is_empty() {
             out_map.insert(
@@ -694,7 +736,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ) = pending_warnings
             .into_iter()
             .filter(|(w, prefix)| {
-                let ptr = format!("/{prefix}{}", w.field);
                 // Info notes describe how a value was derived (or why
                 // it was not); they stay regardless.
                 if w.severity == projection::Severity::Info {
@@ -702,8 +743,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 }
                 // A review note on an inferred value stays exactly as
                 // long as that value does.
-                if let Some((_, value)) = inferred_snapshot.iter().find(|(p, _)| *p == ptr) {
-                    return still_inferred(&ptr, value);
+                if let Some(iv) = inferred_snapshot
+                    .iter()
+                    .find(|iv| iv.field == w.field && iv.prefix == *prefix)
+                {
+                    return still_inferred(&iv.pointer, &iv.value);
                 }
                 !final_projection_has_field(final_projection_snapshot.as_ref(), prefix, &w.field)
             })
@@ -936,16 +980,37 @@ fn merge_formula_results(
     }
 }
 
-/// `(pointer under the projection root, value)` for each inferred path
-/// in a freshly projected Dataset block. `prefix` is the JSON-Pointer
-/// prefix of the Dataset once placed in the final projection (`""` in
-/// Dataset mode, `<dataset_key>/0/` inside a Catalog envelope).
-fn inferred_values(block: &Value, inferred_paths: &[String], prefix: &str) -> Vec<(String, Value)> {
+/// A value a field's inferred-tier `fallback` supplied, as projected.
+struct InferredValue {
+    /// JSON Pointer under the final projection root.
+    pointer: String,
+    value:   Value,
+    /// Logical field its review note carries (`ProjectionWarning::field`).
+    field:   String,
+    /// Pending-warning prefix of the block it was projected into.
+    prefix:  String,
+}
+
+/// Snapshot the inferred values of a freshly projected block. `prefix`
+/// is the JSON-Pointer prefix (escaped, no leading `/`) of that block
+/// once placed in the final projection: `""` for a Dataset in Dataset
+/// mode or for the Catalog envelope, `<dataset_key>/0/` for a Dataset
+/// inside a Catalog.
+fn inferred_values(
+    block: &Value,
+    inferred_paths: &[projection::InferredPath],
+    prefix: &str,
+) -> Vec<InferredValue> {
     inferred_paths
         .iter()
-        .filter_map(|path| {
-            let value = block.pointer(&format!("/{path}"))?.clone();
-            Some((format!("/{prefix}{path}"), value))
+        .filter_map(|p| {
+            let value = block.pointer(&format!("/{}", p.pointer))?.clone();
+            Some(InferredValue {
+                pointer: format!("/{prefix}{}", p.pointer),
+                value,
+                field: p.field.clone(),
+                prefix: prefix.to_string(),
+            })
         })
         .collect()
 }

@@ -427,6 +427,22 @@ pub struct FieldDecl {
     /// Skips the warning.
     #[serde(default)]
     pub default:         Option<Value>,
+    /// Inferred-tier template, rendered only when `emit_when` is falsy
+    /// or `template` renders empty — i.e. when nothing supplied,
+    /// forced or spec-derived exists. A value that comes from here is
+    /// recorded as inferred, and discovered publisher metadata
+    /// REPLACES it during discovery merge (whereas a `template` value
+    /// wins over discovery). Use for judgement calls — a generated
+    /// description, a detected language, a guessed schedule — not for
+    /// facts measured from the file.
+    #[serde(default)]
+    pub fallback:        Option<String>,
+    /// Message attached (Recommended severity) to `projection_warnings`
+    /// whenever `fallback` supplies the value, so a generated value
+    /// filling a Mandatory slot never hides that a human-authored one
+    /// is still missing.
+    #[serde(default)]
+    pub review_note:     Option<String>,
     /// Per-stats-column expansion (Croissant `cr:Field`). When set, the
     /// template runs once per stats column; the column-record is
     /// exposed as `column.*` in scope.

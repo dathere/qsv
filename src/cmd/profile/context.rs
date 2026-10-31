@@ -43,6 +43,11 @@ pub struct ContextArgs<'a> {
     /// construction stays decoupled from the orchestrator's profile
     /// load.
     pub profile:         &'a super::profile_spec::ProfileSpec,
+    /// Run `qsv validate` (RFC 4180 + UTF-8) so the projection can
+    /// assert `conformsTo` / `characterEncoding`. Set from `--validate`:
+    /// a profile that was not asked to validate never pays for the
+    /// extra full-file scan (§5.8).
+    pub check_rfc4180:   bool,
 }
 
 /// Result of the analysis pass — the JSON context plus the column headers we
@@ -220,13 +225,46 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
             .insert("name".to_string(), Value::String(name.to_string()));
     }
 
-    // --- 7. assemble ------------------------------------------------------
+    // --- 7. RFC 4180 + UTF-8 conformance (with --validate) ---------------
+    // `qsv validate` with no schema checks the file is well-formed CSV
+    // (consistent field counts, quoting) and valid UTF-8. The projection
+    // derives `conformsTo`, `characterEncoding` and a syntactic-validity
+    // quality measurement from the result, so they are only asserted
+    // when actually checked; without --validate `rfc4180` is null and
+    // they are omitted. Any failure — invalid data or a validator that
+    // could not run — reads as `valid: false` rather than aborting.
+    let rfc4180 = if args.check_rfc4180 {
+        let mut validate_owned: Vec<String> = Vec::new();
+        append_csv_flags(
+            &mut validate_owned,
+            args,
+            FreqOrCount {
+                jobs:     false,
+                force:    false,
+                memcheck: false,
+            },
+        );
+        let validate_args: Vec<&str> = validate_owned.iter().map(String::as_str).collect();
+        let valid = util::run_qsv_cmd(
+            "validate",
+            &validate_args,
+            args.input_path,
+            "qsv profile: ran `validate` (RFC 4180 / UTF-8)",
+        )
+        .is_ok();
+        json!({ "valid": valid })
+    } else {
+        Value::Null
+    };
+
+    // --- 8. assemble ------------------------------------------------------
     let context = json!({
         "package":  package,
         "resource": resource,
         "dpps":     dpps,
         "dppf":     dppf,
         "dpp":      dpp,
+        "rfc4180":  rfc4180,
     });
 
     Ok(AnalysisContext {

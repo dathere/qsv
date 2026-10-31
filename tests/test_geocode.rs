@@ -3699,14 +3699,43 @@ fn geocode_geoclient_disk_cache() {
     );
     assert_eq!(mock.requests(), 2);
 
-    let mut info = wrk.command("geocode");
-    info.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
-        .arg("cache-info");
-    let output = wrk.output(&mut info);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let cache_info = || {
+        let mut info = wrk.command("geocode");
+        info.env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+            .arg("cache-info");
+        let output = wrk.output(&mut info);
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let line = stdout
+            .lines()
+            .find(|l| l.contains(r#""provider":"Geoclient""#))
+            .unwrap_or_else(|| panic!("no Geoclient line in stdout: {stdout}"));
+        serde_json::from_str::<serde_json::Value>(line).unwrap()
+    };
+    let info = cache_info();
+    assert_eq!(info["exists"], true, "{info}");
+    // the match and the cached non-match
+    assert_eq!(info["entry_count"], 2, "{info}");
+    assert_eq!(info["undecodable_entries"], 0, "{info}");
+    let oldest = info["oldest_entry"].as_str().unwrap();
+    let newest = info["newest_entry"].as_str().unwrap();
+    // RFC 3339 UTC to the second, so the strings order like the instants
     assert!(
-        stdout.contains(r#""provider":"Geoclient""#) && stdout.contains(r#""exists":true"#),
-        "stdout: {stdout}"
+        oldest.len() == 20 && oldest.ends_with('Z') && oldest <= newest,
+        "{info}"
+    );
+
+    let mut clear = wrk.command("geocode");
+    clear
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .arg("cache-clear");
+    wrk.assert_success(&mut clear);
+    let info = cache_info();
+    assert_eq!(info["exists"], true, "{info}");
+    assert_eq!(info["entry_count"], 0, "{info}");
+    assert!(
+        info["oldest_entry"].is_null() && info["newest_entry"].is_null(),
+        "{info}"
     );
 }
 

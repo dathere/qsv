@@ -7127,6 +7127,7 @@ dependencies = [
  "rand_hc",
  "rand_xoshiro",
  "rayon",
+ "redb",
  "redis",
  "regex",
  "reqwest",

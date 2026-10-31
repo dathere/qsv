@@ -64,6 +64,18 @@ spread_max=${QSVBM_SPREAD_MAX:-3}
 speedup_pct=${QSVBM_SPEEDUP_PCT:-33}
 mem_drop_pct=${QSVBM_MEM_DROP_PCT:-25}
 
+# the geocode_geoclient_* benchmarks (see "geoclient inputs" below) run only when one of these
+# is set; without either they are skipped with a NOTE:
+#  QSV_GEOCLIENT_API_KEY: a NYC Geoclient subscription key for the public API (free at
+#   https://api-portal.nyc.gov). Export it in the shell running this script, never in a .env file
+#   (the geoclient benchmarks run with QSV_DOTENV_PATH='<NONE>').
+#  QSV_GEOCLIENT_API_URL: the base URL of a self-hosted Geoclient. Swaps in the opt-in
+#   geocode_geoclient_nocache_selfhosted benchmark and makes the run PRIVATE: results/ is restored
+#   when the script exits, and this run's results are kept in results/private_latest_* instead.
+#  QSVBM_GEOCLIENT_RATE_LIMIT: qsv's --rate-limit (requests/sec) against a self-hosted Geoclient.
+#   (default: 100000, i.e. effectively unthrottled)
+#  QSVBM_RECORD_SELFHOSTED: set to 1 to record a self-hosted run in results/ like any other run.
+
 # what hyperfine measures. Explicit units pin the CSV export to seconds and MiB, and user/system
 # are only exported when asked for. The archive keeps hyperfine 1.x's column names - see
 # hf_result_row.
@@ -149,6 +161,14 @@ if [[ "$arg_pat" == "help" ]]; then
   echo "  benchmark data zip: $datazip"
   echo "  warmup runs: $warmup_runs"
   echo "  benchmark runs: $benchmark_runs"
+  if [ -n "$QSV_GEOCLIENT_API_URL" ]; then
+    if [ "${QSVBM_RECORD_SELFHOSTED:-0}" == "1" ]; then gc_run="recorded"; else gc_run="private"; fi
+    echo "  geoclient: self-hosted at $QSV_GEOCLIENT_API_URL ($gc_run run, rate limit ${QSVBM_GEOCLIENT_RATE_LIMIT:-100000}/s)"
+  elif [ -n "$QSV_GEOCLIENT_API_KEY" ]; then
+    echo "  geoclient: public API (QSV_GEOCLIENT_API_KEY is set)"
+  else
+    echo "  geoclient: skipped (set QSV_GEOCLIENT_API_KEY or QSV_GEOCLIENT_API_URL)"
+  fi
   exit 0
 fi
 

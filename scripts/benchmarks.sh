@@ -1026,6 +1026,20 @@ fi
 # made API calls is never recorded. (A self-hosted Geoclient needs no key, so there the guard
 # can't tell; its requests stay local.)
 geoclient_offline_key=offline-guard
+# OPT-IN SELF-HOSTED VARIANT: with QSV_GEOCLIENT_API_URL set, every request goes to that Geoclient
+# (e.g. the mlipper/geoclient Docker image) instead of the public API. There is no quota then,
+# so the uncached benchmark reads all 100k rows with qsv's rate limiter raised out of the way,
+# timing qsv's request pipeline rather than the public API's pacing. It is published under its
+# own name, geocode_geoclient_nocache_selfhosted, so it never mixes with the public-API series.
+# The images are amd64-only (Geosupport is an x86_64 Linux C library), so on Apple silicon they
+# run emulated - run this variant on x86_64 Linux. QSVBM_GEOCLIENT_RATE_LIMIT sets the cap
+# (--rate-limit has no "unlimited" value).
+geoclient_selfhosted=0
+geoclient_rate_args=()
+if [ -n "$QSV_GEOCLIENT_API_URL" ]; then
+  geoclient_selfhosted=1
+  geoclient_rate_args=(--rate-limit "${QSVBM_GEOCLIENT_RATE_LIMIT:-100000}")
+fi
 geoclient_params='houseNumber={house_number},street={street},borough={borough}'
 geoclient_cache_dir=geoclient_cache
 geoclient_10k_rowcount=
@@ -1059,7 +1073,7 @@ if [[ "$has_geoclient" -eq 1 ]]; then
     for _ in 1 2; do
       env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" "$qsv_bin" geocode \
         geoclient address --endpoint address --params "$geoclient_params" -c geo_latlong \
-        --cache-ttl 0 nyc_addresspoint_100k.csv -o /dev/null
+        --cache-ttl 0 "${geoclient_rate_args[@]}" nyc_addresspoint_100k.csv -o /dev/null
       if env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" \
         QSV_GEOCLIENT_API_KEY="$geoclient_offline_key" "$qsv_bin" geocode geoclient address \
         --endpoint address --params "$geoclient_params" -c geo_latlong --cache-ttl 0 \
@@ -1105,7 +1119,9 @@ function rowcount_for_benchmark {
   to_ods) subset_rowcount="$ods_rowcount" ;;
   fixedwidth_100k) subset_rowcount="$fwf_rowcount" ;;
   geocode_geoclient_nocache) subset_rowcount="$geoclient_10k_rowcount" ;;
-  geocode_geoclient_cache) subset_rowcount="$geoclient_100k_rowcount" ;;
+  geocode_geoclient_cache | geocode_geoclient_nocache_selfhosted)
+    subset_rowcount="$geoclient_100k_rowcount"
+    ;;
   readstat_sav | readstat_sav_compressed | readstat_dta | readstat_dta_select | readstat_xpt | \
     writestat_sav | writestat_sav_compress | writestat_dta | writestat_xpt)
     subset_rowcount="$stat_rowcount"
@@ -1515,15 +1531,24 @@ run geocode_reverse_batchall "$qsv_bin" geocode reverse Location --new-column ge
 # Online geoclient lookups of real NYC addresses (see the geoclient inputs in the prep section).
 # The two differ only in the cache: _nocache times live API calls on 10k rows - bounded by the
 # API's rate limit as much as by qsv - and _cache times serving all 100k from the primed cache.
+# Against a self-hosted Geoclient, _nocache_selfhosted replaces _nocache (see the prep section).
 # _cache runs with an invalid key, so a row missing from the cache fails it (see the prep section).
 # A bad key or an exhausted quota makes qsv exit non-zero, but a run whose lookups mostly fail
 # for other reasons still exits 0, so --verify checks that at least 90% of the rows got NYC
 # coordinates (AddressPoint addresses are Geosupport's own, so nearly all should match).
 if [[ "$has_geoclient" -eq 1 ]]; then
   geoclient_geocoded='test "$("$QSVBM_QSV" search -s geo_latlong "^4[01][.][0-9]+, -7[34][.]" "$QSVBM_STDOUT" | "$QSVBM_QSV" count)" -ge '
-  run --verify "${geoclient_geocoded}$((geoclient_10k_rowcount * 9 / 10))" geocode_geoclient_nocache \
-    env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
-    address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache geoclient_10k.csv
+  if [[ "$geoclient_selfhosted" -eq 1 ]]; then
+    run --verify "${geoclient_geocoded}$((geoclient_100k_rowcount * 9 / 10))" \
+      geocode_geoclient_nocache_selfhosted \
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
+      address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache \
+      "${geoclient_rate_args[@]}" nyc_addresspoint_100k.csv
+  else
+    run --verify "${geoclient_geocoded}$((geoclient_10k_rowcount * 9 / 10))" geocode_geoclient_nocache \
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
+      address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache geoclient_10k.csv
+  fi
   if [[ "$has_geoclient_cache" -eq 1 ]]; then
     run --verify "${geoclient_geocoded}$((geoclient_100k_rowcount * 9 / 10))" geocode_geoclient_cache \
       env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" \

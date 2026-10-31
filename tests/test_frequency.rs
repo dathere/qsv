@@ -7271,14 +7271,16 @@ fn param_prop_frequency_limit_correctness(name: &str, rows: CsvData) -> bool {
     for (field, field_rows) in &grouped {
         let explicit_count = field_rows
             .iter()
-            .filter(|r| r.value != "Other" && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>")
+            .filter(|r| {
+                !r.value.starts_with("Other (") && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>"
+            })
             .count();
         assert!(
             explicit_count <= 2,
             "Field '{field}' has {explicit_count} explicit values with --limit 2"
         );
         // Other rows should have rank 0
-        for r in field_rows.iter().filter(|r| r.value == "Other") {
+        for r in field_rows.iter().filter(|r| r.value.starts_with("Other (")) {
             if !r.rank.is_empty() {
                 assert_eq!(
                     r.rank, "0",
@@ -7321,7 +7323,7 @@ fn param_prop_frequency_negative_limit(name: &str, rows: CsvData) -> bool {
     let parsed = parse_frequency_output(&stdout);
 
     for r in &parsed {
-        if r.value != "Other" && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>" {
+        if !r.value.starts_with("Other (") && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>" {
             let count: usize = r.count.parse().unwrap();
             assert!(
                 count >= 2,
@@ -7332,6 +7334,52 @@ fn param_prop_frequency_negative_limit(name: &str, rows: CsvData) -> bool {
         }
     }
     true
+}
+
+// A whitespace-padded value keeps a column from short-circuiting to <ALL_UNIQUE>, so it is
+// counted in full and its singletons land in the "Other (N)" row. The property tests above
+// once matched only a bare "Other" label, which the exact path never emits; this was the
+// shrunk input that exposed it in CI.
+#[test]
+fn frequency_negative_limit_other_row_exempt() {
+    let rows = CsvData {
+        data: vec![
+            crate::CsvRecord(vec![
+                "!".to_string(),
+                "\"".to_string(),
+                "#".to_string(),
+                "$".to_string(),
+                "%".to_string(),
+            ]),
+            crate::CsvRecord(vec![
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                " ".to_string(),
+            ]),
+        ],
+    };
+    assert!(param_prop_frequency_negative_limit(
+        "frequency_negative_limit_other_row_exempt",
+        rows
+    ));
+}
+
+#[test]
+fn frequency_limit_correctness_other_row() {
+    let rows = CsvData {
+        data: vec![
+            crate::CsvRecord(vec!["x".to_string()]),
+            crate::CsvRecord(vec![" a".to_string()]),
+            crate::CsvRecord(vec![" b".to_string()]),
+            crate::CsvRecord(vec![" c".to_string()]),
+        ],
+    };
+    assert!(param_prop_frequency_limit_correctness(
+        "frequency_limit_correctness_other_row",
+        rows
+    ));
 }
 
 // ---- 5. Sequential vs parallel output ----
@@ -7479,7 +7527,9 @@ fn param_prop_frequency_desc_order(name: &str, rows: CsvData) -> bool {
         // they must be added to this filter as well.
         let counts: Vec<usize> = field_rows
             .iter()
-            .filter(|r| r.value != "Other" && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>")
+            .filter(|r| {
+                !r.value.starts_with("Other (") && r.value != "(NULL)" && r.value != "<ALL_UNIQUE>"
+            })
             .map(|r| r.count.parse::<usize>().unwrap())
             .collect();
         for window in counts.windows(2) {

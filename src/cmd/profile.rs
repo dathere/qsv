@@ -26,6 +26,21 @@ evaluates the spec's `formula` / `suggestion_formula` templates against that
 context. Jinja2 helpers and filters are a native Rust port of DP+'s
 `jinja2_helpers.py`, built on `minijinja`.
 
+For DCAT-US v3 the projection also COMPUTES properties that are tedious to
+author by hand, from the same statistics: temporal coverage and resolution
+(an exact xsd:duration: a regular series' step, else recording precision),
+spatial bounding box (excluding out-of-range and (0, 0) placeholder
+coordinates) and resolution, an update schedule (only for
+a regular calendar series), the content language, DQV quality measurements
+(completeness, plus duplicate rows and CSV/UTF-8 validity with `--validate`),
+and a CSVW table schema with per-column constraints (required, ranges,
+lengths, enumerations, primary key). Values
+that are generated or detected rather than measured - a description, the
+language, the schedule - form an "inferred" tier that the publisher's own
+metadata replaces; `projection_provenance` lists them. A generated
+description carries a disclosure and a review warning, so it never passes
+for a human-authored one.
+
 When the input is a URL whose response carries DCAT markup (HTTP
 `Link: rel=describedBy`), qsv discovers the publisher's stated metadata and
 merges it as a base layer beneath the inferred projection.
@@ -145,7 +160,11 @@ profile options:
                               mlcroissant. Catches missing mandatory fields,
                               cardinality issues, and shape violations.
                               Violations append to projection_warnings by
-                              default.
+                              default. Also runs `qsv validate` over the
+                              input (CSV structure + UTF-8), so a passing
+                              file is declared UTF-8 encoded and its
+                              syntactic validity is recorded as a
+                              quality measurement.
     --strict                  With --validate, fail the command on
                               Required-severity schema violations, or on
                               non-Info external-validator findings,
@@ -212,13 +231,14 @@ Common options:
 use std::path::Path;
 
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use crate::{CliError, CliResult, util};
+use crate::{CliError, CliResult, config::Config, util};
 
 mod context;
 mod dcat_discover;
 mod dcat_validate;
+mod derive;
 mod discovery_merge;
 mod external_validate;
 mod formula_engine;
@@ -265,17 +285,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // stdin): "stdin" for piped input, the original path/URL otherwise.
     // `original_url` is preserved separately so the DCAT projection can
     // use it as `dcat:downloadURL` and to derive a title fallback.
-    let (input_path, original_url, display_input, from_stdin, _kept_temp) =
+    let (input_path, original_url, display_input, from_stdin, _kept_temp, http_last_modified) =
         match args.arg_input.as_deref() {
             Some("-") | None => {
                 let temp = stdin_to_tempfile()?;
                 let local = temp.path().to_string_lossy().to_string();
-                (local, None, "stdin".to_string(), true, Some(temp))
+                (local, None, "stdin".to_string(), true, Some(temp), None)
             },
             Some(p) => {
-                let (local, url, kept) = resolve_input(p)?;
-                let display = url.clone().unwrap_or_else(|| p.to_string());
-                (local, url, display, false, kept)
+                let resolved = resolve_input(p)?;
+                let display = resolved.url.clone().unwrap_or_else(|| p.to_string());
+                (
+                    resolved.local,
+                    resolved.url,
+                    display,
+                    false,
+                    resolved.kept,
+                    resolved.last_modified,
+                )
             },
         };
 
@@ -319,8 +346,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         memcheck:        args.flag_memcheck,
         initial_context: args.flag_initial_context.as_deref(),
         profile:         &profile,
+        check_rfc4180:   args.flag_validate && !args.flag_no_projection,
     };
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
+
+    // One SQL backend for both the spec's formulas and the projection
+    // templates, honoring the same CSV parsing options as the stats /
+    // frequency passes so SQL-backed helpers see the same columns.
+    // The delimiter resolves exactly as stats' does (--delimiter, then
+    // the file extension / QSV_DEFAULT_DELIMITER), so a `.tsv` input is
+    // not read as one comma-less column. --no-headers maps to
+    // has_header=false.
+    let resolved_delimiter = Config::new(Some(&input_path))
+        .delimiter(args.flag_delimiter)
+        .get_delimiter();
+    let sql_backend = sql_backend::SqlBackend::new(&input_path)
+        .with_delimiter(resolved_delimiter)
+        .with_has_header(!args.flag_no_headers);
 
     // --- 3. formula evaluation (minijinja, native Rust) -----------------
     // When a spec is provided, evaluate every `formula` / `suggestion_formula`
@@ -328,15 +370,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // DP+'s `jinja2_helpers.py` (see `formula_helpers.rs`).
     let formula_results = match spec_opt.as_ref() {
         Some(spec) => {
-            // Build a SQL backend honoring the same CSV parsing options
-            // as the rest of the profile pipeline so SQL-backed helpers
-            // (temporal_resolution, guess_accrual_periodicity) see the
-            // same columns stats/frequency saw. --delimiter overrides
-            // Polars' default comma; --no-headers maps to has_header=false.
-            let sql_backend = sql_backend::SqlBackend::new(ctx_args.input_path)
-                .with_delimiter(ctx_args.delimiter.map_or(b',', |d| d.0))
-                .with_has_header(!ctx_args.no_headers);
-            formula_engine::evaluate_spec(spec, &analysis.context, Some(sql_backend))?
+            formula_engine::evaluate_spec(spec, &analysis.context, Some(sql_backend.clone()))?
         },
         None => Vec::new(),
     };
@@ -480,6 +514,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // envelope's own fields) and `<dataset_key>/0/` for Dataset fields
     // once wrapped in a Catalog. Consumed after overrides + validation.
     let mut pending_warnings: Vec<(projection::ProjectionWarning, String)> = Vec::new();
+    // Every value that came from a field's inferred-tier `fallback`, as
+    // projected — before discovery merge and overrides. Compared against
+    // the final projection to report provenance and to keep review notes
+    // only while the inferred value actually survives.
+    let mut inferred_snapshot: Vec<InferredValue> = Vec::new();
 
     if !args.flag_no_projection {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
@@ -493,11 +532,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // the projection compact by default; an empty map makes the
         // profile templates emit no frequency block. The raw counts always
         // remain in the top-level `frequency` output block regardless.
-        let frequency = if args.flag_croissant_frequency {
-            analysis.context.get("dppf").cloned().unwrap_or(json!({}))
-        } else {
-            json!({})
-        };
+        // Filled from the normalized `dppf` below.
+        let mut frequency = json!({});
         // Build the projection context: the YAML's field templates
         // reference these top-level names. `pkg` and `res` are the
         // merged CKAN package + resource; `source_label` is the
@@ -509,32 +545,92 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // optionally re-emit dct:license at the Dataset level (DCAT
         // v1.1 back-compat). Strict v3 keeps license on Distribution
         // only; the flag is off by default.
+        //
+        // `dppf` is the always-present per-column frequency (top 25,
+        // nulls excluded) that stats-derived helpers read — CSVW
+        // enumerations, language detection — independent of the
+        // opt-in `frequency` key above. `rfc4180` carries the `qsv
+        // validate` RFC 4180 / UTF-8 result, and `http_last_modified`
+        // the URL response's Last-Modified (Zulu), when available.
+        // With --no-headers the three column namings disagree: stats
+        // keys columns 0-based (`0`, `1`), frequency 1-based (`1`, `2`),
+        // and `analysis.headers` holds the first DATA row. Re-key
+        // frequency to the stats identities and use those as the
+        // ordered column names, or helpers attach column 0's values
+        // to column 1 and describe data values as column names.
+        let mut dppf = analysis.context.get("dppf").cloned().unwrap_or(json!({}));
+        let headers: Vec<String> = if args.flag_no_headers {
+            if let Some(obj) = dppf.as_object() {
+                dppf = Value::Object(
+                    obj.iter()
+                        .filter_map(|(k, v)| {
+                            let n = k.parse::<usize>().ok()?.checked_sub(1)?;
+                            Some((n.to_string(), v.clone()))
+                        })
+                        .collect(),
+                );
+            }
+            stats
+                .as_object()
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default()
+        } else {
+            analysis.headers.clone()
+        };
+        let rfc4180 = analysis
+            .context
+            .get("rfc4180")
+            .cloned()
+            .unwrap_or(Value::Null);
+        // The opt-in Croissant histograms must index the same
+        // (normalized) per-column frequency the derived helpers read.
+        if args.flag_croissant_frequency {
+            frequency = dppf.clone();
+        }
         let projection_ctx = json!({
-            "pkg":            package,
-            "res":            resource,
-            "stats":          stats,
-            "frequency":      frequency,
-            "dpp":            dpp,
-            "source_label":   display_input,
-            "local_path":     input_path,
-            "legacy_license": args.flag_dcat_legacy_license,
+            "pkg":                package,
+            "res":                resource,
+            "stats":              stats,
+            "frequency":          frequency,
+            "dppf":               dppf,
+            // Column names in FILE order. Template maps iterate sorted
+            // (minijinja is built without preserve_order), so anything
+            // order-sensitive — CSVW columns, the generated
+            // description's column list — must iterate this instead.
+            "headers":            headers,
+            "dpp":                dpp,
+            "rfc4180":            rfc4180,
+            "http_last_modified": http_last_modified,
+            "source_label":       display_input,
+            "local_path":         input_path,
+            "legacy_license":     args.flag_dcat_legacy_license,
         });
+        // SQL-backed and stats-derived helpers (temporal resolution,
+        // robust bbox, duplicate rows, ...) need the backend during the
+        // projection pass too, not only during spec evaluation. The
+        // guard clears it on every exit path.
+        let _sql_guard = formula_helpers::SqlBackendGuard::install(sql_backend.clone());
         // Always project in Dataset mode first, so the discovery merge
         // applies to the Dataset's top-level keys before the Catalog
         // envelope is wrapped around them (Roborev #2490 finding #1).
         // Wrapping first would push discovered Dataset metadata onto
         // the outer Catalog (where keys like `dct:contactPoint`
         // shouldn't live) instead of the inner Dataset.
+        let _ = projection::take_inferred_paths(); // discard anything stale
         let (dataset_block, dataset_warnings) = projection::project(
             &profile,
             &projection_ctx,
             projection::ProjectionMode::Dataset,
         )?;
-        let merged_dataset = discovery_merge::merge(
+        let inferred_paths = projection::take_inferred_paths();
+        let inferred_pointers: Vec<String> =
+            inferred_paths.iter().map(|p| p.pointer.clone()).collect();
+        let merged_dataset = discovery_merge::merge_with_inferred(
             &profile,
-            dataset_block,
+            dataset_block.clone(),
             discovered_dcat.as_ref(),
             &analysis.forced_paths,
+            &inferred_pointers,
         );
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =
@@ -545,10 +641,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .and_then(|c| c.dataset_key.as_deref())
                 .unwrap_or("dcat:dataset");
             let prefix = format!("{}/0/", dataset_key.replace('~', "~0").replace('/', "~1"));
+            inferred_snapshot.extend(inferred_values(&dataset_block, &inferred_paths, &prefix));
+            // Catalog-envelope fields that came from a `fallback`.
+            let catalog_inferred = projection::take_inferred_paths();
+            inferred_snapshot.extend(inferred_values(&catalog_block, &catalog_inferred, ""));
             pending_warnings.extend(dataset_warnings.into_iter().map(|w| (w, prefix.clone())));
             pending_warnings.extend(cat_warnings.into_iter().map(|w| (w, String::new())));
             catalog_block
         } else {
+            inferred_snapshot.extend(inferred_values(&dataset_block, &inferred_paths, ""));
             pending_warnings.extend(dataset_warnings.into_iter().map(|w| (w, String::new())));
             merged_dataset
         };
@@ -598,12 +699,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_projection {
         let out_map = output.as_object_mut().unwrap();
         let final_projection_snapshot = out_map.get("projection").cloned();
+
+        // An inferred value survives only if the final projection still
+        // holds it: discovered publisher metadata (inferred tier) or a
+        // dataset_info / forced override may have replaced it.
+        let still_inferred = |ptr: &str, value: &Value| {
+            final_projection_snapshot
+                .as_ref()
+                .and_then(|p| p.pointer(ptr))
+                .is_some_and(|v| v == value)
+        };
+        let mut provenance = Map::new();
+        for iv in &inferred_snapshot {
+            let source = if still_inferred(&iv.pointer, &iv.value) {
+                "inferred"
+            } else {
+                "replaced"
+            };
+            provenance.insert(iv.pointer.clone(), Value::String(source.to_string()));
+        }
+        if !provenance.is_empty() {
+            out_map.insert(
+                "projection_provenance".to_string(),
+                Value::Object(provenance),
+            );
+        }
+
         let (mut projection_warnings, warning_prefixes): (
             Vec<projection::ProjectionWarning>,
             Vec<String>,
         ) = pending_warnings
             .into_iter()
             .filter(|(w, prefix)| {
+                // Info notes describe how a value was derived (or why
+                // it was not); they stay regardless.
+                if w.severity == projection::Severity::Info {
+                    return true;
+                }
+                // A review note on an inferred value stays exactly as
+                // long as that value does.
+                if let Some(iv) = inferred_snapshot
+                    .iter()
+                    .find(|iv| iv.field == w.field && iv.prefix == *prefix)
+                {
+                    return still_inferred(&iv.pointer, &iv.value);
+                }
                 !final_projection_has_field(final_projection_snapshot.as_ref(), prefix, &w.field)
             })
             .unzip();
@@ -835,6 +975,41 @@ fn merge_formula_results(
     }
 }
 
+/// A value a field's inferred-tier `fallback` supplied, as projected.
+struct InferredValue {
+    /// JSON Pointer under the final projection root.
+    pointer: String,
+    value:   Value,
+    /// Logical field its review note carries (`ProjectionWarning::field`).
+    field:   String,
+    /// Pending-warning prefix of the block it was projected into.
+    prefix:  String,
+}
+
+/// Snapshot the inferred values of a freshly projected block. `prefix`
+/// is the JSON-Pointer prefix (escaped, no leading `/`) of that block
+/// once placed in the final projection: `""` for a Dataset in Dataset
+/// mode or for the Catalog envelope, `<dataset_key>/0/` for a Dataset
+/// inside a Catalog.
+fn inferred_values(
+    block: &Value,
+    inferred_paths: &[projection::InferredPath],
+    prefix: &str,
+) -> Vec<InferredValue> {
+    inferred_paths
+        .iter()
+        .filter_map(|p| {
+            let value = block.pointer(&format!("/{}", p.pointer))?.clone();
+            Some(InferredValue {
+                pointer: format!("/{prefix}{}", p.pointer),
+                value,
+                field: p.field.clone(),
+                prefix: prefix.to_string(),
+            })
+        })
+        .collect()
+}
+
 /// Coerce a JSON value into a mutable object, replacing it with `{}` if it
 /// wasn't an object to begin with.
 fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
@@ -844,21 +1019,47 @@ fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
     v.as_object_mut().unwrap()
 }
 
-/// Resolve the user-supplied input into a local file path. If the input
-/// is an http(s) URL, download it to a tempfile so the rest of the
-/// pipeline sees a normal file. Returns:
-///   * the local file path to feed to stats/frequency/sqlp
-///   * the original URL (when the input was one), for later use as `dcat:downloadURL` on the
-///     Distribution
-///   * a `NamedTempFile` handle that the caller must keep alive until all downstream readers have
-///     finished — dropping it deletes the temp on disk
-fn resolve_input(
-    raw: &str,
-) -> CliResult<(String, Option<String>, Option<tempfile::NamedTempFile>)> {
+/// A user-supplied input resolved to a local file. For an http(s) URL
+/// the body is downloaded to a tempfile so the rest of the pipeline
+/// sees a normal file.
+struct ResolvedInput {
+    /// Local file path to feed to stats / frequency / sqlp.
+    local:         String,
+    /// The original URL (when the input was one), for later use as
+    /// `downloadURL` on the Distribution.
+    url:           Option<String>,
+    /// Tempfile handle the caller must keep alive until all downstream
+    /// readers have finished — dropping it deletes the temp on disk.
+    kept:          Option<tempfile::NamedTempFile>,
+    /// The response's `Last-Modified` header as a Zulu RFC 3339
+    /// timestamp — the server's own statement of when the file last
+    /// changed, used as the Distribution's inferred `modified`.
+    last_modified: Option<String>,
+}
+
+/// Parse an HTTP-date (`Sun, 06 Nov 1994 08:49:37 GMT`, RFC 9110 §5.6.7)
+/// into a Zulu RFC 3339 timestamp; `None` when it is not one.
+fn http_date_to_zulu(raw: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc2822(raw.trim())
+        .ok()
+        .map(|dt| {
+            dt.with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        })
+}
+
+/// Resolve the user-supplied input into a local file, downloading an
+/// http(s) URL to a tempfile. See `ResolvedInput` for what is returned.
+fn resolve_input(raw: &str) -> CliResult<ResolvedInput> {
     use std::io::Write;
 
     if !is_http_url(raw) {
-        return Ok((raw.to_string(), None, None));
+        return Ok(ResolvedInput {
+            local:         raw.to_string(),
+            url:           None,
+            kept:          None,
+            last_modified: None,
+        });
     }
 
     // Reuse qsv's shared blocking HTTP client (user-agent,
@@ -870,6 +1071,12 @@ fn resolve_input(
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|e| CliError::Other(format!("qsv profile: download {raw}: {e}")))?;
+
+    let last_modified = response
+        .headers()
+        .get(reqwest::header::LAST_MODIFIED)
+        .and_then(|v| v.to_str().ok())
+        .and_then(http_date_to_zulu);
 
     // Preserve the URL's *path* extension on the tempfile so downstream
     // qsv code paths that sniff by extension (e.g. compressed-CSV
@@ -890,7 +1097,12 @@ fn resolve_input(
     temp.as_file_mut().flush().ok();
 
     let local = temp.path().to_string_lossy().to_string();
-    Ok((local, Some(raw.to_string()), Some(temp)))
+    Ok(ResolvedInput {
+        local,
+        url: Some(raw.to_string()),
+        kept: Some(temp),
+        last_modified,
+    })
 }
 
 /// Materialize stdin into a `.csv`-suffixed tempfile so the rest of the
@@ -1288,7 +1500,7 @@ fn is_http_url(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_http_url;
+    use super::{http_date_to_zulu, is_http_url};
 
     #[test]
     fn url_detection_recognizes_http_https_case_insensitive() {
@@ -1303,6 +1515,22 @@ mod tests {
         assert!(!is_http_url("file:///tmp/x.csv"));
         assert!(!is_http_url("ftp://example.com/x.csv"));
         assert!(!is_http_url(""));
+    }
+
+    #[test]
+    fn http_date_normalizes_to_zulu() {
+        // RFC 9110 §5.6.7's own example IMF-fixdate.
+        assert_eq!(
+            http_date_to_zulu("Sun, 06 Nov 1994 08:49:37 GMT").as_deref(),
+            Some("1994-11-06T08:49:37Z")
+        );
+        // A non-GMT offset (not HTTP-conformant, but seen) still lands in UTC.
+        assert_eq!(
+            http_date_to_zulu("Sun, 06 Nov 1994 03:49:37 -0500").as_deref(),
+            Some("1994-11-06T08:49:37Z")
+        );
+        assert_eq!(http_date_to_zulu("yesterday"), None);
+        assert_eq!(http_date_to_zulu(""), None);
     }
 
     use serde_json::json;

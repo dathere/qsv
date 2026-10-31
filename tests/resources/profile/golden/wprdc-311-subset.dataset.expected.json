@@ -27,6 +27,13 @@
       "bbox": "POLYGON((-80.0207 40.3978, -80.0207 40.4837, -79.9197 40.4837, -79.9197 40.3978, -80.0207 40.3978))"
     }
   ],
+  "temporal": [
+    {
+      "@type": "PeriodOfTime",
+      "endDate": "2024-02-01T17:20:00+00:00",
+      "startDate": "2024-02-01T08:15:00+00:00"
+    }
+  ],
   "dcat-us:bureauCode": [
     "015:11"
   ],
@@ -61,9 +68,45 @@
   "scopeNote": "Records cover calendar years 2020-2024 only.",
   "liabilityStatement": "Provided as-is; verify before operational use.",
   "accrualPeriodicity": "annually",
+  "temporalResolution": "PT1M",
   "created": "2023-06-15",
   "version": "1.2.0",
-  "versionNotes": "Q3 2024 refresh \u2014 added new sensors and corrected historical timestamps.",
+  "versionNotes": "Q3 2024 refresh — added new sensors and corrected historical timestamps.",
+  "hasQualityMeasurement": [
+    {
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "@type": "Metric",
+        "definition": "Percentage of non-empty cells in the dataset.",
+        "expectedDataType": "xsd:decimal",
+        "inDimension": "http://www.w3.org/2016/05/ldqd#completeness"
+      },
+      "unitMeasure": "percent",
+      "value": "100.00"
+    },
+    {
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "@type": "Metric",
+        "definition": "Number of columns with no non-empty values.",
+        "expectedDataType": "xsd:integer",
+        "inDimension": "http://www.w3.org/2016/05/ldqd#completeness"
+      },
+      "unitMeasure": "columns",
+      "value": "0"
+    },
+    {
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "@type": "Metric",
+        "definition": "Number of columns with at least one empty value.",
+        "expectedDataType": "xsd:integer",
+        "inDimension": "http://www.w3.org/2016/05/ldqd#completeness"
+      },
+      "unitMeasure": "columns",
+      "value": "0"
+    }
+  ],
   "distribution": [
     {
       "@type": "Distribution",
@@ -108,130 +151,190 @@
         "algorithm": "SHA-256",
         "checksumValue": "810690c257210c867534414f3b1f4003f3cd72aa26286bf59a6f6e6f72ee1a51"
       },
+      "spatialResolutionInMeters": "11.1",
       "csvw:tableSchema": {
         "columns": [
           {
-            "datatype": "integer",
-            "name": "COUNCIL_DISTRICT",
-            "qsv:cardinality": 7,
-            "qsv:max": "9",
-            "qsv:min": "2",
-            "qsv:nullcount": 0,
-            "titles": [
-              "COUNCIL_DISTRICT"
-            ]
-          },
-          {
-            "datatype": "dateTime",
-            "name": "CREATED_ON",
-            "qsv:cardinality": 10,
-            "qsv:max": "2024-02-01T17:20:00+00:00",
-            "qsv:min": "2024-02-01T08:15:00+00:00",
-            "qsv:nullcount": 0,
-            "titles": [
-              "CREATED_ON"
-            ]
-          },
-          {
-            "datatype": "string",
-            "name": "DEPARTMENT",
-            "qsv:cardinality": 6,
-            "qsv:max": "Refuse",
-            "qsv:min": "DPW - Forestry",
-            "qsv:nullcount": 0,
-            "titles": [
-              "DEPARTMENT"
-            ]
-          },
-          {
-            "datatype": "string",
-            "name": "NEIGHBORHOOD",
-            "qsv:cardinality": 10,
-            "qsv:max": "Squirrel Hill South",
-            "qsv:min": "Bloomfield",
-            "qsv:nullcount": 0,
-            "titles": [
-              "NEIGHBORHOOD"
-            ]
-          },
-          {
-            "datatype": "integer",
+            "datatype": {
+              "base": "integer",
+              "maximum": 3001010,
+              "minimum": 3001001
+            },
             "name": "REQUEST_ID",
             "qsv:cardinality": 10,
             "qsv:max": "3001010",
             "qsv:min": "3001001",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "REQUEST_ID"
             ]
           },
           {
-            "datatype": "string",
-            "name": "REQUEST_ORIGIN",
-            "qsv:cardinality": 3,
-            "qsv:max": "Call Center",
-            "qsv:min": "311 Mobile App",
+            "datatype": {
+              "base": "dateTime",
+              "maximum": "2024-02-01T17:20:00+00:00",
+              "minimum": "2024-02-01T08:15:00+00:00"
+            },
+            "name": "CREATED_ON",
+            "qsv:cardinality": 10,
+            "qsv:max": "2024-02-01T17:20:00+00:00",
+            "qsv:min": "2024-02-01T08:15:00+00:00",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
-              "REQUEST_ORIGIN"
+              "CREATED_ON"
             ]
           },
           {
-            "datatype": "string",
+            "datatype": {
+              "base": "string",
+              "maxLength": 22,
+              "minLength": 7
+            },
             "name": "REQUEST_TYPE",
             "qsv:cardinality": 10,
             "qsv:max": "Weeds/Debris",
             "qsv:min": "Building - Commercial",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "REQUEST_TYPE"
             ]
           },
           {
-            "datatype": "string",
+            "datatype": {
+              "base": "string",
+              "format": "^(?:311 Mobile App|311 Online|Call Center)$",
+              "maxLength": 14,
+              "minLength": 10
+            },
+            "name": "REQUEST_ORIGIN",
+            "qsv:cardinality": 3,
+            "qsv:max": "Call Center",
+            "qsv:min": "311 Mobile App",
+            "qsv:nullcount": 0,
+            "required": true,
+            "titles": [
+              "REQUEST_ORIGIN"
+            ]
+          },
+          {
+            "datatype": {
+              "base": "string",
+              "format": "^(?:Closed|Open)$",
+              "maxLength": 6,
+              "minLength": 4
+            },
             "name": "STATUS",
             "qsv:cardinality": 2,
             "qsv:max": "Open",
             "qsv:min": "Closed",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "STATUS"
             ]
           },
           {
-            "datatype": "integer",
+            "datatype": {
+              "base": "string",
+              "format": "^(?:DPW \\- Forestry|DPW \\- Street Lights|DPW \\- Street Maintenance|Permits Licenses and Inspections|Public Works \\- Operations|Refuse)$",
+              "maxLength": 32,
+              "minLength": 6
+            },
+            "name": "DEPARTMENT",
+            "qsv:cardinality": 6,
+            "qsv:max": "Refuse",
+            "qsv:min": "DPW - Forestry",
+            "qsv:nullcount": 0,
+            "required": true,
+            "titles": [
+              "DEPARTMENT"
+            ]
+          },
+          {
+            "datatype": {
+              "base": "string",
+              "maxLength": 19,
+              "minLength": 7
+            },
+            "name": "NEIGHBORHOOD",
+            "qsv:cardinality": 10,
+            "qsv:max": "Squirrel Hill South",
+            "qsv:min": "Bloomfield",
+            "qsv:nullcount": 0,
+            "required": true,
+            "titles": [
+              "NEIGHBORHOOD"
+            ]
+          },
+          {
+            "datatype": {
+              "base": "integer",
+              "maximum": 9,
+              "minimum": 2
+            },
+            "name": "COUNCIL_DISTRICT",
+            "qsv:cardinality": 7,
+            "qsv:max": "9",
+            "qsv:min": "2",
+            "qsv:nullcount": 0,
+            "required": true,
+            "titles": [
+              "COUNCIL_DISTRICT"
+            ]
+          },
+          {
+            "datatype": {
+              "base": "integer",
+              "maximum": 29,
+              "minimum": 2
+            },
             "name": "WARD",
             "qsv:cardinality": 8,
             "qsv:max": "29",
             "qsv:min": "2",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "WARD"
             ]
           },
           {
-            "datatype": "double",
+            "datatype": {
+              "base": "double",
+              "maximum": -79.9197,
+              "minimum": -80.0207
+            },
             "name": "X",
             "qsv:cardinality": 10,
             "qsv:max": "-79.9197",
             "qsv:min": "-80.0207",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "X"
             ]
           },
           {
-            "datatype": "double",
+            "datatype": {
+              "base": "double",
+              "maximum": 40.4837,
+              "minimum": 40.3978
+            },
             "name": "Y",
             "qsv:cardinality": 10,
             "qsv:max": "40.4837",
             "qsv:min": "40.3978",
             "qsv:nullcount": 0,
+            "required": true,
             "titles": [
               "Y"
             ]
           }
-        ]
+        ],
+        "primaryKey": "REQUEST_ID"
       }
     }
   ]

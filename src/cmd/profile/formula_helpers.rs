@@ -56,7 +56,33 @@ thread_local! {
 /// Install the SQL backend on the current thread for the duration of
 /// an `evaluate_spec` call. Pass `None` to clear.
 pub fn set_sql_backend(backend: Option<SqlBackend>) {
+    super::derive::clear_memo();
     SQL_BACKEND.with(|cell| *cell.borrow_mut() = backend);
+}
+
+/// Clone of the installed SQL backend, if any. Used by the
+/// stats-derived helpers in `derive.rs`, which treat a missing backend
+/// as "no answer" rather than an error.
+pub(super) fn current_sql_backend() -> Option<SqlBackend> {
+    SQL_BACKEND.with(|cell| cell.borrow().clone())
+}
+
+/// Installs a SQL backend for the guard's lifetime and clears it on
+/// drop — including when the guarded render pass returns early with an
+/// error, so a later pass never sees a stale backend.
+pub struct SqlBackendGuard(());
+
+impl SqlBackendGuard {
+    pub fn install(backend: SqlBackend) -> Self {
+        set_sql_backend(Some(backend));
+        Self(())
+    }
+}
+
+impl Drop for SqlBackendGuard {
+    fn drop(&mut self) {
+        set_sql_backend(None);
+    }
 }
 
 /// Borrow the installed SQL backend on the current thread, if any.
@@ -128,6 +154,9 @@ pub fn register(env: &mut Environment) {
     // for the duration of the render pass, then cleared.
     env.add_function("temporal_resolution", temporal_resolution);
     env.add_function("guess_accrual_periodicity", guess_accrual_periodicity);
+
+    // --- globals (qsv-native, stats-derived; see derive.rs) -----------
+    super::derive::register(env);
 
     // shared data-wrangling filters (regex, datefmt, slugify, padding, etc.)
     crate::minijinja_filters::register(env);
@@ -674,7 +703,10 @@ fn guess_accrual_periodicity(
 /// Resolve a date-field name from an optional first-positional arg,
 /// falling back to the first entry of `dpp.DATE_FIELDS` then
 /// `dpp.DATETIME_FIELDS` in the template context.
-fn resolve_date_field(arg: Option<&Value>, state: &minijinja::State) -> Result<String, Error> {
+pub(super) fn resolve_date_field(
+    arg: Option<&Value>,
+    state: &minijinja::State,
+) -> Result<String, Error> {
     if let Some(v) = arg
         && let Some(s) = v.as_str()
         && !s.is_empty()
@@ -704,7 +736,7 @@ fn resolve_date_field(arg: Option<&Value>, state: &minijinja::State) -> Result<S
 ///   * `%Y-%m-%d %H:%M:%S`    — datetime, second precision (space)
 ///   * `%Y-%m-%d`             — bare date → midnight
 ///   * RFC 3339               — with timezone (normalized to UTC)
-fn parse_date_strings(strs: &[String]) -> Result<Vec<NaiveDateTime>, Error> {
+pub(super) fn parse_date_strings(strs: &[String]) -> Result<Vec<NaiveDateTime>, Error> {
     let mut out = Vec::with_capacity(strs.len());
     for s in strs {
         if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f") {
@@ -1224,7 +1256,7 @@ fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
 /// Mirror of the legacy `dcat::csvw_datatype` — maps qsv stats type
 /// strings to CSVW datatype IRIs. Kept here so the helper is
 /// self-contained and `dcat.rs` can be deleted in Stage 4 cleanup.
-fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
+pub(super) fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
     #[allow(clippy::match_same_arms)]
     match t.and_then(serde_json::Value::as_str) {
         Some("Integer") => "integer",
@@ -1293,9 +1325,14 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
 }
 
 /// `temporal_from_dpps` global — derives a `PeriodOfTime` array, one
-/// entry per inferred date column. Returns undefined when no date
+/// entry per inferred date or datetime column, with bounds normalized
+/// to the forms DCAT-US v3 accepts. Returns undefined when no temporal
 /// columns were detected (v3 cardinality 0..*).
 fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
+    /// Values that are almost always "unknown" placeholders rather than
+    /// real dates; a coverage bound sitting on one is noted, not dropped.
+    const PLACEHOLDER_DATES: [&str; 4] = ["0001-01-01", "1900-01-01", "1970-01-01", "9999-12-31"];
+
     let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
         Ok(v) => v,
         Err(_) => return minijinja::Value::UNDEFINED,
@@ -1304,26 +1341,39 @@ fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijin
         Ok(v) => v,
         Err(_) => return minijinja::Value::UNDEFINED,
     };
-    let Some(dates) = dpp_json
-        .get("DATE_FIELDS")
-        .and_then(serde_json::Value::as_array)
-    else {
-        return minijinja::Value::UNDEFINED;
-    };
+    // Both Date AND DateTime columns describe temporal coverage. Reading
+    // only DATE_FIELDS left every timestamp-only dataset (311 requests,
+    // sensor logs) with no `temporal` at all.
+    let fields = ["DATE_FIELDS", "DATETIME_FIELDS"]
+        .iter()
+        .filter_map(|k| dpp_json.get(*k).and_then(serde_json::Value::as_array))
+        .flatten()
+        .filter_map(serde_json::Value::as_str);
     let mut out: Vec<serde_json::Value> = Vec::new();
-    for field_v in dates {
-        let Some(field) = field_v.as_str() else {
-            continue;
-        };
+    for field in fields {
         let blob = stats_json
             .get(field)
             .and_then(|b| b.get("stats").or(Some(b)));
-        let Some(start) = blob.and_then(|b| b.get("min")).and_then(|v| v.as_str()) else {
+        // Normalize through the same filter every other emitted date
+        // uses, so an offset-less datetime gains its `Z` and anything
+        // unparseable is dropped rather than emitted invalid.
+        let bound = |key: &str| -> Option<String> {
+            let raw = blob.and_then(|b| b.get(key)).and_then(|v| v.as_str())?;
+            dcat_us_date(&minijinja::Value::from(raw))
+                .as_str()
+                .map(str::to_string)
+        };
+        let (Some(start), Some(end)) = (bound("min"), bound("max")) else {
             continue;
         };
-        let Some(end) = blob.and_then(|b| b.get("max")).and_then(|v| v.as_str()) else {
-            continue;
-        };
+        for (which, v) in [("start", &start), ("end", &end)] {
+            if let Some(p) = PLACEHOLDER_DATES.iter().find(|p| v.starts_with(**p)) {
+                super::derive::push_note(format!(
+                    "temporal: `{field}` {which} date is {p}, a common placeholder for an unknown \
+                     date; the coverage period may be overstated"
+                ));
+            }
+        }
         out.push(serde_json::json!({
             "@type":     "PeriodOfTime",
             "startDate": start,

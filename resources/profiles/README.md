@@ -49,6 +49,37 @@ Every entry under `dataset.fields[]`, `distribution.fields[]`, and
 | `emit_when` | Optional guard template; field skipped when this renders falsy/empty. |
 | `default` | Literal fallback when the main template renders empty (suppresses the warning). |
 | `for_each_column` | Croissant-style expansion: emit one entry per stats column. |
+| `fallback` | Inferred-tier template, rendered only when `emit_when` is falsy or `template` renders empty. A value from here is listed in `projection_provenance`, and discovered publisher metadata **replaces** it (a `template` value wins over discovery). Use for judgement calls such as a generated description or a detected language, not for facts measured from the file. A failing fallback is reported at Info severity, never Required. |
+| `review_note` | Message added to `projection_warnings` (Recommended) while a `fallback` value stands, e.g. "replace this generated description before publishing". Dropped once discovery or an override replaces the value. |
+
+### Inferred tier and precedence
+
+For a field with both `template` and `fallback`, the final value comes
+from the first of: a forced `--initial-context` value, a
+`dataset_info` override, the `template` (supplied CKAN/spec values),
+discovered publisher DCAT, the `fallback`.
+
+### Stats-derived helpers
+
+Besides the DP+ ports in `formula_helpers.rs`, templates can call these
+qsv-native helpers (`src/cmd/profile/derive.rs`). Each returns
+undefined, not an error, when its inputs are absent, so guard with
+`is defined` or `| default("")`.
+
+| Helper | Returns |
+|---|---|
+| `xsd_temporal_resolution(field?)` | Temporal resolution of a date/datetime column as an exact xsd:duration: the step of a regular series (`PT15M`, `P1D`, `P1M`, `P1Y`), otherwise the precision values are recorded at (`P1D`, `PT1M`, `PT1S`). Defaults to the first detected date, then datetime, column. |
+| `confident_accrual_periodicity(field?)` | ISO 19115 frequency code, only when ≥90% of gaps are one exact calendar step (whole days at the same time, or whole months on the same day). |
+| `coordinate_resolution_in_meters(dpp, stats)` | Finest separation the lat/lon decimal precision resolves, in metres (3 significant figures). |
+| `robust_bbox(dpp, stats)` | `[Location]` with a WKT `bbox`, excluding out-of-range and (0, 0) coordinates (Info note with the count dropped). |
+| `quality_measurements(stats, dpp, dims, rfc4180)` | DQV `QualityMeasurement` array; `dims` maps `completeness` / `conciseness` / `syntacticValidity` to dimension IRIs. |
+| `build_csvw_schema_rich(stats, dppf, headers, rows)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). |
+| `detect_data_language(stats, dppf)` | ISO 639-1 code of the text values (needs the `whatlang` feature). |
+
+The projection context also exposes `dppf` (per-column frequency),
+`headers` (column names in file order — template maps iterate
+key-sorted), `rfc4180` (`{valid}` when `--validate` ran `qsv
+validate`, else null; lenient, so not proof of strict RFC 4180) and `http_last_modified` (URL inputs).
 
 ## Catalog envelope
 

@@ -17,10 +17,42 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use super::{
-    formula_helpers,
+    derive, formula_helpers,
     profile_spec::{CatalogBlock, FieldDecl, ProfileSpec, RecordSetSpec, RequiredLevel},
 };
 use crate::{CliError, CliResult};
+
+/// A value a field's inferred-tier `fallback` supplied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InferredPath {
+    /// RFC 6901 pointer relative to the block it was projected into
+    /// (no leading `/`), each token escaped: `description`,
+    /// `distribution/0/modified`.
+    pub pointer: String,
+    /// The `ProjectionWarning::field` its review note / notes carry —
+    /// the unescaped logical path (`description`,
+    /// `distribution/0/modified`).
+    pub field:   String,
+}
+
+thread_local! {
+    /// Values taken from a field's inferred-tier `fallback` by the
+    /// `project` / `wrap_in_catalog_envelope` calls since the last
+    /// `take_inferred_paths` on this thread. The discovery merge lets
+    /// discovered publisher metadata replace exactly these.
+    static INFERRED_PATHS: std::cell::RefCell<Vec<InferredPath>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Take (and clear) the inferred paths recorded on this thread.
+pub fn take_inferred_paths() -> Vec<InferredPath> {
+    INFERRED_PATHS.with(|p| std::mem::take(&mut *p.borrow_mut()))
+}
+
+/// RFC 6901 token escape.
+fn escape_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
+}
 
 // -----------------------------------------------------------------------
 // Public types
@@ -100,6 +132,7 @@ pub fn project(
 
     let mj_ctx = minijinja::Value::from(Serde(ctx));
     let mut warnings: Vec<ProjectionWarning> = Vec::new();
+    let mut inferred: Vec<InferredPath> = Vec::new();
 
     // 1. Build the Dataset core. Fields with `on_dataset: false` skip.
     let mut dataset: Map<String, Value> = Map::new();
@@ -115,7 +148,12 @@ pub fn project(
         if !field.on_dataset {
             continue;
         }
-        emit_field(&env, &mj_ctx, field, &mut dataset, &mut warnings);
+        if emit_field(&env, &mj_ctx, field, "", &mut dataset, &mut warnings) {
+            inferred.push(InferredPath {
+                pointer: escape_token(&field.path),
+                field:   field.path.clone(),
+            });
+        }
     }
 
     // 2. Build Distribution[0] from `distribution:` block + any `dataset:` field with
@@ -125,20 +163,24 @@ pub fn project(
         if let Some(type_) = &dist_block.type_ {
             dist.insert("@type".to_string(), Value::String(type_.clone()));
         }
-        for field in &dist_block.fields {
-            emit_field(&env, &mj_ctx, field, &mut dist, &mut warnings);
-        }
-        // Pull cross-placed fields from dataset block.
-        for field in &profile.dataset.fields {
-            if field.on_distribution {
-                emit_field(&env, &mj_ctx, field, &mut dist, &mut warnings);
+        let key = dist_block.path.as_deref().unwrap_or("dcat:distribution");
+        let dist_fields = dist_block
+            .fields
+            .iter()
+            .chain(profile.dataset.fields.iter().filter(|f| f.on_distribution));
+        let scope = format!("{key}/0/");
+        for field in dist_fields {
+            if emit_field(&env, &mj_ctx, field, &scope, &mut dist, &mut warnings) {
+                inferred.push(InferredPath {
+                    pointer: format!("{}/0/{}", escape_token(key), escape_token(&field.path)),
+                    field:   format!("{scope}{}", field.path),
+                });
             }
         }
         if !dist.is_empty() {
             // Profile may override the wrapping key (Croissant uses
             // schema.org bare `distribution`; DCAT defaults to
             // `dcat:distribution`).
-            let key = dist_block.path.as_deref().unwrap_or("dcat:distribution");
             dataset.insert(key.to_string(), Value::Array(vec![Value::Object(dist)]));
         }
     }
@@ -165,6 +207,7 @@ pub fn project(
         },
     };
 
+    INFERRED_PATHS.with(|p| p.borrow_mut().extend(inferred));
     Ok((block, warnings))
 }
 
@@ -202,50 +245,114 @@ pub fn wrap_in_catalog_envelope(
 // Field emission
 // -----------------------------------------------------------------------
 
+/// Render one field into `out`. Returns `true` when the emitted value
+/// came from the field's inferred-tier `fallback` template.
+///
+/// `scope` is the logical path of `out` within the projected block
+/// (`""` for the Dataset or Catalog root, `distribution/0/` for a
+/// Distribution); the review note and helper notes carry
+/// `<scope><path>` so a Distribution `description` note is not
+/// confused with the Dataset's.
 fn emit_field(
     env: &Environment,
     ctx: &minijinja::Value,
     field: &FieldDecl,
+    scope: &str,
     out: &mut Map<String, Value>,
     warnings: &mut Vec<ProjectionWarning>,
-) {
-    // Optional emit_when guard.
-    if let Some(guard) = &field.emit_when
-        && !render_truthy(env, ctx, guard)
-    {
-        return;
+) -> bool {
+    let _ = derive::drain_notes();
+    let inferred = emit_field_inner(env, ctx, field, scope, out, warnings);
+    // Observations recorded by stats-derived helpers while this field
+    // rendered (excluded coordinates, placeholder dates, a declined
+    // schedule) — informational, never fatal under --strict.
+    for note in derive::drain_notes() {
+        warnings.push(ProjectionWarning {
+            field:    format!("{scope}{}", field.path),
+            severity: Severity::Info,
+            message:  note,
+        });
     }
+    inferred
+}
 
-    let rendered = match render_to_string(env, ctx, &field.template) {
-        Ok(s) => s,
-        Err(e) => {
-            warnings.push(ProjectionWarning {
-                field:    field.path.clone(),
-                severity: Severity::Required,
-                message:  format!("template render error: {e}"),
-            });
-            return;
-        },
+fn emit_field_inner(
+    env: &Environment,
+    ctx: &minijinja::Value,
+    field: &FieldDecl,
+    scope: &str,
+    out: &mut Map<String, Value>,
+    warnings: &mut Vec<ProjectionWarning>,
+) -> bool {
+    // Optional emit_when guard. A falsy guard means "no supplied
+    // value" — fall through to the inferred tier when one is declared.
+    let guarded_out = field
+        .emit_when
+        .as_ref()
+        .is_some_and(|guard| !render_truthy(env, ctx, guard));
+
+    let rendered = if guarded_out {
+        String::new()
+    } else {
+        match render_to_string(env, ctx, &field.template) {
+            Ok(s) => s,
+            Err(e) => {
+                warnings.push(ProjectionWarning {
+                    field:    format!("{scope}{}", field.path),
+                    severity: Severity::Required,
+                    message:  format!("template render error: {e}"),
+                });
+                return false;
+            },
+        }
     };
 
-    let trimmed = rendered.trim();
-    if trimmed.is_empty() {
-        if let Some(default) = &field.default {
-            out.insert(field.path.clone(), default.clone());
-            return;
-        }
-        if let Some(level) = field.required_level {
-            warnings.push(ProjectionWarning {
-                field:    field.path.clone(),
-                severity: Severity::from(level),
-                message:  format!("missing {}", field.path),
-            });
-        }
-        return;
+    if !rendered.trim().is_empty() {
+        out.insert(field.path.clone(), coerce_json_or_string(&rendered));
+        return false;
     }
 
-    let value = coerce_json_or_string(&rendered);
-    out.insert(field.path.clone(), value);
+    if let Some(fallback) = &field.fallback {
+        match render_to_string(env, ctx, fallback) {
+            Ok(s) if !s.trim().is_empty() => {
+                out.insert(field.path.clone(), coerce_json_or_string(&s));
+                if let Some(note) = &field.review_note {
+                    warnings.push(ProjectionWarning {
+                        field:    format!("{scope}{}", field.path),
+                        severity: Severity::Recommended,
+                        message:  note.clone(),
+                    });
+                }
+                return true;
+            },
+            Ok(_) => {},
+            Err(e) => {
+                // An inferred value is best-effort: a failing fallback
+                // must not escalate to Required and abort --strict.
+                warnings.push(ProjectionWarning {
+                    field:    format!("{scope}{}", field.path),
+                    severity: Severity::Info,
+                    message:  format!("fallback render error: {e}"),
+                });
+            },
+        }
+    }
+
+    if guarded_out {
+        return false;
+    }
+    if let Some(default) = &field.default {
+        out.insert(field.path.clone(), default.clone());
+        return false;
+    }
+    if let Some(level) = field.required_level {
+        warnings.push(ProjectionWarning {
+            field:    format!("{scope}{}", field.path),
+            severity: Severity::from(level),
+            message:  format!("missing {}", field.path),
+        });
+    }
+    false
 }
 
 fn emit_recordset(
@@ -409,7 +516,15 @@ pub fn wrap_as_catalog(
         // the analysis vars (`pkg`, `res`, `stats`, `dpp`) and the
         // rendered Dataset (`inner["..."]`).
         for field in &envelope.fields {
-            emit_field(env, &mj_with_inner, field, &mut catalog, warnings);
+            // Catalog fields live at the envelope root.
+            if emit_field(env, &mj_with_inner, field, "", &mut catalog, warnings) {
+                INFERRED_PATHS.with(|p| {
+                    p.borrow_mut().push(InferredPath {
+                        pointer: escape_token(&field.path),
+                        field:   field.path.clone(),
+                    });
+                });
+            }
         }
     }
 
@@ -540,16 +655,6 @@ fn lookup_in_vocab(
 // Compile-time validation (called by load() for fail-fast on bad embeds)
 // -----------------------------------------------------------------------
 
-/// Best-effort syntax check of every template in `profile`. Returns
-/// `Ok(())` on success; surfaces the first compile error otherwise.
-///
-/// Called by `profile_spec::load` so a malformed embedded profile
-/// fails at binary startup, not deep inside a render. Checks both the
-/// main `template` AND the optional `emit_when` guard on every field
-/// (dataset, distribution, catalog), plus the catalog title template
-/// and every recordset entry. A guard with a syntax error would
-/// otherwise silently render-fail in `render_truthy` and drop the
-/// field at projection time (Roborev #2495).
 pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
     let mut env = Environment::new();
     formula_helpers::register(&mut env);
@@ -563,19 +668,24 @@ pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
             ))
         })
     };
+    let check_field = |prefix: &str, field: &FieldDecl| -> CliResult<()> {
+        let label = format!("{prefix}{}", field.path);
+        check(&label, &field.template)?;
+        if let Some(guard) = &field.emit_when {
+            check(&format!("{label} (emit_when)"), guard)?;
+        }
+        if let Some(fallback) = &field.fallback {
+            check(&format!("{label} (fallback)"), fallback)?;
+        }
+        Ok(())
+    };
 
     for field in &profile.dataset.fields {
-        check(&field.path, &field.template)?;
-        if let Some(guard) = &field.emit_when {
-            check(&format!("{} (emit_when)", field.path), guard)?;
-        }
+        check_field("", field)?;
     }
     if let Some(dist) = &profile.distribution {
         for field in &dist.fields {
-            check(&format!("distribution/{}", field.path), &field.template)?;
-            if let Some(guard) = &field.emit_when {
-                check(&format!("distribution/{} (emit_when)", field.path), guard)?;
-            }
+            check_field("distribution/", field)?;
         }
     }
     if let Some(cat) = &profile.catalog {
@@ -583,10 +693,7 @@ pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
             check("catalog/title_template", tpl)?;
         }
         for field in &cat.fields {
-            check(&format!("catalog/{}", field.path), &field.template)?;
-            if let Some(guard) = &field.emit_when {
-                check(&format!("catalog/{} (emit_when)", field.path), guard)?;
-            }
+            check_field("catalog/", field)?;
         }
     }
     for rs in &profile.recordsets {
@@ -614,6 +721,83 @@ dataset:
       template: "{{ pkg.notes }}"
       required_level: recommended
 "#;
+
+    #[test]
+    fn fallback_review_notes_and_paths_are_scoped_per_block() {
+        let profile = load_from_str(
+            r#"
+name: scoped
+dataset:
+  type: Dataset
+  fields:
+    - path: description
+      template: "{{ pkg.notes }}"
+      fallback: "generated dataset description"
+      review_note: "dataset note"
+distribution:
+  type: Distribution
+  path: distribution
+  fields:
+    - path: description
+      template: "{{ res.description | default('') }}"
+      fallback: "generated distribution description"
+      review_note: "distribution note"
+"#,
+            "t",
+        )
+        .unwrap();
+        let _ = take_inferred_paths();
+        // The Dataset description is supplied; only the Distribution's
+        // is inferred.
+        let ctx = json!({ "pkg": { "notes": "Supplied" }, "res": {} });
+        let (out, warns) = project(&profile, &ctx, ProjectionMode::Dataset).unwrap();
+        assert_eq!(out["description"], "Supplied");
+        assert_eq!(
+            out["distribution"][0]["description"],
+            "generated distribution description"
+        );
+        let notes: Vec<(&str, &str)> = warns
+            .iter()
+            .map(|w| (w.field.as_str(), w.message.as_str()))
+            .collect();
+        assert_eq!(notes, [("distribution/0/description", "distribution note")]);
+        assert_eq!(
+            take_inferred_paths(),
+            [InferredPath {
+                pointer: "distribution/0/description".to_string(),
+                field:   "distribution/0/description".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn missing_distribution_field_warning_is_scoped() {
+        let profile = load_from_str(
+            r#"
+name: scoped-missing
+dataset:
+  type: Dataset
+  fields:
+    - path: title
+      template: "{{ pkg.title }}"
+distribution:
+  type: Distribution
+  path: distribution
+  fields:
+    - path: title
+      template: "{{ res.name | default('') }}"
+      required_level: required
+"#,
+            "t",
+        )
+        .unwrap();
+        let ctx = json!({ "pkg": { "title": "Dataset title" }, "res": {} });
+        let (_, warns) = project(&profile, &ctx, ProjectionMode::Dataset).unwrap();
+        // Labeled `title`, the final filter would drop it because the
+        // Dataset HAS a title.
+        assert_eq!(warns.len(), 1);
+        assert_eq!(warns[0].field, "distribution/0/title");
+    }
 
     #[test]
     fn project_emits_known_fields() {

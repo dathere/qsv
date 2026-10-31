@@ -1423,7 +1423,7 @@ fn split_into_chunks(text: &str, k: usize) -> Option<Vec<String>> {
 ///
 /// Returns (English name, ISO 639-3 code, confidence).
 #[cfg(feature = "whatlang")]
-fn detect_language_in_text(
+pub(crate) fn detect_language_in_text(
     text: &str,
     min_confidence: Option<f64>,
 ) -> Option<(String, String, f64)> {

@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::workdir::Workdir;
 
@@ -1631,9 +1631,14 @@ fn profile_spec_less_emits_dpp_block() {
         .and_then(|v| v.as_array())
         .expect("csvw:tableSchema.columns");
     assert_eq!(cols.len(), 6);
+    // CSVW `datatype` is an object (`{base, minimum, ...}`) when the
+    // column carries derived constraints, a bare string otherwise.
     let datatypes: Vec<&str> = cols
         .iter()
-        .filter_map(|c| c.get("datatype").and_then(|v| v.as_str()))
+        .filter_map(|c| {
+            let dt = c.get("datatype")?;
+            dt.as_str().or_else(|| dt.get("base")?.as_str())
+        })
         .collect();
     assert!(datatypes.contains(&"integer"));
     assert!(datatypes.contains(&"double"));
@@ -3972,4 +3977,510 @@ fn profile_dcat_us_v3_splits_comma_separated_codes() {
         Some(&serde_json::json!(["015:000"])),
         "{out:#}"
     );
+}
+
+// =========================================================================
+// Stats-derived DCAT-US v3 properties (derive.rs) and the inferred tier
+// =========================================================================
+
+/// 6-row event log: DateTime-only temporal columns, an all-empty
+/// column, a 2-value enumeration, a unique id.
+fn seed_events_csv(wrk: &Workdir) {
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "opened", "status", "lat", "lon", "photo"],
+            svec![
+                "1",
+                "2024-03-01 08:15:00",
+                "Open",
+                "40.7128",
+                "-74.0060",
+                ""
+            ],
+            svec![
+                "2",
+                "2024-03-01 08:45:00",
+                "Closed",
+                "40.7130",
+                "-74.0050",
+                ""
+            ],
+            svec![
+                "3",
+                "2024-03-02 13:00:00",
+                "Open",
+                "40.7200",
+                "-74.0100",
+                ""
+            ],
+            svec![
+                "4",
+                "2024-03-04 09:30:00",
+                "Closed",
+                "40.7150",
+                "-74.0020",
+                ""
+            ],
+            svec![
+                "5",
+                "2024-03-05 17:05:00",
+                "Open",
+                "40.7110",
+                "-74.0080",
+                ""
+            ],
+            svec![
+                "6",
+                "2024-03-09 11:20:00",
+                "Open",
+                "40.7190",
+                "-74.0030",
+                ""
+            ],
+        ],
+    );
+}
+
+fn profile_projection(wrk: &Workdir, extra: &[&str]) -> Value {
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "-o", "out.json"]).args(extra);
+    wrk.assert_success(&mut cmd);
+    read_output(wrk, "out.json")
+}
+
+fn warnings_for<'a>(out: &'a Value, field: &str) -> Vec<&'a Value> {
+    out["projection_warnings"]
+        .as_array()
+        .map(|a| a.iter().filter(|w| w["field"] == field).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn profile_temporal_covers_datetime_only_columns() {
+    // Regression: temporal_from_dpps read only DATE_FIELDS, so a dataset
+    // whose dates are all timestamps got no `temporal` at all.
+    let wrk = Workdir::new("profile_temporal_datetime_only");
+    seed_events_csv(&wrk);
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(
+        out.pointer("/projection/temporal/0/startDate")
+            .and_then(Value::as_str),
+        Some("2024-03-01T08:15:00+00:00")
+    );
+    assert_eq!(
+        out.pointer("/projection/temporal/0/endDate")
+            .and_then(Value::as_str),
+        Some("2024-03-09T11:20:00+00:00")
+    );
+    // Irregular events: the recording precision (whole minutes), not
+    // the smallest gap between two events (a sampling accident).
+    assert_eq!(out["projection"]["temporalResolution"], "PT1M");
+    // Event timestamps are not an update schedule.
+    assert!(out["projection"].get("accrualPeriodicity").is_none());
+}
+
+#[test]
+fn profile_generated_description_is_disclosed_and_flagged() {
+    let wrk = Workdir::new("profile_generated_description");
+    seed_events_csv(&wrk);
+    let out = profile_projection(&wrk, &[]);
+    let desc = out["projection"]["description"]
+        .as_str()
+        .expect("description");
+    assert!(
+        desc.starts_with("Tabular data (CSV) with 6 rows and 6 columns"),
+        "{desc}"
+    );
+    // File order, not key-sorted.
+    assert!(
+        desc.contains("Columns: id, opened, status, lat, lon, photo."),
+        "{desc}"
+    );
+    assert!(
+        desc.ends_with(
+            "WARNING: Description generated automatically by qsv profile from summary statistics; \
+             not reviewed by a person. Verify before using!"
+        ),
+        "{desc}"
+    );
+    let notes = warnings_for(&out, "description");
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0]["severity"], "recommended");
+    assert_eq!(out["projection_provenance"]["/description"], "inferred");
+}
+
+#[test]
+fn profile_supplied_description_suppresses_fallback() {
+    let wrk = Workdir::new("profile_supplied_description");
+    seed_events_csv(&wrk);
+    wrk.create_from_string(
+        "ic.json",
+        r#"{"package": {"notes": "Hand-written description."}}"#,
+    );
+    let out = profile_projection(&wrk, &["--initial-context", "ic.json"]);
+    assert_eq!(
+        out["projection"]["description"],
+        "Hand-written description."
+    );
+    assert!(warnings_for(&out, "description").is_empty());
+    assert!(
+        out.pointer("/projection_provenance/~1description")
+            .is_none()
+    );
+}
+
+#[test]
+fn profile_override_of_inferred_value_drops_review_note() {
+    // A dataset_info override replaces the generated description after
+    // projection; its review note and "inferred" provenance must go.
+    let wrk = Workdir::new("profile_override_inferred");
+    seed_events_csv(&wrk);
+    wrk.create_from_string(
+        "ic.json",
+        r#"{"dataset_info": {"/projection/description": "Override."}}"#,
+    );
+    let out = profile_projection(&wrk, &["--initial-context", "ic.json"]);
+    assert_eq!(out["projection"]["description"], "Override.");
+    assert!(warnings_for(&out, "description").is_empty());
+    assert_eq!(out["projection_provenance"]["/description"], "replaced");
+}
+
+#[test]
+fn profile_quality_measurements_and_csvw_constraints() {
+    let wrk = Workdir::new("profile_quality_csvw");
+    seed_events_csv(&wrk);
+    let out = profile_projection(&wrk, &[]);
+    let qm = out["projection"]["hasQualityMeasurement"]
+        .as_array()
+        .expect("hasQualityMeasurement");
+    let value_of = |def: &str| {
+        qm.iter()
+            .find(|m| m["isMeasurementOf"]["definition"] == def)
+            .map(|m| m["value"].clone())
+    };
+    // 6 cols x 6 rows, `photo` all empty: 30/36 = 83.33%.
+    assert_eq!(
+        value_of("Percentage of non-empty cells in the dataset."),
+        Some(json!("83.33"))
+    );
+    assert_eq!(
+        value_of("Number of columns with no non-empty values."),
+        Some(json!("1"))
+    );
+    // No --validate: neither the full-row duplicate scan nor RFC 4180
+    // validity runs, so neither is asserted either way.
+    assert!(value_of("Number of rows that exactly duplicate an earlier row.").is_none());
+    assert!(
+        value_of(
+            "Whether the file is well-formed delimited text (consistent field counts and quoting) \
+             encoded as UTF-8 (qsv validate)."
+        )
+        .is_none()
+    );
+
+    let schema = &out["projection"]["distribution"][0]["csvw:tableSchema"];
+    let names: Vec<&str> = schema["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["id", "opened", "status", "lat", "lon", "photo"]);
+    assert_eq!(schema["primaryKey"], "id");
+    let status = &schema["columns"][2];
+    assert_eq!(status["datatype"]["format"], "^(?:Closed|Open)$");
+    assert_eq!(status["required"], true);
+    assert!(schema["columns"][5].get("required").is_none());
+    // lat carries 4 decimals but lon only 3 (`-74.0060` is -74.006):
+    // the coarser east-west axis bounds the resolution,
+    // 111 320 m * cos(40.71°) * 10^-3 = 84.4 m.
+    assert_eq!(
+        out["projection"]["distribution"][0]["spatialResolutionInMeters"],
+        "84.4"
+    );
+}
+
+#[test]
+fn profile_utf8_and_validity_only_with_validate() {
+    let wrk = Workdir::new("profile_rfc4180_validate");
+    seed_events_csv(&wrk);
+    let plain = profile_projection(&wrk, &[]);
+    let dist = &plain["projection"]["distribution"][0];
+    assert!(dist.get("conformsTo").is_none());
+    assert!(dist.get("characterEncoding").is_none());
+
+    let validated = profile_projection(&wrk, &["--validate"]);
+    let dist = &validated["projection"]["distribution"][0];
+    // qsv validate is lenient (LF endings, any delimiter), so passing it
+    // proves UTF-8 + well-formedness, never strict RFC 4180.
+    assert!(dist.get("conformsTo").is_none(), "{:?}", dist["conformsTo"]);
+    assert_eq!(dist["characterEncoding"], json!(["UTF-8"]));
+    let qm = validated["projection"]["hasQualityMeasurement"]
+        .as_array()
+        .unwrap();
+    assert!(qm.iter().any(|m| m["isMeasurementOf"]["inDimension"]
+        == "http://www.w3.org/2016/05/ldqd#syntacticValidity"
+        && m["value"] == "true"));
+    assert!(qm.iter().any(|m| m["isMeasurementOf"]["inDimension"]
+        == "http://www.w3.org/2016/05/ldqd#conciseness"
+        && m["value"] == "0"));
+}
+
+#[test]
+fn profile_tsv_is_not_declared_rfc4180() {
+    let wrk = Workdir::new("profile_tsv_rfc4180");
+    wrk.create_from_string("in.tsv", "id\tname\n1\tAlpha\n2\tBravo\n3\tCharlie\n");
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.tsv", "--validate", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let dist = &out["projection"]["distribution"][0];
+    // Well-formed and UTF-8; never claimed as RFC 4180.
+    assert_eq!(dist["characterEncoding"], json!(["UTF-8"]));
+    assert!(dist.get("conformsTo").is_none(), "{:?}", dist["conformsTo"]);
+    // The SQL backend reads the resolved tab delimiter: 2 columns.
+    assert_eq!(
+        dist["csvw:tableSchema"]["columns"].as_array().map(Vec::len),
+        Some(2)
+    );
+}
+
+#[test]
+fn profile_no_headers_keeps_column_identities_aligned() {
+    let wrk = Workdir::new("profile_no_headers_align");
+    wrk.create_from_string("in.csv", "red,cat\nblue,dog\nred,dog\n");
+    let out = profile_projection(&wrk, &["--no-headers"]);
+    let cols = out["projection"]["distribution"][0]["csvw:tableSchema"]["columns"]
+        .as_array()
+        .unwrap();
+    assert_eq!(cols[0]["name"], "0");
+    assert_eq!(cols[0]["datatype"]["format"], "^(?:blue|red)$");
+    assert_eq!(cols[1]["name"], "1");
+    assert_eq!(cols[1]["datatype"]["format"], "^(?:cat|dog)$");
+    let desc = out["projection"]["description"].as_str().unwrap();
+    assert!(desc.contains("Columns: 0, 1."), "{desc}");
+}
+
+#[test]
+fn profile_no_headers_croissant_frequency_uses_stats_identities() {
+    let wrk = Workdir::new("profile_no_headers_croissant_freq");
+    wrk.create_from_string("in.csv", "red,cat\nblue,dog\nred,dog\n");
+    let out = profile_projection(
+        &wrk,
+        &[
+            "--no-headers",
+            "--profile",
+            "croissant",
+            "--croissant-frequency",
+        ],
+    );
+    let text = serde_json::to_string(&out["projection"]).unwrap();
+    // Column 0's histogram is present and holds column 0's values.
+    let rs: Vec<&Value> = out["projection"]["recordSet"]
+        .as_array()
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    let freq0 = rs
+        .iter()
+        .find(|r| {
+            r["@id"]
+                .as_str()
+                .is_some_and(|id| id.ends_with("0-frequency"))
+        })
+        .unwrap_or_else(|| panic!("no column-0 frequency RecordSet: {text}"));
+    let s0 = serde_json::to_string(freq0).unwrap();
+    assert!(s0.contains("red") && !s0.contains("cat"), "{s0}");
+}
+
+#[test]
+fn profile_duplicate_rows_compare_text_not_inferred_values() {
+    let wrk = Workdir::new("profile_dupes_text");
+    wrk.create_from_string("in.csv", "code\n001\n1\n01\n");
+    let out = profile_projection(&wrk, &["--validate"]);
+    let qm = out["projection"]["hasQualityMeasurement"]
+        .as_array()
+        .unwrap();
+    let dupes = qm
+        .iter()
+        .find(|m| {
+            m["isMeasurementOf"]["definition"]
+                == "Number of rows that exactly duplicate an earlier row."
+        })
+        .map(|m| m["value"].clone());
+    assert_eq!(dupes, Some(json!("0")));
+}
+
+#[test]
+fn profile_daily_series_infers_accrual_periodicity() {
+    let wrk = Workdir::new("profile_daily_series");
+    let mut rows = vec![svec!["date", "reading"]];
+    for d in 1..=20 {
+        rows.push(vec![format!("2024-01-{d:02}"), format!("{}", 10 + d % 3)]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(out["projection"]["accrualPeriodicity"], "daily");
+    assert_eq!(out["projection"]["temporalResolution"], "P1D");
+    assert_eq!(
+        out["projection_provenance"]["/accrualPeriodicity"],
+        "inferred"
+    );
+}
+
+#[test]
+fn profile_fixed_time_daily_series_is_daily_but_near_daily_is_not() {
+    // A reading taken at 08:00 every day is a regular daily series.
+    let wrk = Workdir::new("profile_fixed_time_daily");
+    let mut rows = vec![svec!["reading_date", "value"]];
+    for d in 1..=10 {
+        rows.push(vec![format!("2024-05-{d:02} 08:00:00"), format!("{d}")]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(out["projection"]["accrualPeriodicity"], "daily");
+    // The series' step, not the hour-level recording precision (PT1H).
+    assert_eq!(out["projection"]["temporalResolution"], "P1D");
+
+    // ~27 h apart: whole-day truncation would call every gap "1 day";
+    // none is an exact calendar step, so nothing is asserted.
+    let wrk = Workdir::new("profile_near_daily");
+    let mut rows = vec![svec!["reading_date", "value"]];
+    for d in 0..10u32 {
+        let total_hours = 8 + 27 * d;
+        let (day, hour) = (1 + total_hours / 24, total_hours % 24);
+        rows.push(vec![
+            format!("2024-05-{day:02} {hour:02}:00:00"),
+            format!("{d}"),
+        ]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    // Guard against a vacuous pass: the column must be a datetime.
+    assert_eq!(
+        out.pointer("/stats/reading_date/stats/type")
+            .and_then(Value::as_str),
+        Some("DateTime")
+    );
+    assert!(
+        out["projection"].get("accrualPeriodicity").is_none(),
+        "{:?}",
+        out["projection"]["accrualPeriodicity"]
+    );
+
+    // Mostly daily, but 2 of 9 gaps are 2 days (78% < 90%): declined.
+    let wrk = Workdir::new("profile_mostly_daily");
+    let mut rows = vec![svec!["reading_date", "value"]];
+    for day in [1, 2, 3, 5, 6, 7, 9, 10, 11, 12] {
+        rows.push(vec![format!("2024-05-{day:02}"), format!("{day}")]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(
+        out.pointer("/stats/reading_date/stats/type")
+            .and_then(Value::as_str),
+        Some("Date")
+    );
+    assert!(
+        out["projection"].get("accrualPeriodicity").is_none(),
+        "{:?}",
+        out["projection"]["accrualPeriodicity"]
+    );
+}
+
+#[test]
+fn profile_monthly_series_uses_calendar_months() {
+    let wrk = Workdir::new("profile_monthly_series");
+    let mut rows = vec![svec!["report_date", "total"]];
+    for m in 1..=12 {
+        rows.push(vec![format!("2023-{m:02}-01"), format!("{}", m * 7)]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    // 28-31 day gaps are one calendar step, not "P28D".
+    assert_eq!(out["projection"]["temporalResolution"], "P1M");
+    assert_eq!(out["projection"]["accrualPeriodicity"], "monthly");
+}
+
+#[test]
+fn profile_irregular_months_report_recording_precision() {
+    // Month-aligned but irregular (1, 4 and 6 month gaps): no step.
+    let wrk = Workdir::new("profile_irregular_months");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["report_date", "n"],
+            svec!["2024-01-01", "1"],
+            svec!["2024-02-01", "2"],
+            svec!["2024-06-01", "3"],
+            svec!["2024-12-01", "4"],
+        ],
+    );
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(out["projection"]["temporalResolution"], "P1D");
+}
+
+#[test]
+fn profile_bbox_excludes_null_island() {
+    let wrk = Workdir::new("profile_null_island");
+    seed_events_csv(&wrk);
+    // Append a geocoder-failure row at (0, 0).
+    let mut csv = wrk.read_to_string("in.csv").unwrap();
+    csv.push_str("7,2024-03-10 10:00:00,Open,0,0,\n");
+    wrk.create_from_string("in.csv", &csv);
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(
+        out.pointer("/projection/spatial/0/bbox")
+            .and_then(Value::as_str),
+        Some(
+            "POLYGON((-74.01 40.711, -74.01 40.72, -74.002 40.72, -74.002 40.711, -74.01 40.711))"
+        )
+    );
+    let notes = warnings_for(&out, "spatial");
+    assert!(
+        notes.iter().any(|w| w["severity"] == "info"
+            && w["message"]
+                .as_str()
+                .is_some_and(|m| m.starts_with("excluded 1 row(s)"))),
+        "{notes:?}"
+    );
+}
+
+#[cfg(feature = "whatlang")]
+#[test]
+fn profile_detects_content_language() {
+    let wrk = Workdir::new("profile_language");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "comment"],
+            svec![
+                "1",
+                "The water main on the corner has been leaking for three days now"
+            ],
+            svec![
+                "2",
+                "Please send someone to repair the broken streetlight near the school"
+            ],
+            svec![
+                "3",
+                "Garbage was not collected this week and the bins are overflowing"
+            ],
+            svec![
+                "4",
+                "A large pothole is damaging cars driving down the avenue every morning"
+            ],
+            svec![
+                "5",
+                "Neighbors are complaining about loud music playing late into the night"
+            ],
+            svec![
+                "6",
+                "The park benches were vandalized and need to be painted again soon"
+            ],
+        ],
+    );
+    let out = profile_projection(&wrk, &[]);
+    assert_eq!(out["projection"]["language"], "en");
+    assert_eq!(out["projection_provenance"]["/language"], "inferred");
 }

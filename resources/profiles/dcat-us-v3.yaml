@@ -626,18 +626,12 @@ distribution:
         [{ "@type": "Standard", "identifier": {{ ct | tojson }} }]
         {%- endif -%}
       emit_when: '{{ res.conformsTo is defined and res.conformsTo }}'
-      # Asserted only when `qsv validate` confirmed a well-formed,
-      # COMMA-separated file (RFC 4180 is the comma format; a valid TSV
-      # is not RFC 4180).
-      fallback: |
-        {%- if rfc4180 and rfc4180.valid and rfc4180.comma_delimited -%}
-        [{ "@type": "Standard",
-           "title": "RFC 4180: Common Format and MIME Type for Comma-Separated Values (CSV) Files",
-           "identifier": "https://www.rfc-editor.org/rfc/rfc4180" }]
-        {%- endif -%}
 
     # `qsv validate` rejects invalid UTF-8, so a passing file is UTF-8
-    # (an all-ASCII file is valid UTF-8 too).
+    # (an all-ASCII file is valid UTF-8 too). No RFC 4180 `conformsTo`
+    # is asserted: qsv validate is deliberately lenient (LF line
+    # endings, other delimiters), so passing it does not prove strict
+    # RFC 4180 conformance.
     - path: "characterEncoding"
       template: '{%- if rfc4180 and rfc4180.valid -%}["UTF-8"]{%- endif -%}'
 

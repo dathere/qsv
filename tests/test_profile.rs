@@ -4202,7 +4202,7 @@ fn profile_quality_measurements_and_csvw_constraints() {
 }
 
 #[test]
-fn profile_rfc4180_conformance_only_with_validate() {
+fn profile_utf8_and_validity_only_with_validate() {
     let wrk = Workdir::new("profile_rfc4180_validate");
     seed_events_csv(&wrk);
     let plain = profile_projection(&wrk, &[]);
@@ -4212,10 +4212,9 @@ fn profile_rfc4180_conformance_only_with_validate() {
 
     let validated = profile_projection(&wrk, &["--validate"]);
     let dist = &validated["projection"]["distribution"][0];
-    assert_eq!(
-        dist["conformsTo"][0]["identifier"],
-        "https://www.rfc-editor.org/rfc/rfc4180"
-    );
+    // qsv validate is lenient (LF endings, any delimiter), so passing it
+    // proves UTF-8 + well-formedness, never strict RFC 4180.
+    assert!(dist.get("conformsTo").is_none(), "{:?}", dist["conformsTo"]);
     assert_eq!(dist["characterEncoding"], json!(["UTF-8"]));
     let qm = validated["projection"]["hasQualityMeasurement"]
         .as_array()
@@ -4237,7 +4236,7 @@ fn profile_tsv_is_not_declared_rfc4180() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let dist = &out["projection"]["distribution"][0];
-    // Well-formed and UTF-8, but tab-separated: not RFC 4180.
+    // Well-formed and UTF-8; never claimed as RFC 4180.
     assert_eq!(dist["characterEncoding"], json!(["UTF-8"]));
     assert!(dist.get("conformsTo").is_none(), "{:?}", dist["conformsTo"]);
     // The SQL backend reads the resolved tab delimiter: 2 columns.
@@ -4261,6 +4260,37 @@ fn profile_no_headers_keeps_column_identities_aligned() {
     assert_eq!(cols[1]["datatype"]["format"], "^(?:cat|dog)$");
     let desc = out["projection"]["description"].as_str().unwrap();
     assert!(desc.contains("Columns: 0, 1."), "{desc}");
+}
+
+#[test]
+fn profile_no_headers_croissant_frequency_uses_stats_identities() {
+    let wrk = Workdir::new("profile_no_headers_croissant_freq");
+    wrk.create_from_string("in.csv", "red,cat\nblue,dog\nred,dog\n");
+    let out = profile_projection(
+        &wrk,
+        &[
+            "--no-headers",
+            "--profile",
+            "croissant",
+            "--croissant-frequency",
+        ],
+    );
+    let text = serde_json::to_string(&out["projection"]).unwrap();
+    // Column 0's histogram is present and holds column 0's values.
+    let rs: Vec<&Value> = out["projection"]["recordSet"]
+        .as_array()
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    let freq0 = rs
+        .iter()
+        .find(|r| {
+            r["@id"]
+                .as_str()
+                .is_some_and(|id| id.ends_with("0-frequency"))
+        })
+        .unwrap_or_else(|| panic!("no column-0 frequency RecordSet: {text}"));
+    let s0 = serde_json::to_string(freq0).unwrap();
+    assert!(s0.contains("red") && !s0.contains("cat"), "{s0}");
 }
 
 #[test]

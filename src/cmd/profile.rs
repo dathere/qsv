@@ -32,7 +32,7 @@ author by hand, from the same statistics: temporal coverage and resolution
 spatial bounding box (excluding out-of-range and (0, 0) placeholder
 coordinates) and resolution, an update schedule (only for
 a regular calendar series), the content language, DQV quality measurements
-(completeness, plus duplicate rows and RFC 4180 validity with `--validate`),
+(completeness, plus duplicate rows and CSV/UTF-8 validity with `--validate`),
 and a CSVW table schema with per-column constraints (required, ranges,
 lengths, enumerations, primary key). Values
 that are generated or detected rather than measured - a description, the
@@ -161,9 +161,10 @@ profile options:
                               cardinality issues, and shape violations.
                               Violations append to projection_warnings by
                               default. Also runs `qsv validate` over the
-                              input (RFC 4180 structure + UTF-8), so a
-                              passing file is declared to conform to RFC
-                              4180 and to be UTF-8 encoded.
+                              input (CSV structure + UTF-8), so a passing
+                              file is declared UTF-8 encoded and its
+                              syntactic validity is recorded as a
+                              quality measurement.
     --strict                  With --validate, fail the command on
                               Required-severity schema violations, or on
                               non-Info external-validator findings,
@@ -531,11 +532,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // the projection compact by default; an empty map makes the
         // profile templates emit no frequency block. The raw counts always
         // remain in the top-level `frequency` output block regardless.
-        let frequency = if args.flag_croissant_frequency {
-            analysis.context.get("dppf").cloned().unwrap_or(json!({}))
-        } else {
-            json!({})
-        };
+        // Filled from the normalized `dppf` below.
+        let mut frequency = json!({});
         // Build the projection context: the YAML's field templates
         // reference these top-level names. `pkg` and `res` are the
         // merged CKAN package + resource; `source_label` is the
@@ -579,18 +577,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             analysis.headers.clone()
         };
-        // RFC 4180 is the COMMA-separated format: `qsv validate`
-        // passing a TSV proves it well-formed, not RFC 4180.
-        let mut rfc4180 = analysis
+        let rfc4180 = analysis
             .context
             .get("rfc4180")
             .cloned()
             .unwrap_or(Value::Null);
-        if let Some(obj) = rfc4180.as_object_mut() {
-            obj.insert(
-                "comma_delimited".to_string(),
-                Value::Bool(resolved_delimiter == b','),
-            );
+        // The opt-in Croissant histograms must index the same
+        // (normalized) per-column frequency the derived helpers read.
+        if args.flag_croissant_frequency {
+            frequency = dppf.clone();
         }
         let projection_ctx = json!({
             "pkg":                package,

@@ -298,7 +298,7 @@ fn emit_field_inner(
             Ok(s) => s,
             Err(e) => {
                 warnings.push(ProjectionWarning {
-                    field:    field.path.clone(),
+                    field:    format!("{scope}{}", field.path),
                     severity: Severity::Required,
                     message:  format!("template render error: {e}"),
                 });
@@ -347,7 +347,7 @@ fn emit_field_inner(
     }
     if let Some(level) = field.required_level {
         warnings.push(ProjectionWarning {
-            field:    field.path.clone(),
+            field:    format!("{scope}{}", field.path),
             severity: Severity::from(level),
             message:  format!("missing {}", field.path),
         });
@@ -768,6 +768,35 @@ distribution:
                 field:   "distribution/0/description".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn missing_distribution_field_warning_is_scoped() {
+        let profile = load_from_str(
+            r#"
+name: scoped-missing
+dataset:
+  type: Dataset
+  fields:
+    - path: title
+      template: "{{ pkg.title }}"
+distribution:
+  type: Distribution
+  path: distribution
+  fields:
+    - path: title
+      template: "{{ res.name | default('') }}"
+      required_level: required
+"#,
+            "t",
+        )
+        .unwrap();
+        let ctx = json!({ "pkg": { "title": "Dataset title" }, "res": {} });
+        let (_, warns) = project(&profile, &ctx, ProjectionMode::Dataset).unwrap();
+        // Labeled `title`, the final filter would drop it because the
+        // Dataset HAS a title.
+        assert_eq!(warns.len(), 1);
+        assert_eq!(warns[0].field, "distribution/0/title");
     }
 
     #[test]

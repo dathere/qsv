@@ -79,7 +79,7 @@ undefined, not an error, when its inputs are absent, so guard with
 The projection context also exposes `dppf` (per-column frequency),
 `headers` (column names in file order — template maps iterate
 key-sorted), `rfc4180` (`{valid}` when `--validate` ran `qsv
-validate`, else null) and `http_last_modified` (URL inputs).
+validate`, else null; lenient, so not proof of strict RFC 4180) and `http_last_modified` (URL inputs).
 
 ## Catalog envelope
 

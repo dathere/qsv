@@ -1835,6 +1835,45 @@ if [ ! -d "results" ]; then
   mkdir results
 fi
 
+# PRIVATE RUNS. A run against a self-hosted Geoclient (QSV_GEOCLIENT_API_URL set) typically happens
+# on another machine - the Geoclient images are x86_64-only - and its timings are not comparable
+# with the published, git-tracked results, which all come from one benchmark machine. (A pattern
+# run would also rebuild latest_results.csv from its own few rows.) So results/ is snapshotted
+# here, before anything writes to it, and restored when the script exits - normally, on an error
+# or on Ctrl-C. The run still times, checks and prints everything, and keeps its own results as
+# results/private_latest_results*.csv and results/private_latest_run_info.tsv (git-ignored).
+# Its quarantined rows are dropped with it, so `accept` does not apply to a private run.
+# Set QSVBM_RECORD_SELFHOSTED=1 to record the run like any other.
+results_snapshot=
+function restore_private_results {
+  if [ -z "$results_snapshot" ] || [ ! -d "$results_snapshot" ]; then
+    return
+  fi
+  local f
+  for f in latest_results.csv latest_results_display.csv latest_run_info.tsv; do
+    if [ -f "results/$f" ]; then
+      cp "results/$f" "$results_snapshot/private_$f"
+    fi
+  done
+  rm -rf results
+  cp -Rp "$results_snapshot" results
+  rm -rf "$results_snapshot"
+  results_snapshot=
+  echo "> PRIVATE RUN: results/ was restored, so nothing was recorded. This run's results are in"
+  echo "  results/private_latest_results_display.csv (and private_latest_results.csv/_run_info.tsv)."
+}
+if [ -n "$QSV_GEOCLIENT_API_URL" ] && [ "${QSVBM_RECORD_SELFHOSTED:-0}" != "1" ]; then
+  results_snapshot=$(mktemp -d "${TMPDIR:-/tmp}/qsvbm_results.XXXXXX") &&
+    cp -Rp results/. "$results_snapshot"/ || {
+    echo "ERROR: could not snapshot results/ for a private run - nothing was run."
+    exit 1
+  }
+  trap restore_private_results EXIT
+  trap 'exit 130' INT TERM
+  echo "> PRIVATE RUN: QSV_GEOCLIENT_API_URL is set, so this run's results will NOT be recorded in"
+  echo "  results/ (set QSVBM_RECORD_SELFHOSTED=1 to record them)."
+fi
+
 # Init latest_results.csv. It stores the benchmark results for this run
 rm -f results/latest_results.csv
 echo "version,tstamp,name,mean,stddev,median,user,system,min,max,peak_mem_mib" >results/latest_results.csv

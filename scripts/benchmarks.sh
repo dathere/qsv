@@ -44,7 +44,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=10.0.0
+bm_version=10.1.0
 
 # runs of a benchmark whose means are within this percentage of each other tie in the rank
 # column (see the delta & rank comments near the end)
@@ -63,6 +63,18 @@ rank_tie_pct=2
 spread_max=${QSVBM_SPREAD_MAX:-3}
 speedup_pct=${QSVBM_SPEEDUP_PCT:-33}
 mem_drop_pct=${QSVBM_MEM_DROP_PCT:-25}
+
+# the geocode_geoclient_* benchmarks (see "geoclient inputs" below) run only when one of these
+# is set; without either they are skipped with a NOTE:
+#  QSV_GEOCLIENT_API_KEY: a NYC Geoclient subscription key for the public API (free at
+#   https://api-portal.nyc.gov). Export it in the shell running this script, never in a .env file
+#   (the geoclient benchmarks run with QSV_DOTENV_PATH='<NONE>').
+#  QSV_GEOCLIENT_API_URL: the base URL of a self-hosted Geoclient. Swaps in the opt-in
+#   geocode_geoclient_nocache_selfhosted benchmark and makes the run PRIVATE: results/ is restored
+#   when the script exits, and this run's results are kept in results/private_latest_* instead.
+#  QSVBM_GEOCLIENT_RATE_LIMIT: qsv's --rate-limit (requests/sec) against a self-hosted Geoclient.
+#   (default: 100000, i.e. effectively unthrottled)
+#  QSVBM_RECORD_SELFHOSTED: set to 1 to record a self-hosted run in results/ like any other run.
 
 # what hyperfine measures. Explicit units pin the CSV export to seconds and MiB, and user/system
 # are only exported when asked for. The archive keeps hyperfine 1.x's column names - see
@@ -149,6 +161,14 @@ if [[ "$arg_pat" == "help" ]]; then
   echo "  benchmark data zip: $datazip"
   echo "  warmup runs: $warmup_runs"
   echo "  benchmark runs: $benchmark_runs"
+  if [ -n "$QSV_GEOCLIENT_API_URL" ]; then
+    if [ "${QSVBM_RECORD_SELFHOSTED:-0}" == "1" ]; then gc_run="recorded"; else gc_run="private"; fi
+    echo "  geoclient: self-hosted at $QSV_GEOCLIENT_API_URL ($gc_run run, rate limit ${QSVBM_GEOCLIENT_RATE_LIMIT:-100000}/s)"
+  elif [ -n "$QSV_GEOCLIENT_API_KEY" ]; then
+    echo "  geoclient: public API (QSV_GEOCLIENT_API_KEY is set)"
+  else
+    echo "  geoclient: skipped (set QSV_GEOCLIENT_API_KEY or QSV_GEOCLIENT_API_URL)"
+  fi
   exit 0
 fi
 
@@ -252,6 +272,18 @@ if "$qsv_bin" viz --help &>/dev/null; then
   has_viz=1
 else
   echo "NOTE: $qsv_bin does not have the viz feature - skipping the viz benchmark."
+fi
+
+# check if the geoclient benchmarks can run. Another SOFT check: unlike every other benchmark,
+# they call an online API (NYC's Geoclient), so they need a subscription key - or a self-hosted
+# Geoclient in QSV_GEOCLIENT_API_URL, which needs none. Without either, every lookup fails.
+has_geoclient=0
+if "$qsv_bin" geocode --help &>/dev/null &&
+  { [ -n "$QSV_GEOCLIENT_API_KEY" ] || [ -n "$QSV_GEOCLIENT_API_URL" ]; }; then
+  has_geoclient=1
+else
+  echo "NOTE: $qsv_bin does not have the geocode feature, or neither QSV_GEOCLIENT_API_KEY nor"
+  echo "      QSV_GEOCLIENT_API_URL is set - skipping the geoclient benchmarks."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -678,6 +710,9 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f pragmastats_50kdata.csv*
   rm -f fwf_100kdata.txt
   rm -f stat_100kdata*
+  # the decompressed geoclient inputs only - NOT the committed .gz, and NOT the primed
+  # geoclient_cache/ (re-priming costs ~45 minutes and ~100k API calls; rm -r it to re-prime)
+  rm -f nyc_addresspoint_100k.csv geoclient_10k.csv
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
   rm -f data_sorted.csv
@@ -990,6 +1025,92 @@ if [[ "$has_readstat" -eq 1 ]]; then
   stat_rowcount=$("$qsv_benchmarker_bin" count --no-polars stat_100kdata.csv)
 fi
 
+# geoclient inputs. nyc_addresspoint_100k.csv.gz is committed next to this script: 100,000
+# distinct real NYC addresses, 20,000 per borough, sampled (seed 4242) from NYC Open Data's
+# AddressPoint dataset (uf93-f8nk, fetched 2026-10-31) after dropping rows without a ZIP code
+# or BIN and keeping one address point per house number + street + borough. Its bin column is
+# the address point's own BIN, to check geocoding accuracy against.
+# The public Geoclient API allows 2,500 requests/minute and 500,000/day, so an uncached run
+# of all 100k rows takes over 40 minutes - and 2 warmup + 3 timed runs would spend the whole
+# daily quota. So the uncached benchmark reads a 10k-row sample (~4 minutes a run), and only
+# the cached one reads all 100k rows, from a result cache primed below.
+# The cache lives in its own directory, set through QSV_CACHE_DIR (which overrides --cache-dir),
+# so it never touches the user's ~/.qsv-cache. --cache-ttl 0 keeps its entries from expiring
+# between benchmark runs (the default TTL is 14 days). Non-matches are cached too.
+# QSV_DOTENV_PATH='<NONE>' turns off qsv's .env loading for these commands: a .env file is
+# loaded with OVERRIDE, so one setting QSV_CACHE_DIR or QSV_GEOCLIENT_API_KEY would undo both
+# the cache isolation and the offline guard below.
+# The cached benchmark runs with an INVALID key (QSV_GEOCLIENT_API_KEY=offline-guard): the cache
+# key doesn't include the API key, so cached rows are served as usual, but any row that needs
+# the network fails with a fatal HTTP 401 and the run exits non-zero - so a cached result that
+# made API calls is never recorded. (A self-hosted Geoclient needs no key, so there the guard
+# can't tell; its requests stay local.)
+geoclient_offline_key=offline-guard
+# OPT-IN SELF-HOSTED VARIANT: with QSV_GEOCLIENT_API_URL set, every request goes to that Geoclient
+# (e.g. the mlipper/geoclient Docker image) instead of the public API. There is no quota then,
+# so the uncached benchmark reads all 100k rows with qsv's rate limiter raised out of the way,
+# timing qsv's request pipeline rather than the public API's pacing. It is published under its
+# own name, geocode_geoclient_nocache_selfhosted, so it never mixes with the public-API series.
+# The images are amd64-only (Geosupport is an x86_64 Linux C library), so on Apple silicon they
+# run emulated - run this variant on x86_64 Linux. QSVBM_GEOCLIENT_RATE_LIMIT sets the cap
+# (--rate-limit has no "unlimited" value).
+geoclient_selfhosted=0
+geoclient_rate_args=()
+if [ -n "$QSV_GEOCLIENT_API_URL" ]; then
+  geoclient_selfhosted=1
+  geoclient_rate_args=(--rate-limit "${QSVBM_GEOCLIENT_RATE_LIMIT:-100000}")
+fi
+geoclient_params='houseNumber={house_number},street={street},borough={borough}'
+geoclient_cache_dir=geoclient_cache
+geoclient_10k_rowcount=
+geoclient_100k_rowcount=
+has_geoclient_cache=0
+if [[ "$has_geoclient" -eq 1 ]]; then
+  if [ ! -r nyc_addresspoint_100k.csv ]; then
+    echo "   nyc_addresspoint_100k.csv..."
+    gzip -dc nyc_addresspoint_100k.csv.gz >nyc_addresspoint_100k.csv
+  fi
+  if [ ! -r geoclient_10k.csv ]; then
+    echo "   geoclient_10k.csv..."
+    "$qsv_benchmarker_bin" sample 10000 --seed 4242 nyc_addresspoint_100k.csv -o geoclient_10k.csv
+  fi
+  geoclient_10k_rowcount=$("$qsv_benchmarker_bin" count --no-polars geoclient_10k.csv)
+  geoclient_100k_rowcount=$("$qsv_benchmarker_bin" count --no-polars nyc_addresspoint_100k.csv)
+
+  # Prime the cache on EVERY run, with the exact request the cached benchmark sends (the cache
+  # key is built from the endpoint and its params). On a warm cache this is one quick offline
+  # pass; on a cold one - first run, or a qsv release that changed the cache file - it makes up
+  # to 100k API calls. Without it, a cold cache would be timed as a "cached" run. It only runs
+  # when the cached benchmark is selected, so a pattern run of other benchmarks never spends the
+  # time or the API quota.
+  # Lookups that fail transiently (timeouts, 5xx, 400s) are not cached, and the run still exits
+  # 0 below the circuit breaker's threshold, so after each pass the offline guard checks that
+  # every row is cached. A second pass fetches only the gaps; if that still leaves some, the
+  # cached benchmark is skipped rather than timed with live requests in it.
+  if [[ "geocode_geoclient_cache" == *"$arg_pat"* ]]; then
+    echo "   priming the geoclient cache (a cold cache takes ~45 minutes and ~100k API calls)..."
+    geoclient_prime_start=$SECONDS
+    for _ in 1 2; do
+      env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" "$qsv_bin" geocode \
+        geoclient address --endpoint address --params "$geoclient_params" -c geo_latlong \
+        --cache-ttl 0 "${geoclient_rate_args[@]}" nyc_addresspoint_100k.csv -o /dev/null
+      if env QSV_DOTENV_PATH='<NONE>' QSV_CACHE_DIR="$geoclient_cache_dir" \
+        QSV_GEOCLIENT_API_KEY="$geoclient_offline_key" "$qsv_bin" geocode geoclient address \
+        --endpoint address --params "$geoclient_params" -c geo_latlong --cache-ttl 0 \
+        nyc_addresspoint_100k.csv -o /dev/null 2>/dev/null; then
+        has_geoclient_cache=1
+        break
+      fi
+    done
+    if [[ "$has_geoclient_cache" -eq 1 ]]; then
+      echo "   geoclient cache primed in $((SECONDS - geoclient_prime_start))s."
+    else
+      echo "NOTE: the geoclient cache is still missing rows after 2 priming passes - skipping the"
+      echo "      geocode_geoclient_cache benchmark."
+    fi
+  fi
+fi
+
 # Look up the recs_per_sec divisor for a benchmark BY NAME. Most benchmarks read the full
 # dataset and use $rowcount; the few that read a prepared subset are listed here. Sets the
 # global `subset_rowcount` to that subset's rowcount, or "" meaning "use the full $rowcount".
@@ -1017,6 +1138,10 @@ function rowcount_for_benchmark {
   geoconvert_csv2geojsonl) subset_rowcount="$geo_rowcount" ;;
   to_ods) subset_rowcount="$ods_rowcount" ;;
   fixedwidth_100k) subset_rowcount="$fwf_rowcount" ;;
+  geocode_geoclient_nocache) subset_rowcount="$geoclient_10k_rowcount" ;;
+  geocode_geoclient_cache | geocode_geoclient_nocache_selfhosted)
+    subset_rowcount="$geoclient_100k_rowcount"
+    ;;
   readstat_sav | readstat_sav_compressed | readstat_dta | readstat_dta_select | readstat_xpt | \
     writestat_sav | writestat_sav_compress | writestat_dta | writestat_xpt)
     subset_rowcount="$stat_rowcount"
@@ -1423,6 +1548,35 @@ run geocode_suggest "$qsv_bin" geocode suggest City --new-column geocoded_city "
 run geocode_suggest_batchall "$qsv_bin" geocode suggest City --new-column geocoded_city --batch 0 "$data"
 run geocode_reverse "$qsv_bin" geocode reverse Location --new-column geocoded_location "$data"
 run geocode_reverse_batchall "$qsv_bin" geocode reverse Location --new-column geocoded_location --batch 0 "$data"
+# Online geoclient lookups of real NYC addresses (see the geoclient inputs in the prep section).
+# The two differ only in the cache: _nocache times live API calls on 10k rows - bounded by the
+# API's rate limit as much as by qsv - and _cache times serving all 100k from the primed cache.
+# Against a self-hosted Geoclient, _nocache_selfhosted replaces _nocache (see the prep section).
+# _cache runs with an invalid key, so a row missing from the cache fails it (see the prep section).
+# A bad key or an exhausted quota makes qsv exit non-zero, but a run whose lookups mostly fail
+# for other reasons still exits 0, so --verify checks that at least 90% of the rows got NYC
+# coordinates (AddressPoint addresses are Geosupport's own, so nearly all should match).
+if [[ "$has_geoclient" -eq 1 ]]; then
+  geoclient_geocoded='test "$("$QSVBM_QSV" search -s geo_latlong "^4[01][.][0-9]+, -7[34][.]" "$QSVBM_STDOUT" | "$QSVBM_QSV" count)" -ge '
+  if [[ "$geoclient_selfhosted" -eq 1 ]]; then
+    run --verify "${geoclient_geocoded}$((geoclient_100k_rowcount * 9 / 10))" \
+      geocode_geoclient_nocache_selfhosted \
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
+      address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache \
+      "${geoclient_rate_args[@]}" nyc_addresspoint_100k.csv
+  else
+    run --verify "${geoclient_geocoded}$((geoclient_10k_rowcount * 9 / 10))" geocode_geoclient_nocache \
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" "$qsv_bin" geocode geoclient \
+      address --endpoint address --params "'$geoclient_params'" -c geo_latlong --no-cache geoclient_10k.csv
+  fi
+  if [[ "$has_geoclient_cache" -eq 1 ]]; then
+    run --verify "${geoclient_geocoded}$((geoclient_100k_rowcount * 9 / 10))" geocode_geoclient_cache \
+      env "QSV_DOTENV_PATH='<NONE>'" "QSV_CACHE_DIR=$geoclient_cache_dir" \
+      "QSV_GEOCLIENT_API_KEY=$geoclient_offline_key" "$qsv_bin" geocode geoclient address \
+      --endpoint address --params "'$geoclient_params'" -c geo_latlong --cache-ttl 0 \
+      nyc_addresspoint_100k.csv
+  fi
+fi
 run geoconvert_csv2geojsonl "$qsv_bin" geoconvert geo_data.csv csv geojsonl -y Latitude -x Longitude
 run headers "$qsv_bin" headers "$data"
 run headers_justnames "$qsv_bin" headers --just-names "$data"
@@ -1699,6 +1853,66 @@ printf "> Commands to benchmark: %s, w/o index: %s, with index: %s\n\n" "$total_
 # Check if a results directory exists, if it doesn't create it
 if [ ! -d "results" ]; then
   mkdir results
+fi
+
+# PRIVATE RUNS. A run against a self-hosted Geoclient (QSV_GEOCLIENT_API_URL set) typically happens
+# on another machine - the Geoclient images are x86_64-only - and its timings are not comparable
+# with the published, git-tracked results, which all come from one benchmark machine. (A pattern
+# run would also rebuild latest_results.csv from its own few rows.) So results/ is snapshotted
+# here, before anything writes to it, and restored when the script exits - normally, on an error
+# or on Ctrl-C. The run still times, checks and prints everything, and keeps its own results as
+# results/private_latest_results*.csv and results/private_latest_run_info.tsv (git-ignored).
+# Its quarantined rows are dropped with it, so `accept` does not apply to a private run.
+# Set QSVBM_RECORD_SELFHOSTED=1 to record the run like any other.
+results_snapshot=
+function restore_private_results {
+  if [ -z "$results_snapshot" ] || [ ! -d "$results_snapshot" ]; then
+    return
+  fi
+  # keep only what THIS run wrote: a file it never got to (e.g. the display file, on Ctrl-C before
+  # finalize_results) still holds the previous recorded run's data. Older private copies go.
+  local f complete=0
+  rm -f "$results_snapshot"/private_*
+  for f in latest_results.csv latest_results_display.csv latest_run_info.tsv; do
+    if [ -f "results/$f" ] && ! cmp -s "results/$f" "$results_snapshot/$f"; then
+      cp "results/$f" "$results_snapshot/private_$f"
+    fi
+  done
+  # the run info is written last, so a changed one means the run finished
+  if [ -f "$results_snapshot/private_latest_run_info.tsv" ]; then
+    complete=1
+  fi
+  # restore into a side directory and swap it in only once the copy succeeded, so a failed copy
+  # (e.g. a full disk) never leaves results/ deleted - and the snapshot is kept until then
+  rm -rf results.restoring
+  if cp -Rp "$results_snapshot" results.restoring && rm -rf results &&
+    mv results.restoring results; then
+    rm -rf "$results_snapshot"
+    results_snapshot=
+  else
+    echo "ERROR: could not restore results/ after a private run. The untouched results are in"
+    echo "       $results_snapshot - copy them back to results/ by hand."
+    exit 1
+  fi
+  echo "> PRIVATE RUN: results/ was restored, so nothing was recorded."
+  if [[ "$complete" -eq 1 ]]; then
+    echo "  This run's results are in results/private_latest_results_display.csv"
+    echo "  (and private_latest_results.csv/private_latest_run_info.tsv)."
+  else
+    echo "  The run did not finish: results/private_latest_results.csv holds the benchmarks it"
+    echo "  completed (raw, without delta/rank)."
+  fi
+}
+if [ -n "$QSV_GEOCLIENT_API_URL" ] && [ "${QSVBM_RECORD_SELFHOSTED:-0}" != "1" ]; then
+  results_snapshot=$(mktemp -d "${TMPDIR:-/tmp}/qsvbm_results.XXXXXX") &&
+    cp -Rp results/. "$results_snapshot"/ || {
+    echo "ERROR: could not snapshot results/ for a private run - nothing was run."
+    exit 1
+  }
+  trap restore_private_results EXIT
+  trap 'exit 130' INT TERM
+  echo "> PRIVATE RUN: QSV_GEOCLIENT_API_URL is set, so this run's results will NOT be recorded in"
+  echo "  results/ (set QSVBM_RECORD_SELFHOSTED=1 to record them)."
 fi
 
 # Init latest_results.csv. It stores the benchmark results for this run

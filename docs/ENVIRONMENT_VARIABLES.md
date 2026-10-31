@@ -125,6 +125,20 @@ PNG/SVG/PDF/JPEG/WebP.
 | `WEBDRIVER_PATH` | full path to the `chromedriver` executable to drive the headless browser with. qsv only consults this for image output; when it is unset - **or points at a file that does not exist** - qsv probes `$WEBDRIVER_INSTALL_PATH`, `~/.local/bin`, your `PATH`, and then `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, and sets this variable to the first `chromedriver` it finds. This repairs prebuilt binaries, which carry an absolute path baked in from the machine that built them (issue #4620). Firefox/`geckodriver` is not supported - `viz_static` compiles against `plotly_static/chromedriver`, and the chromedriver/geckodriver features are mutually exclusive upstream. The chromedriver MAJOR version must match your installed Chrome; get a matched pair from [Chrome for Testing](https://googlechromelabs.github.io/chrome-for-testing/). |
 | `BROWSER_PATH` | full path to a Chrome/Chromium binary, when the one to render with is not the system default. Passed straight through as the WebDriver `binary` capability. |
 
+## Benchmark Script Environment Variables
+
+These configure [`scripts/benchmarks.sh`](../scripts/benchmarks.sh), not qsv itself. They are **not** `QSV_*` variables, so qsv ignores them and `qsv --envlist` does not list them.
+
+| Variable | Description |
+| --- | --- |
+| `QSVBM_SPREAD_MAX` | the largest slowest/fastest ratio allowed across a benchmark's timed runs. A wider spread usually means the command did its work on only some of the runs, so the benchmark is quarantined in `results/suspect_results.csv` instead of being recorded. (default: 3) |
+| `QSVBM_SPEEDUP_PCT` | quarantine a benchmark whose mean time is below this percentage of its most recent archived mean. A failed run looks like a huge speedup. (default: 33) |
+| `QSVBM_MEM_DROP_PCT` | quarantine a benchmark whose peak memory is below this percentage of its most recent archived peak memory. (default: 25) |
+| `QSVBM_GEOCLIENT_RATE_LIMIT` | the `--rate-limit` (requests per second) the `geocode_geoclient_nocache_selfhosted` benchmark passes to `geocode geoclient` when `QSV_GEOCLIENT_API_URL` points at a self-hosted Geoclient. The public API's 2,500 requests/minute quota doesn't apply there. (default: 100000, effectively unthrottled) |
+| `QSVBM_RECORD_SELFHOSTED` | set to `1` to record a run against a self-hosted Geoclient in `results/` like any other run. Otherwise, a run with `QSV_GEOCLIENT_API_URL` set is private: `results/` is restored when the script exits, and that run's results are kept in `results/private_latest_*`. |
+
+The `geocode_geoclient_*` benchmarks also read `QSV_GEOCLIENT_API_KEY` or `QSV_GEOCLIENT_API_URL` (see above). They are skipped when neither is set. Set the key in the shell that runs the script: the geoclient benchmarks run with `QSV_DOTENV_PATH='<NONE>'`, so a `.env` file is never read.
+
 ## MCP Server Environment Variables
 
 The qsv MCP (Model Context Protocol) Server exposes qsv's capabilities to AI agents like Claude. It can be used as a standalone MCP server or as a Claude Desktop Extension (MCPB).

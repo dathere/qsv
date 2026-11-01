@@ -827,7 +827,7 @@ fn confident_accrual_periodicity(args: Rest<Value>, state: &minijinja::State) ->
 
 /// `quality_measurements(stats, dpp, dims, rfc4180)` — DQV quality
 /// measurements for `hasQualityMeasurement`, computed from stats plus,
-/// on a `--validate` run (`rfc4180` non-null), a SQL duplicate-row
+/// on a `--validate` run (`rfc4180` non-null), a hashed duplicate-row
 /// count and the RFC 4180 / UTF-8 result of `qsv validate`.
 ///
 /// `dims` maps measurement kinds (`completeness`, `conciseness`,
@@ -911,24 +911,16 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
         ));
     }
 
-    // The duplicate-row count hashes every full row, so its memory grows
-    // with the data (measured: +223 MB peak RSS on a 1M-row, 149 MB
-    // file). It runs only on a --validate pass — signalled by the
-    // RFC 4180 result being present — never on the default path.
+    // The duplicate-row count is one more pass over the file, keeping a
+    // 128-bit hash per distinct row (see `duplicate_row_count`), so it
+    // runs only on a --validate pass — signalled by the RFC 4180 result
+    // being present — never on the default path. It compares the text the
+    // file holds: `001` and `1` are different rows.
     let validated = rfc4180.is_object();
     if validated
         && let Some(d) = dim("conciseness")
-        && let Some(distinct) = memo_sql("distinct_rows", |backend| {
-            // Compare the text the file holds: with type inference
-            // `001` and `1` would both read as the integer 1.
-            let df = backend
-                .clone()
-                .with_all_strings()
-                .query("SELECT COUNT(*) AS n FROM (SELECT DISTINCT * FROM data)")
-                .ok()?;
-            let col = df.column("n").ok()?;
-            let cast = col.cast(&polars::prelude::DataType::UInt64).ok()?;
-            Some(Json::from(cast.u64().ok()?.get(0)?))
+        && let Some(duplicates) = memo_sql("duplicate_rows", |backend| {
+            backend.duplicate_row_count().ok().map(Json::from)
         })
         .and_then(|v| v.as_u64())
     {
@@ -936,7 +928,7 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
             d,
             "xsd:integer",
             "Number of rows that exactly duplicate an earlier row.",
-            rows.saturating_sub(distinct).to_string(),
+            duplicates.to_string(),
             "rows",
         ));
     }

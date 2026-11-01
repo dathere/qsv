@@ -170,7 +170,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     let row_count = count_rows(args)?;
     let size_bytes = std::fs::metadata(args.input_path).map_or(0, |m| m.len());
 
-    let dpp = json!({
+    let mut dpp = json!({
         "LAT_FIELD":           lat_field,
         "LON_FIELD":           lon_field,
         // True when *either* lat or lon is missing, matching DP+'s helpers
@@ -193,6 +193,14 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
             "size_bytes":   size_bytes,
         },
     });
+    // No lat/lon pair: a WKT POINT column supplies the coordinates. Added
+    // only when found, so dpp is unchanged for every other file;
+    // NO_LAT_LON_FIELDS stays true, as DP+'s own helpers expect.
+    if (lat_field.is_none() || lon_field.is_none())
+        && let Some(point) = detect_point_field(&stats)
+    {
+        dpp["POINT_FIELD"] = json!(point);
+    }
 
     // --- 6. package / resource seed dicts ---------------------------------
     // Loaded from --initial-context (unified single-file replacement for
@@ -324,6 +332,55 @@ fn detect_lat_lon(stats: &[StatsData]) -> (Option<String>, Option<String>) {
     let lat = pick(LAT_CANDIDATES, -90.0, 90.0);
     let lon = pick(LON_CANDIDATES, -180.0, 180.0);
     (lat, lon)
+}
+
+/// Detect a WKT point column — `POINT (longitude latitude)`, the shape
+/// Socrata portals export a "Location" column in — for files without a
+/// latitude/longitude pair. A String column qualifies when its min and
+/// max both start `POINT (` (case-folded, any spacing before the
+/// parenthesis): every value sorting between two strings that share a
+/// prefix shares it too, so the stats prove the whole column without a
+/// scan. Requiring the parenthesis keeps out place names such as
+/// "Point Reyes". `POINT Z`/`M`/`ZM` qualify (their first two numbers
+/// are still longitude and latitude); EWKT (`SRID=4326;POINT(…)`) does
+/// not.
+fn detect_point_field(stats: &[StatsData]) -> Option<String> {
+    // Some(true): a point with coordinates; Some(false): `POINT EMPTY`
+    let point = |s: &Option<String>| -> Option<bool> {
+        s.as_deref().and_then(|v| {
+            let v = v.trim_start();
+            if !v.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("POINT")) {
+                return None;
+            }
+            // an optional Z / M / ZM dimension tag before the parenthesis
+            let rest = v[5..].trim_start();
+            let rest = rest.trim_start_matches(['Z', 'z', 'M', 'm']).trim_start();
+            // `POINT EMPTY` sorts after `POINT (`, so a column with empty
+            // points has it as its max; it is a POINT, just not a usable one
+            if rest.starts_with('(') {
+                Some(true)
+            } else if rest
+                .get(..5)
+                .is_some_and(|e| e.eq_ignore_ascii_case("EMPTY"))
+            {
+                Some(false)
+            } else {
+                None
+            }
+        })
+    };
+    stats
+        .iter()
+        .find(|sd| {
+            sd.r#type == "String"
+                && match (point(&sd.min), point(&sd.max)) {
+                    // an all-`POINT EMPTY` column has nothing to offer, and
+                    // must not shadow a later column of real points
+                    (Some(lo), Some(hi)) => lo || hi,
+                    _ => false,
+                }
+        })
+        .map(|sd| sd.field.clone())
 }
 
 /// Collect field names whose qsv stats type matches `wanted` (e.g. "Date").

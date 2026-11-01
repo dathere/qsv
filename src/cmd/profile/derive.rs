@@ -156,6 +156,136 @@ fn sig_figs(x: f64, sig: i32) -> String {
 /// to the precision a resolution estimate warrants.
 const METRES_PER_DEGREE: f64 = 111_320.0;
 
+/// Where a dataset's coordinates are: a latitude and a longitude
+/// column, or one WKT `POINT (longitude latitude)` column (Socrata's
+/// "Location" shape), as `context` detected them into `dpp`.
+pub(super) enum Coords {
+    Columns { lat: String, lon: String },
+    Point(String),
+}
+
+impl Coords {
+    /// From `dpp`: `LAT_FIELD`/`LON_FIELD`, else `POINT_FIELD`. `None`
+    /// when there are neither, or a name holds a `"` (it is quoted into
+    /// SQL).
+    pub(super) fn from_dpp(dpp: &Json) -> Option<Self> {
+        let coords = match (dpp_str(dpp, "LAT_FIELD"), dpp_str(dpp, "LON_FIELD")) {
+            (Some(lat), Some(lon)) => Self::Columns {
+                lat: lat.to_string(),
+                lon: lon.to_string(),
+            },
+            _ => Self::Point(dpp_str(dpp, "POINT_FIELD")?.to_string()),
+        };
+        let names = match &coords {
+            Self::Columns { lat, lon } => [lat.as_str(), lon.as_str()],
+            Self::Point(p) => [p.as_str(), p.as_str()],
+        };
+        (!names.iter().any(|n| n.contains('"'))).then_some(coords)
+    }
+
+    /// SQL text expressions for the latitude and longitude, over a
+    /// backend reading every column as text. For a POINT column, the
+    /// first token inside the parentheses is the longitude and the next
+    /// the latitude (a `POINT Z`/`M` value's extra numbers are ignored);
+    /// a `POINT EMPTY` or non-POINT value yields text that does not
+    /// cast, so its row drops out.
+    pub(super) fn texts(&self) -> (String, String) {
+        match self {
+            Self::Columns { lat, lon } => (format!(r#""{lat}""#), format!(r#""{lon}""#)),
+            Self::Point(p) => {
+                // tabs separate ordinates as well as spaces
+                let inner = format!(
+                    "(CASE WHEN UPPER(LTRIM(\"{p}\")) LIKE 'POINT%' THEN \
+                     TRIM(REPLACE(SPLIT_PART(SPLIT_PART(\"{p}\", '(', 2), ')', 1), '\t', ' ')) \
+                     END)"
+                );
+                // the latitude is the first token after the longitude, so
+                // a POINT Z/M value's third and fourth numbers are ignored;
+                // with no second token (`POINT (-71)`) there is no latitude,
+                // rather than the longitude read twice
+                (
+                    format!(
+                        "(CASE WHEN STRPOS({inner}, ' ') > 0 THEN SPLIT_PART(TRIM(SUBSTR({inner}, \
+                         STRPOS({inner}, ' ') + 1)), ' ', 1) END)"
+                    ),
+                    format!("SPLIT_PART({inner}, ' ', 1)"),
+                )
+            },
+        }
+    }
+
+    /// [`Self::texts`] cast to DOUBLE.
+    pub(super) fn exprs(&self) -> (String, String) {
+        let (la, lo) = self.texts();
+        (
+            format!("TRY_CAST({la} AS DOUBLE)"),
+            format!("TRY_CAST({lo} AS DOUBLE)"),
+        )
+    }
+
+    /// The column(s), for notes: "`LAT`/`LON` coordinates" or
+    /// "`Vehicle Location` points".
+    pub(super) fn describe(&self) -> String {
+        match self {
+            Self::Columns { lat, lon } => format!("`{lat}`/`{lon}` coordinates"),
+            Self::Point(p) => format!("`{p}` points"),
+        }
+    }
+
+    fn key(&self) -> String {
+        match self {
+            Self::Columns { lat, lon } => format!("{lat}\u{1f}{lon}"),
+            Self::Point(p) => format!("point\u{1f}{p}"),
+        }
+    }
+}
+
+/// One memoized SQL scan over the plausible coordinates — in range, and
+/// not the (0, 0) "null island" placeholder: their bounds, the number of
+/// rows excluded, each axis' decimal precision and the mean latitude.
+/// `None` when no backend is installed, the query fails, or no row
+/// survives the filter.
+fn coord_summary(coords: &Coords) -> Option<Json> {
+    memo_sql(&format!("coord_summary\u{1f}{}", coords.key()), |backend| {
+        // as text, so integer-looking leading rows don't type the column
+        // as integer and fail the scan at the first decimal
+        let backend = backend.clone().with_all_strings();
+        let (la, lo) = coords.exprs();
+        let (la_t, lo_t) = coords.texts();
+        let keep = format!(
+            "{la} BETWEEN -90 AND 90 AND {lo} BETWEEN -180 AND 180 AND NOT ({la} = 0 AND {lo} = 0)"
+        );
+        let places = |text: &str| {
+            format!("MAX(CASE WHEN {keep} THEN LENGTH(SPLIT_PART(TRIM({text}), '.', 2)) END)")
+        };
+        let sql = format!(
+            "SELECT MIN(CASE WHEN {keep} THEN {lo} END) AS min_lon, MAX(CASE WHEN {keep} THEN \
+             {lo} END) AS max_lon, MIN(CASE WHEN {keep} THEN {la} END) AS min_lat, MAX(CASE WHEN \
+             {keep} THEN {la} END) AS max_lat, AVG(CASE WHEN {keep} THEN {la} END) AS mean_lat, \
+             {} AS p_lat, {} AS p_lon, SUM(CASE WHEN {la} IS NOT NULL AND {lo} IS NOT NULL AND \
+             NOT ({keep}) THEN 1 ELSE 0 END) AS dropped FROM data",
+            places(&la_t),
+            places(&lo_t),
+        );
+        let df = backend.query(&sql).ok()?;
+        let get = |c: &str| -> Option<f64> {
+            let col = df.column(c).ok()?;
+            let cast = col.cast(&polars::prelude::DataType::Float64).ok()?;
+            cast.f64().ok()?.get(0)
+        };
+        Some(json!({
+            "min_lon": get("min_lon")?,
+            "max_lon": get("max_lon")?,
+            "min_lat": get("min_lat")?,
+            "max_lat": get("max_lat")?,
+            "mean_lat": get("mean_lat")?,
+            "p_lat": get("p_lat").unwrap_or(0.0),
+            "p_lon": get("p_lon").unwrap_or(0.0),
+            "dropped": get("dropped").unwrap_or(0.0),
+        }))
+    })
+}
+
 /// `coordinate_resolution_in_meters(dpp, stats)` — the finest spatial
 /// separation the coordinates can express, from the decimal precision
 /// of the lat/lon columns.
@@ -167,28 +297,50 @@ const METRES_PER_DEGREE: f64 = 111_320.0;
 /// east–west; the coarser of the two axes bounds what the data
 /// resolves. (The DP+ port `spatial_resolution_in_meters` returns the
 /// bbox *diagonal* — the extent — and is kept as-is for DP+ parity.)
+///
+/// For a WKT POINT column, which has no numeric stats, the decimal places
+/// are counted by the coordinate scan instead.
 fn coordinate_resolution_in_meters(dpp: Value, stats: Value) -> Value {
     let (dpp, stats) = (to_json(&dpp), to_json(&stats));
-    let (Some(lat), Some(lon)) = (dpp_str(&dpp, "LAT_FIELD"), dpp_str(&dpp, "LON_FIELD")) else {
-        return Value::UNDEFINED;
+    let (p_lat, p_lon, mean_lat) = match Coords::from_dpp(&dpp) {
+        Some(Coords::Columns { lat, lon }) => {
+            let (Some(lat_s), Some(lon_s)) = (col_stats(&stats, &lat), col_stats(&stats, &lon))
+            else {
+                return Value::UNDEFINED;
+            };
+            let (Some(p_lat), Some(p_lon)) = (
+                lat_s.get("max_precision").and_then(Json::as_u64),
+                lon_s.get("max_precision").and_then(Json::as_u64),
+            ) else {
+                return Value::UNDEFINED;
+            };
+            let mean_lat = num(lat_s.get("mean"))
+                .or_else(|| {
+                    Some(f64::midpoint(
+                        num(lat_s.get("min"))?,
+                        num(lat_s.get("max"))?,
+                    ))
+                })
+                .unwrap_or(0.0);
+            (p_lat, p_lon, mean_lat)
+        },
+        // a POINT column has no numeric stats: the coordinate scan counts
+        // each axis' decimal places
+        Some(point @ Coords::Point(_)) => {
+            let Some(s) = coord_summary(&point) else {
+                return Value::UNDEFINED;
+            };
+            let f = |k: &str| s.get(k).and_then(Json::as_f64);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let places = |k: &str| f(k).unwrap_or(0.0).max(0.0) as u64;
+            (
+                places("p_lat"),
+                places("p_lon"),
+                f("mean_lat").unwrap_or(0.0),
+            )
+        },
+        None => return Value::UNDEFINED,
     };
-    let (Some(lat_s), Some(lon_s)) = (col_stats(&stats, lat), col_stats(&stats, lon)) else {
-        return Value::UNDEFINED;
-    };
-    let (Some(p_lat), Some(p_lon)) = (
-        lat_s.get("max_precision").and_then(Json::as_u64),
-        lon_s.get("max_precision").and_then(Json::as_u64),
-    ) else {
-        return Value::UNDEFINED;
-    };
-    let mean_lat = num(lat_s.get("mean"))
-        .or_else(|| {
-            Some(f64::midpoint(
-                num(lat_s.get("min"))?,
-                num(lat_s.get("max"))?,
-            ))
-        })
-        .unwrap_or(0.0);
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     let step = |p: u64| 10f64.powi(-(p.min(15) as i32));
     let ns = METRES_PER_DEGREE * step(p_lat);
@@ -197,7 +349,7 @@ fn coordinate_resolution_in_meters(dpp: Value, stats: Value) -> Value {
 }
 
 /// `robust_bbox(dpp, stats)` — the `spatial` Location array from the
-/// lat/lon columns, excluding coordinates that cannot be real.
+/// lat/lon (or WKT POINT) columns, excluding coordinates that cannot be real.
 ///
 /// The stats min/max are used directly when they are already sane —
 /// within ±90/±180 and with no exact-zero coordinate in either column —
@@ -212,37 +364,58 @@ fn coordinate_resolution_in_meters(dpp: Value, stats: Value) -> Value {
 /// min/max leaves ±90/±180, so `LAT_FIELD`/`LON_FIELD` never name one.
 /// The (0, 0) half is the one real inputs reach. A custom `dpp` (or a
 /// future, more tolerant detector) still gets correct bounds.
+///
+/// A WKT POINT column (`dpp.POINT_FIELD`) has no numeric stats, so its
+/// bounds always come from the SQL pass; when no value parses, that is
+/// noted.
 fn robust_bbox(dpp: Value, stats: Value) -> Value {
     let (dpp, stats) = (to_json(&dpp), to_json(&stats));
-    let (Some(lat), Some(lon)) = (dpp_str(&dpp, "LAT_FIELD"), dpp_str(&dpp, "LON_FIELD")) else {
+    let Some(coords) = Coords::from_dpp(&dpp) else {
         return Value::UNDEFINED;
     };
-    let (Some(lat_s), Some(lon_s)) = (col_stats(&stats, lat), col_stats(&stats, lon)) else {
-        return Value::UNDEFINED;
+    let bounds = match &coords {
+        Coords::Columns { lat, lon } => {
+            let (Some(lat_s), Some(lon_s)) = (col_stats(&stats, lat), col_stats(&stats, lon))
+            else {
+                return Value::UNDEFINED;
+            };
+            let bounds = (
+                num(lon_s.get("min")),
+                num(lon_s.get("max")),
+                num(lat_s.get("min")),
+                num(lat_s.get("max")),
+            );
+            let (Some(min_lon), Some(max_lon), Some(min_lat), Some(max_lat)) = bounds else {
+                return Value::UNDEFINED;
+            };
+            let zeros = |s: &Json| s.get("n_zero").and_then(Json::as_u64).unwrap_or(0);
+            let sane = (-90.0..=90.0).contains(&min_lat)
+                && (-90.0..=90.0).contains(&max_lat)
+                && (-180.0..=180.0).contains(&min_lon)
+                && (-180.0..=180.0).contains(&max_lon)
+                && zeros(lat_s) == 0
+                && zeros(lon_s) == 0;
+            if sane {
+                Some((min_lon, max_lon, min_lat, max_lat))
+            } else {
+                filtered_bounds(&coords)
+            }
+        },
+        // a POINT column has no numeric stats, so its bounds always come
+        // from the coordinate scan
+        Coords::Point(p) => {
+            let b = filtered_bounds(&coords);
+            if b.is_none() && formula_helpers::current_sql_backend().is_some() {
+                push_note(format!(
+                    "`{p}` looks like a WKT POINT column, but none of its values parse as a \
+                     plausible `POINT (longitude latitude)`; no bounding box was computed"
+                ));
+            }
+            b
+        },
     };
-    let bounds = (
-        num(lon_s.get("min")),
-        num(lon_s.get("max")),
-        num(lat_s.get("min")),
-        num(lat_s.get("max")),
-    );
-    let (Some(min_lon), Some(max_lon), Some(min_lat), Some(max_lat)) = bounds else {
+    let Some((min_lon, max_lon, min_lat, max_lat)) = bounds else {
         return Value::UNDEFINED;
-    };
-    let zeros = |s: &Json| s.get("n_zero").and_then(Json::as_u64).unwrap_or(0);
-    let sane = (-90.0..=90.0).contains(&min_lat)
-        && (-90.0..=90.0).contains(&max_lat)
-        && (-180.0..=180.0).contains(&min_lon)
-        && (-180.0..=180.0).contains(&max_lon)
-        && zeros(lat_s) == 0
-        && zeros(lon_s) == 0;
-    let (min_lon, max_lon, min_lat, max_lat) = if sane {
-        (min_lon, max_lon, min_lat, max_lat)
-    } else {
-        match filtered_bounds(lat, lon) {
-            Some(b) => b,
-            None => return Value::UNDEFINED,
-        }
     };
     let polygon = format!(
         "POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} \
@@ -254,46 +427,15 @@ fn robust_bbox(dpp: Value, stats: Value) -> Value {
 /// Bounds over plausible coordinates only; notes how many rows were
 /// excluded. `None` when no backend is installed, the query fails, or
 /// no row survives the filter.
-fn filtered_bounds(lat: &str, lon: &str) -> Option<(f64, f64, f64, f64)> {
-    if lat.contains('"') || lon.contains('"') {
-        return None;
-    }
-    let key = format!("robust_bbox\u{1f}{lat}\u{1f}{lon}");
-    let hit = memo_sql(&key, |backend| {
-        // as text, so integer-looking leading rows don't type the column
-        // as integer and fail the scan at the first decimal
-        let backend = backend.clone().with_all_strings();
-        let la = format!(r#"TRY_CAST("{lat}" AS DOUBLE)"#);
-        let lo = format!(r#"TRY_CAST("{lon}" AS DOUBLE)"#);
-        let keep = format!(
-            "{la} BETWEEN -90 AND 90 AND {lo} BETWEEN -180 AND 180 AND NOT ({la} = 0 AND {lo} = 0)"
-        );
-        let sql = format!(
-            "SELECT MIN(CASE WHEN {keep} THEN {lo} END) AS min_lon, MAX(CASE WHEN {keep} THEN \
-             {lo} END) AS max_lon, MIN(CASE WHEN {keep} THEN {la} END) AS min_lat, MAX(CASE WHEN \
-             {keep} THEN {la} END) AS max_lat, SUM(CASE WHEN {la} IS NOT NULL AND {lo} IS NOT \
-             NULL AND NOT ({keep}) THEN 1 ELSE 0 END) AS dropped FROM data"
-        );
-        let df = backend.query(&sql).ok()?;
-        let get = |c: &str| -> Option<f64> {
-            let col = df.column(c).ok()?;
-            let cast = col.cast(&polars::prelude::DataType::Float64).ok()?;
-            cast.f64().ok()?.get(0)
-        };
-        Some(json!({
-            "min_lon": get("min_lon")?,
-            "max_lon": get("max_lon")?,
-            "min_lat": get("min_lat")?,
-            "max_lat": get("max_lat")?,
-            "dropped": get("dropped").unwrap_or(0.0),
-        }))
-    })?;
+fn filtered_bounds(coords: &Coords) -> Option<(f64, f64, f64, f64)> {
+    let hit = coord_summary(coords)?;
     let f = |k: &str| hit.get(k).and_then(Json::as_f64);
     let dropped = f("dropped").unwrap_or(0.0);
     if dropped > 0.0 {
         push_note(format!(
-            "excluded {dropped:.0} row(s) whose `{lat}`/`{lon}` coordinates are out of range or \
-             the (0, 0) null-island placeholder from the bounding box"
+            "excluded {dropped:.0} row(s) whose {} are out of range or the (0, 0) null-island \
+             placeholder from the bounding box",
+            coords.describe()
         ));
     }
     Some((f("min_lon")?, f("max_lon")?, f("min_lat")?, f("max_lat")?))

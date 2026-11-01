@@ -4978,6 +4978,199 @@ fn bbox_null_island_filter_survives_integer_looking_leading_rows() {
     );
 }
 
+/// Profile a one-column-of-locations CSV; returns the output document.
+fn profile_points(name: &str, rows: &[&str]) -> Value {
+    let wrk = Workdir::new(name);
+    let mut csv = vec![svec!["id", "loc"]];
+    for (i, r) in rows.iter().enumerate() {
+        csv.push(vec![i.to_string(), (*r).to_string()]);
+    }
+    wrk.create("pts.csv", csv);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("pts.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    read_output(&wrk, "out.json")
+}
+
+// Socrata exports locations as one WKT POINT (longitude latitude) column
+#[test]
+fn wkt_point_column_supplies_the_coordinates() {
+    let mut rows = vec!["POINT (-122.33 47.61)"; 5];
+    // no space before the parenthesis is a POINT too, and a POINT Z's
+    // third number (elevation) is not its latitude
+    rows.extend(["POINT(-122.1 47.5)"; 2]);
+    // (it widens the bbox, so dropping it would show)
+    rows.push("POINT Z (-122.4 47.7 120)");
+    // tab-separated ordinates are a point too (and widen the bbox)
+    rows.push("POINT (-122.05\t47.45)");
+    // one ordinate is no point: not (45.1, 45.1) (roborev 6180)
+    rows.push("POINT (45.1)");
+    // runs of spaces, and padding inside the parentheses, still separate
+    // two ordinates (Codacy on #4974); both widen the bbox, so a value
+    // that failed to parse would show
+    rows.push("POINT (  -122.5   47.8  )");
+    rows.push("POINT (-122 \t 47.4)");
+    // the geocoder-failure placeholder is excluded, as for lat/lon columns
+    rows.push("POINT (0 0)");
+    let out = profile_points("profile_wkt_point", &rows);
+
+    assert_eq!(out["dpp"]["POINT_FIELD"], "loc");
+    // longitude first: swapped, every latitude would be out of range
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-122.5 47.4, -122.5 47.8, -122 47.8, -122 47.4, -122.5 47.4))"
+    );
+    let notes = warnings_for(&out, "spatial");
+    assert!(
+        notes.iter().any(|w| w["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("excluded 1 row(s) whose `loc` points"))),
+        "{notes:?}"
+    );
+    // 2 decimal places: 0.01 degree of latitude, ~1.11 km
+    assert_eq!(
+        out["projection"]["distribution"][0]["spatialResolutionInMeters"],
+        "1110"
+    );
+}
+
+#[test]
+fn wkt_point_detection_needs_the_parenthesis_and_lat_lon_columns_win() {
+    // a column with empty points is still a POINT column (roborev 6180)
+    let out = profile_points(
+        "profile_wkt_point_empty",
+        &[
+            "POINT (-71.06 42.36)",
+            "POINT EMPTY",
+            "POINT (-71.05 42.35)",
+        ],
+    );
+    assert_eq!(out["dpp"]["POINT_FIELD"], "loc");
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
+    );
+
+    // an all-empty POINT column must not shadow a later column of real
+    // points (roborev 6183)
+    let wrk = Workdir::new("profile_wkt_point_empty_first");
+    wrk.create(
+        "two.csv",
+        vec![
+            svec!["planned", "actual"],
+            svec!["POINT EMPTY", "POINT (-71.06 42.36)"],
+            svec!["POINT EMPTY", "POINT (-71.05 42.35)"],
+        ],
+    );
+    let mut cmd = wrk.command("profile");
+    cmd.arg("two.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(out["dpp"]["POINT_FIELD"], "actual");
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
+    );
+
+    // EWKT and GeoJSON text are not WKT POINT columns (documented scope)
+    for (name, values) in [
+        (
+            "profile_wkt_point_ewkt",
+            [
+                "SRID=4326;POINT(-71.06 42.36)",
+                "SRID=4326;POINT(-71.05 42.35)",
+            ],
+        ),
+        (
+            "profile_wkt_point_geojson",
+            [
+                r#"{"type":"Point","coordinates":[-71.06,42.36]}"#,
+                r#"{"type":"Point","coordinates":[-71.05,42.35]}"#,
+            ],
+        ),
+    ] {
+        let out = profile_points(name, &values);
+        assert!(
+            out["dpp"].get("POINT_FIELD").is_none(),
+            "{name}: {}",
+            out["dpp"]
+        );
+        assert!(out["projection"].get("spatial").is_none(), "{name}");
+    }
+
+    // place names that merely start with "Point"
+    let out = profile_points(
+        "profile_wkt_point_decoy",
+        &["Point Pleasant", "Point Reyes"],
+    );
+    assert!(out["dpp"].get("POINT_FIELD").is_none(), "{}", out["dpp"]);
+    assert!(out["projection"].get("spatial").is_none());
+
+    let wrk = Workdir::new("profile_wkt_point_and_lat_lon");
+    wrk.create(
+        "both.csv",
+        vec![
+            svec!["latitude", "longitude", "loc"],
+            svec!["42.36", "-71.06", "POINT (-122.33 47.61)"],
+            svec!["42.35", "-71.05", "POINT (-122.1 47.5)"],
+        ],
+    );
+    let mut cmd = wrk.command("profile");
+    cmd.arg("both.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(out["dpp"].get("POINT_FIELD").is_none(), "{}", out["dpp"]);
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
+    );
+}
+
+#[test]
+fn wkt_point_column_that_never_parses_is_noted() {
+    // out of range, and not numbers: a POINT column with no usable point
+    let out = profile_points(
+        "profile_wkt_point_unparsed",
+        &["POINT (500 500)", "POINT (abc def)"],
+    );
+    assert_eq!(out["dpp"]["POINT_FIELD"], "loc");
+    assert!(out["projection"].get("spatial").is_none());
+    let notes = warnings_for(&out, "spatial");
+    assert!(
+        notes.iter().any(|w| w["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("none of its values parse"))),
+        "{notes:?}"
+    );
+}
+
+// needs the `qsv geocode` child process
+#[cfg(feature = "geocode")]
+#[test]
+fn locate_samples_a_wkt_point_column() {
+    let wrk = Workdir::new("profile_locate_wkt_point");
+    let mut rows = vec![svec!["id", "Location"]];
+    for i in 0..20 {
+        rows.push(vec![i.to_string(), "POINT (-71.0589 42.3601)".to_string()]);
+    }
+    wrk.create("bos.csv", rows);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("bos.csv")
+        .args(["--locate", "geonames", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let place = &out["projection"]["spatial"][0];
+    assert_eq!(
+        place["prefLabel"], "Boston, Massachusetts, United States",
+        "{place}"
+    );
+    assert_eq!(
+        place["centroid"]["coordinates"],
+        json!([-71.0589, 42.3601]),
+        "{place}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // --describegpt / --infer / --tag-vocab
 // ---------------------------------------------------------------------------

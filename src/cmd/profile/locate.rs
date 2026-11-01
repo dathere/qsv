@@ -32,7 +32,7 @@ use std::{collections::HashMap, io::Write as _};
 
 use serde_json::{Value, json};
 
-use super::sql_backend::SqlBackend;
+use super::{derive::Coords, sql_backend::SqlBackend};
 use crate::{CliResult, util};
 
 /// How many coordinate cells are looked up. Census single-record
@@ -108,17 +108,10 @@ pub(super) fn locate(
     };
     let from_columns = !column_found.is_empty();
 
-    let lat = dpp
-        .get("LAT_FIELD")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty());
-    let lon = dpp
-        .get("LON_FIELD")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty());
-    let has_coordinates = lat.is_some() && lon.is_some();
-    if let (Some(lat), Some(lon)) = (lat, lon) {
-        match sample_cells(backend, lat, lon) {
+    let coords = Coords::from_dpp(dpp);
+    let has_coordinates = coords.is_some();
+    if let Some(coords) = coords {
+        match sample_cells(backend, &coords) {
             Some((cells, kept, centroid)) if !cells.is_empty() => {
                 primary.insert("centroid".to_string(), centroid);
                 let sampled: f64 = cells.iter().map(|c| c.rows).sum();
@@ -169,7 +162,8 @@ pub(super) fn locate(
                 }
             },
             _ => notes.push(format!(
-                "--locate: no valid `{lat}`/`{lon}` coordinates to look up"
+                "--locate: no valid {} to look up",
+                coords.describe()
             )),
         }
     } else if !mode.census() {
@@ -193,16 +187,12 @@ pub(super) fn locate(
 /// centroid as a GeoJSON Point. Invalid coordinates — out of range, or
 /// the (0, 0) placeholder — are excluded, as for the bbox. Ties order by
 /// the rounded point, so the sample is deterministic.
-fn sample_cells(backend: &SqlBackend, lat: &str, lon: &str) -> Option<(Vec<Cell>, f64, Value)> {
-    if lat.contains('"') || lon.contains('"') {
-        return None;
-    }
+fn sample_cells(backend: &SqlBackend, coords: &Coords) -> Option<(Vec<Cell>, f64, Value)> {
     // Read every column as text and cast explicitly: schema inference
     // over the first rows types `42, 42, ... 42.36` as an integer column
     // and the scan then fails on the first decimal.
     let backend = backend.clone().with_all_strings();
-    let la = format!(r#"TRY_CAST("{lat}" AS DOUBLE)"#);
-    let lo = format!(r#"TRY_CAST("{lon}" AS DOUBLE)"#);
+    let (la, lo) = coords.exprs();
     let keep = format!(
         "{la} BETWEEN -90 AND 90 AND {lo} BETWEEN -180 AND 180 AND NOT ({la} = 0 AND {lo} = 0)"
     );

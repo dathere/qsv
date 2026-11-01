@@ -18,7 +18,11 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-use crate::{CliError, CliResult, util};
+use crate::{
+    CliError, CliResult,
+    config::{Config, Delimiter},
+    util,
+};
 
 /// The `llm` projection-context value and its by-products.
 pub(super) struct LlmMetadata {
@@ -94,27 +98,30 @@ pub(super) fn read_describegpt_json(path: &str) -> CliResult<Value> {
 pub(super) fn run_describegpt(
     input_path: &str,
     tag_vocab: Option<&str>,
-    delimiter: u8,
+    delimiter: Option<Delimiter>,
     no_headers: bool,
 ) -> Result<Value, String> {
-    // describegpt has no --delimiter / --no-headers, so when profile
-    // reads the file differently from the defaults, hand it a normalized
-    // copy whose columns are the ones profile analyzed.
-    let normalized = if delimiter != b',' || no_headers {
-        Some(normalized_copy(input_path, delimiter, no_headers).map_err(|e| e.to_string())?)
-    } else {
-        None
-    };
-    let input_path = normalized.as_ref().map_or_else(
-        || input_path.to_string(),
-        |f| f.path().to_string_lossy().to_string(),
-    );
-    let out = tempfile::Builder::new()
+    // describegpt has no --delimiter / --no-headers, so when profile is
+    // told how to read the file, hand describegpt a normalized copy whose
+    // columns are the ones profile analyzed. The copy lives in its own
+    // directory: describegpt's stats pass writes sidecar files next to
+    // its input, and they must go when the directory does.
+    let workdir = tempfile::Builder::new()
         .prefix("qsv-profile-describegpt")
-        .suffix(".json")
-        .tempfile()
+        .tempdir()
         .map_err(|e| e.to_string())?;
-    let out_path = out.path().to_string_lossy().to_string();
+    let input_path = if delimiter.is_some() || no_headers {
+        let copy = workdir.path().join("input.csv");
+        normalized_copy(input_path, delimiter, no_headers, &copy).map_err(|e| e.to_string())?;
+        copy.to_string_lossy().to_string()
+    } else {
+        input_path.to_string()
+    };
+    let out_path = workdir
+        .path()
+        .join("describegpt.json")
+        .to_string_lossy()
+        .to_string();
     let mut args = vec!["--all", "--format", "json", "--output", &out_path];
     if let Some(v) = tag_vocab {
         args.extend(["--tag-vocab", v]);
@@ -133,37 +140,32 @@ pub(super) fn run_describegpt(
     read_describegpt_json(&out_path).map_err(|e| e.to_string())
 }
 
-/// A comma-delimited copy of `input_path` read with `delimiter`; with
-/// `no_headers`, headed by the 0-based column indices that name
-/// profile's columns in that mode.
+/// Write a comma-delimited copy of `input_path` to `dest`, read the way
+/// profile reads it (qsv's `Config`: decompression, comments, preamble,
+/// `delimiter`). With `no_headers`, the copy is headed by the 0-based
+/// column indices that name profile's columns in that mode.
 fn normalized_copy(
     input_path: &str,
-    delimiter: u8,
+    delimiter: Option<Delimiter>,
     no_headers: bool,
-) -> CliResult<tempfile::NamedTempFile> {
-    let mut rdr = csv::ReaderBuilder::new()
+    dest: &Path,
+) -> CliResult<()> {
+    let mut rdr = Config::new(Some(&input_path.to_string()))
         .delimiter(delimiter)
-        .has_headers(false)
+        .no_headers(true)
         .flexible(true)
-        .from_path(input_path)?;
-    let out = tempfile::Builder::new()
-        .prefix("qsv-profile-describegpt-input")
-        .suffix(".csv")
-        .tempfile()?;
-    {
-        let mut wtr = csv::Writer::from_path(out.path())?;
-        let mut record = csv::ByteRecord::new();
-        let mut first = true;
-        while rdr.read_byte_record(&mut record)? {
-            if first && no_headers {
-                wtr.write_record((0..record.len()).map(|i| i.to_string()))?;
-            }
-            first = false;
-            wtr.write_byte_record(&record)?;
+        .reader()?;
+    let mut wtr = csv::Writer::from_path(dest)?;
+    let mut record = csv::ByteRecord::new();
+    let mut first = true;
+    while rdr.read_byte_record(&mut record)? {
+        if first && no_headers {
+            wtr.write_record((0..record.len()).map(|i| i.to_string()))?;
         }
-        wtr.flush()?;
+        first = false;
+        wtr.write_byte_record(&record)?;
     }
-    Ok(out)
+    Ok(wtr.flush()?)
 }
 
 /// A phase's `response`: older describegpt versions wrote Tags and
@@ -505,8 +507,31 @@ mod normalize_tests {
     fn normalized_copy_rewrites_the_delimiter_and_names_headerless_columns() {
         let mut f = tempfile::Builder::new().suffix(".csv").tempfile().unwrap();
         f.write_all(b"1;a,b\n2;c\n").unwrap();
-        let out = normalized_copy(&f.path().to_string_lossy(), b';', true).unwrap();
-        let text = std::fs::read_to_string(out.path()).unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        normalized_copy(
+            &f.path().to_string_lossy(),
+            Some(Delimiter(b';')),
+            true,
+            dest.path(),
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(dest.path()).unwrap();
         assert_eq!(text, "0,1\n1,\"a,b\"\n2,c\n");
+    }
+
+    #[test]
+    fn normalized_copy_keeps_a_header_row_and_an_explicit_comma() {
+        // a comma-separated file named .tsv: the explicit delimiter wins over the extension
+        let mut f = tempfile::Builder::new().suffix(".tsv").tempfile().unwrap();
+        f.write_all(b"a,b\n1,2\n").unwrap();
+        let dest = tempfile::NamedTempFile::new().unwrap();
+        normalized_copy(
+            &f.path().to_string_lossy(),
+            Some(Delimiter(b',')),
+            false,
+            dest.path(),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(dest.path()).unwrap(), "a,b\n1,2\n");
     }
 }

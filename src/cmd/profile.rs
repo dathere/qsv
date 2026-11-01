@@ -681,7 +681,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             match llm::run_describegpt(
                 &input_path,
                 args.flag_tag_vocab.as_deref(),
-                resolved_delimiter,
+                args.flag_delimiter,
                 args.flag_no_headers,
             ) {
                 Ok(v) => Some(v),

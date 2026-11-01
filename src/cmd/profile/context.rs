@@ -345,26 +345,41 @@ fn detect_lat_lon(stats: &[StatsData]) -> (Option<String>, Option<String>) {
 /// are still longitude and latitude); EWKT (`SRID=4326;POINT(…)`) does
 /// not.
 fn detect_point_field(stats: &[StatsData]) -> Option<String> {
-    let is_point = |s: &Option<String>| {
-        s.as_deref().is_some_and(|v| {
+    // Some(true): a point with coordinates; Some(false): `POINT EMPTY`
+    let point = |s: &Option<String>| -> Option<bool> {
+        s.as_deref().and_then(|v| {
             let v = v.trim_start();
             if !v.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("POINT")) {
-                return false;
+                return None;
             }
             // an optional Z / M / ZM dimension tag before the parenthesis
             let rest = v[5..].trim_start();
             let rest = rest.trim_start_matches(['Z', 'z', 'M', 'm']).trim_start();
             // `POINT EMPTY` sorts after `POINT (`, so a column with empty
             // points has it as its max; it is a POINT, just not a usable one
-            rest.starts_with('(')
-                || rest
-                    .get(..5)
-                    .is_some_and(|e| e.eq_ignore_ascii_case("EMPTY"))
+            if rest.starts_with('(') {
+                Some(true)
+            } else if rest
+                .get(..5)
+                .is_some_and(|e| e.eq_ignore_ascii_case("EMPTY"))
+            {
+                Some(false)
+            } else {
+                None
+            }
         })
     };
     stats
         .iter()
-        .find(|sd| sd.r#type == "String" && is_point(&sd.min) && is_point(&sd.max))
+        .find(|sd| {
+            sd.r#type == "String"
+                && match (point(&sd.min), point(&sd.max)) {
+                    // an all-`POINT EMPTY` column has nothing to offer, and
+                    // must not shadow a later column of real points
+                    (Some(lo), Some(hi)) => lo || hi,
+                    _ => false,
+                }
+        })
         .map(|sd| sd.field.clone())
 }
 

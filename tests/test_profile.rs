@@ -5046,6 +5046,27 @@ fn wkt_point_detection_needs_the_parenthesis_and_lat_lon_columns_win() {
         "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
     );
 
+    // an all-empty POINT column must not shadow a later column of real
+    // points (roborev 6183)
+    let wrk = Workdir::new("profile_wkt_point_empty_first");
+    wrk.create(
+        "two.csv",
+        vec![
+            svec!["planned", "actual"],
+            svec!["POINT EMPTY", "POINT (-71.06 42.36)"],
+            svec!["POINT EMPTY", "POINT (-71.05 42.35)"],
+        ],
+    );
+    let mut cmd = wrk.command("profile");
+    cmd.arg("two.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(out["dpp"]["POINT_FIELD"], "actual");
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
+    );
+
     // place names that merely start with "Point"
     let out = profile_points(
         "profile_wkt_point_decoy",

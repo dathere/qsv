@@ -310,6 +310,7 @@ pub(super) fn build(dg: &Value, vocab: Option<&TagVocab>, headers: &[String]) ->
             .or(Some(&dict))
             .and_then(Value::as_array);
         let mut by_name = Map::new();
+        let mut named = 0_usize;
         for f in fields.into_iter().flatten() {
             let text = |k: &str| {
                 get_ci(f, k)
@@ -322,6 +323,7 @@ pub(super) fn build(dg: &Value, vocab: Option<&TagVocab>, headers: &[String]) ->
             if !headers.contains(&name) {
                 continue;
             }
+            named += 1;
             let mut entry = Map::new();
             if let Some(label) = text("label") {
                 entry.insert("label".into(), json!(label));
@@ -333,7 +335,18 @@ pub(super) fn build(dg: &Value, vocab: Option<&TagVocab>, headers: &[String]) ->
                 by_name.insert(name, Value::Object(entry));
             }
         }
-        if by_name.is_empty() && fields.is_some_and(|f| !f.is_empty()) {
+        if by_name.is_empty() && named > 0 {
+            notes.push((
+                "distribution/0/csvw:tableSchema".into(),
+                format!(
+                    "the describegpt Dictionary names {named} of this file's columns but gives \
+                     none of them a label or description (the LLM's answer was likely unusable); \
+                     it was not used. describegpt caches answers, so to retry, run `qsv \
+                     describegpt <file> --all --fresh --format json --output dg.json` and pass \
+                     `--describegpt dg.json`"
+                ),
+            ));
+        } else if by_name.is_empty() && fields.is_some_and(|f| !f.is_empty()) {
             notes.push((
                 "distribution/0/csvw:tableSchema".into(),
                 "the describegpt Dictionary names none of this file's columns (was it generated \
@@ -466,10 +479,28 @@ mod tests {
     fn dictionary_for_another_file_is_noted_not_used() {
         let m = build(&dg(), None, &["other".into()]);
         assert!(m.context.get("dictionary").is_none());
+        assert!(m.notes.iter().any(|(f, msg)| {
+            f == "distribution/0/csvw:tableSchema" && msg.contains("names none of this file's")
+        }));
+    }
+
+    #[test]
+    fn dictionary_with_only_blank_labels_is_noted_as_unusable() {
+        // gpt-oss-20b answered describegpt --all with every label and description empty
+        let dg = json!({ "Dictionary": { "response": { "fields": [
+            { "name": "a", "label": "", "description": "" },
+            { "name": "b", "label": " ", "description": "" },
+        ] } } });
+        let m = build(&dg, None, &["a".into(), "b".into()]);
+        assert!(m.context.is_null());
+        assert!(m.notes.iter().any(|(f, msg)| {
+            f == "distribution/0/csvw:tableSchema"
+                && msg.contains("names 2 of this file's columns but gives none of them a label")
+        }));
         assert!(
-            m.notes
+            !m.notes
                 .iter()
-                .any(|(f, _)| f == "distribution/0/csvw:tableSchema")
+                .any(|(_, msg)| msg.contains("names none of this file's"))
         );
     }
 

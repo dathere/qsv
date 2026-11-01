@@ -11074,7 +11074,10 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
             stats:     "field,type,cardinality,nullcount,min,max\npark,String,1,0,Central \
                         Park,Central Park\n"
                 .to_string(),
-            frequency: "field,value,count,percentage,rank\npark,Central Park,9,100.0,1\n"
+            // a trailing-space variant is a separate frequency value, but the
+            // same text
+            frequency: "field,value,count,percentage,rank\npark,Central \
+                        Park,8,88.9,1\npark,\"Central Park \",1,11.1,2\n"
                 .to_string(),
             headers:   "park".to_string(),
             file_hash: String::new(),

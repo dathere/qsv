@@ -7542,7 +7542,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --two-pass requires a dictionary-producing inference flag (--dictionary, --all, or
     // --prompt, which internally builds a dictionary for SQL RAG context).
-    if args.flag_two_pass && !args.flag_dictionary && !args.flag_all && args.flag_prompt.is_none() {
+    // With --forget, --two-pass says how the forgotten run built its dictionary (a later
+    // phase's key includes that dictionary), so `--description --two-pass --forget` is valid.
+    if args.flag_two_pass
+        && !args.flag_dictionary
+        && !args.flag_all
+        && args.flag_prompt.is_none()
+        && !args.flag_forget
+    {
         return fail_incorrectusage_clierror!(
             "--two-pass requires --dictionary, --all, or --prompt."
         );

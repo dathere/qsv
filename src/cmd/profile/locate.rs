@@ -503,27 +503,40 @@ fn column_regions(
     headers: &[String],
 ) -> (Vec<Value>, Vec<String>) {
     let state = state_column(dppf, headers);
-    let county = headers
-        .iter()
-        .find(|h| h.to_ascii_lowercase().contains("county"));
+    // a state column narrows every row's county even when too few of its
+    // values are US states to list states from it directly
+    let narrow = state.as_ref().map(|(header, ..)| header.as_str());
     let mut notes = Vec::new();
 
-    let (mut states, counties) = match county {
-        Some(county) => {
-            match county_column_regions(backend, county, state.as_ref().map(|s| s.0.as_str())) {
-                Ok((states, counties, mut more)) => {
-                    notes.append(&mut more);
-                    (states, counties)
-                },
-                Err(note) => {
-                    notes.push(note);
-                    (HashMap::new(), Vec::new())
-                },
-            }
+    // the first county-like column that qualifies; a `county_status`
+    // before the real `County` must not hide it
+    let mut rejected = Vec::new();
+    let mut found = None;
+    for county in headers
+        .iter()
+        .filter(|h| h.to_ascii_lowercase().contains("county"))
+    {
+        match county_column_regions(backend, county, narrow) {
+            Ok(regions) => {
+                found = Some(regions);
+                break;
+            },
+            Err(note) => rejected.push(note),
+        }
+    }
+    let (mut states, counties) = match found {
+        Some((states, counties, mut more)) => {
+            notes.append(&mut more);
+            (states, counties)
         },
-        None => (HashMap::new(), Vec::new()),
+        None => {
+            notes.append(&mut rejected);
+            (HashMap::new(), Vec::new())
+        },
     };
-    if let Some((header, from_column)) = state {
+    if let Some((header, from_column, resolved)) = state
+        && resolved >= STATE_COLUMN_MIN
+    {
         states = from_column;
         notes.insert(
             0,
@@ -546,16 +559,27 @@ fn column_regions(
     (out, notes)
 }
 
-/// The first column whose header mentions "state" and at least 90% of
-/// whose listed frequency (the top values qsv kept) is a USPS code, FIPS
-/// code or state name: its header, and its states weighted by row count.
+/// Share of a state column's listed values that must be US states for
+/// the column to list the dataset's states.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+const STATE_COLUMN_MIN: f64 = 0.9;
+/// Share that makes a column a state column at all, so it narrows each
+/// row's county to that row's state.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+const STATE_NARROW_MIN: f64 = 0.5;
+
+/// The column whose header mentions "state" and the largest share (at
+/// least [`STATE_NARROW_MIN`]) of whose listed frequency (the top values
+/// qsv kept) is a USPS code, FIPS code or state name: its header, its
+/// states weighted by row count, and that share.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn state_column(
     dppf: &Value,
     headers: &[String],
-) -> Option<(String, HashMap<String, (String, f64)>)> {
+) -> Option<(String, HashMap<String, (String, f64)>, f64)> {
     use crate::cmd::viz_census::{state_geoid_for_any_spelling, state_name_for_geoid};
 
+    let mut best: Option<(String, HashMap<String, (String, f64)>, f64)> = None;
     for header in headers {
         if !header.to_ascii_lowercase().contains("state") {
             continue;
@@ -583,18 +607,23 @@ fn state_column(
             }
         }
         let resolved: f64 = states.values().map(|(_, w)| w).sum();
-        if listed > 0.0 && resolved / listed >= 0.9 {
-            return Some((header.clone(), states));
+        if listed <= 0.0 {
+            continue;
+        }
+        let share = resolved / listed;
+        if share >= STATE_NARROW_MIN && best.as_ref().is_none_or(|(.., s)| share > *s) {
+            best = Some((header.clone(), states, share));
         }
     }
-    None
+    best
 }
 
 /// `part` as a percentage of `whole`, rounded DOWN to one decimal so a
 /// near-total share never reads as 100%, and a sliver never as 0%.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn share(part: f64, whole: f64) -> String {
-    let pct = (1000.0 * part / whole).floor() / 10.0;
+    // `+ 0.0` turns the -0.0 an empty f64 sum yields into 0.0
+    let pct = (1000.0 * part / whole).floor() / 10.0 + 0.0;
     if pct < 0.1 && part > 0.0 {
         "under 0.1%".to_string()
     } else {
@@ -716,15 +745,37 @@ fn county_column_regions(
     }
 
     let resolved: f64 = counties.values().map(|(_, w)| w).sum();
+    let unclear: f64 = ambiguous.values().map(|(_, w)| w).sum();
+    let ambiguity = (unclear > 0.0).then(|| {
+        let examples: Vec<String> = ranked(ambiguous)
+            .into_iter()
+            .take(3)
+            .map(|(_, name, _)| format!("`{name}`"))
+            .collect();
+        format!(
+            "{} of the `{county}` values name more than one county{} (e.g. {})",
+            share(unclear, total),
+            if state.is_none() {
+                " and there is no state column to tell them apart"
+            } else {
+                ""
+            },
+            examples.join(", ")
+        )
+    });
     if total <= 0.0 || resolved / total < COUNTY_MIN_RESOLVED {
         return Err(format!(
-            "--locate census: only {} of the `{county}` values name a US county; no county \
+            "--locate census: only {} of the `{county}` values name a US county{}; no county \
              Locations were added",
             if total > 0.0 {
                 share(resolved, total)
             } else {
                 "0%".to_string()
-            }
+            },
+            ambiguity
+                .as_deref()
+                .map(|a| format!(" ({a})"))
+                .unwrap_or_default()
         ));
     }
 
@@ -734,24 +785,8 @@ fn county_column_regions(
         share(resolved, total),
         table.vintage
     )];
-    let unclear: f64 = ambiguous.values().map(|(_, w)| w).sum();
-    if unclear > 0.0 {
-        let examples: Vec<String> = ranked(ambiguous)
-            .into_iter()
-            .take(3)
-            .map(|(_, name, _)| format!("`{name}`"))
-            .collect();
-        notes.push(format!(
-            "--locate census: {} of the `{county}` values name more than one county{} (e.g. {}); \
-             they were left out",
-            share(unclear, total),
-            if state.is_none() {
-                " and there is no state column to tell them apart"
-            } else {
-                ""
-            },
-            examples.join(", ")
-        ));
+    if let Some(a) = ambiguity {
+        notes.push(format!("--locate census: {a}; they were left out"));
     }
 
     let mut states: HashMap<String, (String, f64)> = HashMap::new();

@@ -4824,6 +4824,44 @@ fn locate_census_ignores_a_county_column_that_names_no_counties() {
     );
 }
 
+// roborev 6176 #1: a state column with too few US states to LIST states
+// from must still narrow each row's county to its own row's state
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_narrows_counties_by_a_partly_non_us_state_column() {
+    let mut rows = vec![svec!["id", "state", "county"]];
+    push_rows(&mut rows, 8, &["PA", "Allegheny County"]);
+    // an Ontario row is no US county, whatever its name matches nationwide
+    push_rows(&mut rows, 2, &["ON", "Hampden County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_partial_state", rows);
+
+    assert_eq!(ids, ["42", "42003"], "{notes}");
+}
+
+// roborev 6176 #3 and #4: a decoy county-like column must not hide the
+// real one, and a rejected column explains its ambiguous names
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_tries_each_county_column_and_explains_ambiguity() {
+    let mut rows = vec![svec!["id", "county_status", "County"]];
+    push_rows(&mut rows, 5, &["pending", "Allegheny County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_second_column", rows);
+    assert_eq!(ids, ["42", "42003"], "{notes}");
+    assert!(notes.contains("from the `County` column"), "{notes}");
+
+    let mut rows = vec![svec!["id", "county"]];
+    push_rows(&mut rows, 4, &["Washington County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_all_ambiguous", rows);
+    assert!(ids.is_empty(), "{ids:?}");
+    assert!(
+        notes.contains(
+            "only 0.0% of the `county` values name a US county (100.0% of the `county` values \
+             name more than one county and there is no state column"
+        ),
+        "{notes}"
+    );
+}
+
 // needs the `qsv geocode` child process
 #[cfg(feature = "geocode")]
 #[test]

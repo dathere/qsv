@@ -30,7 +30,8 @@ For DCAT-US v3 the projection also COMPUTES properties that are tedious to
 author by hand, from the same statistics: temporal coverage and resolution
 (an exact xsd:duration: a regular series' step, else recording precision),
 spatial bounding box (excluding out-of-range and (0, 0) placeholder
-coordinates) and resolution, an update schedule (only for
+coordinates) and resolution - from latitude/longitude columns or, without
+them, a WKT `POINT (longitude latitude)` column - an update schedule (only for
 a regular calendar series), the content language, DQV quality measurements
 (completeness, plus duplicate rows and CSV/UTF-8 validity with `--validate`),
 and a CSVW table schema with per-column constraints (required, ranges,

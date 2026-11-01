@@ -1310,7 +1310,7 @@ fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
 /// bucket in frequency output and would otherwise contribute nothing. Falls back to
 /// the headers when the collected text is trivially short (e.g. an all-numeric
 /// dataset) or when parsing fails (detection is best-effort; errors are never
-/// propagated).
+/// propagated). Each distinct value is included once.
 #[cfg(feature = "whatlang")]
 fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String {
     const MAX_SAMPLE_BYTES: usize = 8_192;
@@ -1339,8 +1339,16 @@ fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String
         .collect();
 
     let mut sample = String::with_capacity(4_096);
+    // Each distinct value contributes once. The detector's only safeguard is
+    // that disjoint chunks of the sample AGREE, and repeated text defeats it:
+    // a column holding just "Central Park" (frequency entry + stats min +
+    // max) made three identical chunks that trivially agreed - on Spanish.
+    let mut seen: HashSet<String> = HashSet::default();
     let mut push_value = |value: &str| {
-        if sample.len() >= MAX_SAMPLE_BYTES || value.is_empty() {
+        if sample.len() >= MAX_SAMPLE_BYTES
+            || value.is_empty()
+            || !seen.insert(value.trim().to_string())
+        {
             return;
         }
         if !sample.is_empty() {
@@ -11087,6 +11095,32 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
             sample.len()
         );
         assert!(sample.starts_with("café con leche"));
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_sample_counts_each_value_once() {
+        // A column holding one value contributes it three times - its
+        // frequency entry and its stats min and max. Three identical chunks
+        // trivially pass the chunk-agreement gate, which is the detector's
+        // only safeguard: "Central Park" x3 read as Spanish. Each distinct
+        // value now contributes once, leaving too little text to detect.
+        let analysis_results = AnalysisResults {
+            stats:     "field,type,cardinality,nullcount,min,max\npark,String,1,0,Central \
+                        Park,Central Park\n"
+                .to_string(),
+            // a trailing-space variant is a separate frequency value, but the
+            // same text
+            frequency: "field,value,count,percentage,rank\npark,Central \
+                        Park,8,88.9,1\npark,\"Central Park \",1,11.1,2\n"
+                .to_string(),
+            headers:   "park".to_string(),
+            file_hash: String::new(),
+            delimiter: ',',
+        };
+        let sample = build_language_detection_sample(&analysis_results);
+        assert_eq!(sample.matches("Central Park").count(), 1, "{sample}");
+        assert_eq!(detect_language_in_text(&sample, None), None, "{sample}");
     }
 
     /// The exact sample `build_language_detection_sample` produces for

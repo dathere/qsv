@@ -183,48 +183,50 @@ impl Coords {
         (!names.iter().any(|n| n.contains('"'))).then_some(coords)
     }
 
-    /// SQL text expressions for the latitude and longitude, over a
-    /// backend reading every column as text. For a POINT column, the
-    /// first token inside the parentheses is the longitude and the next
-    /// the latitude (a `POINT Z`/`M` value's extra numbers are ignored);
-    /// a `POINT EMPTY` or non-POINT value yields text that does not
-    /// cast, so its row drops out.
-    pub(super) fn texts(&self) -> (String, String) {
+    /// SQL text expressions for the latitude and longitude, and the
+    /// source to select them `FROM`, over a backend reading every column
+    /// as text. For a POINT column, the source first extracts each row's
+    /// parenthesised text once (as `pt`); the first token in it is the
+    /// longitude and the next the latitude (a `POINT Z`/`M` value's extra
+    /// numbers are ignored). A `POINT EMPTY` or non-POINT value yields
+    /// text that does not cast, so its row drops out.
+    fn texts(&self) -> (String, String, String) {
         match self {
-            Self::Columns { lat, lon } => (format!(r#""{lat}""#), format!(r#""{lon}""#)),
-            Self::Point(p) => {
-                // tabs separate ordinates as well as spaces
-                let inner = format!(
-                    "(CASE WHEN UPPER(LTRIM(\"{p}\")) LIKE 'POINT%' THEN \
-                     TRIM(REPLACE(SPLIT_PART(SPLIT_PART(\"{p}\", '(', 2), ')', 1), '\t', ' ')) \
-                     END)"
-                );
-                // the latitude is the first token after the longitude, so
-                // a POINT Z/M value's third and fourth numbers are ignored;
+            Self::Columns { lat, lon } => (
+                format!(r#""{lat}""#),
+                format!(r#""{lon}""#),
+                "data".to_string(),
+            ),
+            Self::Point(p) => (
+                // the latitude is the first token after the longitude, so a
+                // POINT Z/M value's third and fourth numbers are ignored;
                 // with no second token (`POINT (-71)`) there is no latitude,
                 // rather than the longitude read twice
-                (
-                    format!(
-                        "(CASE WHEN STRPOS({inner}, ' ') > 0 THEN SPLIT_PART(TRIM(SUBSTR({inner}, \
-                         STRPOS({inner}, ' ') + 1)), ' ', 1) END)"
-                    ),
-                    format!("SPLIT_PART({inner}, ' ', 1)"),
-                )
-            },
+                "(CASE WHEN STRPOS(pt, ' ') > 0 THEN SPLIT_PART(TRIM(SUBSTR(pt, STRPOS(pt, ' ') + \
+                 1)), ' ', 1) END)"
+                    .to_string(),
+                "SPLIT_PART(pt, ' ', 1)".to_string(),
+                // tabs separate ordinates as well as spaces
+                format!(
+                    "(SELECT (CASE WHEN UPPER(LTRIM(\"{p}\")) LIKE 'POINT%' THEN \
+                     TRIM(REPLACE(SPLIT_PART(SPLIT_PART(\"{p}\", '(', 2), ')', 1), '\t', ' ')) \
+                     END) AS pt FROM data) AS point_text"
+                ),
+            ),
         }
     }
 
     /// A derived table of the coordinates — `lat_t`/`lon_t` (the text)
     /// and `la`/`lo` (cast to DOUBLE) — to select `FROM`, over a backend
-    /// reading every column as text. Each row's text is extracted ONCE:
-    /// inlining the POINT extraction into every aggregate repeated it
-    /// ~20 times a row, which Polars does not factor out (1.32 s vs
-    /// 0.05 s on 300k points).
+    /// reading every column as text. Each row's POINT text is extracted
+    /// once, in the innermost projection: inlining the extraction into
+    /// every aggregate repeated it ~20 times a row, which Polars does not
+    /// factor out (1.32 s vs 0.04 s on 300k points).
     pub(super) fn table(&self) -> String {
-        let (la_t, lo_t) = self.texts();
+        let (la_t, lo_t, from) = self.texts();
         format!(
             "(SELECT TRY_CAST(lat_t AS DOUBLE) AS la, TRY_CAST(lon_t AS DOUBLE) AS lo, lat_t, \
-             lon_t FROM (SELECT {la_t} AS lat_t, {lo_t} AS lon_t FROM data) AS coord_text) AS \
+             lon_t FROM (SELECT {la_t} AS lat_t, {lo_t} AS lon_t FROM {from}) AS coord_text) AS \
              coords"
         )
     }

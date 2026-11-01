@@ -4830,12 +4830,20 @@ fn locate_census_ignores_a_county_column_that_names_no_counties() {
 #[test]
 fn locate_census_narrows_counties_by_a_partly_non_us_state_column() {
     let mut rows = vec![svec!["id", "state", "county"]];
-    push_rows(&mut rows, 8, &["PA", "Allegheny County"]);
-    // an Ontario row is no US county, whatever its name matches nationwide
-    push_rows(&mut rows, 2, &["ON", "Hampden County"]);
+    push_rows(&mut rows, 4, &["PA", "Allegheny County"]);
+    // Ontario rows are no US county, whatever their names match
+    // nationwide — even when they are most of the column (roborev 6179)
+    push_rows(&mut rows, 6, &["ON", "Hampden County"]);
     let (ids, _, notes) = locate_region_columns("profile_locate_county_partial_state", rows);
 
-    assert_eq!(ids, ["42", "42003"], "{notes}");
+    assert!(
+        !ids.iter().any(|id| id.starts_with("25")),
+        "{ids:?} {notes}"
+    );
+    assert!(
+        notes.contains("only 40.0% of the `county` values"),
+        "{notes}"
+    );
 }
 
 // roborev 6176 #3 and #4: a decoy county-like column must not hide the

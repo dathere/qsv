@@ -563,15 +563,14 @@ fn column_regions(
 /// the column to list the dataset's states.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 const STATE_COLUMN_MIN: f64 = 0.9;
-/// Share that makes a column a state column at all, so it narrows each
-/// row's county to that row's state.
-#[cfg(all(feature = "viz", feature = "feature_capable"))]
-const STATE_NARROW_MIN: f64 = 0.5;
-
-/// The column whose header mentions "state" and the largest share (at
-/// least [`STATE_NARROW_MIN`]) of whose listed frequency (the top values
-/// qsv kept) is a USPS code, FIPS code or state name: its header, its
-/// states weighted by row count, and that share.
+/// The column whose header mentions "state" and the largest share of
+/// whose listed frequency (the top values qsv kept) is a USPS code, FIPS
+/// code or state name: its header, its states weighted by row count,
+/// and that share. Any share above zero makes it a state column, so it
+/// narrows every row's county to that row's state — a mostly non-US
+/// column then declines county inference rather than matching its rows
+/// nationwide — while a header such as `Statement Date`, with no US
+/// state at all, is not one.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn state_column(
     dppf: &Value,
@@ -611,7 +610,7 @@ fn state_column(
             continue;
         }
         let share = resolved / listed;
-        if share >= STATE_NARROW_MIN && best.as_ref().is_none_or(|(.., s)| share > *s) {
+        if share > 0.0 && best.as_ref().is_none_or(|(.., s)| share > *s) {
             best = Some((header.clone(), states, share));
         }
     }

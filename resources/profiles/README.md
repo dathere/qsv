@@ -75,11 +75,15 @@ undefined, not an error, when its inputs are absent, so guard with
 | `quality_measurements(stats, dpp, dims, rfc4180)` | DQV `QualityMeasurement` array; `dims` maps `completeness` / `conciseness` / `syntacticValidity` to dimension IRIs. |
 | `build_csvw_schema_rich(stats, dppf, headers, rows)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). |
 | `detect_data_language(stats, dppf)` | ISO 639-1 code of the text values (needs the `whatlang` feature). |
+| `with_located(base, located)` | `base` (a `[Location]`, e.g. from `robust_bbox`) with the `--locate` results folded in: `located.primary` keys merge into the first Location (keys it already has win), `located.regions` follow it, and `located.notes` become Info warnings. With `located` null, `base` is returned unchanged. |
 
 The projection context also exposes `dppf` (per-column frequency),
 `headers` (column names in file order — template maps iterate
 key-sorted), `rfc4180` (`{valid}` when `--validate` ran `qsv
-validate`, else null; lenient, so not proof of strict RFC 4180) and `http_last_modified` (URL inputs).
+validate`, else null; lenient, so not proof of strict RFC 4180), `http_last_modified` (URL inputs)
+and `located` (`--locate`, else null): `{primary, regions, notes}`, where `primary` holds the
+centroid and any GeoNames `prefLabel` / `identifier` / `inScheme` for the bbox Location, and
+`regions` the US Census state and county Locations.
 
 ## Catalog envelope
 

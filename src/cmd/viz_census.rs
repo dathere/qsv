@@ -670,6 +670,16 @@ pub fn state_geoid_for_name(raw: &str) -> Option<&'static str> {
         })
 }
 
+/// The name of the state (or DC / territory) whose 2-digit GEOID is `geoid`, e.g. "25" →
+/// "Massachusetts".
+#[must_use]
+pub fn state_name_for_geoid(geoid: &str) -> Option<&'static str> {
+    USPS_STATE_FIPS
+        .iter()
+        .find(|(_, fips, _)| *fips == geoid)
+        .map(|(.., name)| *name)
+}
+
 /// Is `values` a column of STATE codes and nothing else a finer layer could claim?
 ///
 /// True when at least half of the non-empty values are state codes ([`is_state_code`]) AND no

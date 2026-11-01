@@ -94,6 +94,7 @@ pub fn register(env: &mut Environment) {
     env.add_function("build_csvw_schema_rich", build_csvw_schema_rich);
     env.add_function("detect_data_language", detect_data_language);
     env.add_function("robust_bbox", robust_bbox);
+    env.add_function("with_located", with_located);
 }
 
 // ---------------------------------------------------------------------
@@ -291,6 +292,51 @@ fn filtered_bounds(lat: &str, lon: &str) -> Option<(f64, f64, f64, f64)> {
         ));
     }
     Some((f("min_lon")?, f("max_lon")?, f("min_lat")?, f("max_lat")?))
+}
+
+/// `with_located(base, located)` — the `spatial` Location array with the
+/// `--locate` results folded in: `located.primary` (prefLabel,
+/// identifier, gazetteer, centroid) merges into the first Location —
+/// the bbox, whose label it is — and `located.regions` (Census states
+/// and counties) follow it. Keys the base Location already has win.
+/// Without `--locate` (`located` null) the base passes through
+/// unchanged; with no base, the regions alone are returned.
+fn with_located(base: Value, located: Value) -> Value {
+    let located = to_json(&located);
+    let base_json = to_json(&base);
+    if !located.is_object() {
+        return base;
+    }
+    for note in located
+        .get("notes")
+        .and_then(Json::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Json::as_str)
+    {
+        push_note(note.to_string());
+    }
+    let mut out: Vec<Json> = base_json.as_array().cloned().unwrap_or_default();
+    if let (Some(first), Some(primary)) = (
+        out.first_mut().and_then(Json::as_object_mut),
+        located.get("primary").and_then(Json::as_object),
+    ) {
+        for (k, v) in primary {
+            first.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+    }
+    out.extend(
+        located
+            .get("regions")
+            .and_then(Json::as_array)
+            .into_iter()
+            .flatten()
+            .cloned(),
+    );
+    if out.is_empty() {
+        return Value::UNDEFINED;
+    }
+    Value::from(Serde(Json::Array(out)))
 }
 
 // ---------------------------------------------------------------------

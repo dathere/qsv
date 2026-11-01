@@ -4484,3 +4484,243 @@ fn profile_detects_content_language() {
     assert_eq!(out["projection"]["language"], "en");
     assert_eq!(out["projection_provenance"]["/language"], "inferred");
 }
+
+// ---------------------------------------------------------------------------
+// --locate
+// ---------------------------------------------------------------------------
+
+/// A minimal US Census Geocoder stand-in for `geographies/coordinates`:
+/// north of 42.8 is Hillsborough County NH, north of 42.33 is Suffolk
+/// County MA, anything else Norfolk County MA. One connection per request.
+fn start_census_mock() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+        sync::{Arc, atomic::AtomicUsize},
+    };
+
+    // Local mock-server bind address (not production code).
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // DevSkim: ignore DS162092
+    let addr = listener.local_addr().unwrap();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = hits.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            let _ = reader.read_line(&mut request_line);
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+            }
+            let query = request_line
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| path.split_once('?'))
+                .map(|(_, q)| q.to_string())
+                .unwrap_or_default();
+            let param = |name: &str| -> f64 {
+                query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix(&format!("{name}=")))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0.0)
+            };
+            let (x, y) = (param("x"), param("y"));
+            let (st, stname, co, coname) = if y > 42.8 {
+                ("33", "New Hampshire", "33011", "Hillsborough County")
+            } else if y >= 42.33 {
+                ("25", "Massachusetts", "25025", "Suffolk County")
+            } else {
+                ("25", "Massachusetts", "25021", "Norfolk County")
+            };
+            let body = json!({ "result": {
+                "input": { "location": { "x": x, "y": y } },
+                "geographies": {
+                    "States": [{ "GEOID": st, "STATE": st, "NAME": stname }],
+                    "Counties": [{ "GEOID": co, "STATE": st, "NAME": coname }],
+                },
+            }})
+            .to_string();
+            let mut stream = stream;
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                 {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    (format!("http://{addr}/geocoder"), hits) // DevSkim: ignore DS137138
+}
+
+/// 80 rows downtown Boston (Suffolk), 15 in Norfolk County, 3 in New
+/// Hampshire (3% — below the 5% region floor) and 2 (0, 0) placeholders.
+fn seed_locate_csv(wrk: &Workdir) {
+    let mut rows = vec![svec!["id", "latitude", "longitude"]];
+    let mut push = |n: usize, lat: &str, lon: &str| {
+        for _ in 0..n {
+            let id = (rows.len()).to_string();
+            rows.push(vec![id, lat.to_string(), lon.to_string()]);
+        }
+    };
+    push(80, "42.3601", "-71.0589");
+    push(15, "42.2500", "-71.1000");
+    push(3, "42.9956", "-71.4548");
+    push(2, "0", "0");
+    wrk.create("loc.csv", rows);
+}
+
+fn census_locate_cmd(wrk: &Workdir, url: &str) -> std::process::Command {
+    let mut cmd = wrk.command("profile");
+    cmd.env("QSV_CENSUS_GEOCODER_URL", url)
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("QSV_CENSUS_GEOCODER_RETRY_BASE_MS", "1")
+        .arg("loc.csv")
+        .args(["--locate", "census", "-o", "out.json"]);
+    cmd
+}
+
+#[test]
+fn locate_census_adds_weighted_state_and_county_locations() {
+    let wrk = Workdir::new("profile_locate_census");
+    seed_locate_csv(&wrk);
+    let (url, hits) = start_census_mock();
+    let mut cmd = census_locate_cmd(&wrk, &url);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let spatial = out["projection"]["spatial"].as_array().unwrap();
+
+    // the bbox Location stays first, gains the centroid of the valid rows
+    assert!(spatial[0]["bbox"].is_string(), "{spatial:?}");
+    assert_eq!(spatial[0]["centroid"]["type"], "Point");
+    let lat = spatial[0]["centroid"]["coordinates"][1].as_f64().unwrap();
+    let expected_lat = (80.0 * 42.3601 + 15.0 * 42.25 + 3.0 * 42.9956) / 98.0;
+    assert!((lat - expected_lat).abs() < 1e-5, "{lat} vs {expected_lat}");
+
+    // NH holds 3% of the rows: below the 5% floor, so neither it nor its
+    // county is listed; Norfolk (15%) is
+    let ids: Vec<&str> = spatial[1..]
+        .iter()
+        .map(|l| l["identifier"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["25", "25025", "25021"]);
+    assert_eq!(spatial[2]["prefLabel"], "Suffolk County, Massachusetts");
+    assert_eq!(spatial[2]["inScheme"]["@type"], "ConceptScheme");
+    // three distinct cells, one lookup each — (0, 0) is never sent
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 3);
+}
+
+#[test]
+fn locate_census_outage_is_noted_and_keeps_the_bbox() {
+    let wrk = Workdir::new("profile_locate_census_down");
+    seed_locate_csv(&wrk);
+    // nothing listens on port 9 (discard): every lookup fails
+    let mut cmd = census_locate_cmd(&wrk, "http://127.0.0.1:9/geocoder"); // DevSkim: ignore DS137138
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let spatial = out["projection"]["spatial"].as_array().unwrap();
+    assert_eq!(spatial.len(), 1, "{spatial:?}");
+    assert!(spatial[0]["bbox"].is_string());
+    let notes: Vec<&str> = out["projection_warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| w["field"] == "spatial")
+        .filter_map(|w| w["message"].as_str())
+        .collect();
+    assert!(
+        notes.iter().any(|m| m.contains("lookup failed")),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|m| m.contains("no sampled coordinate")),
+        "{notes:?}"
+    );
+}
+
+#[test]
+fn locate_off_leaves_spatial_unchanged() {
+    let wrk = Workdir::new("profile_locate_off");
+    seed_locate_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("loc.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let spatial = out["projection"]["spatial"].as_array().unwrap();
+    assert_eq!(spatial.len(), 1);
+    assert!(spatial[0].get("centroid").is_none(), "{spatial:?}");
+    assert!(spatial[0].get("prefLabel").is_none(), "{spatial:?}");
+}
+
+#[test]
+fn locate_rejects_an_unknown_mode() {
+    let wrk = Workdir::new("profile_locate_bad_mode");
+    seed_locate_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("loc.csv").args(["--locate", "tiger"]);
+    wrk.assert_err(&mut cmd);
+}
+
+// state columns resolve through viz_census, which qsvdp does not build
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_uses_a_state_column_without_coordinates() {
+    let wrk = Workdir::new("profile_locate_state_column");
+    let mut rows = vec![svec!["id", "state", "amount"]];
+    for i in 0..30 {
+        let st = if i < 20 {
+            "MA"
+        } else if i < 29 {
+            "New York"
+        } else {
+            "36"
+        };
+        rows.push(vec![i.to_string(), st.to_string(), (i * 10).to_string()]);
+    }
+    wrk.create("st.csv", rows);
+    let mut cmd = wrk.command("profile");
+    // no coordinates: no lookup is made, so a dead URL proves it
+    cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138
+        .arg("st.csv")
+        .args(["--locate", "census", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let spatial = out["projection"]["spatial"].as_array().unwrap();
+    let ids: Vec<&str> = spatial
+        .iter()
+        .map(|l| l["identifier"].as_str().unwrap())
+        .collect();
+    // "New York" and "36" are the same state
+    assert_eq!(ids, ["25", "36"]);
+    assert_eq!(spatial[1]["prefLabel"], "New York");
+}
+
+#[test]
+fn locate_geonames_labels_the_bbox_with_the_shared_place() {
+    let wrk = Workdir::new("profile_locate_geonames");
+    let mut rows = vec![svec!["id", "latitude", "longitude"]];
+    for i in 0..20 {
+        rows.push(vec![
+            i.to_string(),
+            "42.3601".to_string(),
+            "-71.0589".to_string(),
+        ]);
+    }
+    wrk.create("bos.csv", rows);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("bos.csv")
+        .args(["--locate", "geonames", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let place = &out["projection"]["spatial"][0];
+    assert_eq!(
+        place["prefLabel"], "Boston, Massachusetts, United States",
+        "{place}"
+    );
+    assert_eq!(place["identifier"], "https://sws.geonames.org/4930956/");
+    assert_eq!(place["inScheme"]["title"], "GeoNames");
+}

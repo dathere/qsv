@@ -5013,7 +5013,9 @@ fn infer_without_a_reachable_llm_warns_and_keeps_the_stats_description() {
     let mut cmd = wrk.command("profile");
     // nothing listens on port 9: describegpt fails fast
     cmd.env("QSV_LLM_BASE_URL", "http://127.0.0.1:9/v1") // DevSkim: ignore DS137138
-        .env_remove("QSV_LLM_APIKEY")
+        // a key, so describegpt gets as far as the (unreachable) server: 127.0.0.1 is not
+        // "localhost", the only base URL it lets through without one
+        .env("QSV_LLM_APIKEY", "unused")
         .arg("in.csv")
         .args(["--infer", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
@@ -5024,7 +5026,10 @@ fn infer_without_a_reachable_llm_warns_and_keeps_the_stats_description() {
         warnings_for(&out, "description")
             .iter()
             .any(|w| w["severity"] == "recommended"
-                && w["message"].as_str().unwrap().starts_with("--infer:")),
+                && w["message"].as_str().unwrap().starts_with("--infer:")
+                // describegpt's own error, not a generic "is an LLM configured?"
+                && w["message"].as_str().unwrap().contains("127.0.0.1:9")), /* DevSkim: ignore
+                                                                             * DS137138 */
         "{:?}",
         warnings_for(&out, "description")
     );

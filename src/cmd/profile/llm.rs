@@ -126,18 +126,42 @@ pub(super) fn run_describegpt(
     if let Some(v) = tag_vocab {
         args.extend(["--tag-vocab", v]);
     }
-    util::run_qsv_cmd(
-        "describegpt",
-        &args,
-        &input_path,
+    let start = std::time::Instant::now();
+    let output =
+        util::run_qsv_cmd_output("describegpt", &args, &input_path).map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let cause = describegpt_error(&String::from_utf8_lossy(&output.stderr));
+        return Err(format!(
+            "`qsv describegpt` failed{}{cause} (LLM settings: QSV_LLM_BASE_URL, QSV_LLM_MODEL and \
+             QSV_LLM_APIKEY)",
+            if cause.is_empty() { "" } else { ": " }
+        ));
+    }
+    util::print_status(
         "qsv profile: ran `describegpt` for --infer",
-    )
-    .map_err(|_| {
-        "`qsv describegpt` did not complete (is an LLM configured? see QSV_LLM_BASE_URL, \
-         QSV_LLM_MODEL and QSV_LLM_APIKEY)"
-            .to_string()
-    })?;
+        Some(start.elapsed()),
+    );
     read_describegpt_json(&out_path).map_err(|e| e.to_string())
+}
+
+/// describegpt's own error: the lines after its last progress line (`Interacting with
+/// LLM...`, `Analyzing data...`) or elapsed-time status, joined and capped.
+fn describegpt_error(stderr: &str) -> String {
+    let mut lines: Vec<&str> = stderr
+        .lines()
+        .rev()
+        .map(str::trim)
+        .skip_while(|l| l.is_empty())
+        .take_while(|l| !l.ends_with("...") && !l.contains("(elapsed:"))
+        .filter(|l| !l.is_empty())
+        .collect();
+    lines.reverse();
+    let msg = lines.join("; ");
+    if msg.chars().count() > 400 {
+        format!("{}…", msg.chars().take(400).collect::<String>())
+    } else {
+        msg
+    }
 }
 
 /// Write a comma-delimited copy of `input_path` to `dest`, read the way
@@ -564,5 +588,23 @@ mod normalize_tests {
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(dest.path()).unwrap(), "a,b\n1,2\n");
+    }
+
+    #[test]
+    fn describegpt_error_is_what_follows_the_last_progress_line() {
+        let bad_model = "Analyzing data...\nAnalyzed data. (elapsed: 0.04s)\n\nInteracting with \
+                         LLM...\nInvalid model: no-such-model\n  Valid models: a, b\n";
+        assert_eq!(
+            describegpt_error(bad_model),
+            "Invalid model: no-such-model; Valid models: a, b"
+        );
+        let dead_url = "\nInteracting with LLM...\nnetwork error: error sending request for url \
+                        (http://127.0.0.1:9/v1/models)\n"; // DevSkim: ignore DS137138
+        assert_eq!(
+            describegpt_error(dead_url),
+            "network error: error sending request for url (http://127.0.0.1:9/v1/models)" /* DevSkim: ignore DS137138 */
+        );
+        assert_eq!(describegpt_error("Interacting with LLM...\n\n"), "");
+        assert!(describegpt_error(&"x".repeat(500)).ends_with('…'));
     }
 }

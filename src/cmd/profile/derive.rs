@@ -715,7 +715,7 @@ fn quality_measurements(stats: Value, dpp: Value, dims: Value, rfc4180: Value) -
 /// Above this cardinality a column is not described as an enumeration.
 const CSVW_ENUM_MAX: u64 = 10;
 
-/// `build_csvw_schema_rich(stats, freq, headers?, rows?)` — a CSVW
+/// `build_csvw_schema_rich(stats, freq, headers?, rows?, dictionary?)` — a CSVW
 /// `tableSchema` whose columns carry machine-checkable constraints
 /// derived from stats and frequency, on top of the `build_csvw_schema`
 /// shape:
@@ -730,6 +730,11 @@ const CSVW_ENUM_MAX: u64 = 10;
 ///     cardinality EQUALS `rows` (the rounded `uniqueness_ratio` reads 1.0 for 99,999 distinct
 ///     values in 100,000 rows, so it is not evidence). Omitted when `rows` is not given.
 ///
+/// `dictionary` (the `llm.dictionary` map of column name →
+/// `{label, description}` from describegpt) adds the label to a
+/// column's `titles` and its description as `dc:description`, with an
+/// Info note that they are LLM-generated.
+///
 /// Columns follow `headers` (the file's order) when given. The legacy
 /// `qsv:*` per-column extensions are kept so existing consumers keep
 /// working.
@@ -738,8 +743,11 @@ fn build_csvw_schema_rich(
     freq: Value,
     headers: Option<Value>,
     rows: Option<Value>,
+    dictionary: Option<Value>,
 ) -> Value {
     let (stats, freq) = (to_json(&stats), to_json(&freq));
+    let dictionary = dictionary.map(|d| to_json(&d)).filter(Json::is_object);
+    let mut annotated = 0usize;
     let Some(cols) = stats.as_object() else {
         return Value::UNDEFINED;
     };
@@ -831,6 +839,21 @@ fn build_csvw_schema_rich(
         if nullcount == 0 && ty != "NULL" {
             col["required"] = Json::Bool(true);
         }
+        if let Some(entry) = dictionary.as_ref().and_then(|d| d.get(name)) {
+            let text = |k: &str| {
+                entry
+                    .get(k)
+                    .and_then(Json::as_str)
+                    .filter(|s| !s.is_empty())
+            };
+            if let Some(label) = text("label").filter(|l| l != name) {
+                col["titles"] = json!([name, label]);
+            }
+            if let Some(desc) = text("description") {
+                col["dc:description"] = Json::from(desc);
+            }
+            annotated += 1;
+        }
         columns.push(col);
 
         if primary_key.is_none()
@@ -842,6 +865,12 @@ fn build_csvw_schema_rich(
         {
             primary_key = Some(name.clone());
         }
+    }
+    if annotated > 0 {
+        push_note(format!(
+            "{annotated} column title(s)/description(s) come from an LLM data dictionary (qsv \
+             describegpt); verify before using"
+        ));
     }
     let mut schema = json!({ "columns": columns });
     if let Some(pk) = primary_key {
@@ -1243,6 +1272,7 @@ mod tests {
             Value::from(Serde(&freq)),
             Some(Value::from(Serde(&headers))),
             Some(Value::from(4)),
+            None,
         );
         let j = to_json(&v);
         assert_eq!(j["primaryKey"], "id");
@@ -1287,6 +1317,7 @@ mod tests {
             Value::from(Serde(json!({}))),
             None,
             Some(Value::from(100_000)),
+            None,
         );
         let j = to_json(&v);
         assert!(j.get("primaryKey").is_none(), "{j}");

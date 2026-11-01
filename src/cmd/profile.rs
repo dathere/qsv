@@ -156,6 +156,26 @@ profile options:
                               Also adds the coordinates' centroid. A lookup
                               that cannot run is noted in projection_warnings;
                               the bounding box is kept. Default: off.
+    --describegpt <json>      Use a `qsv describegpt --format json` result as
+                              LLM-inferred metadata (see also --infer). Its
+                              Description becomes the description, its Tags
+                              the keywords and its Dictionary labels and
+                              descriptions annotate the CSVW columns - all as
+                              inferred values, which supplied or discovered
+                              metadata replaces. describegpt's attribution
+                              footer moves to the `llm_attribution` block and
+                              the description gets a one-line disclosure.
+    --infer                   Run `qsv describegpt --all` on the input and use
+                              its result as with --describegpt. The LLM is
+                              configured through describegpt's QSV_LLM_*
+                              environment variables. If it cannot run, a
+                              warning is added and the statistics-based
+                              description is used.
+    --tag-vocab <file>        With --describegpt or --infer: a `tag,description`
+                              CSV (as for describegpt). Only tags in it are
+                              kept - describegpt only asks the LLM to keep to
+                              the vocabulary - and they also become `theme`
+                              Concepts carrying the vocabulary's description.
     --dcat-legacy-license     Also emit `license` on the Dataset, alongside
                               the Distribution-level copy. Both are valid
                               DCAT-US v3 (the Dataset-level property was
@@ -262,6 +282,7 @@ mod discovery_merge;
 mod external_validate;
 mod formula_engine;
 mod formula_helpers;
+mod llm;
 mod locate;
 mod profile_spec;
 mod projection;
@@ -285,6 +306,9 @@ struct Args {
     flag_no_ckan:                  bool,
     flag_croissant_frequency:      bool,
     flag_locate:                   Option<String>,
+    flag_describegpt:              Option<String>,
+    flag_infer:                    bool,
+    flag_tag_vocab:                Option<String>,
     flag_force:                    bool,
     flag_jobs:                     Option<usize>,
     flag_output:                   Option<String>,
@@ -358,6 +382,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let profile = profile_spec::load(profile_arg)?;
 
     // --- 2. run stats + frequency, build analysis context -----------------
+    if args.flag_describegpt.is_some() && args.flag_infer {
+        return fail_incorrectusage_clierror!("--describegpt and --infer cannot be used together.");
+    }
+    if args.flag_tag_vocab.is_some() && args.flag_describegpt.is_none() && !args.flag_infer {
+        return fail_incorrectusage_clierror!("--tag-vocab needs --describegpt or --infer.");
+    }
+    // A named file that is unreadable or malformed is a usage error, so
+    // check both before the (slow) analysis runs.
+    let tag_vocab = args
+        .flag_tag_vocab
+        .as_deref()
+        .map(llm::read_tag_vocab)
+        .transpose()?;
+    let describegpt_json = args
+        .flag_describegpt
+        .as_deref()
+        .map(llm::read_describegpt_json)
+        .transpose()?;
+
     let locate_mode = args
         .flag_locate
         .as_deref()
@@ -620,6 +663,60 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             Some(mode) => locate::locate(mode, &sql_backend, &dpp, &dppf, &headers),
             None => Value::Null,
         };
+        // Where Dataset fields sit in the output: under the Catalog
+        // envelope's dataset array with --catalog, at the top otherwise.
+        let dataset_prefix = if args.flag_catalog {
+            let dataset_key = profile
+                .catalog
+                .as_ref()
+                .and_then(|c| c.dataset_key.as_deref())
+                .unwrap_or("dcat:dataset");
+            format!("{}/0/", dataset_key.replace('~', "~0").replace('/', "~1"))
+        } else {
+            String::new()
+        };
+        // --describegpt / --infer: LLM output, verified (tag vocabulary,
+        // this file's columns) before the templates see it.
+        let llm_json = if args.flag_infer {
+            match llm::run_describegpt(&input_path, args.flag_tag_vocab.as_deref()) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    pending_warnings.push((
+                        projection::ProjectionWarning {
+                            field:    "description".to_string(),
+                            severity: projection::Severity::Recommended,
+                            message:  format!(
+                                "--infer: {e}; the statistics-based description is used"
+                            ),
+                        },
+                        dataset_prefix.clone(),
+                    ));
+                    None
+                },
+            }
+        } else {
+            describegpt_json.clone()
+        };
+        let llm_ctx = match llm_json.as_ref() {
+            Some(dg) => {
+                let built = llm::build(dg, tag_vocab.as_ref(), &headers);
+                for (field, message) in built.notes {
+                    pending_warnings.push((
+                        projection::ProjectionWarning {
+                            field,
+                            severity: projection::Severity::Info,
+                            message,
+                        },
+                        dataset_prefix.clone(),
+                    ));
+                }
+                if built.attribution.as_object().is_some_and(|a| !a.is_empty()) {
+                    out_map.insert("llm_attribution".to_string(), built.attribution);
+                }
+                built.context
+            },
+            None => Value::Null,
+        };
         let projection_ctx = json!({
             "pkg":                package,
             "res":                resource,
@@ -635,6 +732,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "rfc4180":            rfc4180,
             "http_last_modified": http_last_modified,
             "located":            located,
+            "llm":                llm_ctx,
             "source_label":       display_input,
             "local_path":         input_path,
             "legacy_license":     args.flag_dcat_legacy_license,
@@ -669,12 +767,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =
                 projection::wrap_in_catalog_envelope(&profile, merged_dataset, &projection_ctx)?;
-            let dataset_key = profile
-                .catalog
-                .as_ref()
-                .and_then(|c| c.dataset_key.as_deref())
-                .unwrap_or("dcat:dataset");
-            let prefix = format!("{}/0/", dataset_key.replace('~', "~0").replace('/', "~1"));
+            let prefix = dataset_prefix.clone();
             inferred_snapshot.extend(inferred_values(&dataset_block, &inferred_paths, &prefix));
             // Catalog-envelope fields that came from a `fallback`.
             let catalog_inferred = projection::take_inferred_paths();

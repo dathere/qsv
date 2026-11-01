@@ -50,7 +50,7 @@ Every entry under `dataset.fields[]`, `distribution.fields[]`, and
 | `default` | Literal fallback when the main template renders empty (suppresses the warning). |
 | `for_each_column` | Croissant-style expansion: emit one entry per stats column. |
 | `fallback` | Inferred-tier template, rendered only when `emit_when` is falsy or `template` renders empty. A value from here is listed in `projection_provenance`, and discovered publisher metadata **replaces** it (a `template` value wins over discovery). Use for judgement calls such as a generated description or a detected language, not for facts measured from the file. A failing fallback is reported at Info severity, never Required. |
-| `review_note` | Message added to `projection_warnings` (Recommended) while a `fallback` value stands, e.g. "replace this generated description before publishing". Dropped once discovery or an override replaces the value. |
+| `review_note` | Message added to `projection_warnings` (Recommended) while a `fallback` value stands, e.g. "replace this generated description before publishing". A template, so it can name the source (`{% if llm and llm.description %}by an LLM{% else %}from summary statistics{% endif %}`). Dropped once discovery or an override replaces the value. |
 
 ### Inferred tier and precedence
 
@@ -73,7 +73,7 @@ undefined, not an error, when its inputs are absent, so guard with
 | `coordinate_resolution_in_meters(dpp, stats)` | Finest separation the lat/lon decimal precision resolves, in metres (3 significant figures). |
 | `robust_bbox(dpp, stats)` | `[Location]` with a WKT `bbox`, excluding out-of-range and (0, 0) coordinates (Info note with the count dropped). |
 | `quality_measurements(stats, dpp, dims, rfc4180)` | DQV `QualityMeasurement` array; `dims` maps `completeness` / `conciseness` / `syntacticValidity` to dimension IRIs. |
-| `build_csvw_schema_rich(stats, dppf, headers, rows)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). |
+| `build_csvw_schema_rich(stats, dppf, headers, rows, dictionary?)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). `dictionary` (`llm.dictionary`) adds each described column's LLM label to `titles` and its description as `dc:description`, with an Info note. |
 | `detect_data_language(stats, dppf)` | ISO 639-1 code of the text values (needs the `whatlang` feature). |
 | `with_located(base, located)` | `base` (a `[Location]`, e.g. from `robust_bbox`) with the `--locate` results folded in: `located.primary` keys merge into the first Location (keys it already has win), `located.regions` follow it, and `located.notes` become Info warnings. With `located` null, `base` is returned unchanged. |
 
@@ -84,6 +84,14 @@ validate`, else null; lenient, so not proof of strict RFC 4180), `http_last_modi
 and `located` (`--locate`, else null): `{primary, regions, notes}`, where `primary` holds the
 centroid and any GeoNames `prefLabel` / `identifier` / `inScheme` for the bbox Location, and
 `regions` the US Census state and county Locations.
+
+`llm` (`--describegpt` / `--infer`, else null) carries the verified describegpt output:
+`description` (its attribution footer and a leading "Description" heading removed), `model`,
+`keywords` (trimmed and de-duplicated; with `--tag-vocab`, vocabulary members only),
+`themes` (the members as DCAT-US `Concept`s, with the vocabulary's description as
+`definition`) and `dictionary` (column name → `{label, description}`, this file's columns
+only). The bundled DCAT-US v3 profile uses them only in `fallback`s, and appends the
+`disclosures.llm_description` text (its `{model}` placeholder filled) to an LLM description.
 
 ## Catalog envelope
 

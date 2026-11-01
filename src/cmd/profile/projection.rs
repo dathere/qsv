@@ -316,11 +316,18 @@ fn emit_field_inner(
         match render_to_string(env, ctx, fallback) {
             Ok(s) if !s.trim().is_empty() => {
                 out.insert(field.path.clone(), coerce_json_or_string(&s));
+                // A review note is a template, so it can say where the
+                // value came from (an LLM vs summary statistics).
                 if let Some(note) = &field.review_note {
+                    let message = render_to_string(env, ctx, note)
+                        .map(|m| m.trim().to_string())
+                        .ok()
+                        .filter(|m| !m.is_empty())
+                        .unwrap_or_else(|| note.clone());
                     warnings.push(ProjectionWarning {
-                        field:    format!("{scope}{}", field.path),
+                        field: format!("{scope}{}", field.path),
                         severity: Severity::Recommended,
-                        message:  note.clone(),
+                        message,
                     });
                 }
                 return true;
@@ -676,6 +683,9 @@ pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
         }
         if let Some(fallback) = &field.fallback {
             check(&format!("{label} (fallback)"), fallback)?;
+        }
+        if let Some(note) = &field.review_note {
+            check(&format!("{label} (review_note)"), note)?;
         }
         Ok(())
     };

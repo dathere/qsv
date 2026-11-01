@@ -4980,7 +4980,7 @@ fn bbox_null_island_filter_survives_integer_looking_leading_rows() {
 
 // roborev 6195: the duplicate-row count must skip the preamble lines
 // QSV_SNIFF_PREAMBLE detects, as the SQL backend does; two identical
-// metadata lines are not a duplicate data row.
+// metadata lines are not a duplicate data row, the repeated data row is.
 #[test]
 fn duplicate_row_count_skips_a_sniffed_preamble() {
     let wrk = Workdir::new("profile_dup_rows_preamble");
@@ -4990,6 +4990,8 @@ fn duplicate_row_count_skips_a_sniffed_preamble() {
     for i in 1..=40 {
         csv.push_str(&format!("{i},n{i},{}\n", i * 10));
     }
+    // one real duplicate data row, so the count is not trivially 0
+    csv.push_str("40,n40,400\n");
     wrk.create_from_string("p.csv", &csv);
     let mut cmd = wrk.command("profile");
     cmd.env("QSV_SNIFF_PREAMBLE", "1")
@@ -5007,7 +5009,7 @@ fn duplicate_row_count_skips_a_sniffed_preamble() {
                 .is_some_and(|d| d.contains("duplicate"))
         })
         .map(|m| m["value"].clone());
-    assert_eq!(duplicates, Some(json!("0")), "{}", out["projection"]);
+    assert_eq!(duplicates, Some(json!("1")), "{}", out["projection"]);
 }
 
 /// Profile a one-column-of-locations CSV; returns the output document.

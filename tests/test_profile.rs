@@ -4621,7 +4621,7 @@ fn locate_census_outage_is_noted_and_keeps_the_bbox() {
     let wrk = Workdir::new("profile_locate_census_down");
     seed_locate_csv(&wrk);
     // nothing listens on port 9 (discard): every lookup fails
-    let mut cmd = census_locate_cmd(&wrk, "http://127.0.0.1:9/geocoder"); // DevSkim: ignore DS137138
+    let mut cmd = census_locate_cmd(&wrk, "http://127.0.0.1:9/geocoder"); // DevSkim: ignore DS137138,DS162092
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let spatial = out["projection"]["spatial"].as_array().unwrap();
@@ -4686,7 +4686,7 @@ fn locate_census_uses_a_state_column_without_coordinates() {
     wrk.create("st.csv", rows);
     let mut cmd = wrk.command("profile");
     // no coordinates: no lookup is made, so a dead URL proves it
-    cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138
+    cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138,DS162092
         .arg("st.csv")
         .args(["--locate", "census", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
@@ -4699,6 +4699,201 @@ fn locate_census_uses_a_state_column_without_coordinates() {
     // "New York" and "36" are the same state
     assert_eq!(ids, ["25", "36"]);
     assert_eq!(spatial[1]["prefLabel"], "New York");
+}
+
+/// `--locate census` over `rows` (a header row first), against the mock
+/// `TIGERweb` county name table; the dead geocoder URL proves no
+/// coordinate lookup is made. Returns the `spatial` identifiers, the
+/// `spatial` Locations and the `--locate` notes.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+fn locate_region_columns(name: &str, rows: Vec<Vec<String>>) -> (Vec<String>, Vec<Value>, String) {
+    let wrk = Workdir::new(name);
+    wrk.create("regions.csv", rows);
+    let mut result = None;
+    crate::test_viz_census::with_mock_tigerweb(|base, _| {
+        let mut cmd = wrk.command("profile");
+        cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138,DS162092
+            .env("QSV_CENSUS_TIGERWEB_URL", base)
+            .env(
+                "QSV_CACHE_DIR",
+                wrk.path("cache").to_string_lossy().to_string(),
+            )
+            .arg("regions.csv")
+            .args(["--locate", "census", "-o", "out.json"]);
+        wrk.assert_success(&mut cmd);
+        result = Some(read_output(&wrk, "out.json"));
+    });
+    let out = result.unwrap();
+    let spatial = out["projection"]["spatial"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let ids = spatial
+        .iter()
+        // the bbox Location carries no identifier
+        .map(|l| l["identifier"].as_str().unwrap_or_default().to_string())
+        .collect();
+    let notes = out["projection_warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|w| w["message"].as_str())
+        .filter(|m| m.starts_with("--locate"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (ids, spatial, notes)
+}
+
+/// `n` copies of a `state,county` row, ids continuing from `rows`.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+fn push_rows(rows: &mut Vec<Vec<String>>, n: usize, cells: &[&str]) {
+    for _ in 0..n {
+        let mut row = vec![rows.len().to_string()];
+        row.extend(cells.iter().map(ToString::to_string));
+        rows.push(row);
+    }
+}
+
+// county columns resolve through viz_census, which qsvdp does not build
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_resolves_county_names_within_each_rows_state() {
+    let mut rows = vec![svec!["id", "State", "County"]];
+    push_rows(&mut rows, 10, &["PA", "Allegheny County"]);
+    // "Washington" is a county in BOTH Pennsylvania and Maryland: only the
+    // row's own state can tell them apart
+    push_rows(&mut rows, 6, &["Pennsylvania", "Washington"]);
+    push_rows(&mut rows, 4, &["MD", "Washington County"]);
+    // Baltimore County and Baltimore city share the name within Maryland
+    push_rows(&mut rows, 3, &["24", "Baltimore"]);
+    // not a US state, so not a US county either: unskipped, this would
+    // add Hampden County, Massachusetts (2 of 25 rows)
+    push_rows(&mut rows, 2, &["ON", "Hampden County"]);
+    let (ids, spatial, notes) = locate_region_columns("profile_locate_county_state", rows);
+
+    assert_eq!(ids, ["42", "24", "42003", "42125", "24043"], "{notes}");
+    assert_eq!(spatial[2]["prefLabel"], "Allegheny County, Pennsylvania");
+    assert_eq!(spatial[3]["prefLabel"], "Washington County, Pennsylvania");
+    assert_eq!(spatial[4]["prefLabel"], "Washington County, Maryland");
+    assert!(
+        notes.contains("states taken from the `State` column"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("counties taken from the `County` column"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("name more than one county (e.g. `Baltimore`)"),
+        "{notes}"
+    );
+    assert!(!notes.contains("no state column"), "{notes}");
+}
+
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_takes_states_from_the_counties_without_a_state_column() {
+    let mut rows = vec![svec!["id", "county_name"]];
+    push_rows(&mut rows, 5, &["Allegheny County"]);
+    // a 5-digit GEOID is a county too
+    push_rows(&mut rows, 3, &["25013"]);
+    // without a state, Washington County is ambiguous (PA and MD)
+    push_rows(&mut rows, 2, &["Washington County"]);
+    let (ids, spatial, notes) = locate_region_columns("profile_locate_county_only", rows);
+
+    assert_eq!(ids, ["42", "25", "42003", "25013"], "{notes}");
+    assert_eq!(spatial[0]["prefLabel"], "Pennsylvania");
+    assert_eq!(spatial[3]["prefLabel"], "Hampden County, Massachusetts");
+    assert!(
+        notes.contains("`Washington County`") && notes.contains("no state column"),
+        "{notes}"
+    );
+}
+
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_ignores_a_county_column_that_names_no_counties() {
+    let mut rows = vec![svec!["id", "county_status"]];
+    push_rows(&mut rows, 9, &["pending"]);
+    push_rows(&mut rows, 1, &["Allegheny County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_decoy", rows);
+
+    assert!(ids.is_empty(), "{ids:?}");
+    assert!(
+        notes.contains("only 10.0% of the `county_status` values name a US county"),
+        "{notes}"
+    );
+}
+
+// roborev 6176 #1: a state column with too few US states to LIST states
+// from must still narrow each row's county to its own row's state
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_narrows_counties_by_a_partly_non_us_state_column() {
+    let mut rows = vec![svec!["id", "state", "county"]];
+    push_rows(&mut rows, 4, &["PA", "Allegheny County"]);
+    // Ontario rows are no US county, whatever their names match
+    // nationwide — even when they are most of the column (roborev 6179)
+    push_rows(&mut rows, 6, &["ON", "Hampden County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_partial_state", rows);
+
+    assert!(
+        !ids.iter().any(|id| id.starts_with("25")),
+        "{ids:?} {notes}"
+    );
+    assert!(
+        notes.contains("only 40.0% of the `county` values"),
+        "{notes}"
+    );
+}
+
+// roborev 6176 #3 and #4: a decoy county-like column must not hide the
+// real one, and a rejected column explains its ambiguous names
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_tries_each_county_column_and_explains_ambiguity() {
+    let mut rows = vec![svec!["id", "county_status", "County"]];
+    push_rows(&mut rows, 5, &["pending", "Allegheny County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_second_column", rows);
+    assert_eq!(ids, ["42", "42003"], "{notes}");
+    assert!(notes.contains("from the `County` column"), "{notes}");
+
+    let mut rows = vec![svec!["id", "county"]];
+    push_rows(&mut rows, 4, &["Washington County"]);
+    let (ids, _, notes) = locate_region_columns("profile_locate_county_all_ambiguous", rows);
+    assert!(ids.is_empty(), "{ids:?}");
+    assert!(
+        notes.contains(
+            "only 0.0% of the `county` values name a US county (100.0% of the `county` values \
+             name more than one county and there is no state column"
+        ),
+        "{notes}"
+    );
+}
+
+// Region columns name every row exactly; the coordinate lookup samples
+// cells. With both, the columns supply the Census Locations — the dead
+// geocoder URL proves the coordinate lookup is not made.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_prefers_region_columns_over_sampled_coordinates() {
+    let mut rows = vec![svec!["id", "latitude", "longitude", "State", "County"]];
+    push_rows(&mut rows, 6, &["40.44", "-79.99", "PA", "Allegheny County"]);
+    push_rows(
+        &mut rows,
+        4,
+        &["39.96", "-75.16", "PA", "Philadelphia County"],
+    );
+    let (ids, spatial, notes) = locate_region_columns("profile_locate_columns_win", rows);
+
+    // the bbox Location first (from the coordinates), then the regions
+    assert!(spatial[0]["bbox"].is_string(), "{spatial:?}");
+    assert_eq!(&ids[1..], ["42", "42003", "42101"], "{notes}");
+    assert!(!notes.contains("Geocoder lookup failed"), "{notes}");
+    assert!(
+        notes.contains("counties taken from the `County` column"),
+        "{notes}"
+    );
 }
 
 // needs the `qsv geocode` child process

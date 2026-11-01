@@ -2061,6 +2061,28 @@ mod tests {
         assert!(Layer::County.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("County"));
     }
+
+    #[test]
+    fn county_name_table_names_a_geoid_by_its_full_name() {
+        let row = |geoid: &str, name: &str, basename: &str, state: &str| CountyNameRow {
+            geoid:    geoid.to_string(),
+            name:     name.to_string(),
+            basename: basename.to_string(),
+            state:    state.to_string(),
+        };
+        let table = CountyNameTable::from_rows(
+            &[
+                row("42003", "Allegheny County", "Allegheny", "42"),
+                row("24510", "Baltimore city", "Baltimore", "24"),
+            ],
+            2023,
+        );
+        // the full NAME, not the BASENAME the table also resolves by
+        assert_eq!(table.name_for_geoid("42003"), Some("Allegheny County"));
+        assert_eq!(table.name_for_geoid("24510"), Some("Baltimore city"));
+        assert_eq!(table.name_for_geoid("99999"), None);
+        assert_eq!(table.name_for_geoid(""), None);
+    }
 }
 
 // ===========================================================================================
@@ -2702,6 +2724,8 @@ pub enum CountyLookup {
 pub struct CountyNameTable {
     /// Folded name -> `(geoid, state_fips)` candidates.
     by_name:     std::collections::HashMap<String, Vec<(String, String)>>,
+    /// GEOID -> the county's full `NAME` ("Allegheny County").
+    names:       std::collections::HashMap<String, String>,
     /// The vintage these names describe. Callers MUST pin their boundary fetch to it, so the
     /// names and the geometry cannot drift apart when a new vintage publishes mid-TTL.
     pub vintage: u16,
@@ -2726,7 +2750,21 @@ impl CountyNameTable {
             add(&row.name, row);
             add(&row.basename, row);
         }
-        Self { by_name, vintage }
+        let names = rows
+            .iter()
+            .map(|r| (r.geoid.clone(), r.name.clone()))
+            .collect();
+        Self {
+            by_name,
+            names,
+            vintage,
+        }
+    }
+
+    /// The full `NAME` of the county with this GEOID ("Allegheny County").
+    #[must_use]
+    pub fn name_for_geoid(&self, geoid: &str) -> Option<&str> {
+        self.names.get(geoid).map(String::as_str)
     }
 
     /// Does the table know no names at all? A service that answers with an empty set must be

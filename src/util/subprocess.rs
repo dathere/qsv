@@ -77,9 +77,11 @@ pub fn run_qsv_cmd(
 
     // sample takes a positional <sample-size> argument *before* the input path
     // (e.g. `qsv sample 1000 input.csv`), so for sample we order args before
-    // input. Every other command in qsv accepts the input as the first
-    // positional, so input goes before flags/args.
-    if command == "sample" {
+    // input. geocode likewise takes its subcommand and <column> first
+    // (`qsv geocode census <column> [options] <input>`). Every other
+    // command in qsv accepts the input as the first positional, so input
+    // goes before flags/args.
+    if command == "sample" || command == "geocode" {
         cmd.arg(command).args(args).arg(input_path);
     } else {
         cmd.arg(command).arg(input_path).args(args);

@@ -344,17 +344,17 @@ dataset:
     # UNDEFINED renders the string "null" via `| tojson` and
     # coerce_json_or_string keeps it as a literal string, leaving a
     # malformed `"spatial": "null"` in the output (Roborev #2490).
+    #
+    # with_located folds in the opt-in --locate results (`located`, null
+    # otherwise): the bbox Location gains a GeoNames prefLabel/identifier
+    # and the centroid, and US Census state/county Locations follow it.
     - path: "spatial"
       template: |
         {%- set wkt = pkg.dpp_suggestions.spatial_extent.value | default("") -%}
-        {%- set bbox = robust_bbox(dpp, stats) -%}
-        {%- if wkt != "" -%}
-        [{
-          "@type": "Location",
-          "geometry": {{ wkt | tojson }}
-        }]
-        {%- elif bbox -%}{{ bbox | tojson }}{%- endif -%}
-      emit_when: '{{ (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" or robust_bbox(dpp, stats) is defined }}'
+        {%- set base = [{"@type": "Location", "geometry": wkt}] if wkt != "" else robust_bbox(dpp, stats) -%}
+        {%- set sp = with_located(base, located) -%}
+        {%- if sp -%}{{ sp | tojson }}{%- endif -%}
+      emit_when: '{{ with_located([{"@type": "Location", "geometry": pkg.dpp_suggestions.spatial_extent.value}] if (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" else robust_bbox(dpp, stats), located) is defined }}'
 
     - path: "temporal"
       template: |

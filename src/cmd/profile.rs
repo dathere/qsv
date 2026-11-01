@@ -137,6 +137,25 @@ profile options:
                               projection compact); the raw counts always remain
                               in the top-level `frequency` block regardless.
                               Other bundled profiles ignore this flag.
+    --locate <mode>           Name the places the data covers, as DCAT-US v3
+                              `spatial` Locations, by looking up the densest
+                              coordinate cells (up to 40, row-weighted) with
+                              `qsv geocode`. <mode> is one of:
+                                geonames - label the bounding box with the
+                                           place, admin1 or country that 80%
+                                           of the sampled rows share (offline
+                                           Geonames index).
+                                census   - add each US state, and each county
+                                           holding at least 5% of the sampled
+                                           rows, keyed by Census GEOID (US
+                                           Census Geocoder: online, keyless,
+                                           cached). Without coordinates, a
+                                           state column (USPS, FIPS or name)
+                                           is used instead.
+                                both     - geonames and census.
+                              Also adds the coordinates' centroid. A lookup
+                              that cannot run is noted in projection_warnings;
+                              the bounding box is kept. Default: off.
     --dcat-legacy-license     Also emit `license` on the Dataset, alongside
                               the Distribution-level copy. Both are valid
                               DCAT-US v3 (the Dataset-level property was
@@ -243,6 +262,7 @@ mod discovery_merge;
 mod external_validate;
 mod formula_engine;
 mod formula_helpers;
+mod locate;
 mod profile_spec;
 mod projection;
 mod spec;
@@ -264,6 +284,7 @@ struct Args {
     flag_profile:                  Option<String>,
     flag_no_ckan:                  bool,
     flag_croissant_frequency:      bool,
+    flag_locate:                   Option<String>,
     flag_force:                    bool,
     flag_jobs:                     Option<usize>,
     flag_output:                   Option<String>,
@@ -337,6 +358,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let profile = profile_spec::load(profile_arg)?;
 
     // --- 2. run stats + frequency, build analysis context -----------------
+    let locate_mode = args
+        .flag_locate
+        .as_deref()
+        .map(locate::LocateMode::parse)
+        .transpose()?;
+
     let ctx_args = context::ContextArgs {
         input_path:      &input_path,
         no_headers:      args.flag_no_headers,
@@ -587,6 +614,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_croissant_frequency {
             frequency = dppf.clone();
         }
+        // --locate: the place lookups run once, here, as `qsv geocode`
+        // child processes; templates only read the result.
+        let located = match locate_mode {
+            Some(mode) => locate::locate(mode, &sql_backend, &dpp, &dppf, &headers),
+            None => Value::Null,
+        };
         let projection_ctx = json!({
             "pkg":                package,
             "res":                resource,
@@ -601,6 +634,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "dpp":                dpp,
             "rfc4180":            rfc4180,
             "http_last_modified": http_last_modified,
+            "located":            located,
             "source_label":       display_input,
             "local_path":         input_path,
             "legacy_license":     args.flag_dcat_legacy_license,

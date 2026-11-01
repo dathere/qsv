@@ -2702,6 +2702,8 @@ pub enum CountyLookup {
 pub struct CountyNameTable {
     /// Folded name -> `(geoid, state_fips)` candidates.
     by_name:     std::collections::HashMap<String, Vec<(String, String)>>,
+    /// GEOID -> the county's full `NAME` ("Allegheny County").
+    names:       std::collections::HashMap<String, String>,
     /// The vintage these names describe. Callers MUST pin their boundary fetch to it, so the
     /// names and the geometry cannot drift apart when a new vintage publishes mid-TTL.
     pub vintage: u16,
@@ -2726,7 +2728,21 @@ impl CountyNameTable {
             add(&row.name, row);
             add(&row.basename, row);
         }
-        Self { by_name, vintage }
+        let names = rows
+            .iter()
+            .map(|r| (r.geoid.clone(), r.name.clone()))
+            .collect();
+        Self {
+            by_name,
+            names,
+            vintage,
+        }
+    }
+
+    /// The full `NAME` of the county with this GEOID ("Allegheny County").
+    #[must_use]
+    pub fn name_for_geoid(&self, geoid: &str) -> Option<&str> {
+        self.names.get(geoid).map(String::as_str)
     }
 
     /// Does the table know no names at all? A service that answers with an empty set must be

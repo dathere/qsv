@@ -149,9 +149,14 @@ profile options:
                                            holding at least 5% of the sampled
                                            rows, keyed by Census GEOID (US
                                            Census Geocoder: online, keyless,
-                                           cached). Without coordinates, a
-                                           state column (USPS, FIPS or name)
-                                           is used instead.
+                                           cached). Without coordinates,
+                                           state and county columns are used
+                                           instead: states as USPS, FIPS or
+                                           names; counties as names or GEOIDs,
+                                           matched exactly within each row's
+                                           state (TIGERweb county names). A
+                                           name several counties share is
+                                           noted, not guessed.
                                 both     - geonames and census.
                               Also adds the coordinates' centroid. A lookup
                               that cannot run is noted in projection_warnings;

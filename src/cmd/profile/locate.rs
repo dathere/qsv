@@ -20,9 +20,12 @@
 //! context key. A lookup that cannot run is noted, never fatal: the
 //! projection keeps its bbox.
 //!
-//! A file without coordinates but with a state column (USPS code, FIPS
-//! or name; header mentioning "state") gets its state Locations from
-//! the column's frequency instead, in builds with the `viz` feature.
+//! A file without coordinates gets its Locations from its region
+//! columns instead, in builds with the `viz` feature: a state column
+//! (USPS code, FIPS or name; header mentioning "state") from its
+//! frequency, and a county column (names or GEOIDs; header mentioning
+//! "county") resolved exactly against the Census county name table,
+//! within each row's state.
 
 use std::{collections::HashMap, io::Write as _};
 
@@ -154,7 +157,7 @@ pub(super) fn locate(
             )),
         }
     } else if mode.census() {
-        let (found, mut more) = state_column_regions(dppf, headers);
+        let (found, mut more) = column_regions(backend, dppf, headers);
         regions.extend(found);
         notes.append(&mut more);
     } else {
@@ -489,12 +492,68 @@ fn census_regions(cells: &[Cell], rows: &[HashMap<String, String>]) -> (Vec<Valu
     (out, notes)
 }
 
-/// State Locations for a file without coordinates, from a state column:
-/// its header mentions "state", and at least 90% of its listed
-/// frequency (the top values qsv kept) is a USPS code, FIPS code or
-/// state name. Weighted by row counts like the coordinate path.
+/// Census Locations for a file without coordinates, from its region
+/// columns: states from a state column (see [`state_column`]), counties
+/// from a county column (see [`county_column_regions`]). With no state
+/// column, the states are those of the resolved counties.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
-fn state_column_regions(dppf: &Value, headers: &[String]) -> (Vec<Value>, Vec<String>) {
+fn column_regions(
+    backend: &SqlBackend,
+    dppf: &Value,
+    headers: &[String],
+) -> (Vec<Value>, Vec<String>) {
+    let state = state_column(dppf, headers);
+    let county = headers
+        .iter()
+        .find(|h| h.to_ascii_lowercase().contains("county"));
+    let mut notes = Vec::new();
+
+    let (mut states, counties) = match county {
+        Some(county) => {
+            match county_column_regions(backend, county, state.as_ref().map(|s| s.0.as_str())) {
+                Ok((states, counties, mut more)) => {
+                    notes.append(&mut more);
+                    (states, counties)
+                },
+                Err(note) => {
+                    notes.push(note);
+                    (HashMap::new(), Vec::new())
+                },
+            }
+        },
+        None => (HashMap::new(), Vec::new()),
+    };
+    if let Some((header, from_column)) = state {
+        states = from_column;
+        notes.insert(
+            0,
+            format!("--locate census: no coordinates; states taken from the `{header}` column"),
+        );
+    }
+    if states.is_empty() && counties.is_empty() && notes.is_empty() {
+        notes.push(
+            "--locate census: no latitude/longitude, state or county column detected".to_string(),
+        );
+    }
+    let total: f64 = states.values().map(|(_, w)| w).sum();
+    let mut out: Vec<Value> = ranked(states)
+        .into_iter()
+        .enumerate()
+        .filter(|(i, (.., w))| *i == 0 || *w / total >= REGION_MIN_SHARE)
+        .map(|(_, (geoid, name, _))| region_location(&name, &geoid))
+        .collect();
+    out.extend(counties);
+    (out, notes)
+}
+
+/// The first column whose header mentions "state" and at least 90% of
+/// whose listed frequency (the top values qsv kept) is a USPS code, FIPS
+/// code or state name: its header, and its states weighted by row count.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+fn state_column(
+    dppf: &Value,
+    headers: &[String],
+) -> Option<(String, HashMap<String, (String, f64)>)> {
     use crate::cmd::viz_census::{state_geoid_for_any_spelling, state_name_for_geoid};
 
     for header in headers {
@@ -524,33 +583,226 @@ fn state_column_regions(dppf: &Value, headers: &[String]) -> (Vec<Value>, Vec<St
             }
         }
         let resolved: f64 = states.values().map(|(_, w)| w).sum();
-        if listed <= 0.0 || resolved / listed < 0.9 {
-            continue;
+        if listed > 0.0 && resolved / listed >= 0.9 {
+            return Some((header.clone(), states));
         }
-        let out = ranked(states)
-            .into_iter()
-            .enumerate()
-            .filter(|(i, (.., w))| *i == 0 || *w / resolved >= REGION_MIN_SHARE)
-            .map(|(_, (geoid, name, _))| region_location(&name, &geoid))
-            .collect();
-        let notes = vec![format!(
-            "--locate census: no coordinates; states taken from the `{header}` column"
-        )];
-        return (out, notes);
     }
-    (
-        Vec::new(),
-        vec!["--locate census: no latitude/longitude columns or state column detected".to_string()],
-    )
+    None
+}
+
+/// `part` as a percentage of `whole`, rounded DOWN to one decimal so a
+/// near-total share never reads as 100%, and a sliver never as 0%.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+fn share(part: f64, whole: f64) -> String {
+    let pct = (1000.0 * part / whole).floor() / 10.0;
+    if pct < 0.1 && part > 0.0 {
+        "under 0.1%".to_string()
+    } else {
+        format!("{pct:.1}%")
+    }
+}
+
+/// Share of a county column's rows that must name a US county before
+/// any county Location is trusted.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+const COUNTY_MIN_RESOLVED: f64 = 0.5;
+
+/// County Locations from a county column: names ("Allegheny County",
+/// "Allegheny") or 5-digit GEOIDs, resolved EXACTLY against the Census
+/// county name table `viz` uses — never fuzzily, which turns a county
+/// name into a real but wrong county. With a state column, each row's
+/// county is resolved within its own row's state (one GROUP BY over the
+/// pair), so `King, WA` is King County, Washington; a name several
+/// counties share stays unresolved and is noted, never guessed.
+///
+/// Returns the states of the resolved counties (row-weighted), the
+/// county Locations holding at least [`REGION_MIN_SHARE`] of the rows
+/// (at most [`MAX_COUNTIES`]), and notes. `Err` is a note: the column
+/// could not be read or the name table could not be fetched.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+fn county_column_regions(
+    backend: &SqlBackend,
+    county: &str,
+    state: Option<&str>,
+) -> Result<(HashMap<String, (String, f64)>, Vec<Value>, Vec<String>), String> {
+    use crate::cmd::viz_census::{
+        CountyLookup, county_name_table, state_geoid_for_any_spelling, state_name_for_geoid,
+    };
+
+    if county.contains('"') || state.is_some_and(|s| s.contains('"')) {
+        return Err(format!(
+            "--locate census: the `{county}` column name cannot be queried; no county Locations \
+             were added"
+        ));
+    }
+    let backend = backend.clone().with_all_strings();
+    let sql = match state {
+        Some(st) => format!(
+            r#"SELECT "{st}" AS s, "{county}" AS c, COUNT(*) AS n FROM data WHERE "{county}" IS NOT NULL GROUP BY "{st}", "{county}""#
+        ),
+        None => format!(
+            r#"SELECT "{county}" AS c, COUNT(*) AS n FROM data WHERE "{county}" IS NOT NULL GROUP BY "{county}""#
+        ),
+    };
+    let df = backend.query(&sql).map_err(|e| {
+        format!(
+            "--locate census: could not read the `{county}` column ({e}); no county Locations \
+             were added"
+        )
+    })?;
+    let table = county_name_table(None).map_err(|e| {
+        format!(
+            "--locate census: the Census county name table is unavailable ({e}); no county \
+             Locations were added"
+        )
+    })?;
+
+    let text_at = |c: &str, i: usize| -> Option<String> {
+        let col = df.column(c).ok()?;
+        let cast = col.cast(&polars::prelude::DataType::String).ok()?;
+        cast.str().ok()?.get(i).map(|s| s.trim().to_string())
+    };
+    let count_at = |i: usize| -> f64 {
+        df.column("n")
+            .ok()
+            .and_then(|c| c.cast(&polars::prelude::DataType::Float64).ok())
+            .and_then(|c| c.f64().ok().and_then(|f| f.get(i)))
+            .unwrap_or(0.0)
+    };
+
+    let mut total = 0.0;
+    let mut counties: HashMap<String, (String, f64)> = HashMap::new();
+    let mut ambiguous: HashMap<String, (String, f64)> = HashMap::new();
+    for i in 0..df.height() {
+        let Some(name) = text_at("c", i).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let n = count_at(i);
+        total += n;
+        let state_fips = match state {
+            Some(_) => match text_at("s", i)
+                .as_deref()
+                .and_then(state_geoid_for_any_spelling)
+            {
+                Some(fips) => Some(fips),
+                // a row whose state is not a US state cannot name a US county
+                None => continue,
+            },
+            None => None,
+        };
+        let geoid = if name.len() == 5
+            && name.bytes().all(|b| b.is_ascii_digit())
+            && table.name_for_geoid(&name).is_some()
+            && state_fips.as_deref().is_none_or(|f| name.starts_with(f))
+        {
+            Some(name.clone())
+        } else {
+            match table.resolve(&name, state_fips.as_deref()) {
+                CountyLookup::Resolved(geoid) => Some(geoid),
+                CountyLookup::Ambiguous(_) => {
+                    ambiguous
+                        .entry(name.to_ascii_lowercase())
+                        .or_insert_with(|| (name.clone(), 0.0))
+                        .1 += n;
+                    None
+                },
+                CountyLookup::NoMatch | CountyLookup::StateMismatch(_) => None,
+            }
+        };
+        if let Some(geoid) = geoid {
+            let label = table.name_for_geoid(&geoid).unwrap_or(&geoid).to_string();
+            counties.entry(geoid).or_insert_with(|| (label, 0.0)).1 += n;
+        }
+    }
+
+    let resolved: f64 = counties.values().map(|(_, w)| w).sum();
+    if total <= 0.0 || resolved / total < COUNTY_MIN_RESOLVED {
+        return Err(format!(
+            "--locate census: only {} of the `{county}` values name a US county; no county \
+             Locations were added",
+            if total > 0.0 {
+                share(resolved, total)
+            } else {
+                "0%".to_string()
+            }
+        ));
+    }
+
+    let mut notes = vec![format!(
+        "--locate census: counties taken from the `{county}` column ({} of its values resolved \
+         against the ACS{} county names)",
+        share(resolved, total),
+        table.vintage
+    )];
+    let unclear: f64 = ambiguous.values().map(|(_, w)| w).sum();
+    if unclear > 0.0 {
+        let examples: Vec<String> = ranked(ambiguous)
+            .into_iter()
+            .take(3)
+            .map(|(_, name, _)| format!("`{name}`"))
+            .collect();
+        notes.push(format!(
+            "--locate census: {} of the `{county}` values name more than one county{} (e.g. {}); \
+             they were left out",
+            share(unclear, total),
+            if state.is_none() {
+                " and there is no state column to tell them apart"
+            } else {
+                ""
+            },
+            examples.join(", ")
+        ));
+    }
+
+    let mut states: HashMap<String, (String, f64)> = HashMap::new();
+    for (geoid, (_, w)) in &counties {
+        let Some(fips) = geoid.get(..2) else {
+            continue;
+        };
+        if let Some(name) = state_name_for_geoid(fips) {
+            states
+                .entry(fips.to_string())
+                .or_insert_with(|| (name.to_string(), 0.0))
+                .1 += w;
+        }
+    }
+    let qualifying: Vec<_> = ranked(counties)
+        .into_iter()
+        .filter(|(.., w)| *w / total >= REGION_MIN_SHARE)
+        .collect();
+    if qualifying.len() > MAX_COUNTIES {
+        notes.push(format!(
+            "--locate census: {} counties each hold at least {:.0}% of the rows; only the \
+             {MAX_COUNTIES} largest are listed",
+            qualifying.len(),
+            REGION_MIN_SHARE * 100.0
+        ));
+    }
+    let out = qualifying
+        .into_iter()
+        .take(MAX_COUNTIES)
+        .map(|(geoid, name, _)| {
+            let label = geoid
+                .get(..2)
+                .and_then(state_name_for_geoid)
+                .map_or_else(|| name.clone(), |st| format!("{name}, {st}"));
+            region_location(&label, &geoid)
+        })
+        .collect();
+    Ok((states, out, notes))
 }
 
 #[cfg(not(all(feature = "viz", feature = "feature_capable")))]
-fn state_column_regions(_dppf: &Value, _headers: &[String]) -> (Vec<Value>, Vec<String>) {
+fn column_regions(
+    _backend: &SqlBackend,
+    _dppf: &Value,
+    _headers: &[String],
+) -> (Vec<Value>, Vec<String>) {
     (
         Vec::new(),
         vec![
-            "--locate census: no latitude/longitude columns detected (state columns are only \
-             resolved in builds with the `viz` feature)"
+            "--locate census: no latitude/longitude columns detected (state and county columns \
+             are only resolved in builds with the `viz` feature)"
                 .to_string(),
         ],
     )
@@ -726,7 +978,7 @@ mod tests {
             ],
         });
         let headers = ["code".to_string(), "state".to_string()];
-        let (regions, notes) = state_column_regions(&dppf, &headers);
+        let (regions, notes) = column_regions(&SqlBackend::new("unused.csv"), &dppf, &headers);
         let ids: Vec<&str> = regions
             .iter()
             .map(|r| r["identifier"].as_str().unwrap())
@@ -738,7 +990,11 @@ mod tests {
         // island areas resolve too: an 11% Guam share must not sink the column
         let territory =
             json!({ "state": [{"value": "GU", "count": 11}, {"value": "MA", "count": 89}] });
-        let (regions, _) = state_column_regions(&territory, &["state".to_string()]);
+        let (regions, _) = column_regions(
+            &SqlBackend::new("unused.csv"),
+            &territory,
+            &["state".to_string()],
+        );
         let ids: Vec<&str> = regions
             .iter()
             .map(|r| r["identifier"].as_str().unwrap())
@@ -748,7 +1004,11 @@ mod tests {
 
         let unresolved =
             json!({ "state": [{"value": "open", "count": 9}, {"value": "MA", "count": 1}] });
-        let (regions, _) = state_column_regions(&unresolved, &["state".to_string()]);
+        let (regions, _) = column_regions(
+            &SqlBackend::new("unused.csv"),
+            &unresolved,
+            &["state".to_string()],
+        );
         assert!(regions.is_empty());
     }
 }

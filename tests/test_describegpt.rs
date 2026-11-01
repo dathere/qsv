@@ -5126,6 +5126,42 @@ fn describegpt_forget_removes_the_cached_dictionary_answer() {
     assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Second A");
 }
 
+// `--forget` with no phase selected forgets every phase, as USAGE says; it
+// must not be rejected as "No inference options specified." (27.0.1 accepted
+// it; moving --forget after language resolution in #4971 put it behind that
+// check).
+#[test]
+#[serial]
+fn describegpt_forget_without_a_phase_forgets_every_phase() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_bare");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("First");
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out1.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.arg("--forget");
+    let out = wrk.output(&mut cmd);
+    let got = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{got}");
+    assert!(
+        got.contains("Removed the cached Dictionary answer"),
+        "{got}"
+    );
+    // every phase is reported, not only the one that was cached
+    assert!(got.contains("No cached Description answer found"), "{got}");
+    assert!(got.contains("No cached Tags answer found"), "{got}");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "--forget must not call the LLM"
+    );
+}
+
 /// describegpt over the mock with an explicit `--model`, for the `--forget` model lookup.
 fn mock_describegpt_cmd_with_model(
     wrk: &Workdir,

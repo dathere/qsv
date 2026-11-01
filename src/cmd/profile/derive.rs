@@ -193,13 +193,21 @@ impl Coords {
         match self {
             Self::Columns { lat, lon } => (format!(r#""{lat}""#), format!(r#""{lon}""#)),
             Self::Point(p) => {
+                // tabs separate ordinates as well as spaces
                 let inner = format!(
-                    r#"(CASE WHEN UPPER(LTRIM("{p}")) LIKE 'POINT%' THEN TRIM(SPLIT_PART(SPLIT_PART("{p}", '(', 2), ')', 1)) END)"#
+                    "(CASE WHEN UPPER(LTRIM(\"{p}\")) LIKE 'POINT%' THEN \
+                     TRIM(REPLACE(SPLIT_PART(SPLIT_PART(\"{p}\", '(', 2), ')', 1), '\t', ' ')) \
+                     END)"
                 );
                 // the latitude is the first token after the longitude, so
-                // a POINT Z/M value's third and fourth numbers are ignored
+                // a POINT Z/M value's third and fourth numbers are ignored;
+                // with no second token (`POINT (-71)`) there is no latitude,
+                // rather than the longitude read twice
                 (
-                    format!("SPLIT_PART(TRIM(SUBSTR({inner}, STRPOS({inner}, ' ') + 1)), ' ', 1)"),
+                    format!(
+                        "(CASE WHEN STRPOS({inner}, ' ') > 0 THEN SPLIT_PART(TRIM(SUBSTR({inner}, \
+                         STRPOS({inner}, ' ') + 1)), ' ', 1) END)"
+                    ),
                     format!("SPLIT_PART({inner}, ' ', 1)"),
                 )
             },

@@ -354,7 +354,12 @@ fn detect_point_field(stats: &[StatsData]) -> Option<String> {
             // an optional Z / M / ZM dimension tag before the parenthesis
             let rest = v[5..].trim_start();
             let rest = rest.trim_start_matches(['Z', 'z', 'M', 'm']).trim_start();
+            // `POINT EMPTY` sorts after `POINT (`, so a column with empty
+            // points has it as its max; it is a POINT, just not a usable one
             rest.starts_with('(')
+                || rest
+                    .get(..5)
+                    .is_some_and(|e| e.eq_ignore_ascii_case("EMPTY"))
         })
     };
     stats

@@ -4806,6 +4806,10 @@ fn wkt_point_column_supplies_the_coordinates() {
     rows.extend(["POINT(-122.1 47.5)"; 2]);
     // (it widens the bbox, so dropping it would show)
     rows.push("POINT Z (-122.4 47.7 120)");
+    // tab-separated ordinates are a point too (and widen the bbox)
+    rows.push("POINT (-122.05\t47.45)");
+    // one ordinate is no point: not (45.1, 45.1) (roborev 6180)
+    rows.push("POINT (45.1)");
     // the geocoder-failure placeholder is excluded, as for lat/lon columns
     rows.push("POINT (0 0)");
     let out = profile_points("profile_wkt_point", &rows);
@@ -4814,7 +4818,7 @@ fn wkt_point_column_supplies_the_coordinates() {
     // longitude first: swapped, every latitude would be out of range
     assert_eq!(
         out["projection"]["spatial"][0]["bbox"],
-        "POLYGON((-122.4 47.5, -122.4 47.7, -122.1 47.7, -122.1 47.5, -122.4 47.5))"
+        "POLYGON((-122.4 47.45, -122.4 47.7, -122.05 47.7, -122.05 47.45, -122.4 47.45))"
     );
     let notes = warnings_for(&out, "spatial");
     assert!(
@@ -4832,6 +4836,21 @@ fn wkt_point_column_supplies_the_coordinates() {
 
 #[test]
 fn wkt_point_detection_needs_the_parenthesis_and_lat_lon_columns_win() {
+    // a column with empty points is still a POINT column (roborev 6180)
+    let out = profile_points(
+        "profile_wkt_point_empty",
+        &[
+            "POINT (-71.06 42.36)",
+            "POINT EMPTY",
+            "POINT (-71.05 42.35)",
+        ],
+    );
+    assert_eq!(out["dpp"]["POINT_FIELD"], "loc");
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
+    );
+
     // place names that merely start with "Point"
     let out = profile_points(
         "profile_wkt_point_decoy",

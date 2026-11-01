@@ -20,8 +20,9 @@
 //! context key. A lookup that cannot run is noted, never fatal: the
 //! projection keeps its bbox.
 //!
-//! A file without coordinates gets its Locations from its region
-//! columns instead, in builds with the `viz` feature: a state column
+//! Region columns, in builds with the `viz` feature, supply the Census
+//! Locations instead — whether or not the file has coordinates, since
+//! they name every row's region where the lookup samples cells: a state column
 //! (USPS code, FIPS or name; header mentioning "state") from its
 //! frequency, and a county column (names or GEOIDs; header mentioning
 //! "county") resolved exactly against the Census county name table,
@@ -95,6 +96,18 @@ pub(super) fn locate(
     let mut primary = serde_json::Map::new();
     let mut regions: Vec<Value> = Vec::new();
 
+    // A state or county column names every row's region exactly, where
+    // the coordinate lookup samples only the densest cells: when one
+    // resolves, it supplies the Census Locations even if the file also
+    // has coordinates (which still give the bbox, centroid and Geonames
+    // label).
+    let (column_found, mut column_notes) = if mode.census() {
+        column_regions(backend, dppf, headers)
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let from_columns = !column_found.is_empty();
+
     let lat = dpp
         .get("LAT_FIELD")
         .and_then(Value::as_str)
@@ -103,6 +116,7 @@ pub(super) fn locate(
         .get("LON_FIELD")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty());
+    let has_coordinates = lat.is_some() && lon.is_some();
     if let (Some(lat), Some(lon)) = (lat, lon) {
         match sample_cells(backend, lat, lon) {
             Some((cells, kept, centroid)) if !cells.is_empty() => {
@@ -126,7 +140,7 @@ pub(super) fn locate(
                         Err(e) => notes.push(format!("--locate geonames: lookup failed ({e})")),
                     }
                 }
-                if mode.census() {
+                if mode.census() && !from_columns {
                     match spawn_lookup(&cells, &census_args()) {
                         Ok(rows) => {
                             let (found, mut more) = census_regions(&cells, &rows);
@@ -146,22 +160,26 @@ pub(super) fn locate(
                         )),
                     }
                 }
-                notes.push(format!(
-                    "--locate: looked up the {} densest coordinate cells, covering {coverage:.1}% \
-                     of the rows with valid coordinates",
-                    cells.len()
-                ));
+                if mode.geonames() || !from_columns {
+                    notes.push(format!(
+                        "--locate: looked up the {} densest coordinate cells, covering \
+                         {coverage:.1}% of the rows with valid coordinates",
+                        cells.len()
+                    ));
+                }
             },
             _ => notes.push(format!(
                 "--locate: no valid `{lat}`/`{lon}` coordinates to look up"
             )),
         }
-    } else if mode.census() {
-        let (found, mut more) = column_regions(backend, dppf, headers);
-        regions.extend(found);
-        notes.append(&mut more);
-    } else {
+    } else if !mode.census() {
         notes.push("--locate geonames: no latitude/longitude columns detected".to_string());
+    }
+    // without coordinates the column notes always explain the outcome;
+    // with them, only when the columns supplied the Locations
+    if from_columns || !has_coordinates {
+        regions.extend(column_found);
+        notes.append(&mut column_notes);
     }
 
     if primary.is_empty() && regions.is_empty() && notes.is_empty() {
@@ -540,7 +558,7 @@ fn column_regions(
         states = from_column;
         notes.insert(
             0,
-            format!("--locate census: no coordinates; states taken from the `{header}` column"),
+            format!("--locate census: states taken from the `{header}` column"),
         );
     }
     if states.is_empty() && counties.is_empty() && notes.is_empty() {

@@ -4730,7 +4730,8 @@ fn locate_region_columns(name: &str, rows: Vec<Vec<String>>) -> (Vec<String>, Ve
         .unwrap_or_default();
     let ids = spatial
         .iter()
-        .map(|l| l["identifier"].as_str().unwrap().to_string())
+        // the bbox Location carries no identifier
+        .map(|l| l["identifier"].as_str().unwrap_or_default().to_string())
         .collect();
     let notes = out["projection_warnings"]
         .as_array()
@@ -4866,6 +4867,31 @@ fn locate_census_tries_each_county_column_and_explains_ambiguity() {
             "only 0.0% of the `county` values name a US county (100.0% of the `county` values \
              name more than one county and there is no state column"
         ),
+        "{notes}"
+    );
+}
+
+// Region columns name every row exactly; the coordinate lookup samples
+// cells. With both, the columns supply the Census Locations — the dead
+// geocoder URL proves the coordinate lookup is not made.
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+#[test]
+fn locate_census_prefers_region_columns_over_sampled_coordinates() {
+    let mut rows = vec![svec!["id", "latitude", "longitude", "State", "County"]];
+    push_rows(&mut rows, 6, &["40.44", "-79.99", "PA", "Allegheny County"]);
+    push_rows(
+        &mut rows,
+        4,
+        &["39.96", "-75.16", "PA", "Philadelphia County"],
+    );
+    let (ids, spatial, notes) = locate_region_columns("profile_locate_columns_win", rows);
+
+    // the bbox Location first (from the coordinates), then the regions
+    assert!(spatial[0]["bbox"].is_string(), "{spatial:?}");
+    assert_eq!(&ids[1..], ["42", "42003", "42101"], "{notes}");
+    assert!(!notes.contains("Geocoder lookup failed"), "{notes}");
+    assert!(
+        notes.contains("counties taken from the `County` column"),
         "{notes}"
     );
 }

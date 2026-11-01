@@ -555,10 +555,10 @@ describegpt options:
                            phases when none is selected) and then exit, without calling
                            the LLM. Pass the other options of the run whose answers
                            you are forgetting (model, language, tag options and so on),
-                           since they are part of the cache key. Give the model's full
-                           name as the LLM server lists it (e.g. openai/gpt-oss-20b, not
-                           gpt-oss-20b): a run caches under the full name, and this
-                           option does not contact the server to complete a short one.
+                           since they are part of the cache key. A short model name
+                           (e.g. gpt-oss-20b) is completed from the LLM server's model
+                           list, as a run completes it; when the server cannot be
+                           reached, the name is used as given, so pass the full one.
                            A Description, Tags or Prompt answer cached with a
                            dictionary is found only while that dictionary's answer is
                            still cached.
@@ -6685,6 +6685,38 @@ fn run_inference_options(
     Ok(())
 }
 
+/// The model a run with these arguments used for its cache keys. A run resolves the model
+/// through `check_model`, so a short `--model gpt-oss-20b` is keyed as the endpoint's full
+/// `openai/gpt-oss-20b`; `--forget` must resolve it the same way or find nothing. Best-effort,
+/// because `--forget` needs no API key and may run offline: when the lookup fails, the name is
+/// kept as given, with a note.
+fn forget_model(args: &Args) -> CliResult<String> {
+    let prompt_file = get_prompt_file(args)?;
+    let given = prompt_file.model.clone();
+    let api_key = args
+        .flag_api_key
+        .clone()
+        .filter(|k| !k.eq_ignore_ascii_case("NONE"))
+        .or_else(|| env::var("QSV_LLM_APIKEY").ok())
+        .filter(|k| !k.is_empty());
+    let resolved = util::create_reqwest_blocking_client(
+        args.flag_user_agent.clone(),
+        10,
+        Some(prompt_file.base_url.clone()),
+    )
+    .and_then(|client| check_model(&client, api_key.as_deref(), args));
+    Ok(resolved.unwrap_or_else(|e| {
+        print_status(
+            &format!(
+                "--forget: could not look up the model `{given}` at the LLM API ({e}); using the \
+                 name as given. If the cached run used a short model name, pass the full one."
+            ),
+            None,
+        );
+        given
+    }))
+}
+
 fn forget_cached_answers(
     args: &Args,
     cache_type: &CacheType,
@@ -6695,7 +6727,7 @@ fn forget_cached_answers(
             "--forget has no cache to remove from with --no-cache."
         );
     }
-    let model = get_prompt_file(args)?.model.clone();
+    let model = forget_model(args)?;
     let cached = |key: &str| {
         let key = key.to_string();
         if args.flag_redis_cache {

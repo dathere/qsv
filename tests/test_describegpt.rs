@@ -5126,6 +5126,71 @@ fn describegpt_forget_removes_the_cached_dictionary_answer() {
     assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Second A");
 }
 
+/// describegpt over the mock with an explicit `--model`, for the `--forget` model lookup.
+fn mock_describegpt_cmd_with_model(
+    wrk: &Workdir,
+    base_url: &str,
+    model: &str,
+) -> std::process::Command {
+    let mut cmd = wrk.command("describegpt");
+    cmd.env("QSV_TIMEOUT", "0")
+        .env("QSV_LLM_APIKEY", "mock")
+        .env_remove("QSV_LLM_BASE_URL")
+        .env_remove("QSV_LLM_MODEL")
+        .arg("in.csv")
+        .args(["--base-url", base_url, "--model", model])
+        .args(["--disk-cache-dir", &wrk.path("cache").to_string_lossy()]);
+    cmd
+}
+
+// A run resolves a short --model to the endpoint's full id ("model" -> "mock-model") and
+// keys its cache by that, so --forget must resolve it too.
+#[test]
+#[serial]
+fn describegpt_forget_resolves_a_short_model_name() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_short_model");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("First");
+
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, &base_url, "model");
+    cmd.args(["--dictionary", "--format", "json", "--output", "out1.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, &base_url, "model");
+    cmd.args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the cached Dictionary answer"),
+        "{got}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "--forget must not call the LLM"
+    );
+}
+
+// An unreachable endpoint must not stop --forget: the name is used as given, with a note.
+#[test]
+#[serial]
+fn describegpt_forget_uses_the_model_as_given_when_the_api_is_unreachable() {
+    let wrk = Workdir::new("describegpt_forget_offline_model");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let dead = "http://127.0.0.1:9/v1"; // DevSkim: ignore DS137138,DS162092
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, dead, "model");
+    cmd.env_remove("QSV_LLM_APIKEY")
+        .args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("--forget: could not look up the model `model`"),
+        "{got}"
+    );
+    assert!(got.contains("No cached Dictionary answer found"), "{got}");
+}
+
 #[test]
 #[serial]
 fn describegpt_forget_finds_a_description_cached_under_its_dictionary() {

@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build: Polars is built with its `serde` feature instead of `serde-lazy`. qsv only serializes Polars schemas (the `.pschema.json` cache), which `serde` covers; `serde-lazy` also generated serialization code for Polars' whole query-plan layer, which qsv never uses. A clean `-F all_features` debug build takes about 16% less CPU time. No behavior change. ([#4951](https://github.com/dathere/qsv/pull/4951))
 
 ### Fixed
+- `describegpt --forget` completes a short `--model` name (e.g. `gpt-oss-20b`) from the LLM server's model list, as a run does, so it finds the answers that run cached under the full name (`openai/gpt-oss-20b`). It still needs no API key: when the server cannot be reached, the name is used as given, with a note.
 - `describegpt`: the LLM-answer cache ([#4970](https://github.com/dathere/qsv/pull/4970))
   - A dictionary answer that matched none of the columns (usually malformed JSON) was cached, so "Re-run to retry the inference" replayed the same unusable answer. It is now dropped from the cache, and a re-run asks the LLM again.
   - `--fresh` did not replace a cached answer, and on an empty cache it made a second LLM call and cached that answer instead of the one it returned. It now makes one call and writes that answer over the entry.

@@ -91,7 +91,24 @@ pub(super) fn read_describegpt_json(path: &str) -> CliResult<Value> {
 /// Run `qsv describegpt <input> --all --format json` (LLM settings from
 /// the `QSV_LLM_*` environment, describegpt's cache honored). `Err` is
 /// a message for a Recommended warning: `--infer` never fails the run.
-pub(super) fn run_describegpt(input_path: &str, tag_vocab: Option<&str>) -> Result<Value, String> {
+pub(super) fn run_describegpt(
+    input_path: &str,
+    tag_vocab: Option<&str>,
+    delimiter: u8,
+    no_headers: bool,
+) -> Result<Value, String> {
+    // describegpt has no --delimiter / --no-headers, so when profile
+    // reads the file differently from the defaults, hand it a normalized
+    // copy whose columns are the ones profile analyzed.
+    let normalized = if delimiter != b',' || no_headers {
+        Some(normalized_copy(input_path, delimiter, no_headers).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    let input_path = normalized.as_ref().map_or_else(
+        || input_path.to_string(),
+        |f| f.path().to_string_lossy().to_string(),
+    );
     let out = tempfile::Builder::new()
         .prefix("qsv-profile-describegpt")
         .suffix(".json")
@@ -105,7 +122,7 @@ pub(super) fn run_describegpt(input_path: &str, tag_vocab: Option<&str>) -> Resu
     util::run_qsv_cmd(
         "describegpt",
         &args,
-        input_path,
+        &input_path,
         "qsv profile: ran `describegpt` for --infer",
     )
     .map_err(|_| {
@@ -114,6 +131,39 @@ pub(super) fn run_describegpt(input_path: &str, tag_vocab: Option<&str>) -> Resu
             .to_string()
     })?;
     read_describegpt_json(&out_path).map_err(|e| e.to_string())
+}
+
+/// A comma-delimited copy of `input_path` read with `delimiter`; with
+/// `no_headers`, headed by the 0-based column indices that name
+/// profile's columns in that mode.
+fn normalized_copy(
+    input_path: &str,
+    delimiter: u8,
+    no_headers: bool,
+) -> CliResult<tempfile::NamedTempFile> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(delimiter)
+        .has_headers(false)
+        .flexible(true)
+        .from_path(input_path)?;
+    let out = tempfile::Builder::new()
+        .prefix("qsv-profile-describegpt-input")
+        .suffix(".csv")
+        .tempfile()?;
+    {
+        let mut wtr = csv::Writer::from_path(out.path())?;
+        let mut record = csv::ByteRecord::new();
+        let mut first = true;
+        while rdr.read_byte_record(&mut record)? {
+            if first && no_headers {
+                wtr.write_record((0..record.len()).map(|i| i.to_string()))?;
+            }
+            first = false;
+            wtr.write_byte_record(&record)?;
+        }
+        wtr.flush()?;
+    }
+    Ok(out)
 }
 
 /// A phase's `response`: older describegpt versions wrote Tags and
@@ -442,5 +492,21 @@ mod tests {
             &[],
         );
         assert!(m.context.is_null());
+    }
+}
+
+#[cfg(test)]
+mod normalize_tests {
+    use std::io::Write as _;
+
+    use super::*;
+
+    #[test]
+    fn normalized_copy_rewrites_the_delimiter_and_names_headerless_columns() {
+        let mut f = tempfile::Builder::new().suffix(".csv").tempfile().unwrap();
+        f.write_all(b"1;a,b\n2;c\n").unwrap();
+        let out = normalized_copy(&f.path().to_string_lossy(), b';', true).unwrap();
+        let text = std::fs::read_to_string(out.path()).unwrap();
+        assert_eq!(text, "0,1\n1,\"a,b\"\n2,c\n");
     }
 }

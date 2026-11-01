@@ -678,7 +678,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // --describegpt / --infer: LLM output, verified (tag vocabulary,
         // this file's columns) before the templates see it.
         let llm_json = if args.flag_infer {
-            match llm::run_describegpt(&input_path, args.flag_tag_vocab.as_deref()) {
+            match llm::run_describegpt(
+                &input_path,
+                args.flag_tag_vocab.as_deref(),
+                resolved_delimiter,
+                args.flag_no_headers,
+            ) {
                 Ok(v) => Some(v),
                 Err(e) => {
                     pending_warnings.push((

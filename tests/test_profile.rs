@@ -5005,6 +5005,11 @@ fn wkt_point_column_supplies_the_coordinates() {
     rows.push("POINT (-122.05\t47.45)");
     // one ordinate is no point: not (45.1, 45.1) (roborev 6180)
     rows.push("POINT (45.1)");
+    // runs of spaces, and padding inside the parentheses, still separate
+    // two ordinates (Codacy on #4974); both widen the bbox, so a value
+    // that failed to parse would show
+    rows.push("POINT (  -122.5   47.8  )");
+    rows.push("POINT (-122 \t 47.4)");
     // the geocoder-failure placeholder is excluded, as for lat/lon columns
     rows.push("POINT (0 0)");
     let out = profile_points("profile_wkt_point", &rows);
@@ -5013,7 +5018,7 @@ fn wkt_point_column_supplies_the_coordinates() {
     // longitude first: swapped, every latitude would be out of range
     assert_eq!(
         out["projection"]["spatial"][0]["bbox"],
-        "POLYGON((-122.4 47.45, -122.4 47.7, -122.05 47.7, -122.05 47.45, -122.4 47.45))"
+        "POLYGON((-122.5 47.4, -122.5 47.8, -122 47.8, -122 47.4, -122.5 47.4))"
     );
     let notes = warnings_for(&out, "spatial");
     assert!(
@@ -5066,6 +5071,32 @@ fn wkt_point_detection_needs_the_parenthesis_and_lat_lon_columns_win() {
         out["projection"]["spatial"][0]["bbox"],
         "POLYGON((-71.06 42.35, -71.06 42.36, -71.05 42.36, -71.05 42.35, -71.06 42.35))"
     );
+
+    // EWKT and GeoJSON text are not WKT POINT columns (documented scope)
+    for (name, values) in [
+        (
+            "profile_wkt_point_ewkt",
+            [
+                "SRID=4326;POINT(-71.06 42.36)",
+                "SRID=4326;POINT(-71.05 42.35)",
+            ],
+        ),
+        (
+            "profile_wkt_point_geojson",
+            [
+                r#"{"type":"Point","coordinates":[-71.06,42.36]}"#,
+                r#"{"type":"Point","coordinates":[-71.05,42.35]}"#,
+            ],
+        ),
+    ] {
+        let out = profile_points(name, &values);
+        assert!(
+            out["dpp"].get("POINT_FIELD").is_none(),
+            "{name}: {}",
+            out["dpp"]
+        );
+        assert!(out["projection"].get("spatial").is_none(), "{name}");
+    }
 
     // place names that merely start with "Point"
     let out = profile_points(

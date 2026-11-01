@@ -124,6 +124,43 @@ impl SqlBackend {
         }
         Ok(out)
     }
+
+    /// Rows that exactly duplicate an earlier row (every field's text
+    /// equal), in one streaming pass that keeps a 128-bit xxh3 hash per
+    /// distinct row rather than the rows themselves: ~16-32 bytes a row
+    /// where `SELECT DISTINCT *` held every full row (about 2.5x the
+    /// file's size). Each field is hashed with its length, so `a,bc` and
+    /// `ab,c` differ. Two distinct rows sharing a 128-bit hash would be
+    /// counted as duplicates; at a billion rows the odds are ~1e-21.
+    pub fn duplicate_row_count(&self) -> CliResult<u64> {
+        use std::collections::HashSet;
+
+        use xxhash_rust::xxh3::Xxh3;
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(self.delimiter)
+            .has_headers(self.has_header)
+            .flexible(true)
+            .from_path(&self.csv_path)
+            .map_err(|e| CliError::Other(format!("SqlBackend: cannot read input: {e}")))?;
+        let mut seen: HashSet<u128, foldhash::fast::RandomState> = HashSet::default();
+        let mut record = csv::ByteRecord::new();
+        let mut rows: u64 = 0;
+        let mut hasher = Xxh3::new();
+        while rdr
+            .read_byte_record(&mut record)
+            .map_err(|e| CliError::Other(format!("SqlBackend: cannot read row: {e}")))?
+        {
+            hasher.reset();
+            for field in &record {
+                hasher.update(&(field.len() as u64).to_le_bytes());
+                hasher.update(field);
+            }
+            seen.insert(hasher.digest128());
+            rows += 1;
+        }
+        Ok(rows - seen.len() as u64)
+    }
 }
 
 #[cfg(test)]
@@ -203,5 +240,34 @@ mod tests {
         let backend = SqlBackend::new(f.path()).with_has_header(false);
         let dates = backend.distinct_sorted_date_strings("column_1").unwrap();
         assert_eq!(dates, vec!["2024-01-01", "2024-01-02", "2024-01-03"]);
+    }
+
+    #[test]
+    fn duplicate_row_count_compares_each_fields_text() {
+        let f = write_csv(
+            "dups",
+            "k,v\na,1\na,1\n\"a\",1\na,01\nab,c\na,bc\n,x\n\"\",x\n",
+        );
+        // `a,1` twice more (quoting does not change a value), and `"",x`
+        // repeats `,x` (a quoted empty field is still empty). `a,01` is not
+        // `a,1`, and `ab,c` is not `a,bc`: each field is hashed with its
+        // length.
+        assert_eq!(SqlBackend::new(f.path()).duplicate_row_count().unwrap(), 3);
+    }
+
+    #[test]
+    fn duplicate_row_count_honors_delimiter_and_header() {
+        // tab-separated, `a,b` and `"a,b"` are the same single field; read
+        // as comma-separated they would be different rows
+        let tsv = write_csv("dups_tsv", "k\na,b\n\"a,b\"\n");
+        let backend = SqlBackend::new(tsv.path()).with_delimiter(b'\t');
+        assert_eq!(backend.duplicate_row_count().unwrap(), 1);
+
+        // without a header, the first row is data and is duplicated
+        let raw = write_csv("dups_noheader", "a,1\na,1\nb,2\n");
+        let with_header = SqlBackend::new(raw.path());
+        assert_eq!(with_header.duplicate_row_count().unwrap(), 0);
+        let no_header = SqlBackend::new(raw.path()).with_has_header(false);
+        assert_eq!(no_header.duplicate_row_count().unwrap(), 1);
     }
 }

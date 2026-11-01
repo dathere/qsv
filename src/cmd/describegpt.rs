@@ -678,7 +678,7 @@ mod session;
 use dictionary::{
     combine_dictionary_entries, combine_dictionary_entries_with_baseline,
     generate_code_based_dictionary, parse_frequency_csv, parse_llm_dictionary_response,
-    parse_stats_csv,
+    parse_llm_dictionary_response_quiet, parse_stats_csv,
 };
 use duckdb_sql::{
     build_score_refinement_prompt, escape_sql_string, extract_sql_sample, handle_sql_error,
@@ -3910,17 +3910,78 @@ fn get_cached_completion(
             Ok(rc_result.into_inner())
         },
         CacheType::Fresh => {
-            // Make fresh API call and manually update cache
             let fresh_result = get_completion(args, client, model, api_key, messages, kind)?;
-            // Manually update the appropriate cache with the fresh result
-            if args.flag_redis_cache {
-                let _ = get_redis_completion(args, client, model, api_key, kind, messages);
-            } else {
-                let _ = get_diskcache_completion(args, client, model, api_key, kind, messages);
-            }
+            // Write the fresh answer over the cached one. Calling the cached function here
+            // instead would keep a stale entry (a hit is never overwritten) or, on a miss,
+            // make a second LLM call and cache that answer rather than this one.
+            store_cached_completion(args, kind, model, &fresh_result);
             Ok(fresh_result)
         },
         CacheType::None => get_completion(args, client, model, api_key, messages, kind),
+    }
+}
+
+/// Overwrite the cache entry for `kind` with `completion` (disk or Redis, whichever is active).
+fn store_cached_completion(
+    args: &Args,
+    kind: PromptType,
+    model: &str,
+    completion: &CompletionResponse,
+) {
+    let key = get_cache_key(args, kind, model);
+    let stored = if args.flag_redis_cache {
+        GET_REDIS_COMPLETION
+            .cache_set(key, completion.clone())
+            .map(|_| ())
+            .map_err(|e| format!("{e:?}"))
+    } else {
+        GET_DISKCACHE_COMPLETION
+            .cache_set(key, completion.clone())
+            .and_then(|_| GET_DISKCACHE_COMPLETION.flush())
+            .map_err(|e| format!("{e:?}"))
+    };
+    if let Err(e) = stored {
+        print_status(
+            &format!("Warning: Cannot update cache entry for {kind}: {e}"),
+            None,
+        );
+    }
+}
+
+/// Drop the cached `kind` completion when the LLM's dictionary answer matched none of the
+/// columns, so a re-run asks the LLM again instead of replaying the unusable answer.
+fn forget_unusable_dictionary(
+    args: &Args,
+    kind: PromptType,
+    model: &str,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+    completion: &CompletionResponse,
+) {
+    if cache_type == &CacheType::None {
+        return;
+    }
+    // the same column names `build_combined_dictionary_entries` matches the answer against
+    let Ok((stats_records, _)) = parse_stats_csv(&analysis_results.stats) else {
+        return;
+    };
+    let field_names: Vec<String> = stats_records.into_iter().map(|r| r.field).collect();
+    let unusable = !field_names.is_empty()
+        && parse_llm_dictionary_response_quiet(
+            &completion.response,
+            &field_names,
+            args.flag_infer_content_type,
+        )
+        .map_or(true, |fields| fields.is_empty());
+    if unusable {
+        remove_cache_entry_by_key(
+            &get_cache_key(args, kind, model),
+            args,
+            kind,
+            &format!(
+                "Removed the unusable {kind} answer from the cache; a re-run asks the LLM again"
+            ),
+        );
     }
 }
 
@@ -4463,6 +4524,12 @@ fn format_dictionary_phase(
     } else if output_format == OutputFormat::Json || output_format == OutputFormat::Toon {
         let mut dictionary_json =
             build_output_dictionary_json(args, combined_entries, relationships);
+        // Stash before the attribution placeholder is filled in, as every other format
+        // does: the filled-in attribution carries the command line and a timestamp, and
+        // this JSON is fingerprinted into the Description/Tags/Prompt cache keys, so those
+        // phases would never hit the cache.
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
         {
@@ -4480,8 +4547,6 @@ fn format_dictionary_phase(
             "reasoning": completion_response.reasoning,
             "token_usage": completion_response.token_usage,
         });
-        DATA_DICTIONARY_JSON
-            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
     } else if output_format == OutputFormat::Tsv {
         let mut tsv_output =
             formatters::format_dictionary_tsv(combined_entries, args.flag_infer_content_type);
@@ -5094,6 +5159,14 @@ fn run_dictionary_phase(
         PromptType::Dictionary,
         &messages,
     )?;
+    forget_unusable_dictionary(
+        args,
+        PromptType::Dictionary,
+        model,
+        dictionary_cache_type,
+        analysis_results,
+        &data_dict,
+    );
     print_status(
         &format!(
             "   Received {}dictionary inference.\n   {:?}\n  ",
@@ -5156,6 +5229,14 @@ fn run_dictionary_phase(
         PromptType::DictionaryRefine,
         &refine_messages,
     )?;
+    forget_unusable_dictionary(
+        args,
+        PromptType::DictionaryRefine,
+        model,
+        dictionary_cache_type,
+        analysis_results,
+        &refine_completion,
+    );
     print_status(
         &format!(
             "   Received refined dictionary.\n   {:?}\n  ",
@@ -6644,30 +6725,15 @@ fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
 /// Redis installations.
 fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
     if args.flag_redis_cache {
-        let conn_str = &REDISCONFIG.get().unwrap().conn_str;
-        match redis::Client::open(conn_str.to_string()) {
+        // Through the cache store, not a raw `DEL <key>`: RedisCache stores entries under
+        // an escaped `{namespace}:{prefix}:{key}`, which a raw key never matches.
+        let key_string = key.to_string();
+        match GET_REDIS_COMPLETION.cache_remove(&key_string) {
+            Ok(_) => print_status(success_msg, None),
             Err(e) => print_status(
-                &format!(
-                    "Warning: Cannot open Redis client for removing cache entry for {kind}: {e:?}"
-                ),
+                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
                 None,
             ),
-            Ok(redis_client) => match redis_client.get_connection() {
-                Err(e) => print_status(
-                    &format!(
-                        "Warning: Cannot connect to Redis for removing cache entry for {kind}: \
-                         {e:?}"
-                    ),
-                    None,
-                ),
-                Ok(mut redis_conn) => match redis::cmd("DEL").arg(key).exec(&mut redis_conn) {
-                    Ok(()) => print_status(success_msg, None),
-                    Err(e) => print_status(
-                        &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                        None,
-                    ),
-                },
-            },
         }
     } else if !args.flag_no_cache {
         let key_string = key.to_string();

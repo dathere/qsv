@@ -214,12 +214,18 @@ impl Coords {
         }
     }
 
-    /// [`Self::texts`] cast to DOUBLE.
-    pub(super) fn exprs(&self) -> (String, String) {
-        let (la, lo) = self.texts();
-        (
-            format!("TRY_CAST({la} AS DOUBLE)"),
-            format!("TRY_CAST({lo} AS DOUBLE)"),
+    /// A derived table of the coordinates — `lat_t`/`lon_t` (the text)
+    /// and `la`/`lo` (cast to DOUBLE) — to select `FROM`, over a backend
+    /// reading every column as text. Each row's text is extracted ONCE:
+    /// inlining the POINT extraction into every aggregate repeated it
+    /// ~20 times a row, which Polars does not factor out (1.32 s vs
+    /// 0.05 s on 300k points).
+    pub(super) fn table(&self) -> String {
+        let (la_t, lo_t) = self.texts();
+        format!(
+            "(SELECT TRY_CAST(lat_t AS DOUBLE) AS la, TRY_CAST(lon_t AS DOUBLE) AS lo, lat_t, \
+             lon_t FROM (SELECT {la_t} AS lat_t, {lo_t} AS lon_t FROM data) AS coord_text) AS \
+             coords"
         )
     }
 
@@ -240,6 +246,11 @@ impl Coords {
     }
 }
 
+/// The plausible coordinates in a [`Coords::table`]: in range, and not
+/// the (0, 0) "null island" placeholder.
+pub(super) const KEEP_COORDS: &str =
+    "la BETWEEN -90 AND 90 AND lo BETWEEN -180 AND 180 AND NOT (la = 0 AND lo = 0)";
+
 /// One memoized SQL scan over the plausible coordinates — in range, and
 /// not the (0, 0) "null island" placeholder: their bounds, the number of
 /// rows excluded, each axis' decimal precision and the mean latitude.
@@ -250,22 +261,19 @@ fn coord_summary(coords: &Coords) -> Option<Json> {
         // as text, so integer-looking leading rows don't type the column
         // as integer and fail the scan at the first decimal
         let backend = backend.clone().with_all_strings();
-        let (la, lo) = coords.exprs();
-        let (la_t, lo_t) = coords.texts();
-        let keep = format!(
-            "{la} BETWEEN -90 AND 90 AND {lo} BETWEEN -180 AND 180 AND NOT ({la} = 0 AND {lo} = 0)"
-        );
+        let keep = KEEP_COORDS;
         let places = |text: &str| {
             format!("MAX(CASE WHEN {keep} THEN LENGTH(SPLIT_PART(TRIM({text}), '.', 2)) END)")
         };
         let sql = format!(
-            "SELECT MIN(CASE WHEN {keep} THEN {lo} END) AS min_lon, MAX(CASE WHEN {keep} THEN \
-             {lo} END) AS max_lon, MIN(CASE WHEN {keep} THEN {la} END) AS min_lat, MAX(CASE WHEN \
-             {keep} THEN {la} END) AS max_lat, AVG(CASE WHEN {keep} THEN {la} END) AS mean_lat, \
-             {} AS p_lat, {} AS p_lon, SUM(CASE WHEN {la} IS NOT NULL AND {lo} IS NOT NULL AND \
-             NOT ({keep}) THEN 1 ELSE 0 END) AS dropped FROM data",
-            places(&la_t),
-            places(&lo_t),
+            "SELECT MIN(CASE WHEN {keep} THEN lo END) AS min_lon, MAX(CASE WHEN {keep} THEN lo \
+             END) AS max_lon, MIN(CASE WHEN {keep} THEN la END) AS min_lat, MAX(CASE WHEN {keep} \
+             THEN la END) AS max_lat, AVG(CASE WHEN {keep} THEN la END) AS mean_lat, {} AS p_lat, \
+             {} AS p_lon, SUM(CASE WHEN la IS NOT NULL AND lo IS NOT NULL AND NOT ({keep}) THEN 1 \
+             ELSE 0 END) AS dropped FROM {}",
+            places("lat_t"),
+            places("lon_t"),
+            coords.table(),
         );
         let df = backend.query(&sql).ok()?;
         let get = |c: &str| -> Option<f64> {

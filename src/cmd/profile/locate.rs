@@ -32,7 +32,10 @@ use std::{collections::HashMap, io::Write as _};
 
 use serde_json::{Value, json};
 
-use super::{derive::Coords, sql_backend::SqlBackend};
+use super::{
+    derive::{Coords, KEEP_COORDS},
+    sql_backend::SqlBackend,
+};
 use crate::{CliResult, util};
 
 /// How many coordinate cells are looked up. Census single-record
@@ -192,10 +195,7 @@ fn sample_cells(backend: &SqlBackend, coords: &Coords) -> Option<(Vec<Cell>, f64
     // over the first rows types `42, 42, ... 42.36` as an integer column
     // and the scan then fails on the first decimal.
     let backend = backend.clone().with_all_strings();
-    let (la, lo) = coords.exprs();
-    let keep = format!(
-        "{la} BETWEEN -90 AND 90 AND {lo} BETWEEN -180 AND 180 AND NOT ({la} = 0 AND {lo} = 0)"
-    );
+    let (table, keep) = (coords.table(), KEEP_COORDS);
     let f64_at = |df: &polars::prelude::DataFrame, c: &str, i: usize| -> Option<f64> {
         let col = df.column(c).ok()?;
         let cast = col.cast(&polars::prelude::DataType::Float64).ok()?;
@@ -204,7 +204,7 @@ fn sample_cells(backend: &SqlBackend, coords: &Coords) -> Option<(Vec<Cell>, f64
 
     let totals = backend
         .query(&format!(
-            "SELECT COUNT(*) AS kept, AVG({la}) AS clat, AVG({lo}) AS clon FROM data WHERE {keep}"
+            "SELECT COUNT(*) AS kept, AVG(la) AS clat, AVG(lo) AS clon FROM {table} WHERE {keep}"
         ))
         .ok()?;
     let kept = f64_at(&totals, "kept", 0)?;
@@ -219,8 +219,8 @@ fn sample_cells(backend: &SqlBackend, coords: &Coords) -> Option<(Vec<Cell>, f64
 
     let df = backend
         .query(&format!(
-            "SELECT plat, plon, COUNT(*) AS n FROM (SELECT ROUND({la}, 3) AS plat, ROUND({lo}, 3) \
-             AS plon FROM data WHERE {keep}) AS s GROUP BY plat, plon ORDER BY n DESC, plat, plon \
+            "SELECT plat, plon, COUNT(*) AS n FROM (SELECT ROUND(la, 3) AS plat, ROUND(lo, 3) AS \
+             plon FROM {table} WHERE {keep}) AS s GROUP BY plat, plon ORDER BY n DESC, plat, plon \
              LIMIT {SAMPLE_CELLS}"
         ))
         .ok()?;

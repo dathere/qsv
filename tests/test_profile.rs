@@ -4584,6 +4584,8 @@ fn census_locate_cmd(wrk: &Workdir, url: &str) -> std::process::Command {
     cmd
 }
 
+// needs the `qsv geocode` child process
+#[cfg(feature = "geocode")]
 #[test]
 fn locate_census_adds_weighted_state_and_county_locations() {
     let wrk = Workdir::new("profile_locate_census");
@@ -4699,6 +4701,8 @@ fn locate_census_uses_a_state_column_without_coordinates() {
     assert_eq!(spatial[1]["prefLabel"], "New York");
 }
 
+// needs the `qsv geocode` child process
+#[cfg(feature = "geocode")]
 #[test]
 fn locate_geonames_labels_the_bbox_with_the_shared_place() {
     let wrk = Workdir::new("profile_locate_geonames");
@@ -4723,4 +4727,58 @@ fn locate_geonames_labels_the_bbox_with_the_shared_place() {
     );
     assert_eq!(place["identifier"], "https://sws.geonames.org/4930956/");
     assert_eq!(place["inScheme"]["title"], "GeoNames");
+}
+
+// needs the `qsv geocode` child process
+#[cfg(feature = "geocode")]
+#[test]
+fn locate_samples_coordinates_whose_leading_rows_look_like_integers() {
+    let wrk = Workdir::new("profile_locate_int_coords");
+    let mut rows = vec![svec!["id", "latitude", "longitude"]];
+    // more integer-looking rows than schema inference reads, then decimals
+    for i in 0..150 {
+        rows.push(vec![i.to_string(), "42".to_string(), "-71".to_string()]);
+    }
+    for i in 150..160 {
+        rows.push(vec![
+            i.to_string(),
+            "42.3601".to_string(),
+            "-71.0589".to_string(),
+        ]);
+    }
+    wrk.create("int.csv", rows);
+    let (url, hits) = start_census_mock();
+    let mut cmd = wrk.command("profile");
+    cmd.env("QSV_CENSUS_GEOCODER_URL", &url)
+        .env("QSV_CACHE_DIR", wrk.path("").to_string_lossy().to_string())
+        .env("QSV_CENSUS_GEOCODER_RETRY_BASE_MS", "1")
+        .arg("int.csv")
+        .args(["--locate", "census", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let spatial = out["projection"]["spatial"].as_array().unwrap();
+    assert_eq!(spatial[0]["centroid"]["type"], "Point", "{spatial:?}");
+    // both cells looked up: (42, -71) and (42.36, -71.059)
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[test]
+fn bbox_null_island_filter_survives_integer_looking_leading_rows() {
+    let wrk = Workdir::new("profile_bbox_int_coords");
+    let mut rows = vec![svec!["id", "latitude", "longitude"]];
+    for i in 0..150 {
+        rows.push(vec![i.to_string(), "42".to_string(), "-71".to_string()]);
+    }
+    rows.push(svec!["150", "42.3601", "-71.0589"]);
+    // a (0, 0) row sends the bbox through its SQL filter
+    rows.push(svec!["151", "0", "0"]);
+    wrk.create("int.csv", rows);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("int.csv").args(["-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out["projection"]["spatial"][0]["bbox"],
+        "POLYGON((-71.0589 42, -71.0589 42.3601, -71 42.3601, -71 42, -71.0589 42))"
+    );
 }

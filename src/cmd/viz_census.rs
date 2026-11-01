@@ -670,14 +670,21 @@ pub fn state_geoid_for_name(raw: &str) -> Option<&'static str> {
         })
 }
 
-/// The name of the state (or DC / territory) whose 2-digit GEOID is `geoid`, e.g. "25" →
-/// "Massachusetts".
+/// The name of the state, DC or territory (island areas included) whose 2-digit GEOID is `geoid`,
+/// e.g. "25" → "Massachusetts".
 #[must_use]
 pub fn state_name_for_geoid(geoid: &str) -> Option<&'static str> {
     USPS_STATE_FIPS
         .iter()
         .find(|(_, fips, _)| *fips == geoid)
         .map(|(.., name)| *name)
+        .or(match geoid {
+            "60" => Some("American Samoa"),
+            "66" => Some("Guam"),
+            "69" => Some("Northern Mariana Islands"),
+            "78" => Some("U.S. Virgin Islands"),
+            _ => None,
+        })
 }
 
 /// Is `values` a column of STATE codes and nothing else a finer layer could claim?

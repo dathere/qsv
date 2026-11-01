@@ -258,6 +258,9 @@ fn filtered_bounds(lat: &str, lon: &str) -> Option<(f64, f64, f64, f64)> {
     }
     let key = format!("robust_bbox\u{1f}{lat}\u{1f}{lon}");
     let hit = memo_sql(&key, |backend| {
+        // as text, so integer-looking leading rows don't type the column
+        // as integer and fail the scan at the first decimal
+        let backend = backend.clone().with_all_strings();
         let la = format!(r#"TRY_CAST("{lat}" AS DOUBLE)"#);
         let lo = format!(r#"TRY_CAST("{lon}" AS DOUBLE)"#);
         let keep = format!(

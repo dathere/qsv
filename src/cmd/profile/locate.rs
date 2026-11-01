@@ -176,6 +176,10 @@ fn sample_cells(backend: &SqlBackend, lat: &str, lon: &str) -> Option<(Vec<Cell>
     if lat.contains('"') || lon.contains('"') {
         return None;
     }
+    // Read every column as text and cast explicitly: schema inference
+    // over the first rows types `42, 42, ... 42.36` as an integer column
+    // and the scan then fails on the first decimal.
+    let backend = backend.clone().with_all_strings();
     let la = format!(r#"TRY_CAST("{lat}" AS DOUBLE)"#);
     let lo = format!(r#"TRY_CAST("{lon}" AS DOUBLE)"#);
     let keep = format!(
@@ -730,6 +734,17 @@ mod tests {
         assert_eq!(ids, ["25", "36"]);
         assert_eq!(regions[1]["prefLabel"], "New York");
         assert!(notes[0].contains("`state`"), "{notes:?}");
+
+        // island areas resolve too: an 11% Guam share must not sink the column
+        let territory =
+            json!({ "state": [{"value": "GU", "count": 11}, {"value": "MA", "count": 89}] });
+        let (regions, _) = state_column_regions(&territory, &["state".to_string()]);
+        let ids: Vec<&str> = regions
+            .iter()
+            .map(|r| r["identifier"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["25", "66"]);
+        assert_eq!(regions[1]["prefLabel"], "Guam");
 
         let unresolved =
             json!({ "state": [{"value": "open", "count": 9}, {"value": "MA", "count": 1}] });

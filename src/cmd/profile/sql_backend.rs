@@ -137,12 +137,27 @@ impl SqlBackend {
 
         use xxhash_rust::xxh3::Xxh3;
 
+        // Skip the same sniffed preamble lines `query` skips
+        // (QSV_SNIFF_PREAMBLE), or repeated metadata lines would count
+        // as duplicate rows.
+        let file = std::fs::File::open(&self.csv_path)
+            .map_err(|e| CliError::Other(format!("SqlBackend: cannot read input: {e}")))?;
+        let mut input = std::io::BufReader::new(file);
+        let mut line = Vec::new();
+        for _ in 0..crate::config::sniffed_preamble_lines(&self.csv_path) {
+            line.clear();
+            if std::io::BufRead::read_until(&mut input, b'\n', &mut line)
+                .map_err(|e| CliError::Other(format!("SqlBackend: cannot read input: {e}")))?
+                == 0
+            {
+                break;
+            }
+        }
         let mut rdr = csv::ReaderBuilder::new()
             .delimiter(self.delimiter)
             .has_headers(self.has_header)
             .flexible(true)
-            .from_path(&self.csv_path)
-            .map_err(|e| CliError::Other(format!("SqlBackend: cannot read input: {e}")))?;
+            .from_reader(input);
         let mut seen: HashSet<u128, foldhash::fast::RandomState> = HashSet::default();
         let mut record = csv::ByteRecord::new();
         let mut rows: u64 = 0;

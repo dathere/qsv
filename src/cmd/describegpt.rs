@@ -6693,12 +6693,15 @@ fn run_inference_options(
 fn forget_model(args: &Args) -> CliResult<String> {
     let prompt_file = get_prompt_file(args)?;
     let given = prompt_file.model.clone();
-    let api_key = args
-        .flag_api_key
-        .clone()
-        .filter(|k| !k.eq_ignore_ascii_case("NONE"))
-        .or_else(|| env::var("QSV_LLM_APIKEY").ok())
-        .filter(|k| !k.is_empty());
+    // --api-key wins over QSV_LLM_APIKEY, and `NONE` means NO key: resolve the
+    // precedence before filtering, or `--api-key NONE` would fall through to
+    // the environment's key and send it to this endpoint.
+    let api_key = match args.flag_api_key.as_deref() {
+        Some(k) if k.eq_ignore_ascii_case("NONE") => None,
+        Some(k) => Some(k.to_string()),
+        None => env::var("QSV_LLM_APIKEY").ok(),
+    }
+    .filter(|k| !k.is_empty());
     let resolved = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
         10,

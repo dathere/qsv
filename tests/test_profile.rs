@@ -4621,7 +4621,7 @@ fn locate_census_outage_is_noted_and_keeps_the_bbox() {
     let wrk = Workdir::new("profile_locate_census_down");
     seed_locate_csv(&wrk);
     // nothing listens on port 9 (discard): every lookup fails
-    let mut cmd = census_locate_cmd(&wrk, "http://127.0.0.1:9/geocoder"); // DevSkim: ignore DS137138
+    let mut cmd = census_locate_cmd(&wrk, "http://127.0.0.1:9/geocoder"); // DevSkim: ignore DS137138,DS162092
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let spatial = out["projection"]["spatial"].as_array().unwrap();
@@ -4686,7 +4686,7 @@ fn locate_census_uses_a_state_column_without_coordinates() {
     wrk.create("st.csv", rows);
     let mut cmd = wrk.command("profile");
     // no coordinates: no lookup is made, so a dead URL proves it
-    cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138
+    cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138,DS162092
         .arg("st.csv")
         .args(["--locate", "census", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
@@ -4712,7 +4712,7 @@ fn locate_region_columns(name: &str, rows: Vec<Vec<String>>) -> (Vec<String>, Ve
     let mut result = None;
     crate::test_viz_census::with_mock_tigerweb(|base, _| {
         let mut cmd = wrk.command("profile");
-        cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138
+        cmd.env("QSV_CENSUS_GEOCODER_URL", "http://127.0.0.1:9/geocoder") // DevSkim: ignore DS137138,DS162092
             .env("QSV_CENSUS_TIGERWEB_URL", base)
             .env(
                 "QSV_CACHE_DIR",

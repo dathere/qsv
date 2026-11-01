@@ -2061,6 +2061,28 @@ mod tests {
         assert!(Layer::County.matches_catalog_name("Counties"));
         assert!(!Layer::County.matches_catalog_name("County"));
     }
+
+    #[test]
+    fn county_name_table_names_a_geoid_by_its_full_name() {
+        let row = |geoid: &str, name: &str, basename: &str, state: &str| CountyNameRow {
+            geoid:    geoid.to_string(),
+            name:     name.to_string(),
+            basename: basename.to_string(),
+            state:    state.to_string(),
+        };
+        let table = CountyNameTable::from_rows(
+            &[
+                row("42003", "Allegheny County", "Allegheny", "42"),
+                row("24510", "Baltimore city", "Baltimore", "24"),
+            ],
+            2023,
+        );
+        // the full NAME, not the BASENAME the table also resolves by
+        assert_eq!(table.name_for_geoid("42003"), Some("Allegheny County"));
+        assert_eq!(table.name_for_geoid("24510"), Some("Baltimore city"));
+        assert_eq!(table.name_for_geoid("99999"), None);
+        assert_eq!(table.name_for_geoid(""), None);
+    }
 }
 
 // ===========================================================================================

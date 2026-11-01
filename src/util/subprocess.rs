@@ -61,15 +61,13 @@ pub fn print_status(msg: &str, elapsed: Option<std::time::Duration>) {
     }
 }
 
-// Helper function to run qsv commands with consistent error handling and timing
-pub fn run_qsv_cmd(
+/// Run a qsv command and return its output whatever its exit status, for callers that
+/// report the child's own stderr when it fails. `run_qsv_cmd` is the status-checked form.
+pub fn run_qsv_cmd_output(
     command: &str,
     args: &[&str],
     input_path: &str,
-    status_msg: &str,
-) -> CliResult<(String, String)> {
-    let start_time = Instant::now();
-
+) -> CliResult<std::process::Output> {
     // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
     let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
     let mut cmd = Command::new(qsv_path);
@@ -87,9 +85,19 @@ pub fn run_qsv_cmd(
         cmd.arg(command).arg(input_path).args(args);
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+    cmd.output()
+        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))
+}
+
+// Helper function to run qsv commands with consistent error handling and timing
+pub fn run_qsv_cmd(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<(String, String)> {
+    let start_time = Instant::now();
+    let output = run_qsv_cmd_output(command, args, input_path)?;
     log::debug!("qsv command {command} output: {output:?}");
 
     if !output.status.success() {

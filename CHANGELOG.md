@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `describegpt`: dataset-language detection no longer counts a value more than once. A String column's top frequency values and its stats min and max were all added to the detection sample, so a column holding a single value (e.g. "Central Park") contributed it three times, and three identical chunks trivially passed the detector's chunk-agreement gate - "Central Park" was detected as Spanish, which then set `detected_language` and the language of the LLM prompts. Each distinct value now contributes once, as in `profile`. ([#4976](https://github.com/dathere/qsv/pull/4976))
+- `describegpt --forget` completes a short `--model` name (e.g. `gpt-oss-20b`) from the LLM server's model list, as a run does, so it finds the answers that run cached under the full name (`openai/gpt-oss-20b`). It still needs no API key: when the server cannot be reached, the name is used as given, with a note. ([#4978](https://github.com/dathere/qsv/pull/4978))
 - `describegpt`: the LLM-answer cache ([#4970](https://github.com/dathere/qsv/pull/4970))
   - A dictionary answer that matched none of the columns (usually malformed JSON) was cached, so "Re-run to retry the inference" replayed the same unusable answer. It is now dropped from the cache, and a re-run asks the LLM again.
   - `--fresh` did not replace a cached answer, and on an empty cache it made a second LLM call and cached that answer instead of the one it returned. It now makes one call and writes that answer over the entry.

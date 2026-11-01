@@ -5126,6 +5126,137 @@ fn describegpt_forget_removes_the_cached_dictionary_answer() {
     assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Second A");
 }
 
+/// describegpt over the mock with an explicit `--model`, for the `--forget` model lookup.
+fn mock_describegpt_cmd_with_model(
+    wrk: &Workdir,
+    base_url: &str,
+    model: &str,
+) -> std::process::Command {
+    let mut cmd = wrk.command("describegpt");
+    cmd.env("QSV_TIMEOUT", "0")
+        .env("QSV_LLM_APIKEY", "mock")
+        .env_remove("QSV_LLM_BASE_URL")
+        .env_remove("QSV_LLM_MODEL")
+        .arg("in.csv")
+        .args(["--base-url", base_url, "--model", model])
+        .args(["--disk-cache-dir", &wrk.path("cache").to_string_lossy()]);
+    cmd
+}
+
+// A run resolves a short --model to the endpoint's full id ("model" -> "mock-model") and
+// keys its cache by that, so --forget must resolve it too.
+#[test]
+#[serial]
+fn describegpt_forget_resolves_a_short_model_name() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_short_model");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("First");
+
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, &base_url, "model");
+    cmd.args(["--dictionary", "--format", "json", "--output", "out1.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, &base_url, "model");
+    cmd.args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the cached Dictionary answer"),
+        "{got}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "--forget must not call the LLM"
+    );
+}
+
+// An unreachable endpoint must not stop --forget: the name is used as given, with a note.
+#[test]
+#[serial]
+fn describegpt_forget_uses_the_model_as_given_when_the_api_is_unreachable() {
+    let wrk = Workdir::new("describegpt_forget_offline_model");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let dead = "http://127.0.0.1:9/v1"; // DevSkim: ignore DS137138,DS162092
+    let mut cmd = mock_describegpt_cmd_with_model(&wrk, dead, "model");
+    cmd.env_remove("QSV_LLM_APIKEY")
+        .args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("--forget: could not look up the model `model`"),
+        "{got}"
+    );
+    assert!(got.contains("No cached Dictionary answer found"), "{got}");
+}
+
+/// A `/models`-only server recording each request's `Authorization` header ("" when absent).
+fn start_models_auth_recorder() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        net::TcpListener,
+        sync::{Arc, Mutex},
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // DevSkim: ignore DS137138,DS162092
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap()); // DevSkim: ignore DS137138,DS162092
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let seen_srv = Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut auth = String::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("authorization:") {
+                    auth = v.trim().to_string();
+                }
+            }
+            seen_srv.lock().unwrap().push(auth);
+            let payload = serde_json::json!({ "data": [{ "id": "mock-model" }] }).to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                 {}\r\nConnection: close\r\n\r\n{payload}",
+                payload.len()
+            );
+        }
+    });
+    (base_url, seen)
+}
+
+// roborev 6201: `--api-key NONE` means no key, even when QSV_LLM_APIKEY holds one — the
+// --forget model lookup must not send the environment's credential to this endpoint.
+#[test]
+#[serial]
+fn describegpt_forget_model_lookup_honors_api_key_none() {
+    let wrk = Workdir::new("describegpt_forget_api_key_none");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, seen) = start_models_auth_recorder();
+
+    for (api_key, expected) in [
+        (Some("NONE"), ""),
+        (Some("cli-key"), "bearer cli-key"),
+        (None, "bearer env-secret"),
+    ] {
+        seen.lock().unwrap().clear();
+        let mut cmd = mock_describegpt_cmd_with_model(&wrk, &base_url, "model");
+        cmd.env("QSV_LLM_APIKEY", "env-secret")
+            .args(["--dictionary", "--forget"]);
+        if let Some(k) = api_key {
+            cmd.args(["--api-key", k]);
+        }
+        let got = wrk.output_stderr(&mut cmd);
+        let auths = seen.lock().unwrap().clone();
+        assert_eq!(auths, [expected], "--api-key {api_key:?}: {got}");
+    }
+}
+
 #[test]
 #[serial]
 fn describegpt_forget_finds_a_description_cached_under_its_dictionary() {

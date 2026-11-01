@@ -2620,7 +2620,7 @@ pub(super) fn downgrade_all_midnight_datetime_columns(
 /// deterministically based on the `<ALL_UNIQUE>` frequency sentinel and the LLM
 /// has no way to verify that condition, so accepting it would let non-ALL_UNIQUE
 /// fields be misclassified.
-pub(super) fn parse_llm_dictionary_response(
+pub(super) fn parse_llm_dictionary_response_quiet(
     llm_response: &str,
     field_names: &[String],
     infer_content_type: bool,
@@ -2880,6 +2880,17 @@ pub(super) fn parse_llm_dictionary_response(
         }
     }
 
+    Ok(result)
+}
+
+/// [`parse_llm_dictionary_response_quiet`], warning when the response is unusable.
+pub(super) fn parse_llm_dictionary_response(
+    llm_response: &str,
+    field_names: &[String],
+    infer_content_type: bool,
+) -> CliResult<HashMap<String, LlmDictField>> {
+    let result =
+        parse_llm_dictionary_response_quiet(llm_response, field_names, infer_content_type)?;
     // A response that parsed but matched NOT ONE of the real column names is a red flag, not
     // an empty dictionary. The usual cause is malformed JSON: `extract_json_from_output`
     // fails on the whole object, falls through to its brace scan, and returns the first
@@ -2897,7 +2908,6 @@ pub(super) fn parse_llm_dictionary_response(
             field_names.len()
         );
     }
-
     Ok(result)
 }
 

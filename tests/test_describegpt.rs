@@ -4880,3 +4880,200 @@ fn describegpt_stdin_default_delimiter_env() {
         "stdin was read as one merged column: {got}"
     );
 }
+
+// ---- disk cache behavior, against a scripted OpenAI-compatible mock (no real LLM) ----
+
+/// A minimal OpenAI-compatible server: `GET /models` lists `mock-model`, and every
+/// `POST /chat/completions` answers with the current contents of the returned
+/// `Mutex<String>` and bumps the returned counter.
+fn start_llm_mock() -> (
+    String,
+    std::sync::Arc<std::sync::Mutex<String>>,
+    std::sync::Arc<std::sync::atomic::AtomicUsize>,
+) {
+    use std::{
+        io::{BufRead, BufReader, Read, Write},
+        net::TcpListener,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // DevSkim: ignore DS137138
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap()); // DevSkim: ignore DS137138
+    let answer = Arc::new(Mutex::new(String::new()));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let (answer_srv, calls_srv) = (Arc::clone(&answer), Arc::clone(&calls));
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).is_err() {
+                continue;
+            }
+            let mut content_length = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() || line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    content_length = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; content_length];
+            let _ = reader.read_exact(&mut body);
+            let payload = if request_line.contains("/models") {
+                serde_json::json!({ "data": [{ "id": "mock-model" }] })
+            } else {
+                calls_srv.fetch_add(1, Ordering::SeqCst);
+                serde_json::json!({
+                    "choices": [{ "message": { "content": *answer_srv.lock().unwrap() } }],
+                    "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+                })
+            }
+            .to_string();
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                 {}\r\nConnection: close\r\n\r\n{payload}",
+                payload.len()
+            );
+        }
+    });
+    (base_url, answer, calls)
+}
+
+fn mock_describegpt_cmd(wrk: &Workdir, base_url: &str) -> std::process::Command {
+    let mut cmd = wrk.command("describegpt");
+    cmd.env("QSV_TIMEOUT", "0")
+        .env("QSV_LLM_APIKEY", "mock")
+        .env_remove("QSV_LLM_BASE_URL")
+        .env_remove("QSV_LLM_MODEL")
+        .arg("in.csv")
+        .args(["--base-url", base_url, "--model", "mock-model"])
+        .args(["--disk-cache-dir", &wrk.path("cache").to_string_lossy()]);
+    cmd
+}
+
+fn mock_dictionary_answer(label: &str) -> String {
+    serde_json::json!({
+        "a": { "label": format!("{label} A"), "description": "first column" },
+        "b": { "label": format!("{label} B"), "description": "second column" },
+    })
+    .to_string()
+}
+
+fn mock_dictionary_label_a(wrk: &Workdir, out: &str) -> String {
+    let json: serde_json::Value = serde_json::from_str(&wrk.read_to_string(out).unwrap()).unwrap();
+    json["Dictionary"]["response"]["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "a")
+        .and_then(|f| f["label"].as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+#[serial]
+fn describegpt_cache_drops_an_unusable_dictionary_answer() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_cache_unusable");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = "Sorry, I cannot produce that JSON.".to_string();
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out1.json"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the unusable Dictionary answer"),
+        "{got}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // the unusable answer was not kept: the re-run asks the LLM again
+    *answer.lock().unwrap() = mock_dictionary_answer("Good");
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out2.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Good A");
+}
+
+#[test]
+#[serial]
+fn describegpt_fresh_makes_one_call_and_replaces_the_cached_answer() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_cache_fresh");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+
+    // --fresh on an empty cache: one LLM call, not one plus a second to fill the cache
+    *answer.lock().unwrap() = mock_dictionary_answer("First");
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args([
+        "--dictionary",
+        "--fresh",
+        "--format",
+        "json",
+        "--output",
+        "out1.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // --fresh over a cached answer replaces it ...
+    *answer.lock().unwrap() = mock_dictionary_answer("Second");
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args([
+        "--dictionary",
+        "--fresh",
+        "--format",
+        "json",
+        "--output",
+        "out2.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Second A");
+
+    // ... so a normal run replays the fresh answer, not the first one
+    *answer.lock().unwrap() = mock_dictionary_answer("Third");
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out3.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(mock_dictionary_label_a(&wrk, "out3.json"), "Second A");
+}
+
+#[test]
+#[serial]
+fn describegpt_json_rerun_replays_every_phase_from_the_cache() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_cache_all_phases");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("Same");
+
+    for out in ["out1.json", "out2.json"] {
+        let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+        cmd.args([
+            "--dictionary",
+            "--description",
+            "--format",
+            "json",
+            "--output",
+            out,
+        ]);
+        wrk.assert_success(&mut cmd);
+    }
+    // two phases asked once each; the identical second run is served from the cache
+    // (the Description key fingerprints the dictionary, which must not carry the
+    // per-run attribution timestamp)
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}

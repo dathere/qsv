@@ -4485,6 +4485,25 @@ fn profile_detects_content_language() {
     assert_eq!(out["projection_provenance"]["/language"], "inferred");
 }
 
+// Identifier-like text carries no language: an all-unique `name` column of
+// `n1 ... n40` is sampled in file order and was detected as Welsh.
+#[cfg(feature = "whatlang")]
+#[test]
+fn profile_does_not_detect_a_language_in_codes() {
+    let wrk = Workdir::new("profile_language_codes");
+    let mut rows = vec![svec!["id", "name", "amount"]];
+    for i in 1..=40 {
+        rows.push(vec![i.to_string(), format!("n{i}"), (i * 10).to_string()]);
+    }
+    wrk.create("in.csv", rows);
+    let out = profile_projection(&wrk, &[]);
+    assert!(
+        out["projection"].get("language").is_none(),
+        "{}",
+        out["projection"]["language"]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // --locate
 // ---------------------------------------------------------------------------

@@ -1387,6 +1387,28 @@ fn build_language_detection_sample(analysis_results: &AnalysisResults) -> String
     sample
 }
 
+/// Letters that are part of a word: alphabetic characters in runs of at least two. `n12` and
+/// `A7` contribute none, while a sentence in a script written without spaces (Japanese,
+/// Chinese, Thai) is one long run and counts in full.
+#[cfg(feature = "whatlang")]
+fn word_letters(text: &str) -> usize {
+    let (mut total, mut run) = (0, 0);
+    for c in text.chars() {
+        if c.is_alphabetic() {
+            run += 1;
+        } else {
+            if run >= 2 {
+                total += run;
+            }
+            run = 0;
+        }
+    }
+    if run >= 2 {
+        total += run;
+    }
+    total
+}
+
 /// Split `text` into `k` disjoint, contiguous chunks at whitespace-token boundaries.
 ///
 /// Splitting on tokens rather than byte offsets keeps every chunk char-boundary-safe and
@@ -1453,12 +1475,15 @@ pub(crate) fn detect_language_in_text(
 
     let chunks = split_into_chunks(text, LANGDETECT_CHUNKS)?;
     // A chunk whose detect() returns None (all dates/numbers/punctuation) counts as
-    // DISAGREEMENT. Note `is_some_and` rather than `detect(c)?.lang() == full_lang`: inside a
-    // closure `?` returns from the CLOSURE, so a None chunk would silently read as agreement.
-    if !chunks
-        .iter()
-        .all(|chunk| detect(chunk).is_some_and(|info| info.lang() == full_lang))
-    {
+    // DISAGREEMENT, and so does one without words: identifier-like values (`n1 n2 ... n20`)
+    // give whatlang the same lone letters in every chunk, which then agree on a language they
+    // never contained (Welsh, here). Note `is_some_and` rather than
+    // `detect(c)?.lang() == full_lang`: inside a closure `?` returns from the CLOSURE, so a
+    // None chunk would silently read as agreement.
+    if !chunks.iter().all(|chunk| {
+        word_letters(chunk) >= MIN_SAMPLE_CHARS
+            && detect(chunk).is_some_and(|info| info.lang() == full_lang)
+    }) {
         return None;
     }
 
@@ -11121,6 +11146,36 @@ description_md_template = "OVERRIDDEN: {{ llm_response }}"
         let sample = build_language_detection_sample(&analysis_results);
         assert_eq!(sample.matches("Central Park").count(), 1, "{sample}");
         assert_eq!(detect_language_in_text(&sample, None), None, "{sample}");
+    }
+
+    #[test]
+    #[cfg(feature = "whatlang")]
+    fn language_detection_needs_words_not_codes() {
+        // Identifier-like values carry no language: `n1 ... n20` - the
+        // file-order sample of an all-unique `name` column - read as Welsh,
+        // every chunk agreeing on the lone repeated letter.
+        let codes = (1..=20)
+            .map(|i| format!("n{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(detect_language_in_text(&codes, None), None, "{codes}");
+        let mixed_codes = (1..=20)
+            .map(|i| format!("A{i}x B{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            detect_language_in_text(&mixed_codes, None),
+            None,
+            "{mixed_codes}"
+        );
+        // Words in a script written without spaces are still words.
+        let japanese = "今日は天気がとても良いので公園へ散歩に行きました \
+                        明日は友達と一緒に映画を見に行く予定です \
+                        週末には家族で海へ旅行に出かけるつもりです";
+        assert!(
+            detect_language_in_text(japanese, None).is_some(),
+            "{japanese}"
+        );
     }
 
     /// The exact sample `build_language_detection_sample` produces for

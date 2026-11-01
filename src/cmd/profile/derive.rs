@@ -95,6 +95,8 @@ pub fn register(env: &mut Environment) {
     env.add_function("detect_data_language", detect_data_language);
     env.add_function("robust_bbox", robust_bbox);
     env.add_function("with_located", with_located);
+    env.add_function("ckan_group_concepts", ckan_group_concepts);
+    env.add_function("ckan_group_scheme", ckan_group_scheme);
 }
 
 // ---------------------------------------------------------------------
@@ -340,6 +342,105 @@ fn with_located(base: Value, located: Value) -> Value {
         return Value::UNDEFINED;
     }
     Value::from(Serde(Json::Array(out)))
+}
+
+/// `ckan_group_concepts(groups, scheme)` — CKAN package groups as DCAT-US v3 `theme`
+/// Concepts: `prefLabel` from the group's `title`, else `display_name`, else `name` (a
+/// bare-string group is its own label), `definition` from a non-empty `description`, and
+/// `inScheme` the `scheme` `ConceptScheme` (see `ckan_group_scheme`) when it has a title.
+/// A group with no label is skipped: a Concept without `prefLabel` is invalid. UNDEFINED
+/// when no group has a label.
+fn ckan_group_concepts(groups: Value, scheme: Value) -> Value {
+    let groups = to_json(&groups);
+    let scheme = to_json(&scheme);
+    let scheme = scheme
+        .get("title")
+        .and_then(Json::as_str)
+        .is_some_and(|t| !t.trim().is_empty())
+        .then_some(scheme);
+    let text = |g: &Json, key: &str| {
+        g.get(key)
+            .and_then(Json::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let concepts: Vec<Json> = groups
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|g| {
+            let label = match g {
+                Json::String(s) => Some(s.trim().to_string()).filter(|s| !s.is_empty()),
+                _ => text(g, "title")
+                    .or_else(|| text(g, "display_name"))
+                    .or_else(|| text(g, "name")),
+            }?;
+            let mut concept = json!({ "@type": "Concept", "prefLabel": label });
+            if let Some(definition) = text(g, "description") {
+                concept["definition"] = json!(definition);
+            }
+            if let Some(scheme) = &scheme {
+                concept["inScheme"] = scheme.clone();
+            }
+            Some(concept)
+        })
+        .collect();
+    if concepts.is_empty() {
+        return Value::UNDEFINED;
+    }
+    Value::from(Serde(Json::Array(concepts)))
+}
+
+/// `ckan_group_scheme(urls, fallback_title, portal_title)` — the `ConceptScheme` CKAN group
+/// Concepts belong to: the portal's own group list. The portal is found from the first of
+/// `urls` (the resource URL, then the input) that has CKAN's `/dataset/` path: its root is
+/// everything before that, so a CKAN under a sub-path is handled, and the scheme is
+/// `{"@id": "<root>/group/", "title": portal_title with {portal} replaced}`. A URL without
+/// that path may point off the portal (a linked resource), so it is not used; with none,
+/// the scheme is just `fallback_title`.
+fn ckan_group_scheme(urls: Value, fallback_title: Value, portal_title: Value) -> Value {
+    let urls = to_json(&urls);
+    let portal = urls
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Json::as_str)
+        .find_map(ckan_portal_root);
+    let fallback = to_json(&fallback_title);
+    let scheme = match (portal, to_json(&portal_title).as_str()) {
+        (Some(root), Some(pattern)) if !pattern.trim().is_empty() => {
+            let name = root
+                .split_once("://")
+                .map_or(root.as_str(), |(_, rest)| rest);
+            json!({
+                "@type": "ConceptScheme",
+                "@id": format!("{root}/group/"),
+                "title": pattern.replace("{portal}", name),
+            })
+        },
+        _ => match fallback.as_str().map(str::trim).filter(|t| !t.is_empty()) {
+            Some(title) => json!({ "@type": "ConceptScheme", "title": title }),
+            None => return Value::UNDEFINED,
+        },
+    };
+    Value::from(Serde(scheme))
+}
+
+/// The root of the CKAN portal serving `url`: scheme, host and any path before
+/// `/dataset/`, without a trailing slash. None for a URL without that path.
+fn ckan_portal_root(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let path = parsed.path();
+    let prefix = &path[..path.find("/dataset/")?];
+    Some(format!(
+        "{}{}",
+        parsed.origin().ascii_serialization(),
+        prefix.trim_end_matches('/')
+    ))
 }
 
 // ---------------------------------------------------------------------
@@ -1359,5 +1460,92 @@ mod tests {
         push_note("b".into());
         assert_eq!(drain_notes(), vec!["b".to_string(), "a".to_string()]);
         assert!(drain_notes().is_empty());
+    }
+
+    #[test]
+    fn ckan_groups_become_labelled_concepts_in_the_scheme() {
+        let groups = Value::from(Serde(json!([
+            { "name": "transportation", "title": "Transportation",
+              "display_name": "Transport", "description": " Roads and transit " },
+            { "name": "health", "title": "", "display_name": "Health" },
+            { "name": "parks", "description": "" },
+            "Environment",
+            { "title": "  " },
+            "",
+        ])));
+        let scheme = json!({ "@type": "ConceptScheme", "title": "CKAN groups" });
+        let got = to_json(&ckan_group_concepts(
+            groups,
+            Value::from(Serde(scheme.clone())),
+        ));
+        assert_eq!(
+            got,
+            json!([
+                { "@type": "Concept", "prefLabel": "Transportation",
+                  "definition": "Roads and transit", "inScheme": scheme },
+                { "@type": "Concept", "prefLabel": "Health", "inScheme": scheme },
+                { "@type": "Concept", "prefLabel": "parks", "inScheme": scheme },
+                { "@type": "Concept", "prefLabel": "Environment", "inScheme": scheme },
+            ])
+        );
+    }
+
+    #[test]
+    fn ckan_group_scheme_names_the_portal_from_a_ckan_url() {
+        let scheme = |urls: Json| {
+            to_json(&ckan_group_scheme(
+                Value::from(Serde(urls)),
+                Value::from("CKAN groups"),
+                Value::from("{portal} groups"),
+            ))
+        };
+        // an uploaded resource's URL is on the portal
+        assert_eq!(
+            scheme(json!([
+                "https://data.wprdc.org/dataset/311/resource/76fd/download/311.csv",
+                "local.csv"
+            ])),
+            json!({ "@type": "ConceptScheme", "@id": "https://data.wprdc.org/group/",
+                    "title": "data.wprdc.org groups" })
+        );
+        // a CKAN under a sub-path; the resource URL is undefined, the input is the dataset
+        assert_eq!(
+            scheme(json!([null, "https://example.org/ckan/dataset/roads"])),
+            json!({ "@type": "ConceptScheme", "@id": "https://example.org/ckan/group/",
+                    "title": "example.org/ckan groups" })
+        );
+        // a linked resource may live off the portal: no /dataset/ path, so not used
+        assert_eq!(
+            scheme(json!(["https://files.example.com/roads.csv", "roads.csv"])),
+            json!({ "@type": "ConceptScheme", "title": "CKAN groups" })
+        );
+    }
+
+    #[test]
+    fn ckan_groups_without_labels_are_undefined_and_no_scheme_means_no_in_scheme() {
+        let none = Value::from(Serde(json!([{ "title": "" }, ""])));
+        let scheme = Value::from(Serde(json!({ "@type": "ConceptScheme", "title": "G" })));
+        assert!(ckan_group_concepts(none, scheme).is_undefined());
+        let one = Value::from(Serde(json!([{ "name": "x" }])));
+        assert_eq!(
+            to_json(&ckan_group_concepts(one, Value::UNDEFINED)),
+            json!([{ "@type": "Concept", "prefLabel": "x" }])
+        );
+        // no portal and no fallback title: no scheme at all
+        let urls = Value::from(Serde(json!(["roads.csv"])));
+        assert!(
+            ckan_group_scheme(urls, Value::UNDEFINED, Value::from("{portal} groups"))
+                .is_undefined()
+        );
+        // an emptied {portal} pattern falls back to the plain title
+        let urls = Value::from(Serde(json!(["https://d.example/dataset/x"])));
+        assert_eq!(
+            to_json(&ckan_group_scheme(
+                urls,
+                Value::from("CKAN groups"),
+                Value::from(" ")
+            )),
+            json!({ "@type": "ConceptScheme", "title": "CKAN groups" })
+        );
     }
 }

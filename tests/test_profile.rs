@@ -5035,3 +5035,56 @@ fn infer_without_a_reachable_llm_warns_and_keeps_the_stats_description() {
     );
     assert!(out.get("llm_attribution").is_none());
 }
+
+#[test]
+fn ckan_groups_become_theme_concepts_in_the_portals_group_scheme() {
+    let wrk = Workdir::new("profile_ckan_group_themes");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(src, wrk.path("in.csv")).expect("copy fixture");
+    let ic_path = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/dcat-init-context.json");
+    let mut ic: Value = serde_json::from_str(&std::fs::read_to_string(ic_path).unwrap()).unwrap();
+    ic["package"]["groups"] = serde_json::json!([
+        { "name": "transportation", "title": "Transportation",
+          "description": "Roads, transit and parking" },
+        { "name": "health", "title": "" },
+    ]);
+    // an uploaded resource: its URL is on the portal, under CKAN's /dataset/ path
+    ic["resource"]["url"] =
+        serde_json::json!("https://data.example.gov/dataset/311/resource/ab12/download/311.csv");
+    wrk.create_from_string("ic.json", &ic.to_string());
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "dcat-us-v3",
+        "--initial-context",
+        "ic.json",
+    ])
+    .args(["--validate", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let scheme = serde_json::json!({ "@type": "ConceptScheme",
+        "@id": "https://data.example.gov/group/", "title": "data.example.gov groups" });
+    assert_eq!(
+        out["projection"]["theme"],
+        serde_json::json!([
+            { "@type": "Concept", "prefLabel": "Transportation",
+              "definition": "Roads, transit and parking", "inScheme": scheme },
+            { "@type": "Concept", "prefLabel": "health", "inScheme": scheme },
+        ])
+    );
+    assert!(
+        !out["projection_warnings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|w| w["field"].as_str().unwrap_or_default().starts_with("theme")),
+        "{:?}",
+        out["projection_warnings"]
+    );
+}

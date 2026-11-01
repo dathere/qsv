@@ -19,7 +19,14 @@
     "transportation"
   ],
   "theme": [
-    "transportation"
+    {
+      "@type": "Concept",
+      "inScheme": {
+        "@type": "ConceptScheme",
+        "title": "CKAN groups"
+      },
+      "prefLabel": "transportation"
+    }
   ],
   "temporal": [
     {

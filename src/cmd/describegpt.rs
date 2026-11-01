@@ -551,7 +551,13 @@ describegpt options:
     --fresh                Send a fresh request to the LLM API, refreshing a cached response if it exists.
                            When a --prompt SQL query fails, you can also use this option to request the
                            LLM to generate a new SQL query.
-    --forget               Remove a cached response if it exists and then exit.
+    --forget               Remove the cached LLM answers of the selected phases (all
+                           phases when none is selected) and then exit, without calling
+                           the LLM. Pass the other options of the run whose answers
+                           you are forgetting (model, language, tag options and so on),
+                           since they are part of the cache key. A Description, Tags
+                           or Prompt answer cached with a dictionary is found only
+                           while that dictionary's answer is still cached.
     --flush-cache          Flush the current cache entries on startup.
                            WARNING: This operation is irreversible.
 
@@ -4358,22 +4364,11 @@ fn emit_dictionary_context_only(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
     relationships: &[serde_json::Value],
-    model: &str,
-    base_url: &str,
 ) -> CliResult<()> {
-    let mut dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
-    if let Some(attribution) = dictionary_json.get_mut("attribution")
-        && let Some(attr_str) = attribution.as_str()
-    {
-        *attribution = json!(replace_attribution_placeholder(
-            attr_str,
-            args,
-            model,
-            base_url,
-            AttributionFormat::Markdown,
-            PromptType::Dictionary
-        ));
-    }
+    // The attribution placeholder is left unfilled, as every format's stash does: the filled-in
+    // attribution carries the command line and a timestamp, and this JSON is fingerprinted
+    // into the Prompt cache key, so a --prompt answer would never be served from the cache.
+    let dictionary_json = build_output_dictionary_json(args, combined_entries, relationships);
     DATA_DICTIONARY_JSON.get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
     Ok(())
 }
@@ -4868,13 +4863,7 @@ fn process_phase_output(
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
         let (combined_entries, relationships, _grain, _grain_unit, _tour) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
-        return emit_dictionary_context_only(
-            args,
-            &combined_entries,
-            &relationships,
-            model,
-            base_url,
-        );
+        return emit_dictionary_context_only(args, &combined_entries, &relationships);
     }
 
     if kind == PromptType::Dictionary {
@@ -5282,7 +5271,7 @@ fn run_dictionary_phase(
     if args.flag_prompt.is_some() {
         // --prompt mode: stash refined dictionary JSON for downstream SQL RAG context, no
         // user-visible dictionary output.
-        emit_dictionary_context_only(args, &merged_entries, &relationships, model, base_url)?;
+        emit_dictionary_context_only(args, &merged_entries, &relationships)?;
     } else {
         format_dictionary_phase(
             PromptType::Dictionary,
@@ -6692,64 +6681,186 @@ fn run_inference_options(
     Ok(())
 }
 
-fn determine_cache_kinds_to_remove(args: &Args) -> Vec<PromptType> {
-    // When removing a Dictionary cache entry we ALSO remove DictionaryRefine: the refine
-    // entry's cache key embeds the first-pass dictionary fingerprint, so it's logically
-    // downstream of the Dictionary entry. Without the cascade, `--forget --dictionary`
-    // would leave a stale refine entry that would no longer match any first-pass content.
-    if args.flag_dictionary {
-        vec![PromptType::Dictionary, PromptType::DictionaryRefine]
-    } else if args.flag_description {
-        vec![PromptType::Description]
-    } else if args.flag_tags {
-        vec![PromptType::Tags]
-    } else if args.flag_prompt.is_some() {
-        vec![PromptType::Prompt]
-    } else {
-        vec![
-            PromptType::Dictionary,
-            PromptType::DictionaryRefine,
-            PromptType::Description,
-            PromptType::Tags,
-            PromptType::Prompt,
-        ]
+fn forget_cached_answers(
+    args: &Args,
+    cache_type: &CacheType,
+    analysis_results: &AnalysisResults,
+) -> CliResult<()> {
+    if cache_type == &CacheType::None {
+        return fail_incorrectusage_clierror!(
+            "--forget has no cache to remove from with --no-cache."
+        );
     }
+    let model = get_prompt_file(args)?.model.clone();
+    let cached = |key: &str| {
+        let key = key.to_string();
+        if args.flag_redis_cache {
+            GET_REDIS_COMPLETION.cache_get(&key).ok().flatten()
+        } else {
+            GET_DISKCACHE_COMPLETION.cache_get(&key).ok().flatten()
+        }
+    };
+
+    let all = args.flag_all
+        || !(args.flag_dictionary
+            || args.flag_description
+            || args.flag_tags
+            || args.flag_prompt.is_some());
+    let mut later_kinds = Vec::new();
+    if all || args.flag_description {
+        later_kinds.push(PromptType::Description);
+    }
+    if all || args.flag_tags {
+        later_kinds.push(PromptType::Tags);
+    }
+    if args.flag_prompt.is_some() {
+        later_kinds.push(PromptType::Prompt);
+    }
+    let forget_dictionary = all || args.flag_dictionary;
+    let mut removed: HashMap<PromptType, bool> = HashMap::new();
+    let mut remove = |kind: PromptType, key: Option<&str>| {
+        let msg = format!("Removed the cached {kind} answer");
+        let found = match key {
+            Some(key) => remove_cache_entry_by_key(key, args, kind, &msg),
+            None => remove_prompt_cache_entries_for_both_flags(args, kind, &model, &msg),
+        };
+        *removed.entry(kind).or_default() |= found;
+    };
+    let key_of = |kind: PromptType| get_cache_key(args, kind, &model);
+
+    // Read before anything is removed: the dictionary answer is needed below even when it is
+    // being forgotten itself.
+    let dictionary_key = key_of(PromptType::Dictionary);
+    let first_pass = cached(&dictionary_key);
+
+    // A later phase is cached under the dictionary its run produced, or without one when that
+    // run did not run the dictionary phase (e.g. `--description` alone). Remove both forms:
+    // first the dictionary-less keys, while no dictionary is known, as in such a run.
+    if forget_dictionary {
+        remove(PromptType::Dictionary, Some(&dictionary_key));
+    }
+    for &kind in &later_kinds {
+        if kind == PromptType::Prompt {
+            remove(kind, None);
+        } else {
+            remove(kind, Some(&key_of(kind)));
+        }
+    }
+
+    // Then rebuild that dictionary from its cached answer, as run_dictionary_phase builds it,
+    // and remove the keys that include it.
+    // keeps FIRST_PASS_DICT_JSON, which the refine key embeds, seeded until the end
+    let mut _first_pass_guard = None;
+    let mut dictionary_found = false;
+    if let Some(first_pass) = first_pass {
+        let built = if args.flag_two_pass {
+            let (first_pass_entries, ..) =
+                build_combined_dictionary_entries(args, analysis_results, &first_pass)?;
+            _first_pass_guard = Some(FirstPassDictGuard::seed(
+                build_first_pass_dictionary_json_string(args, &first_pass_entries),
+            ));
+            let refine_key = key_of(PromptType::DictionaryRefine);
+            let refined = cached(&refine_key);
+            if forget_dictionary {
+                remove(PromptType::DictionaryRefine, Some(&refine_key));
+            }
+            match refined {
+                Some(refine) => {
+                    let (entries, relationships, ..) = build_combined_dictionary_entries_two_pass(
+                        args,
+                        analysis_results,
+                        &first_pass,
+                        &refine,
+                    )?;
+                    Some((entries, relationships))
+                },
+                None => None,
+            }
+        } else {
+            let (entries, relationships, ..) =
+                build_combined_dictionary_entries(args, analysis_results, &first_pass)?;
+            Some((entries, relationships))
+        };
+        if let Some((entries, relationships)) = built {
+            let dictionary_json = build_output_dictionary_json(args, &entries, &relationships);
+            DATA_DICTIONARY_JSON
+                .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+            dictionary_found = true;
+            for &kind in &later_kinds {
+                if kind == PromptType::Prompt {
+                    remove(kind, None);
+                } else {
+                    remove(kind, Some(&key_of(kind)));
+                }
+            }
+        }
+    }
+
+    let mut reported: Vec<PromptType> = Vec::new();
+    if forget_dictionary {
+        reported.push(PromptType::Dictionary);
+    }
+    reported.extend(&later_kinds);
+    for kind in reported {
+        if removed.get(&kind).copied().unwrap_or_default() {
+            continue;
+        }
+        if kind != PromptType::Dictionary && !dictionary_found {
+            print_status(
+                &format!(
+                    "No cached {kind} answer found. One cached with a dictionary can only be \
+                     located while that dictionary's answer is still cached."
+                ),
+                None,
+            );
+        } else {
+            print_status(&format!("No cached {kind} answer found"), None);
+        }
+    }
+    Ok(())
 }
 
-/// Remove a cache entry by key from whichever backend is active.
+/// Remove a cache entry by key from whichever backend is active, printing `success_msg`
+/// only when an entry was there to remove. Returns whether one was.
 ///
 /// Backend selection mirrors `run`'s match on `(flag_no_cache, flag_redis_cache)`:
 /// `--redis-cache` wins over the default disk cache, and `--no-cache` is a
 /// no-op. Previously this always took the disk path when `--no-cache` was
 /// false, so `--forget` / SQL-failure invalidation silently did nothing on
 /// Redis installations.
-fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) {
-    if args.flag_redis_cache {
+fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_msg: &str) -> bool {
+    let key_string = key.to_string();
+    let removed = if args.flag_redis_cache {
         // Through the cache store, not a raw `DEL <key>`: RedisCache stores entries under
         // an escaped `{namespace}:{prefix}:{key}`, which a raw key never matches.
-        let key_string = key.to_string();
-        match GET_REDIS_COMPLETION.cache_remove(&key_string) {
-            Ok(_) => print_status(success_msg, None),
-            Err(e) => print_status(
-                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
-                None,
-            ),
-        }
+        GET_REDIS_COMPLETION
+            .cache_remove(&key_string)
+            .map_err(|e| format!("{e:?}"))
     } else if !args.flag_no_cache {
-        let key_string = key.to_string();
-        if let Err(e) = GET_DISKCACHE_COMPLETION.cache_remove(&key_string) {
+        GET_DISKCACHE_COMPLETION
+            .cache_remove(&key_string)
+            .map_err(|e| format!("{e:?}"))
+    } else {
+        return false;
+    };
+    match removed {
+        Err(e) => {
             print_status(
-                &format!("Warning: Cannot remove cache entry for {kind}: {e:?}"),
+                &format!("Warning: Cannot remove cache entry for {kind}: {e}"),
                 None,
             );
-        } else {
+            false
+        },
+        Ok(None) => false,
+        Ok(Some(_)) => {
             print_status(success_msg, None);
-            if let Err(e) = GET_DISKCACHE_COMPLETION.flush() {
+            if !args.flag_redis_cache
+                && let Err(e) = GET_DISKCACHE_COMPLETION.flush()
+            {
                 print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
-            } else if success_msg.contains("removed") {
-                print_status("Flushed disk cache after removing cache entry", None);
             }
-        }
+            true
+        },
     }
 }
 
@@ -6785,16 +6896,19 @@ fn invalidate_cache_entry(args: &Args, kind: PromptType) -> CliResult<()> {
 
 /// Remove `PromptType::Prompt` cache entries for both "valid" and "invalid" validity
 /// flags, since the stored key is whichever flag was current at the time it was cached.
+/// Returns whether either was there to remove.
 fn remove_prompt_cache_entries_for_both_flags(
     args: &Args,
     kind: PromptType,
     actual_model: &str,
     success_msg: &str,
-) {
+) -> bool {
+    let mut removed = false;
     for flag in ["valid", "invalid"] {
         let key = get_cache_key_with_flag(args, kind, actual_model, flag);
-        remove_cache_entry_by_key(&key, args, kind, success_msg);
+        removed |= remove_cache_entry_by_key(&key, args, kind, success_msg);
     }
+    removed
 }
 
 /// Determine which additional columns to include based on args
@@ -7119,40 +7233,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 return fail_clierror!(r#"Cannot create cache directory "{diskcache_dir}": {e:?}"#);
             }
 
-            // If --forget is set, remove cache entries and exit
-            if args.flag_forget {
-                // Determine which cache entries to remove
-                let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-
-                // Get the model from prompt file for cache key generation
-                let prompt_file = get_prompt_file(&args)?;
-
-                // Remove cache entries for all specified kinds using the same key format as the
-                // macro
-                for kind in kinds_to_remove {
-                    if kind == PromptType::Prompt {
-                        // For prompt kind, the stored key depends on which validity
-                        // flag was active when cached, so remove both variants.
-                        remove_prompt_cache_entries_for_both_flags(
-                            &args,
-                            kind,
-                            &prompt_file.model,
-                            &format!("Found and removed cache entry for {kind}"),
-                        );
-                    } else {
-                        // For other kinds, use the normal key format
-                        let key = get_cache_key(&args, kind, &prompt_file.model);
-                        remove_cache_entry_by_key(
-                            &key,
-                            &args,
-                            kind,
-                            &format!("Found and removed cache entry for {kind}"),
-                        );
-                    }
-                }
-                return Ok(());
-            }
-
             if args.flag_fresh {
                 CacheType::Fresh
             } else {
@@ -7187,34 +7267,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .exec(&mut redis_conn)
                     .map_err(|_| "Cannot flush Redis cache")?;
                 print_status("Flushed Redis database.", None);
-                return Ok(());
-            }
-
-            // If --forget is set, remove cache entries and exit
-            if args.flag_forget {
-                let kinds_to_remove = determine_cache_kinds_to_remove(&args);
-                let prompt_file = get_prompt_file(&args)?;
-
-                for kind in kinds_to_remove {
-                    if kind == PromptType::Prompt {
-                        // PromptType::Prompt keys include the validity flag, so purge
-                        // both "valid" and "invalid" variants — same as the disk path.
-                        remove_prompt_cache_entries_for_both_flags(
-                            &args,
-                            kind,
-                            &prompt_file.model,
-                            &format!("Found and removed cache entry for {kind}"),
-                        );
-                    } else {
-                        let key = get_cache_key(&args, kind, &prompt_file.model);
-                        remove_cache_entry_by_key(
-                            &key,
-                            &args,
-                            kind,
-                            &format!("Found and removed cache entry for {kind}"),
-                        );
-                    }
-                }
                 return Ok(());
             }
 
@@ -7382,7 +7434,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // --process-response branch above already returns before reaching
     // here, so it's not affected. `api_key` is unused on the
     // --prepare-context path; the empty string is a typed placeholder.
-    let api_key: String = if args.flag_prepare_context {
+    // neither --prepare-context nor --forget calls the LLM
+    let api_key: String = if args.flag_prepare_context || args.flag_forget {
         String::new()
     } else if effective_base_url.contains("localhost") {
         // Allow empty API key for localhost
@@ -7598,6 +7651,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Chat mode (--prompt) already resolved it from the prompt text above.
     if args.flag_prompt.is_none() {
         resolve_output_language(&mut args);
+    }
+
+    // Here, not at cache setup: the cache keys include the file hash, the resolved output
+    // language and the dictionary the forgotten run produced, all known only from this point.
+    if args.flag_forget {
+        return forget_cached_answers(&args, &cache_type, &analysis_results);
     }
 
     // --prepare-context mode: output prompts and cache state as JSON, then exit

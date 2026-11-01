@@ -85,7 +85,7 @@
       {
         "flag": "--forget",
         "type": "flag",
-        "description": "Remove a cached response if it exists and then exit."
+        "description": "Remove the cached LLM answers of the selected phases (all phases when none is selected) and then exit, without calling the LLM. Pass the other options of the run whose answers you are forgetting (model, language, tag options and so on), since they are part of the cache key. A Description, Tags or Prompt answer cached with a dictionary is found only while that dictionary's answer is still cached."
       },
       {
         "flag": "--format",

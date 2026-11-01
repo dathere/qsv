@@ -5077,3 +5077,151 @@ fn describegpt_json_rerun_replays_every_phase_from_the_cache() {
     // per-run attribution timestamp)
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+
+#[test]
+#[serial]
+fn describegpt_forget_removes_the_cached_dictionary_answer() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_dictionary");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("First");
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out1.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the cached Dictionary answer"),
+        "{got}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "--forget must not call the LLM"
+    );
+
+    *answer.lock().unwrap() = mock_dictionary_answer("Second");
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--dictionary", "--format", "json", "--output", "out2.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(mock_dictionary_label_a(&wrk, "out2.json"), "Second A");
+}
+
+#[test]
+#[serial]
+fn describegpt_forget_finds_a_description_cached_under_its_dictionary() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_description");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("Same");
+
+    for out in ["out1.json", "out2.json"] {
+        let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+        cmd.args([
+            "--dictionary",
+            "--description",
+            "--format",
+            "json",
+            "--output",
+            out,
+        ]);
+        wrk.assert_success(&mut cmd);
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+    // only the Description: its key includes the dictionary, rebuilt from the cache
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--description", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the cached Description answer"),
+        "{got}"
+    );
+    assert!(
+        !got.contains("Removed the cached Dictionary answer"),
+        "{got}"
+    );
+
+    // the Description is asked again; the Dictionary is still served from the cache
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args([
+        "--dictionary",
+        "--description",
+        "--format",
+        "json",
+        "--output",
+        "out3.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+#[serial]
+fn describegpt_forget_reports_when_nothing_is_cached_and_needs_no_api_key() {
+    let wrk = Workdir::new("describegpt_forget_nothing");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, _answer, _calls) = start_llm_mock();
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.env_remove("QSV_LLM_APIKEY")
+        .args(["--dictionary", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("No cached Dictionary answer found"), "{got}");
+    assert!(!got.contains("Removed"), "{got}");
+}
+
+#[test]
+#[serial]
+fn describegpt_forget_finds_a_description_cached_without_a_dictionary() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_forget_description_alone");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = "A small table of two columns.".to_string();
+
+    // --description alone runs no dictionary phase, so its key carries no dictionary
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--description", "--format", "json", "--output", "out1.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--description", "--forget"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Removed the cached Description answer"),
+        "{got}"
+    );
+
+    let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+    cmd.args(["--description", "--format", "json", "--output", "out2.json"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+#[serial]
+fn describegpt_prompt_rerun_is_served_from_the_cache() {
+    use std::sync::atomic::Ordering;
+    let wrk = Workdir::new("describegpt_cache_prompt");
+    wrk.create_from_string("in.csv", "a,b\n1,x\n2,y\n");
+    let (base_url, answer, calls) = start_llm_mock();
+    *answer.lock().unwrap() = mock_dictionary_answer("Same");
+
+    for out in ["out1.md", "out2.md"] {
+        let mut cmd = mock_describegpt_cmd(&wrk, &base_url);
+        cmd.args(["--prompt", "How many rows are there?", "--output", out]);
+        wrk.assert_success(&mut cmd);
+    }
+    // the dictionary (for context) and the prompt, once each: the Prompt key includes the
+    // dictionary, which must not carry the per-run attribution timestamp
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}

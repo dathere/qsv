@@ -7166,7 +7166,6 @@ dependencies = [
  "unicode-width",
  "url",
  "uuid",
- "webdriver-downloader",
  "whatlang",
  "xxhash-rust",
  "yaml_serde",

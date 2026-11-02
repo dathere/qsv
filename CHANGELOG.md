@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Highlights
 
-~<TBD> commits since 27.0.1, and almost all of them go into one command: **`profile` now writes much more of a [DCAT-US v3.0](https://resources.data.gov/resources/dcat-us3/) record for you**, the metadata standard data.gov is moving to.
+~<TBD> commits since 27.0.1, and the banner feature is **`profile` writing much more of a [DCAT-US v3.0](https://resources.data.gov/resources/dcat-us3/) record for you**, the metadata standard data.gov is moving to.
 
 qsv is a [neuro-symbolic](https://en.wikipedia.org/wiki/Neuro-symbolic_AI) [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) engine, and this release puts both halves to work on the same record:
 

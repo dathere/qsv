@@ -254,8 +254,9 @@ profile options:
                               names: dcat-us-v3 (default), dcat-ap-v3,
                               croissant; geoconnex (when built with the
                               `geoconnex` feature, which no prebuilt binary
-                              includes: build qsv with `-F geoconnex`, or
-                              qsvdp with `-F datapusher_plus,geoconnex`).
+                              includes: build qsv with
+                              `-F feature_capable,geoconnex`, or qsvdp
+                              with `-F datapusher_plus,geoconnex`).
                               A path to a custom YAML profile is also
                               accepted; embedded names always win over
                               same-named files. See

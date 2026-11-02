@@ -7582,12 +7582,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // safety: canonicalize() ensures the path is valid
         .unwrap();
 
-    // If no inference flags specified, print error message.
+    // If no inference flags specified, print error message. `--forget` alone selects every
+    // phase (forget_cached_answers), as USAGE says.
     if !args.flag_all
         && !args.flag_dictionary
         && !args.flag_description
         && !args.flag_tags
         && args.flag_prompt.is_none()
+        && !args.flag_forget
     {
         return fail_incorrectusage_clierror!("No inference options specified.");
     // If --all flag is specified, but other inference flags are also set, print error message.

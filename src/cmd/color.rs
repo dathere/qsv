@@ -416,13 +416,10 @@ fn test_fill() {
 #[inline]
 fn field_width(field: &[u8]) -> usize {
     // Use display width for UTF-8 so East Asian wide chars/emoji align correctly.
-    std::str::from_utf8(field).map_or_else(
-        |_| field.len(),
-        |s| {
-            use unicode_width::UnicodeWidthStr;
-            s.width()
-        },
-    )
+    std::str::from_utf8(field).map_or(field.len(), |s| {
+        use unicode_width::UnicodeWidthStr;
+        s.width()
+    })
 }
 
 #[test]

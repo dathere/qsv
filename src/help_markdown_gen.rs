@@ -901,8 +901,10 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
         if trimmed.starts_with("Usage:") {
             // Finalize any pending option group
             if !current_option_lines.is_empty() {
-                option_groups.push((current_option_group_name.clone(), current_option_lines));
-                current_option_lines = Vec::new();
+                option_groups.push((
+                    current_option_group_name.clone(),
+                    std::mem::take(&mut current_option_lines),
+                ));
                 current_option_group_name.clear();
             }
             state = State::UsagePatterns;
@@ -932,8 +934,10 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
             if trimmed.ends_with("options:") || trimmed.ends_with("option:") {
                 // Finalize previous option group
                 if !current_option_lines.is_empty() {
-                    option_groups.push((current_option_group_name.clone(), current_option_lines));
-                    current_option_lines = Vec::new();
+                    option_groups.push((
+                        current_option_group_name.clone(),
+                        std::mem::take(&mut current_option_lines),
+                    ));
                 }
                 current_option_group_name = trimmed.trim_end_matches(':').to_string();
                 state = State::Options;
@@ -956,8 +960,10 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
             {
                 // Finalize previous option group
                 if !current_option_lines.is_empty() {
-                    option_groups.push((current_option_group_name.clone(), current_option_lines));
-                    current_option_lines = Vec::new();
+                    option_groups.push((
+                        current_option_group_name.clone(),
+                        std::mem::take(&mut current_option_lines),
+                    ));
                 }
                 current_option_group_name = trimmed.trim_end_matches(':').to_string();
                 continue;

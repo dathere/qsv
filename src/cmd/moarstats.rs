@@ -1333,7 +1333,7 @@ fn compute_percentile_ratio(p10: Option<f64>, p90: Option<f64>) -> Option<f64> {
 #[inline]
 #[allow(clippy::cast_precision_loss)]
 fn compute_share(part: u64, total: u64) -> Option<f64> {
-    (total > 0).then(|| part as f64 / total as f64)
+    (total > 0).then_some(part as f64 / total as f64)
 }
 
 /// Compute Normalized Entropy: `shannon_entropy` / log2(cardinality)
@@ -2935,7 +2935,7 @@ impl CentralMoments {
 
     /// Biased excess kurtosis g2 = m4 / m2² - 3
     fn g2(&self) -> Option<f64> {
-        (self.m2 > 0.0).then(|| self.m4 / (self.m2 * self.m2) - 3.0)
+        (self.m2 > 0.0).then_some(self.m4 / (self.m2 * self.m2) - 3.0)
     }
 
     /// Adjusted Fisher-Pearson sample skewness G1 (scipy `skew(bias=False)`).
@@ -3077,7 +3077,7 @@ fn compute_lag1_autocorrelation(values: &[f64], mean: f64) -> Option<f64> {
         let d = x - mean;
         den = d.mul_add(d, den);
     }
-    (den > 0.0).then(|| num / den)
+    (den > 0.0).then_some(num / den)
 }
 
 /// Minimum count of non-zero values for a Benford first-digit test
@@ -3224,7 +3224,7 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
     };
 
     let non_negative = !is_date && values.iter().all(|&v| v >= 0.0);
-    let hoover_val = (non_negative && sum > 0.0).then(|| mean_abs_dev / (2.0 * moments.mean));
+    let hoover_val = (non_negative && sum > 0.0).then_some(mean_abs_dev / (2.0 * moments.mean));
     let benford_val = if is_date {
         None
     } else {
@@ -3235,9 +3235,9 @@ fn finalize_kga(mut values: Vec<f64>, is_date: bool, atkinson_epsilon: f64) -> K
     let (l_cv_val, l_skew_val, l_kurt_val) = match compute_l_moments(&values, moments.mean) {
         // l_cv of a constant positive column is a genuine 0; the ratios over l2 are not
         Some([l1, l2, l3, l4]) => (
-            (!is_date && l1 > 0.0 && l2 >= 0.0).then(|| l2 / l1),
-            (l2 > 0.0).then(|| l3 / l2),
-            (l2 > 0.0).then(|| l4 / l2),
+            (!is_date && l1 > 0.0 && l2 >= 0.0).then_some(l2 / l1),
+            (l2 > 0.0).then_some(l3 / l2),
+            (l2 > 0.0).then_some(l4 / l2),
         ),
         None => (None, None, None),
     };

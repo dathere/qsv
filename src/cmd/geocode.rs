@@ -2888,55 +2888,6 @@ fn resolve_older_than(value: &str) -> CliResult<Duration> {
         })
 }
 
-/// What `cache-info` reports about one result cache's stored entries.
-#[derive(Default)]
-struct CacheEntryStats {
-    entries:     u64,
-    undecodable: u64,
-    oldest:      Option<SystemTime>,
-    newest:      Option<SystemTime>,
-}
-
-/// Count a result cache's stored entries (expired-but-unpruned ones included) and find the
-/// oldest and newest. `cached`'s `RedbCache` won't count (`cache_size()` is `Ok(None)`) and has
-/// no iterator, so read its redb file directly. That format is frozen for the file version in
-/// the file name (`_v3`): table `cached_disk_cache`, each value a positional array, encoded with
-/// `rmp_serde`, of the cached value, then its `created_at`. An entry that doesn't decode is counted
-/// apart: `cached` treats it as expired, so `cache-prune` removes it.
-/// A `cached` upgrade that changed this layout would show up here as 0 entries, or as entries
-/// that are all undecodable. `test_geocode::geocode_geoclient_disk_cache` pins the count to
-/// catch that.
-fn scan_cache_entries(path: &Path) -> Result<CacheEntryStats, String> {
-    use redb::{ReadableDatabase, ReadableTable};
-
-    // only the timestamp is needed: IgnoredAny skips the value without allocating it
-    #[derive(Deserialize)]
-    struct EntryMeta(serde::de::IgnoredAny, SystemTime);
-    const TABLE: redb::TableDefinition<&str, &[u8]> =
-        redb::TableDefinition::new("cached_disk_cache");
-
-    let db = redb::ReadOnlyDatabase::open(path).map_err(|e| e.to_string())?;
-    let rtxn = db.begin_read().map_err(|e| e.to_string())?;
-    let table = match rtxn.open_table(TABLE) {
-        Ok(table) => table,
-        // a cache file that was never written to has no table yet
-        Err(redb::TableError::TableDoesNotExist(_)) => return Ok(CacheEntryStats::default()),
-        Err(e) => return Err(e.to_string()),
-    };
-    let mut stats = CacheEntryStats::default();
-    for item in table.iter().map_err(|e| e.to_string())? {
-        let (_, value) = item.map_err(|e| e.to_string())?;
-        if let Ok(EntryMeta(_, created_at)) = rmp_serde::from_slice::<EntryMeta>(value.value()) {
-            stats.entries += 1;
-            stats.oldest = Some(stats.oldest.map_or(created_at, |t| t.min(created_at)));
-            stats.newest = Some(stats.newest.map_or(created_at, |t| t.max(created_at)));
-        } else {
-            stats.undecodable += 1;
-        }
-    }
-    Ok(stats)
-}
-
 /// An entry timestamp as RFC 3339 UTC, to the second.
 fn rfc3339_utc(t: SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
@@ -3041,12 +2992,13 @@ fn manage_one_cache(
             winfo!("Pruned {pruned} expired entries from the {provider} cache.");
         },
         GeocodeSubCmd::CacheInfo => {
-            let disk_path = cache.disk_path().to_path_buf();
-            // redb locks the file, so release cached's handle before opening it again
-            drop(cache);
-            let stats = scan_cache_entries(&disk_path)
+            // an explicit O(n) scan under one read transaction (cache_size() is Ok(None));
+            // `entries` includes expired-but-unpruned and undecodable entries
+            let stats = cache
+                .scan_stats()
                 .map_err(|e| CliError::Other(format!("Error reading {provider} cache: {e}")))?;
-            let entry_count = stats.entries + stats.undecodable;
+            let disk_path = cache.disk_path().to_path_buf();
+            let entry_count = stats.entries;
             let oldest_entry = stats.oldest.map(rfc3339_utc);
             let newest_entry = stats.newest.map(rfc3339_utc);
             let disk_path = disk_path.as_path();

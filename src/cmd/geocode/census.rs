@@ -1877,7 +1877,7 @@ mod tests {
             DEFAULT_CENSUS_GEOCODER_URL
         );
         for bad in [
-            "localhost:8080/geocoder",
+            "localhost:8080/geocoder", // DevSkim: ignore DS162092
             "ftp://x/geocoder",
             "not a url",
             "file:///tmp",

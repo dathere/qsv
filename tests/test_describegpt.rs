@@ -4901,7 +4901,7 @@ fn start_llm_mock() -> (
         },
     };
 
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // DevSkim: ignore DS137138
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // DevSkim: ignore DS162092
     let base_url = format!("http://{}/v1", listener.local_addr().unwrap()); // DevSkim: ignore DS137138
     let answer = Arc::new(Mutex::new(String::new()));
     let calls = Arc::new(AtomicUsize::new(0));

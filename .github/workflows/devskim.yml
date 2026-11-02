@@ -44,15 +44,12 @@ jobs:
           #   literal, none pass a string — minified third-party noise.
           #   Scoped to the two vendored files so any hand-written asset added
           #   to this dir stays scanned.
-          ignore-globs: |
-            .claude/**
-            tests/resources/**
-            docs/describegpt/*.md
-            docs/describegpt/*.json
-            docs/describegpt/*.toon
-            src/cmd/assets/datatables.min.js
-            src/cmd/assets/datatables.min.css
-        
+          # FORMAT: ONE comma-separated line, each glob prefixed with `**/`. The action passes
+          # this input unquoted to `devskim analyze --ignore-globs`, and DevSkim matches globs
+          # against absolute paths (/github/workspace/...). A newline-separated list of
+          # root-relative globs ignored NOTHING: verified by running the action's image locally.
+          ignore-globs: "**/.git/**,**/.claude/**,**/tests/resources/**,**/docs/describegpt/*.md,**/docs/describegpt/*.json,**/docs/describegpt/*.toon,**/src/cmd/assets/datatables.min.js,**/src/cmd/assets/datatables.min.css"
+
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4.39.1
         with:

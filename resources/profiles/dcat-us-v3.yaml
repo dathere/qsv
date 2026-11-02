@@ -133,9 +133,9 @@ vocabularies:
   # (https://www.w3.org/2016/05/ldqd). Swap these to report against a
   # different quality framework; a dimension mapped to "" is omitted.
   quality_dimensions:
-    completeness:      "http://www.w3.org/2016/05/ldqd#completeness"
-    conciseness:       "http://www.w3.org/2016/05/ldqd#conciseness"
-    syntacticValidity: "http://www.w3.org/2016/05/ldqd#syntacticValidity"
+    completeness:      "http://www.w3.org/2016/05/ldqd#completeness"  # DevSkim: ignore DS137138 (W3C vocabulary IRI, not fetched)
+    conciseness:       "http://www.w3.org/2016/05/ldqd#conciseness"  # DevSkim: ignore DS137138 (W3C vocabulary IRI, not fetched)
+    syntacticValidity: "http://www.w3.org/2016/05/ldqd#syntacticValidity"  # DevSkim: ignore DS137138 (W3C vocabulary IRI, not fetched)
 
   # Disclosures appended to text qsv generates, in the style of
   # describegpt's "WARNING: ... Verify before using!" attribution.

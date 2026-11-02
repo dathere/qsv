@@ -11,6 +11,8 @@ on:
 # Least privilege: the repo's default GITHUB_TOKEN permission is write.
 permissions:
   actions: write
+  # actions/checkout needs it: gh infers the repo from the checkout's git remote
+  contents: read
 
 jobs:
   clear-caches:

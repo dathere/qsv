@@ -1,6 +1,6 @@
 {
   "name": "@qsv/agent-skills",
-  "version": "27.0.1",
+  "version": "28.0.0",
   "description": "Agent Skills for qsv tabular data-wrangling toolkit",
   "type": "module",
   "main": "dist/index.js",

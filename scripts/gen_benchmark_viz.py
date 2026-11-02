@@ -499,6 +499,8 @@ def prep_treemap():
 
 def prep_gainers():
     f = qsv(["search", "-s", "delta (%)", r"^\d", latest_with_prev_baseline()], tmp("g0.csv"))  # positive deltas only
+    # the *_vs_duckdb rows time DuckDB, not qsv: a DuckDB upgrade would show up as a qsv gain
+    f = qsv(["search", "-v", "-s", "name", "_vs_duckdb$", f], tmp("g0b.csv"))
     f = qsv(["sort", "-s", "delta (%)", "-N", "-R", f], tmp("g1.csv"))
     return qsv(["slice", "--len", "15", f], tmp("gainers.csv"))
 
@@ -968,7 +970,8 @@ def main():
                     "The 15 benchmarks that improved most over the previous release. Bigger, brighter "
                     "bubbles are larger wins — the percentage cut in mean run time from one version "
                     "to the next. Benchmarks with no run in the previous release (new, or back after "
-                    "a gap) are left out, since their change would span several releases."))
+                    "a gap) are left out, since their change would span several releases, as are "
+                    "the sqlp_*_vs_duckdb reference runs, which time DuckDB rather than qsv."))
     delta_box_src = prep_delta_box()
     # Fit the axis to the charted data rather than a fixed window. DELTA_CLAMP has already dropped
     # the measurement artifacts, so everything left is a real result and none of it should be

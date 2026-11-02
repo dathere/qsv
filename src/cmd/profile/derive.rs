@@ -618,7 +618,7 @@ fn date_field(args: &Rest<Value>, state: &minijinja::State) -> Option<String> {
 }
 
 /// Whole calendar months from `a` to `b` when both fall on the same
-/// day of month at midnight (`2024-01-15 → 2024-04-15` is 3), else
+/// day of month and time of day (`2024-01-15 → 2024-04-15` is 3), else
 /// `None`.
 fn calendar_months(a: NaiveDateTime, b: NaiveDateTime) -> Option<i32> {
     if a.day() != b.day() || a.time() != b.time() {

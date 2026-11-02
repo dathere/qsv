@@ -1267,9 +1267,9 @@ dependencies = [
 
 [[package]]
 name = "cached"
-version = "4.0.3"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85a0dbacacc2069fc95062beec3f79a28f0f54ef2f72d7fe69000d1557f7c3d0"
+checksum = "6f886e989b5b6e7991606f2550e45a99e130024465ba8d67f9f9b256eb7044bf"
 dependencies = [
  "ahash",
  "blocking",
@@ -7127,12 +7127,10 @@ dependencies = [
  "rand_hc",
  "rand_xoshiro",
  "rayon",
- "redb",
  "redis",
  "regex",
  "reqwest",
  "rfd",
- "rmp-serde",
  "rust-i18n",
  "rust_decimal",
  "same-file",

@@ -6824,6 +6824,8 @@ fn tu_fixture(wrk: &Workdir) {
 }
 
 #[test]
+#[ignore = "regressed upstream by pola-rs/polars#30363; un-ignore when pola-rs/polars#30523 is \
+            fixed"]
 fn sqlp_count_over_limited_union() {
     // pola-rs/polars#30150: len() is no longer pushed into a sliced union.
     // Both queries panicked in polars-expr's sum reducer on c7da28c.
@@ -7105,6 +7107,205 @@ fn sqlp_create_temp_table() {
     assert_eq!(
         got,
         vec![svec!["g", "x"], svec!["1", "10"], svec!["1", "20"]]
+    );
+}
+
+// Polars SQL behavior changed between py-2.1.0 (7f902bd) and 0b47007.
+// The first two tests are RESULT changes to queries that already ran on py-2.1.0;
+// the rest errored on py-2.1.0.
+
+fn nulls_fixture(wrk: &Workdir) {
+    wrk.create(
+        "n.csv",
+        vec![
+            svec!["a", "b", "s"],
+            svec!["1", "10", "apple"],
+            svec!["", "20", "banana"],
+            svec!["3", "", ""],
+            svec!["4", "40", "date"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_is_distinct_from_binds_tighter_than_and_or() {
+    // pola-rs/polars#30367 (sqlparser 0.63): `a IS DISTINCT FROM b AND c OR d` now parses
+    // as `((a IS DISTINCT FROM b) AND c) OR d`. py-2.1.0 bound the AND/OR into the
+    // right operand, giving false/false/true/true.
+    let wrk = Workdir::new("sqlp_is_distinct_from_binds_tighter_than_and_or");
+    nulls_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("n.csv")
+        .arg("SELECT a, b, a IS DISTINCT FROM b AND a > 3 OR b = 10 AS r FROM n");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a", "b", "r"],
+            svec!["1", "10", "true"],
+            svec!["", "20", ""],
+            svec!["3", "", ""],
+            svec!["4", "40", "true"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_position_of_null_string_is_null() {
+    // pola-rs/polars#30493: POSITION/STRPOS of a NULL string is NULL; py-2.1.0
+    // returned 0 (the "not found" value).
+    let wrk = Workdir::new("sqlp_position_of_null_string_is_null");
+    nulls_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("n.csv")
+        .arg("SELECT s, POSITION('a' IN s) AS p, STRPOS(s, 'a') AS sp FROM n");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["s", "p", "sp"],
+            svec!["apple", "1", "1"],
+            svec!["banana", "2", "2"],
+            svec!["", "", ""],
+            svec!["date", "2", "2"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_join_on_mixed_numeric_keys() {
+    // pola-rs/polars#30401: join keys of different numeric types (i64 vs decimal) are
+    // compared in a common type; py-2.1.0 failed with "datatypes of join keys don't match".
+    let wrk = Workdir::new("sqlp_join_on_mixed_numeric_keys");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"])
+        .arg("SELECT t.x, u.y FROM t JOIN u ON t.x = u.y / 10.0 ORDER BY t.x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["x", "y"],
+            svec!["10", "100"],
+            svec!["20", "200"],
+            svec!["40", "400"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_correlated_in_with_inequality() {
+    // pola-rs/polars#30378: a correlated subquery may use any condition on outer
+    // columns, not just equalities. py-2.1.0: "no table or struct column named 't'".
+    let wrk = Workdir::new("sqlp_correlated_in_with_inequality");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"])
+        .arg("SELECT g, x FROM t WHERE x IN (SELECT y / 10 FROM u WHERE u.y > t.x * 6) ORDER BY x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["g", "x"],
+            svec!["1", "10"],
+            svec!["1", "20"],
+            svec!["3", "40"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_percentile_within_group() {
+    // pola-rs/polars#30442: PERCENTILE_CONT / PERCENTILE_DISC ... WITHIN GROUP.
+    let wrk = Workdir::new("sqlp_percentile_within_group");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x), 2) AS pc, \
+         ROUND(PERCENTILE_DISC(0.5) WITHIN GROUP (ORDER BY x), 2) AS pd FROM t",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["pc", "pd"], svec!["25.0", "20.0"]]);
+}
+
+#[test]
+fn sqlp_like_non_literal_pattern() {
+    // pola-rs/polars#30364 / #30372: a LIKE pattern may be an expression, not just a
+    // string literal.
+    let wrk = Workdir::new("sqlp_like_non_literal_pattern");
+    tu_fixture(&wrk);
+    nulls_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("n.csv")
+        .arg("SELECT s FROM n WHERE s LIKE '%' || 'an' || '%'");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["s"], svec!["banana"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT g, x FROM t WHERE CAST(x AS VARCHAR) LIKE CAST(g AS VARCHAR) || '%' ORDER BY x",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["g", "x"], svec!["1", "10"]]);
+}
+
+#[test]
+fn sqlp_typed_numeric_literal() {
+    // pola-rs/polars#30486: typed literals of numeric and string types. py-2.1.0 only
+    // accepted DATE, DATETIME, TIME and TIMESTAMP.
+    let wrk = Workdir::new("sqlp_typed_numeric_literal");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT INTEGER '5' + x AS v FROM t ORDER BY v");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["v"],
+            svec!["15"],
+            svec!["25"],
+            svec!["35"],
+            svec!["45"]
+        ]
+    );
+}
+
+#[test]
+fn sqlp_limit_scalar_subquery() {
+    // pola-rs/polars#30425: LIMIT/OFFSET/FETCH may be an expression such as a scalar
+    // subquery.
+    let wrk = Workdir::new("sqlp_limit_scalar_subquery");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.args(["t.csv", "u.csv"])
+        .arg("SELECT x FROM t ORDER BY x LIMIT (SELECT COUNT(*) FROM u WHERE g = 1)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["x"], svec!["10"], svec!["20"]]);
+}
+
+#[test]
+fn sqlp_repeated_unnamed_constants() {
+    // pola-rs/polars#30488: repeated unnamed constants get distinct names; py-2.1.0
+    // failed with "the name 'literal' ... is duplicate".
+    let wrk = Workdir::new("sqlp_repeated_unnamed_constants");
+    tu_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT 7, 7, x FROM t ORDER BY x LIMIT 1");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["literal", "literal:1", "x"], svec!["7", "7", "10"]]
     );
 }
 

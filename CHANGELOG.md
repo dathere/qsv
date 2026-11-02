@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **deps: Polars bumped to upstream rev [`0b47007`](https://github.com/pola-rs/polars/commit/0b47007ab65f0efd39ddc4d5abd5b2e44097a009)** (from `py-2.1.0`, 126 commits, [#4993](https://github.com/dathere/qsv/pull/4993)). Crates stay 0.55.1; it moves to zstd 0.14 ([#30316](https://github.com/pola-rs/polars/pull/30316)), so the 13 zstd "unsound" advisory ignores (#4930–#4942) are dropped from `.cargo/audit.toml`. Some `sqlp` results that already worked change:
+  - **`IS DISTINCT FROM` binds tighter than `AND`/`OR`** ([#30367](https://github.com/pola-rs/polars/pull/30367)). `a IS DISTINCT FROM b AND c OR d` is now `((a IS DISTINCT FROM b) AND c) OR d`; before, the `AND`/`OR` became part of the right operand.
+  - **`POSITION`/`STRPOS` of a NULL string is NULL**, not `0` ([#30493](https://github.com/pola-rs/polars/pull/30493)). String length, position and date-part functions also return Int64.
+  - **Known issue: `COUNT(*)` over a `UNION ALL ... LIMIT` panics again** (`not implemented for dtype UInt128`). The #30150 fix regressed in [#30363](https://github.com/pola-rs/polars/pull/30363); reported as [pola-rs/polars#30523](https://github.com/pola-rs/polars/issues/30523). Workaround: count a column (`COUNT(g)`) instead of `COUNT(*)`, or add an `ORDER BY` inside the limited union. (`COUNT(*)` over a `UNION ALL` without `LIMIT` panicked on py-2.1.0 too.)
+  - **A window function query with no outer `ORDER BY` may return rows in a different order** ([#30494](https://github.com/pola-rs/polars/pull/30494)). Add an `ORDER BY` if you depend on row order.
+  - **New SQL:** join keys of different numeric types ([#30401](https://github.com/pola-rs/polars/pull/30401)); correlated subqueries with any outer condition, `GROUP BY`, `HAVING`, `LIMIT`, `ANY`/`ALL`, and `LATERAL` derived tables ([#30378](https://github.com/pola-rs/polars/pull/30378), [#30453](https://github.com/pola-rs/polars/pull/30453), [#30466](https://github.com/pola-rs/polars/pull/30466), [#30459](https://github.com/pola-rs/polars/pull/30459), [#30490](https://github.com/pola-rs/polars/pull/30490), [#30467](https://github.com/pola-rs/polars/pull/30467)); `PERCENTILE_CONT`/`PERCENTILE_DISC ... WITHIN GROUP` ([#30442](https://github.com/pola-rs/polars/pull/30442)); non-literal `LIKE` patterns ([#30364](https://github.com/pola-rs/polars/pull/30364), [#30372](https://github.com/pola-rs/polars/pull/30372)); typed numeric/string literals ([#30486](https://github.com/pola-rs/polars/pull/30486)); `LIMIT`/`OFFSET` expressions such as scalar subqueries ([#30425](https://github.com/pola-rs/polars/pull/30425)); repeated unnamed constants ([#30488](https://github.com/pola-rs/polars/pull/30488)); `RANDOM()`, `REPEAT`, `CARDINALITY`, constant `GROUP BY` keys and row values in `IN (subquery)`.
+
 ## [28.0.0] - 2026-11-01 🧠 The "DCAT-US v3.0 neuro-symbolic FAIRification" Release 🏛️
 
 ### Highlights

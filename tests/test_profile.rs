@@ -5427,6 +5427,64 @@ fn describegpt_dictionary_annotates_csvw_columns() {
     // a column the dictionary does not describe is untouched
     assert_eq!(col("closed_dt")["titles"], json!(["closed_dt"]));
     assert!(col("closed_dt").get("dc:description").is_none());
+
+    // the annotations are inferred values, listed in projection_provenance
+    let idx = cols
+        .iter()
+        .position(|c| c["name"] == "case_enquiry_id")
+        .unwrap();
+    let base = format!("/distribution/0/csvw:tableSchema/columns/{idx}");
+    let provenance = &out["projection_provenance"];
+    assert_eq!(
+        provenance[format!("{base}/titles")],
+        "inferred",
+        "{provenance}"
+    );
+    assert_eq!(
+        provenance[format!("{base}/dc:description")],
+        "inferred",
+        "{provenance}"
+    );
+    let closed = cols.iter().position(|c| c["name"] == "closed_dt").unwrap();
+    assert!(
+        !provenance
+            .as_object()
+            .unwrap()
+            .keys()
+            .any(|k| k.contains(&format!("/columns/{closed}/"))),
+        "{provenance}"
+    );
+
+    // ...and an override replaces one
+    wrk.create_from_string(
+        "seed.json",
+        &json!({ "dataset_info": {
+            format!("/projection{base}/dc:description"): "Request number assigned by the city."
+        }})
+        .to_string(),
+    );
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv").args([
+        "--describegpt",
+        "dg.json",
+        "--initial-context",
+        "seed.json",
+        "-o",
+        "out2.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out2.json");
+    let provenance = &out["projection_provenance"];
+    assert_eq!(
+        provenance[format!("{base}/dc:description")],
+        "replaced",
+        "{provenance}"
+    );
+    assert_eq!(
+        provenance[format!("{base}/titles")],
+        "inferred",
+        "{provenance}"
+    );
 }
 
 #[test]

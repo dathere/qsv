@@ -767,7 +767,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &projection_ctx,
             projection::ProjectionMode::Dataset,
         )?;
-        let inferred_paths = projection::take_inferred_paths();
+        let mut inferred_paths = projection::take_inferred_paths();
+        inferred_paths.extend(llm_dictionary_paths(&dataset_block, &projection_ctx["llm"]));
         let inferred_pointers: Vec<String> =
             inferred_paths.iter().map(|p| p.pointer.clone()).collect();
         let merged_dataset = discovery_merge::merge_with_inferred(
@@ -1124,6 +1125,60 @@ struct InferredValue {
     field:   String,
     /// Pending-warning prefix of the block it was projected into.
     prefix:  String,
+}
+
+/// The CSVW column annotations an LLM data dictionary supplied to a freshly
+/// projected Dataset block: a column's `titles` carrying the dictionary's
+/// label, and its `dc:description`. They are inferred values like the rest
+/// of the `--describegpt` / `--infer` metadata, so `projection_provenance`
+/// lists them, and reports `replaced` once an override changes one.
+fn llm_dictionary_paths(block: &Value, llm: &Value) -> Vec<projection::InferredPath> {
+    let Some(dictionary) = llm.get("dictionary").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let Some(distributions) = block.get("distribution").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for (d, distribution) in distributions.iter().enumerate() {
+        let Some(columns) = distribution
+            .pointer("/csvw:tableSchema/columns")
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for (i, column) in columns.iter().enumerate() {
+            let Some(entry) = column
+                .get("name")
+                .and_then(Value::as_str)
+                .and_then(|name| dictionary.get(name))
+            else {
+                continue;
+            };
+            let from_llm = |key: &str, value: Option<&Value>| {
+                let llm_text = entry.get(key).and_then(Value::as_str);
+                llm_text.is_some() && value.and_then(Value::as_str) == llm_text
+            };
+            let base = format!("distribution/{d}/csvw:tableSchema/columns/{i}");
+            for (key, value, dictionary_key) in [
+                ("titles", column.pointer("/titles/1"), "label"),
+                (
+                    "dc:description",
+                    column.get("dc:description"),
+                    "description",
+                ),
+            ] {
+                if from_llm(dictionary_key, value) {
+                    let pointer = format!("{base}/{key}");
+                    paths.push(projection::InferredPath {
+                        field: pointer.clone(),
+                        pointer,
+                    });
+                }
+            }
+        }
+    }
+    paths
 }
 
 /// Snapshot the inferred values of a freshly projected block. `prefix`

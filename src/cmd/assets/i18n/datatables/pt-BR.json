@@ -28,7 +28,6 @@
             "1": "Uma linha copiada com sucesso"
         },
         "copyTitle": "Copiar para a Área de Transferência",
-        "createState": "Criar estado",
         "csv": "CSV",
         "excel": "Excel",
         "pageLength": {
@@ -37,13 +36,7 @@
             "1": "Mostrar 1 registro"
         },
         "pdf": "PDF",
-        "print": "Imprimir",
-        "removeAllStates": "Remover todos os estados",
-        "removeState": "Remover",
-        "renameState": "Renomear",
-        "savedStates": "Estados salvos",
-        "stateRestore": "Estado %d",
-        "updateState": "Atualizar"
+        "print": "Imprimir"
     },
     "datetime": {
         "amPm": {
@@ -225,33 +218,23 @@
         }
     },
     "stateRestore": {
-        "creationModal": {
-            "button": "Criar",
-            "columns": {
-                "search": "Busca de colunas",
-                "visible": "Visibilidade da coluna"
-            },
-            "name": "Nome:",
-            "order": "Ordernar",
-            "paging": "Paginação",
-            "scroller": "Posição da barra de rolagem",
-            "search": "Busca",
-            "searchBuilder": "Mecanismo de busca",
-            "select": "Selecionar",
-            "title": "Criar novo estado",
-            "toggleLabel": "Inclui:"
+        "button": {
+            "create": "Criar estado",
+            "edit": "Atualizar",
+            "remove": "Remover",
+            "statesList": "Estados salvos",
+            "statesRemoveAll": "Remover todos os estados"
         },
-        "duplicateError": "Já existe um estado com esse nome!",
-        "emptyError": "Não pode ser vazio!",
-        "emptyStates": "Nenhum estado salvo",
-        "removeConfirm": "Confirma remover %s?",
-        "removeError": "Falha ao remover estado!",
-        "removeJoiner": "e",
-        "removeSubmit": "Remover",
-        "removeTitle": "Remover estado",
-        "renameButton": "Renomear",
-        "renameLabel": "Novo nome para %s:",
-        "renameTitle": "Renomear estado"
+        "create": {
+            "title": "Criar novo estado"
+        },
+        "remove": {
+            "button": "Remover",
+            "message": {
+                "_": "Confirma remover %s?"
+            },
+            "title": "Remover estado"
+        }
     },
     "thousands": ".",
     "zeroRecords": "Nenhum registro encontrado"

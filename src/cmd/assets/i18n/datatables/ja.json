@@ -25,7 +25,6 @@
             "1": "1 行をクリップボードにコピーしました"
         },
         "copyTitle": "クリップボードにコピー",
-        "createState": "Stateを作成",
         "csv": "CSV",
         "excel": "Excel",
         "pageLength": {
@@ -33,13 +32,7 @@
             "-1": "すべての行を表示"
         },
         "pdf": "PDF",
-        "print": "印刷",
-        "removeAllStates": "Stateを全て削除",
-        "removeState": "削除",
-        "renameState": "名前を変更",
-        "savedStates": "State一覧",
-        "stateRestore": "State %d",
-        "updateState": "更新"
+        "print": "印刷"
     },
     "datetime": {
         "amPm": {
@@ -215,33 +208,23 @@
         }
     },
     "stateRestore": {
-        "creationModal": {
-            "button": "作成",
-            "columns": {
-                "search": "列の検索",
-                "visible": "列の表示"
-            },
-            "name": "名前:",
-            "order": "ソート",
-            "paging": "ページング",
-            "scroller": "スクロール位置",
-            "search": "検索",
-            "searchBuilder": "カスタムサーチ",
-            "select": "検索",
-            "title": "新しいStateを作成",
-            "toggleLabel": "含む:"
+        "button": {
+            "create": "Stateを作成",
+            "edit": "更新",
+            "remove": "削除",
+            "statesList": "State一覧",
+            "statesRemoveAll": "Stateを全て削除"
         },
-        "duplicateError": "この名前のStateはすでに存在します。",
-        "emptyError": "名前を空にすることはできません。",
-        "emptyStates": "保存されたStateはありません",
-        "removeConfirm": "%s を削除してよろしいですか？",
-        "removeError": "Stateの削除に失敗しました。",
-        "removeJoiner": " と ",
-        "removeSubmit": "削除",
-        "removeTitle": "Stateを削除",
-        "renameButton": "名前を変更",
-        "renameLabel": "%s の新しい名前:",
-        "renameTitle": "名前を変更"
+        "create": {
+            "title": "新しいStateを作成"
+        },
+        "remove": {
+            "button": "削除",
+            "message": {
+                "_": "%s を削除してよろしいですか？"
+            },
+            "title": "Stateを削除"
+        }
     },
     "thousands": ",",
     "zeroRecords": "一致するレコードがありません"

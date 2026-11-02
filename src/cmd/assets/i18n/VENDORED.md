@@ -15,7 +15,7 @@ with the library that consumes them:
 
 | Asset | Pinned to | Where the pin lives |
 |---|---|---|
-| `datatables/*.json` | DataTables combo `dt-3.1.4/b-4.1.2/cc-2.1.2/date-2.1.2/sb-2.1.1` | `DATATABLES_CDN_COMBO`, `src/cmd/viz.rs` |
+| `datatables/*.json` | DataTables combo `dt-3.1.5/b-4.1.3/cc-2.1.3/date-2.1.3/sb-2.1.1` | `DATATABLES_CDN_COMBO`, `src/cmd/viz.rs` |
 | `plotly/plotly-locale-*.js` | plotly.js **3.7.0** | `PLOTLY_CDN_VERSION`, `src/cmd/viz.rs` (and the bundle shipped by the `plotly` crate) |
 
 A bump does not always mean a re-download — it means a re-*check*. On **2026-08-02**, when the
@@ -65,9 +65,21 @@ moved): all seven files were sha256-compared against
 The `zh` SearchBuilder date-condition inversion is *still* unfixed at 3.1.4, so the splice-time
 override and the `zh_date_condition_labels_are_corrected` canary both stay.
 
+And on **2026-11-02**, when the pin moved from `dt-3.1.4/b-4.1.2/cc-2.1.2/date-2.1.2/sb-2.1.1`
+to `dt-3.1.5/b-4.1.3/cc-2.1.3/date-2.1.3/sb-2.1.1`, the check found the first upstream change since
+these files were first retrieved: all seven `https://cdn.datatables.net/plug-ins/3.1.5/i18n/<code>.json`
+files **differ** from 3.1.4, so all seven were re-downloaded. In every locale the change is a
+restructuring of the `stateRestore` keys (StateRestore is a paid DataTables Plus extension that qsv
+does not vendor, so none of those strings reach a page). The only other change is in `de`:
+`datetime.weekdays` went from full day names (`Sonntag`) to the abbreviations (`So.`) that the
+DateTime picker's narrow calendar header expects, matching the other locales. Every
+`searchBuilder`, `columnControl` and core string is unchanged; the `zh` SearchBuilder
+date-condition inversion is *still* unfixed at 3.1.5, so the splice-time override and the
+`zh_date_condition_labels_are_corrected` canary both stay.
+
 **Every dated paragraph above is a frozen historical record — leave them all alone.** Each one
 deliberately names the pin *as it was on that date*, so a version-bump sweep that greps for either
-the old pin **or the current one** will match them. The 2026-10-03 paragraph is the newest; the
+the old pin **or the current one** will match them. The last dated paragraph is the newest; the
 next bump appends another below it rather than editing any of these. The only live pins in this
 file are the table row above and the per-file `Source:` URLs under **Files**.
 
@@ -81,14 +93,14 @@ Note that plotly's locale files are genuinely version-specific: `plotly-locale-e
 
 ## Files
 
-### `datatables/es.json` — 10,700 bytes
+### `datatables/es.json` — 9,815 bytes
 
-* Source: <https://cdn.datatables.net/plug-ins/3.1.4/i18n/es-ES.json>
+* Source: <https://cdn.datatables.net/plug-ins/3.1.5/i18n/es-ES.json>
 * License: MIT, Copyright (C) 2008-2026 SpryMedia Ltd. Full text in
   `src/cmd/assets/LICENSE-DataTables.txt` (shared with the vendored DataTables bundle).
 * Supplies every DataTables-authored string in the data-viewer drawer: pagination, search,
   "no matching records", and the `columnControl` widget strings (the pinned combo includes
-  `cc-2.1.2`, and this file covers it).
+  `cc-2.1.3`, and this file covers it).
 * **qsv overrides `searchBuilder.button` in this file** at assembly time, as it does for every
   locale. The vendored file renders it literally as "Constructor de búsqueda"; qsv deliberately
   names that control "Advanced Filter" (translated from qsv's own catalog,
@@ -120,10 +132,10 @@ CDN name often is not** — DataTables region-qualifies most European languages:
 
 | Local file | Bytes | Fetched from |
 |---|---|---|
-| `datatables/fr.json` | 10,838 | `.../3.1.4/i18n/fr-FR.json` |
-| `datatables/de.json` | 10,523 | `.../3.1.4/i18n/de-DE.json` |
-| `datatables/it.json` | 10,443 | `.../3.1.4/i18n/it-IT.json` |
-| `datatables/pt-BR.json` | 8,659 | `.../3.1.4/i18n/pt-BR.json` |
+| `datatables/fr.json` | 9,974 | `.../3.1.5/i18n/fr-FR.json` |
+| `datatables/de.json` | 9,631 | `.../3.1.5/i18n/de-DE.json` |
+| `datatables/it.json` | 9,613 | `.../3.1.5/i18n/it-IT.json` |
+| `datatables/pt-BR.json` | 7,832 | `.../3.1.5/i18n/pt-BR.json` |
 | `plotly/plotly-locale-fr.js` | 3,505 | `plotly-locale-fr-3.7.0.js` |
 | `plotly/plotly-locale-de.js` | 3,225 | `plotly-locale-de-3.7.0.js` |
 | `plotly/plotly-locale-it.js` | 3,317 | `plotly-locale-it-3.7.0.js` |
@@ -153,8 +165,8 @@ DataTables falls back to its own English default for any key its language object
 
 | Local file | Bytes | Fetched from |
 |---|---|---|
-| `datatables/ja.json` | 8,845 | `.../3.1.4/i18n/ja.json` |
-| `datatables/zh-CN.json` | 7,844 | `.../3.1.4/i18n/**zh**.json` |
+| `datatables/ja.json` | 7,935 | `.../3.1.5/i18n/ja.json` |
+| `datatables/zh-CN.json` | 7,058 | `.../3.1.5/i18n/**zh**.json` |
 | `plotly/plotly-locale-ja.js` | 5,183 | `plotly-locale-ja-3.7.0.js` |
 | `plotly/plotly-locale-zh-CN.js` | 4,164 | `plotly-locale-**zh-cn**-3.7.0.js` |
 

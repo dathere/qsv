@@ -44,7 +44,7 @@ pub struct ContextArgs<'a> {
     /// load.
     pub profile:         &'a super::profile_spec::ProfileSpec,
     /// Run `qsv validate` (RFC 4180 + UTF-8) so the projection can
-    /// assert `conformsTo` / `characterEncoding`. Set from `--validate`:
+    /// assert `characterEncoding` and record syntactic validity. Set from `--validate`:
     /// a profile that was not asked to validate never pays for the
     /// extra full-file scan (§5.8).
     pub check_rfc4180:   bool,
@@ -236,8 +236,9 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // --- 7. RFC 4180 + UTF-8 conformance (with --validate) ---------------
     // `qsv validate` with no schema checks the file is well-formed CSV
     // (consistent field counts, quoting) and valid UTF-8. The projection
-    // derives `conformsTo`, `characterEncoding` and a syntactic-validity
-    // quality measurement from the result, so they are only asserted
+    // derives `characterEncoding` and a syntactic-validity quality
+    // measurement from the result (no RFC 4180 `conformsTo`: `qsv validate`
+    // is deliberately lenient), so they are only asserted
     // when actually checked; without --validate `rfc4180` is null and
     // they are omitted. Any failure — invalid data or a validator that
     // could not run — reads as `valid: false` rather than aborting.
@@ -339,8 +340,9 @@ fn detect_lat_lon(stats: &[StatsData]) -> (Option<String>, Option<String>) {
 /// latitude/longitude pair. A String column qualifies when its min and
 /// max both start `POINT (` (case-folded, any spacing before the
 /// parenthesis): every value sorting between two strings that share a
-/// prefix shares it too, so the stats prove the whole column without a
-/// scan. Requiring the parenthesis keeps out place names such as
+/// prefix shares it too, so every value starts `POINT` without a scan
+/// (a value that is not a point after all just fails to parse and drops
+/// out). Requiring the parenthesis keeps out place names such as
 /// "Point Reyes". `POINT Z`/`M`/`ZM` qualify (their first two numbers
 /// are still longitude and latitude); EWKT (`SRID=4326;POINT(…)`) does
 /// not.

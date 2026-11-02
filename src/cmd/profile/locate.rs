@@ -9,9 +9,9 @@
 //!   * `geonames` — the offline Geonames index (`geocode reverse`). The finest level that at least
 //!     [`AGREEMENT`] of the sampled rows share — nearest place, then admin1, then country — labels
 //!     the bbox Location (`prefLabel`, plus a `GeoNames` `identifier` for a place or country).
-//!   * `census` — the keyless US Census Geocoder (`geocode census --reverse`). Each state, and each
-//!     county holding at least [`REGION_MIN_SHARE`] of the sampled rows, becomes a Location keyed
-//!     by its Census GEOID.
+//!   * `census` — the keyless US Census Geocoder (`geocode census --reverse`). Each state and each
+//!     county holding at least [`REGION_MIN_SHARE`] of the sampled rows (the heaviest state
+//!     always), becomes a Location keyed by its Census GEOID.
 //!
 //! The lookups run once, before projection, as `qsv geocode` child
 //! processes — so they share its caches, rate limiting, retries and
@@ -500,9 +500,9 @@ fn census_regions(cells: &[Cell], rows: &[HashMap<String, String>]) -> (Vec<Valu
     (out, notes)
 }
 
-/// Census Locations for a file without coordinates, from its region
-/// columns: states from a state column (see [`state_column`]), counties
-/// from a county column (see [`county_column_regions`]). With no state
+/// Census Locations from a file's region columns, which `locate` prefers
+/// over sampled coordinates whenever they resolve: states from a state column (see
+/// [`state_column`]), counties from a county column (see [`county_column_regions`]). With no state
 /// column, the states are those of the resolved counties.
 #[cfg(all(feature = "viz", feature = "feature_capable"))]
 fn column_regions(

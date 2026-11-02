@@ -264,8 +264,8 @@ fn emit_field(
     let _ = derive::drain_notes();
     let inferred = emit_field_inner(env, ctx, field, scope, out, warnings);
     // Observations recorded by stats-derived helpers while this field
-    // rendered (excluded coordinates, placeholder dates, a declined
-    // schedule) — informational, never fatal under --strict.
+    // rendered (excluded coordinates, placeholder dates, LLM-dictionary
+    // annotations) — informational, never fatal under --strict.
     for note in derive::drain_notes() {
         warnings.push(ProjectionWarning {
             field:    format!("{scope}{}", field.path),

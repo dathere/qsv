@@ -36,9 +36,11 @@ a regular calendar series), the content language, DQV quality measurements
 (completeness, plus duplicate rows and CSV/UTF-8 validity with `--validate`),
 and a CSVW table schema with per-column constraints (required, ranges,
 lengths, enumerations, primary key). Values
-that are generated or detected rather than measured - a description, the
-language, the schedule - form an "inferred" tier that the publisher's own
-metadata replaces; `projection_provenance` lists them. A generated
+that are generated, detected or estimated rather than measured (a
+description, the language, the schedule, the temporal and spatial resolution)
+form an "inferred" tier that the publisher's own metadata replaces;
+`projection_provenance` lists them (and LLM column annotations, which only an
+override replaces). A generated
 description carries a disclosure and a review warning, so it never passes
 for a human-authored one.
 
@@ -146,9 +148,11 @@ profile options:
                                            place, admin1 or country that 80%
                                            of the sampled rows share (offline
                                            Geonames index).
-                                census   - add each US state, and each county
+                                census   - add each US state and county
                                            holding at least 5% of the sampled
-                                           rows, keyed by Census GEOID (US
+                                           rows (the heaviest state always;
+                                           up to 10 counties), keyed by
+                                           Census GEOID (US
                                            Census Geocoder: online, keyless,
                                            cached). State and county
                                            columns, when they resolve, supply
@@ -179,8 +183,9 @@ profile options:
                               environment variables. If it cannot run, a
                               warning is added and the statistics-based
                               description is used.
-    --tag-vocab <file>        With --describegpt or --infer: a `tag,description`
-                              CSV (as for describegpt). Only tags in it are
+    --tag-vocab <file>        With --describegpt or --infer: a local
+                              `tag,description` CSV (the format describegpt
+                              uses for its own tag vocabulary). Only tags in it are
                               kept - describegpt only asks the LLM to keep to
                               the vocabulary - and they also become `theme`
                               Concepts carrying the vocabulary's description.
@@ -248,8 +253,10 @@ profile options:
     --profile <name|path>     Metadata projection profile to use. Embedded
                               names: dcat-us-v3 (default), dcat-ap-v3,
                               croissant; geoconnex (when built with the
-                              `geoconnex` feature — qsv default; qsvdp
-                              opt-in via -F datapusher_plus,geoconnex).
+                              `geoconnex` feature, which no prebuilt binary
+                              includes: build qsv with
+                              `-F feature_capable,geoconnex`, or qsvdp
+                              with `-F datapusher_plus,geoconnex`).
                               A path to a custom YAML profile is also
                               accepted; embedded names always win over
                               same-named files. See

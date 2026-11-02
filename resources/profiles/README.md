@@ -75,6 +75,8 @@ undefined, not an error, when its inputs are absent, so guard with
 | `quality_measurements(stats, dpp, dims, rfc4180)` | DQV `QualityMeasurement` array; `dims` maps `completeness` / `conciseness` / `syntacticValidity` to dimension IRIs. |
 | `build_csvw_schema_rich(stats, dppf, headers, rows, dictionary?)` | CSVW table schema in file order, with per-column constraints (string lengths only for ASCII columns: qsv counts bytes, CSVW characters) and a `primaryKey` (a column whose cardinality equals `rows`). `dictionary` (`llm.dictionary`) adds each described column's LLM label to `titles` and its description as `dc:description`, with an Info note. |
 | `detect_data_language(stats, dppf)` | ISO 639-1 code of the text values (needs the `whatlang` feature). |
+| `ckan_group_concepts(groups, scheme)` | CKAN groups as DCAT-US v3 `theme` Concepts: `prefLabel` from the group's title (else display name, else name), `definition` from its description, and `inScheme` the given scheme. Groups with no label are skipped; undefined when none is left. |
+| `ckan_group_scheme(urls, fallback_title, portal_title)` | The `ConceptScheme` of a CKAN portal's groups, from the first URL with CKAN's `/dataset/` path: `@id` `<portal>/group/`, titled `portal_title` with `{portal}` replaced. Without such a URL, a scheme titled `fallback_title` (undefined when that is empty). |
 | `with_located(base, located)` | `base` (a `[Location]`, e.g. from `robust_bbox`) with the `--locate` results folded in: `located.primary` keys merge into the first Location (keys it already has win), `located.regions` follow it, and `located.notes` become Info warnings. With `located` null, `base` is returned unchanged. |
 
 The projection context also exposes `dppf` (per-column frequency),

@@ -11346,6 +11346,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--describegpt",
+          isRepeatable: true,
+          args: {
+            name: "describegpt",
+            isOptional: true,
+          },
+        },
+        {
           name: "--initial-context",
           isRepeatable: true,
           args: {
@@ -11358,6 +11366,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--locate",
+          isRepeatable: true,
+          args: {
+            name: "locate",
             isOptional: true,
           },
         },
@@ -11386,6 +11402,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--tag-vocab",
+          isRepeatable: true,
+          args: {
+            name: "tag-vocab",
+            isOptional: true,
+          },
+        },
+        {
           name: "--allow-external-validator",
         },
         {
@@ -11399,6 +11423,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--force",
+        },
+        {
+          name: "--infer",
         },
         {
           name: "--memcheck",

@@ -1,6 +1,6 @@
 {
   "name": "qsv-fmt",
-  "version": "27.0.1",
+  "version": "28.0.0",
   "description": "Reformat a CSV with different delimiters, record terminators or quoting rules. (Supports ASCII delimited data.)",
   "category": "formatting",
   "command": {

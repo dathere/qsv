@@ -4,7 +4,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [28.0.0] - <TBD> 🧠 The "DCAT-US v3.0 neuro-symbolic FAIRification" Release 🏛️
+
+### Highlights
+
+~<TBD> commits since 27.0.1, and almost all of them go into one command: **`profile` now writes much more of a [DCAT-US v3.0](https://resources.data.gov/resources/dcat-us3/) record for you**, the metadata standard data.gov is moving to.
+
+qsv is a [neuro-symbolic](https://en.wikipedia.org/wiki/Neuro-symbolic_AI) [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) engine, and this release puts both halves to work on the same record:
+
+- **Symbolic: properties measured from the data.** `profile` computes what is tedious and error-prone to write by hand from the stats and frequency it already runs, plus a SQL pass over the file: `temporalResolution` as an exact duration, `accrualPeriodicity` only when the dates really are a regular series, a `spatial` bounding box that drops out-of-range and "null island" rows, the dataset's `language`, DQV quality measurements, and CSVW column constraints and a primary key. `--locate` names the places a dataset covers, from the offline GeoNames index or the US Census Geocoder, and a WKT `POINT` column (the shape Socrata exports) now counts as coordinates.
+- **Neural: metadata an LLM proposes, checked before it is used.** `--describegpt` or `--infer` adds a `describegpt` description, tags and data dictionary. Tags can be held to a controlled vocabulary, dictionary entries must name real columns, and a generated description says so in the description itself.
+
+Every value records where it came from: values the publisher supplies win over inferred ones, and values measured from the file win over everything discovered. A new `projection_provenance` block lists which tier each value came from, and `llm_attribution` keeps the LLM run's command line, API URL and timestamp out of the published record. See the [DCAT-US v3](https://github.com/dathere/qsv/wiki/DCAT-US-v3) and [Metadata Profiling](https://github.com/dathere/qsv/wiki/Metadata-Profiling) wiki pages.
+
+Also in this release:
+
+- **`describegpt`'s answer cache works as documented.** `--fresh`, `--forget` and multi-phase JSON/TOON runs all hit, replace or remove the entries they should, on disk and on Redis.
+- **Data Schematics size themselves when embedded.** A framed `viz smart` page reports its height to the host page, so CKAN can fit the iframe without injecting a script, and a map in a sandboxed iframe explains why it is blank.
+- **Benchmarks on hyperfine 2.0**, with peak memory recorded, suspect results quarantined, and new `geocode geoclient` benchmarks.
+- **Least-privilege CI.** Every workflow declares the `GITHUB_TOKEN` permissions it needs, and third-party actions are pinned to commit SHAs.
+
+Read **[Breaking Changes](#v28-breaking-changes)** before upgrading if you consume `profile`'s DCAT-US v3 output: two of its properties changed shape.
+
+### 🙏 Contributors
+
+Thanks to everyone who made 28.0.0 possible:
+
+- [@jaemk](https://github.com/jaemk) for adding `RedbCache::scan_stats()` to [`cached`](https://github.com/jaemk/cached) 4.1 at our request ([jaemk/cached#336](https://github.com/jaemk/cached/issues/336), [jaemk/cached#337](https://github.com/jaemk/cached/pull/337)), which `geocode cache-info` now uses to count entries
+
+---
+<a id="v28-changes" name="v28-changes"></a>
+
+<a id="v28-breaking-changes" name="v28-breaking-changes"></a>
+### Breaking Changes
+- **`profile` (DCAT-US v3): CSVW column `datatype` is now an object, not a string** ([#4967](https://github.com/dathere/qsv/pull/4967)). It is now `{"base": "integer", "minimum": ..., ...}`, carrying derived constraints in the CSVW form, instead of a bare datatype string (`dcat-ap-v3` keeps the bare string). Consumers that read `datatype` as a string should read `datatype.base`.
+- **`profile` (DCAT-US v3): `theme` built from CKAN groups is now a list of Concepts, not group-name strings** ([#4972](https://github.com/dathere/qsv/pull/4972)). Each takes its `prefLabel` from the group's title and its `definition` from the group's description, and is placed `inScheme` the portal's own group list (`@id` `<portal>/group/`). The portal is found from a resource or input URL with CKAN's `/dataset/` path; without one, the scheme is titled "CKAN groups". Both titles can be changed in the profile (`concept_schemes`).
 
 ### Added
 - **`profile` (DCAT-US v3) computes properties that are tedious to write by hand**, deterministically, from the stats and frequency it already runs plus a SQL pass over the file. New MiniJinja helpers (`src/cmd/profile/derive.rs`) feed `resources/profiles/dcat-us-v3.yaml` (profile 5.0.0). Where a DataPusher+ spec supplies its own suggestions (`dpp_suggestions`), those still take precedence: ([#4967](https://github.com/dathere/qsv/pull/4967))
@@ -41,8 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `profile --validate`: the duplicate-row count (`hasQualityMeasurement`) keeps a 128-bit xxh3 hash per distinct row in one streaming pass, instead of `SELECT DISTINCT *` holding every full row. Release build, 1M-row 255 MB LA crime file: peak memory with `--validate` drops from 994 MB to 447 MB (the run without `--validate` peaks at 362 MB), for about 0.4 s more. A quoted empty field (`""`) now counts as the same value as an unquoted empty one, as CSV quoting does not change a value and qsv's completeness measure already counts both as empty; the SQL count treated them as different. ([#4975](https://github.com/dathere/qsv/pull/4975))
-- `profile` (DCAT-US v3): `theme` built from CKAN groups is now a list of Concepts instead of group-name strings. Each takes its `prefLabel` from the group's title and its `definition` from the group's description, and is placed `inScheme` the portal's own group list (`@id` `<portal>/group/`). The portal is found from a resource or input URL with CKAN's `/dataset/` path; without one, the scheme is titled "CKAN groups". Both titles can be changed in the profile (`concept_schemes`). ([#4972](https://github.com/dathere/qsv/pull/4972))
-- `profile` (DCAT-US v3 profile): a CSVW column's `datatype` is now an object (`{"base": "integer", "minimum": ..., ...}`) carrying derived constraints, in the CSVW form, instead of a bare datatype string (`dcat-ap-v3` keeps the bare string). Consumers that read `datatype` as a string should read `datatype.base`. ([#4967](https://github.com/dathere/qsv/pull/4967))
 - `profile --validate` also runs `qsv validate` over the input (CSV structure + UTF-8), one extra pass over the file, so it can assert `characterEncoding` and record syntactic validity. Without `--validate` there is no extra pass, and neither is asserted. ([#4967](https://github.com/dathere/qsv/pull/4967))
 - Build: bump `datasketches` from 0.5 to 0.6. `stats --quantile-method approx` now reads the quartiles, and separately the custom percentiles, in one t-digest scan each (`TDigestMut::quantiles`) instead of one query per rank, with identical output. 0.6's t-digest fixes can move an approximate quantile in its last printed digit: on 350K test rows, 2 of about 100 values changed, and parallel runs on indexed files were unchanged. `--cardinality-method approx` and `frequency --sketch-method frequent_items` output is unchanged. ([#4963](https://github.com/dathere/qsv/pull/4963))
 - Build: bump `cached` from 4.0 to 4.1. `geocode cache-info` now counts each result cache's entries with `cached`'s new `RedbCache::scan_stats()`, added at our request ([jaemk/cached#336](https://github.com/jaemk/cached/issues/336)). Previously qsv opened the redb file a second time and decoded `cached`'s on-disk format itself. The scan uses the open cache handle and stays correct if `cached` changes its file format. qsv no longer depends on `redb` and `rmp-serde` directly. `cache-info` output is unchanged. ([#4983](https://github.com/dathere/qsv/pull/4983))
@@ -76,6 +108,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`viz smart`: a map in a sandboxed iframe now says why it's blank** ([#4947](https://github.com/dathere/qsv/pull/4947), [#4946](https://github.com/dathere/qsv/issues/4946)). Embedded in an `<iframe sandbox>` without `allow-same-origin` (the CKAN Webpage view the wiki recommends), every MapLibre map panel stayed empty with no error: the map library bundled with plotly.js 3.x rejects its own worker's messages when the page's origin is `null`. The schematic now shows a note above each such map telling the viewer to open it in its own tab. Pages opened from a file aren't affected. Rendering the maps there needs a plotly.js upgrade; #4946 tracks it.
 - `geocode cache-info` now reports what its help promises: each result cache's real entry count, plus the timestamps of its oldest and newest entries (`oldest_entry`/`newest_entry`, RFC 3339 UTC). It printed `Entries: unknown` and no timestamps, because the cache library can't count its entries. It now reads each cache file once to count them. Expired entries that haven't been pruned yet are included. Entries that can't be decoded are counted in `entry_count` and also reported apart as `undecodable_entries`; `cache-prune` removes them. ([#4966](https://github.com/dathere/qsv/pull/4966))
 - `get`: overwriting an existing file with `--output` (`get`, `get cache-fetch`) no longer briefly exposes the new contents: the temp file that replaces it is owner-only (`0600`) while the data is written, and takes the old file's mode only afterwards. It also keeps the old file's group, so a group-readable file isn't handed to a different group; where the group can't be kept, the new file isn't group-readable, and other users get no access the old file denied its group. Setuid/setgid bits aren't carried over, as an in-place overwrite would have cleared them. Follow-up to [#4945](https://github.com/dathere/qsv/pull/4945). ([#4948](https://github.com/dathere/qsv/pull/4948))
+
+### CI/Actions
+- **Every workflow declares least-privilege `GITHUB_TOKEN` permissions** ([#4985](https://github.com/dathere/qsv/pull/4985), [#4986](https://github.com/dathere/qsv/pull/4986)). 42 workflows declared none and so ran with the repository's default write-scoped token (CodeQL's 57 `actions/missing-workflow-permissions` alerts). Test and lint workflows now get `contents: read`; publish workflows get `contents: write` only on the job that uploads release assets. `clear-caches` keeps `contents: read` for its checkout. If a publish job fails with `Resource not accessible by integration`, it needs a missing scope added.
+- **Third-party actions are pinned to commit SHAs**, and a shell injection in `bench-qsv-stats-alloc.yml` is fixed ([#4957](https://github.com/dathere/qsv/pull/4957)). 93 `uses:` references across 46 workflows carry a full SHA and a `# <version>` comment, guarding against a moved or compromised tag; Dependabot keeps them current. The benchmark workflow's `runs` and `warmup` dispatch inputs were expanded with `${{ }}` inside `run:` scripts and now go through quoted environment variables.
+- **DevSkim's ignore list now ignores something** ([#4984](https://github.com/dathere/qsv/pull/4984)). Its `ignore-globs` were root-relative, but DevSkim matches absolute paths, so test fixtures, `.claude` and the vendored DataTables bundle were all scanned. All 40 open alerts were false positives; the rest are suppressed inline.
+- `frequency` property tests matched a bare `"Other"` label that the exact path never emits (it writes `Other (N)`), so two of them flaked on CI and one rank check never ran ([#4965](https://github.com/dathere/qsv/pull/4965)).
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/27.0.1...28.0.0
 
 ## [27.0.1] - 2026-10-27 📡 The "Live Data Schematics" Release 📊
 

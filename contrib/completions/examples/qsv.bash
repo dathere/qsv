@@ -11861,7 +11861,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__profile)
-            opts="-d -j -n -o -h --allow-external-validator --catalog --croissant-frequency --dcat-discovery-timeout --dcat-legacy-license --delimiter --force --initial-context --jobs --memcheck --no-ckan --no-dcat-discovery --no-headers --no-projection --output --profile --spec --strict --validate --help"
+            opts="-d -j -n -o -h --allow-external-validator --catalog --croissant-frequency --dcat-discovery-timeout --dcat-legacy-license --delimiter --describegpt --force --infer --initial-context --jobs --locate --memcheck --no-ckan --no-dcat-discovery --no-headers --no-projection --output --profile --spec --strict --tag-vocab --validate --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -11879,6 +11879,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --describegpt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --initial-context)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -11888,6 +11892,10 @@ _qsv() {
                     return 0
                     ;;
                 -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --locate)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -11904,6 +11912,10 @@ _qsv() {
                     return 0
                     ;;
                 --spec)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tag-vocab)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

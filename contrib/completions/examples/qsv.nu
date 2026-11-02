@@ -2096,9 +2096,12 @@ module completions {
     --dcat-discovery-timeout: string
     --dcat-legacy-license
     --delimiter(-d): string
+    --describegpt: string
     --force
+    --infer
     --initial-context: string
     --jobs(-j): string
+    --locate: string
     --memcheck
     --no-ckan
     --no-dcat-discovery
@@ -2108,6 +2111,7 @@ module completions {
     --profile: string
     --spec: string
     --strict
+    --tag-vocab: string
     --validate
     --help(-h)                # Print help
   ]

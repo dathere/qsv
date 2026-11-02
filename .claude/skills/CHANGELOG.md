@@ -5,6 +5,13 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`qsv-describegpt` redescribes `--forget`** ([#4971](https://github.com/dathere/qsv/pull/4971), [#4978](https://github.com/dathere/qsv/pull/4978), [#4980](https://github.com/dathere/qsv/pull/4980)): it removes the cached LLM answers of the selected phases (all phases when none is selected) and exits without calling the LLM, so a client should pass the other options of the run whose answers it is forgetting. It used to say only "Remove a cached response if it exists", and until qsv 28.0.0 it removed nothing.
+- **Node.js builtins are imported with the `node:` protocol** ([#4958](https://github.com/dathere/qsv/pull/4958)), and unused imports, variables and the `ConvertedFileCache` type alias are removed ([#4957](https://github.com/dathere/qsv/pull/4957)). No behavior change.
+- Build: bump `@hono/node-server` ([#4956](https://github.com/dathere/qsv/pull/4956)).
+
 ## [27.0.1] - 2026-10-27
 Companion release to qsv 27.0.1, "The Live Data Schematics Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 27.0.1 because the regenerated skill JSONs advertise options that only exist in the new binary (`qsv-viz --no-daemon-bridge`, `qsv-validate --offline`, `qsv-pivotp --no-moarstats`) and no longer offer `--low-memory` on `qsv-sqlp`, `qsv-joinp` and `qsv-count`, which the new binary rejects. The skill count stays at **57**. Update your qsv binary first.
 

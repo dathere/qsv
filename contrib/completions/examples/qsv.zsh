@@ -3061,18 +3061,22 @@ _arguments "${_arguments_options[@]}" : \
 '--dcat-discovery-timeout=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--describegpt=[]: :_default' \
 '--initial-context=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--locate=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--profile=[]: :_default' \
 '--spec=[]: :_default' \
+'--tag-vocab=[]: :_default' \
 '--allow-external-validator[]' \
 '--catalog[]' \
 '--croissant-frequency[]' \
 '--dcat-legacy-license[]' \
 '--force[]' \
+'--infer[]' \
 '--memcheck[]' \
 '--no-ckan[]' \
 '--no-dcat-discovery[]' \

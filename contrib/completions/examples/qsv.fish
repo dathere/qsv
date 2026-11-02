@@ -1853,16 +1853,20 @@ complete -c qsv -n "__fish_qsv_using_subcommand pro; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand pro; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l dcat-discovery-timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand profile" -l describegpt -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l initial-context -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand profile" -l locate -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l profile -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l spec -r
+complete -c qsv -n "__fish_qsv_using_subcommand profile" -l tag-vocab -r
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l allow-external-validator
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l catalog
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l croissant-frequency
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l dcat-legacy-license
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l force
+complete -c qsv -n "__fish_qsv_using_subcommand profile" -l infer
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l memcheck
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l no-ckan
 complete -c qsv -n "__fish_qsv_using_subcommand profile" -l no-dcat-discovery

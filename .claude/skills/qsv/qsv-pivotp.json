@@ -1,6 +1,6 @@
 {
   "name": "qsv-pivotp",
-  "version": "27.0.1",
+  "version": "28.0.0",
   "description": "Pivot CSV data. Features \"smart\" aggregation auto-selection based on data type & stats.",
   "category": "utility",
   "command": {

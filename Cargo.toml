@@ -180,7 +180,7 @@ bytemuck = { version = "1.24", features = [
 byteorder = "1.5"
 bytes = "1"
 cached = { version = "4.1", features = ["ahash", "redb_store", "redis_store"] }
-calamine = { version = "0.37", features = ["chrono"] }
+calamine = { version = "0.38", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"

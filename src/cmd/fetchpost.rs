@@ -949,7 +949,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else if let Ok(s) = simdutf8::basic::from_utf8(&record[column_index]) {
             s.clone_into(&mut url);
         } else {
-            url = String::new();
+            url.clear();
         }
         if url.is_empty() {
             final_response.clone_from(&empty_response);
@@ -1548,7 +1548,7 @@ fn get_response(
                         api_status.canonical_reason().unwrap_or("unknown error")
                     );
                 } else {
-                    final_value = String::new();
+                    final_value.clear();
                 }
             } else {
                 error_flag = false;
@@ -1567,7 +1567,7 @@ fn get_response(
                             if flag_store_error {
                                 final_value = e.to_string();
                             } else {
-                                final_value = String::new();
+                                final_value.clear();
                             }
                             error_flag = true;
                         },
@@ -1590,7 +1590,7 @@ fn get_response(
                             if flag_store_error {
                                 final_value = e.to_string();
                             } else {
-                                final_value = String::new();
+                                final_value.clear();
                             }
                             error_flag = true;
                         },

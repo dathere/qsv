@@ -28045,7 +28045,7 @@ fn pearson_skewness_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
         else {
             return None;
         };
-        (stddev > 0.0).then(|| 3.0 * (mean - median) / stddev)
+        (stddev > 0.0).then_some(3.0 * (mean - median) / stddev)
     })
 }
 
@@ -28145,7 +28145,7 @@ fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     };
     let total = neg + zero + pos;
     #[allow(clippy::cast_precision_loss)]
-    (total > 0).then(|| zero as f64 / total as f64)
+    (total > 0).then_some(zero as f64 / total as f64)
 }
 
 /// The notable-shape hints for a box/violin/histogram panel, from cached statistics, in priority

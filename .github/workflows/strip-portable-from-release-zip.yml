@@ -59,6 +59,10 @@ concurrency:
   group: strip-portable-from-release-zip
   cancel-in-progress: false
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: write
+
 jobs:
   strip:
     # MUST match the runner that BUILT this artifact - publish.yml builds

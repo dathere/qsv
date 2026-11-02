@@ -6,6 +6,10 @@ on:
 env:
   QSV_KIND: prebuilt
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   analyze-tags:
     runs-on: ubuntu-22.04
@@ -22,6 +26,8 @@ jobs:
       #▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲#
 
   publish:
+    permissions:
+      contents: write
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     runs-on: self-hosted

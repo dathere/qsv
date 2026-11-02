@@ -37,6 +37,10 @@ env:
   # AVX-512 behind a global target-feature, add `-C target-feature=+avx512f`
   # to the WITH-avx512 build only.
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   bench:
     runs-on: ubuntu-latest

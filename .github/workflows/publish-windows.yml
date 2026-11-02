@@ -35,6 +35,10 @@ on:
         required: false
         default: ''
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   analyze-tags:
     runs-on: ubuntu-22.04
@@ -77,6 +81,8 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   publish:
+    permissions:
+      contents: write
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     strategy:

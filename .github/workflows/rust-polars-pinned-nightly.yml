@@ -10,6 +10,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   build:
 

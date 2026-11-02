@@ -8,6 +8,10 @@ on:
     - cron: '0 4 * * SUN'
   workflow_dispatch:
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  actions: write
+
 jobs:
   clear-caches:
     runs-on: ubuntu-latest

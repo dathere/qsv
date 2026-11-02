@@ -18,6 +18,10 @@ concurrency:
   group: publish-debian
   cancel-in-progress: false
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   build-and-publish:
     name: Build .deb packages and publish to apt repo

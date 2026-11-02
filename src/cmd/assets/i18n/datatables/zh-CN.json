@@ -25,7 +25,6 @@
             "1": "已复制 1 行到剪贴板"
         },
         "copyTitle": "复制到剪贴板",
-        "createState": "创建状态",
         "csv": "CSV",
         "excel": "Excel",
         "pageLength": {
@@ -33,13 +32,7 @@
             "-1": "显示所有行"
         },
         "pdf": "PDF",
-        "print": "打印",
-        "removeAllStates": "删除所有状态",
-        "removeState": "删除",
-        "renameState": "重命名",
-        "savedStates": "保存的状态",
-        "stateRestore": "状态 %d",
-        "updateState": "更新"
+        "print": "打印"
     },
     "datetime": {
         "amPm": {
@@ -215,33 +208,23 @@
         }
     },
     "stateRestore": {
-        "creationModal": {
-            "button": "创建",
-            "columns": {
-                "search": "列搜索",
-                "visible": "列可见性"
-            },
-            "name": "名称:",
-            "order": "排序",
-            "paging": "分页",
-            "scroller": "滚动定位",
-            "search": "搜索",
-            "searchBuilder": "搜索生成器",
-            "select": "选择",
-            "title": "创建新状态",
-            "toggleLabel": "包括:"
+        "button": {
+            "create": "创建状态",
+            "edit": "更新",
+            "remove": "删除",
+            "statesList": "保存的状态",
+            "statesRemoveAll": "删除所有状态"
         },
-        "duplicateError": "已存在使用此名称的状态。",
-        "emptyError": "名称不能为空。",
-        "emptyStates": "没有保存的状态",
-        "removeConfirm": "确定要删除 %s？",
-        "removeError": "删除状态失败。",
-        "removeJoiner": "和",
-        "removeSubmit": "删除",
-        "removeTitle": "删除状态",
-        "renameButton": "重命名",
-        "renameLabel": "%s 的新名称:",
-        "renameTitle": "重命名状态"
+        "create": {
+            "title": "创建新状态"
+        },
+        "remove": {
+            "button": "删除",
+            "message": {
+                "_": "确定要删除 %s？"
+            },
+            "title": "删除状态"
+        }
     },
     "thousands": ",",
     "zeroRecords": "没有找到匹配的记录"

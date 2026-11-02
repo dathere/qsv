@@ -28,7 +28,6 @@
             "1": "Copiata 1 riga nella clipboard"
         },
         "copyTitle": "Copia nella Clipboard",
-        "createState": "Crea stato",
         "csv": "CSV",
         "excel": "Excel",
         "pageLength": {
@@ -37,13 +36,7 @@
             "1": "Mostra 1 riga"
         },
         "pdf": "PDF",
-        "print": "Stampa",
-        "removeAllStates": "Rimuovi tutti gli stati",
-        "removeState": "Rimuovi",
-        "renameState": "Rinomina",
-        "savedStates": "Salva stato",
-        "stateRestore": "Ripristina stato",
-        "updateState": "Aggiorna"
+        "print": "Stampa"
     },
     "columnControl": {
         "buttons": {
@@ -277,33 +270,23 @@
         }
     },
     "stateRestore": {
-        "creationModal": {
-            "button": "Crea",
-            "columns": {
-                "search": "Colonna Cerca",
-                "visible": "Colonna Visibilità"
-            },
-            "name": "Nome:",
-            "order": "Ordinamento",
-            "paging": "Paginazione",
-            "scroller": "Scorri posizione",
-            "search": "Ricerca",
-            "searchBuilder": "Form di Ricerca",
-            "select": "Seleziona",
-            "title": "Crea nuovo Stato",
-            "toggleLabel": "Includi:"
+        "button": {
+            "create": "Crea stato",
+            "edit": "Aggiorna",
+            "remove": "Rimuovi",
+            "statesList": "Salva stato",
+            "statesRemoveAll": "Rimuovi tutti gli stati"
         },
-        "duplicateError": "Nome stato già presente",
-        "emptyError": "Il nome è obbligatorio",
-        "emptyStates": "Non ci sono stati salvati",
-        "removeConfirm": "Sei sicuro di eliminare lo Stato %s?",
-        "removeError": "Errore durante l'eliminazione dello Stato",
-        "removeJoiner": "e",
-        "removeSubmit": "Elimina",
-        "removeTitle": "Elimina Stato",
-        "renameButton": "Rinomina",
-        "renameLabel": "Nuovo nome per %s:",
-        "renameTitle": "Rinomina Stato"
+        "create": {
+            "title": "Crea nuovo Stato"
+        },
+        "remove": {
+            "button": "Elimina",
+            "message": {
+                "_": "Sei sicuro di eliminare lo Stato %s?"
+            },
+            "title": "Elimina Stato"
+        }
     },
     "thousands": ".",
     "zeroRecords": "Nessun elemento corrispondente trovato"

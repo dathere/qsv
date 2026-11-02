@@ -5,6 +5,10 @@ on:
   #   - cron: "0 */24 * * *"
   workflow_dispatch:
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

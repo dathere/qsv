@@ -11,6 +11,10 @@ on:
 # workflow - setting it here would look effective while build.rs silently fell back to
 # "compiled". It is set in publish-target.yml instead.
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   analyze-tags:
     runs-on: ubuntu-22.04
@@ -29,6 +33,8 @@ jobs:
       #   run: rm -rf qsv
 
   publish:
+    permissions:
+      contents: write
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     strategy:

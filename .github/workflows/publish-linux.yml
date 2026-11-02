@@ -61,6 +61,10 @@ on:
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   analyze-tags:
     runs-on: ubuntu-22.04
@@ -103,6 +107,8 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   publish:
+    permissions:
+      contents: write
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     # one caller job per target: a job-level `if` cannot read `matrix`, so per-target
@@ -178,6 +184,8 @@ jobs:
       QSV_ZIPSIGN_PRIV_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
 
   publish-aarch64-musl:
+    permissions:
+      contents: write
     name: Publish for ${{ matrix.job.target }}
     needs: analyze-tags
     if: ${{ inputs.target == 'all' || inputs.target == 'aarch64-unknown-linux-musl' }}

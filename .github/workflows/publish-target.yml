@@ -140,6 +140,10 @@ on:
       QSV_ZIPSIGN_PRIV_KEY:
         required: true
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: read
+
 jobs:
   build:
     # one job when split_mcp is false ("all"); two in parallel when true ("main" + "mcp")
@@ -336,6 +340,8 @@ jobs:
         retention-days: 1
 
   package:
+    permissions:
+      contents: write
     name: ${{ inputs.target }} [package]
     needs: build
     runs-on: ${{ inputs.os }}

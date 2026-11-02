@@ -6,6 +6,10 @@ on:
 env:
   QSV_KIND: prebuilt-testing
 
+# Least privilege: the repo's default GITHUB_TOKEN permission is write.
+permissions:
+  contents: write
+
 jobs:
   publish:
     name: Publish for ${{ matrix.job.target }}

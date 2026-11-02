@@ -499,7 +499,7 @@ discovery_merge:
     #[test]
     fn inferred_keys_match_as_escaped_pointers() {
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
-        let key = "http://purl.org/dc/terms/description";
+        let key = "http://purl.org/dc/terms/description"; // DevSkim: ignore DS137138
         let merged = merge_with_inferred(
             &profile,
             json!({ key: "Generated" }),

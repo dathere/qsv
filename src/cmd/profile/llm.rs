@@ -599,10 +599,10 @@ mod normalize_tests {
             "Invalid model: no-such-model; Valid models: a, b"
         );
         let dead_url = "\nInteracting with LLM...\nnetwork error: error sending request for url \
-                        (http://127.0.0.1:9/v1/models)\n"; // DevSkim: ignore DS137138
+                        (http://127.0.0.1:9/v1/models)\n"; // DevSkim: ignore DS137138,DS162092
         assert_eq!(
             describegpt_error(dead_url),
-            "network error: error sending request for url (http://127.0.0.1:9/v1/models)" /* DevSkim: ignore DS137138 */
+            "network error: error sending request for url (http://127.0.0.1:9/v1/models)" /* DevSkim: ignore DS137138,DS162092 */
         );
         assert_eq!(describegpt_error("Interacting with LLM...\n\n"), "");
         assert!(describegpt_error(&"x".repeat(500)).ends_with('…'));

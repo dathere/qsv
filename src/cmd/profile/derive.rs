@@ -1477,8 +1477,8 @@ mod tests {
     fn quality_measurements_completeness_and_validity() {
         let dpp = json!({"RECORD_COUNT": 4});
         let dims = json!({
-            "completeness": "http://www.w3.org/2016/05/ldqd#completeness",
-            "syntacticValidity": "http://www.w3.org/2016/05/ldqd#syntacticValidity",
+            "completeness": "http://www.w3.org/2016/05/ldqd#completeness", // DevSkim: ignore DS137138
+            "syntacticValidity": "http://www.w3.org/2016/05/ldqd#syntacticValidity", // DevSkim: ignore DS137138
         });
         formula_helpers::set_sql_backend(None);
         let v = quality_measurements(
@@ -1499,7 +1499,7 @@ mod tests {
         assert_eq!(arr[3]["value"], "true");
         assert_eq!(
             arr[3]["isMeasurementOf"]["inDimension"],
-            "http://www.w3.org/2016/05/ldqd#syntacticValidity"
+            "http://www.w3.org/2016/05/ldqd#syntacticValidity" // DevSkim: ignore DS137138
         );
     }
 

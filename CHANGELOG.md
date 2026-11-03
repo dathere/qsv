@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **docs: "Statistics at a Glance" in [`docs/STATS_DEFINITIONS.md`](docs/STATS_DEFINITIONS.md)**: qsv compiles 159 statistic columns across `stats` (48), `moarstats` (76 + 14 bivariate), `pragmastat` (18) and `frequency` (3). A new test checks the table against real output, so the counts can't go stale silently ([#4996](https://github.com/dathere/qsv/pull/4996)).
+
 ### Changed
 - **deps: Polars bumped to upstream rev [`0b47007`](https://github.com/pola-rs/polars/commit/0b47007ab65f0efd39ddc4d5abd5b2e44097a009)** (from `py-2.1.0`, 126 commits, [#4993](https://github.com/dathere/qsv/pull/4993)). Crates stay 0.55.1; it moves to zstd 0.14 ([#30316](https://github.com/pola-rs/polars/pull/30316)), so the 13 zstd "unsound" advisory ignores (#4930–#4942) are dropped from `.cargo/audit.toml`. Some `sqlp` results that already worked change:
   - **`IS DISTINCT FROM` binds tighter than `AND`/`OR`** ([#30367](https://github.com/pola-rs/polars/pull/30367)). `a IS DISTINCT FROM b AND c OR d` is now `((a IS DISTINCT FROM b) AND c) OR d`; before, the `AND`/`OR` became part of the right operand.

@@ -6,12 +6,38 @@
 > version above, and check `qsv stats --help` for anything that looks off.
 >
 > Two facts here are machine-checked by `scripts/docs-drift-check.py` (CI job **Docs drift
-> check**): the documented stat-column total, and the feature-set memberships. Everything
-> else — every definition, formula and example below — is checked by humans only.
+> check**): the documented stat-column total, and the feature-set memberships. The
+> [Statistics at a Glance](#statistics-at-a-glance) counts are checked against real output by
+> the `test_moarstats::stats_definitions_at_a_glance_counts` test. Everything else — every
+> definition, formula and example below — is checked by humans only.
+
+## Statistics at a Glance
+
+Across `stats`, `moarstats`, `pragmastat` and `frequency`, qsv compiles **159 statistic
+columns**. Identifier columns (`field`, `type`, `field1`/`field2`, `field_x`/`field_y`,
+`value`) are not counted.
+
+| Command | Columns | Scope |
+|---|---:|---|
+| [`stats`](#stats) | 48 | per column: the union across all flags (see [Streaming vs Non-Streaming Statistics](#streaming-vs-non-streaming-statistics)) |
+| [`moarstats`](#moarstats) | 76 | per column, appended to the stats cache (58 by default, 18 more with `--advanced`) |
+| [`moarstats --bivariate`](#bivariate-statistics) | 14 | per column pair, with `--bivariate-stats all` (13 statistics plus `n_pairs`) |
+| [`pragmastat`](#pragmastat) | 18 | 7 one-sample `ps_*` columns plus 11 two-sample columns (`--twosample`) |
+| [`frequency`](#frequency) | 3 | per value: `count`, `percentage`, `rank` |
+| **Total** | **159** | |
+
+The 159 counts output columns, not distinct measures. A few measures emit several columns:
+the [moarstats Count Reference](#count-reference) counts its 90 columns (76 + 14) as 73
+measures. The count also includes bookkeeping columns such as the sample sizes (`ps_n`,
+`n_x`, `n_y`, `n_pairs`) and pragmastat's confidence bounds. `pragmastat --compare1` and
+`--compare2` add threshold verdicts on the same estimators, not new statistics, and the
+per-field `cardinality`, `nullcount`, `sparsity` and `uniqueness_ratio` in `frequency --json`
+repeat `stats` columns, so neither is counted again. Counts verified against qsv 28.0.0 output.
 
 
 ## Table of Contents
 
+- [Statistics at a Glance](#statistics-at-a-glance)
 - [stats](#stats)
   - [Streaming vs Non-Streaming Statistics](#streaming-vs-non-streaming-statistics)
   - [Weighted Statistics](#weighted-statistics)

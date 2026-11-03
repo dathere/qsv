@@ -7984,6 +7984,7 @@ fn stats_definitions_at_a_glance_counts() {
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
             .from_reader(csv_text.as_bytes());
+        // safety: this helper only receives successful command output with a CSV header.
         rdr.headers().unwrap().iter().map(String::from).collect()
     }
 
@@ -7993,6 +7994,7 @@ fn stats_definitions_at_a_glance_counts() {
     let mut cmd = wrk.command("stats");
     cmd.args(["--everything", "--infer-dates", "boston311-100.csv"]);
     wrk.assert_success(&mut cmd);
+    // safety: the successful stats command writes this output file.
     let stats_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
     // minus the `field`/`type` identifiers, plus `median`, which `--everything` replaces with
     // `q2_median` (the doc counts the union across all flags)
@@ -8007,8 +8009,10 @@ fn stats_definitions_at_a_glance_counts() {
         "boston311-100.csv",
     ]);
     wrk.assert_success(&mut cmd);
+    // safety: the successful moarstats command writes this output file.
     let moar_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
     let moarstats_cols = moar_hdr.len() - stats_hdr.len();
+    // safety: the successful moarstats command writes this output file.
     let biv_hdr = header_of(
         &wrk.read_to_string("boston311-100.stats.bivariate.csv")
             .unwrap(),
@@ -8021,6 +8025,7 @@ fn stats_definitions_at_a_glance_counts() {
     let mut cmd = wrk.command("pragmastat");
     cmd.arg("boston311-100.csv");
     wrk.assert_success(&mut cmd);
+    // safety: the successful pragmastat command writes this output file.
     let ps_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
     let one_sample = ps_hdr.iter().filter(|h| h.starts_with("ps_")).count();
     let mut cmd = wrk.command("pragmastat");
@@ -8051,14 +8056,16 @@ fn stats_definitions_at_a_glance_counts() {
 
     let doc_path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/STATS_DEFINITIONS.md");
+    // safety: this test verifies the documentation file included in the repository.
     let doc = std::fs::read_to_string(doc_path).unwrap();
+    // safety: this test requires the named section to be present in the documentation.
     let section = doc
         .split("## Statistics at a Glance")
         .nth(1)
         .expect("docs/STATS_DEFINITIONS.md lost its \"Statistics at a Glance\" section")
         .split("\n## ")
         .next()
-        .unwrap();
+        .unwrap(); // safety: split always yields at least one piece.
 
     let mut documented = Vec::new();
     let mut documented_total = None;
@@ -8070,8 +8077,10 @@ fn stats_definitions_at_a_glance_counts() {
         if let Some(rest) = cells[1].strip_prefix("[`")
             && let Some((label, _)) = rest.split_once("`]")
         {
+            // safety: statistic counts in the markdown table are decimal integers.
             documented.push((label.to_string(), cells[2].parse::<usize>().unwrap()));
         } else if cells[1] == "**Total**" {
+            // safety: the markdown table's total is a decimal integer.
             documented_total = Some(cells[2].trim_matches('*').parse::<usize>().unwrap());
         }
     }

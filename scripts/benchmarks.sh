@@ -44,7 +44,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=10.1.0
+bm_version=10.1.1
 
 # runs of a benchmark whose means are within this percentage of each other tie in the rank
 # column (see the delta & rank comments near the end)
@@ -1588,14 +1588,21 @@ run json "$qsv_bin" json benchmark_data.json
 run json_jaq "$qsv_bin" json "--jaq 'map(select(.Borough == \"BROOKLYN\"))'" benchmark_data.json
 run join "$qsv_bin" join \'Community Board\' "$data" community_board communityboards.csv
 run join_casei "$qsv_bin" join \'Community Board\' "$data" community_board --ignore-case communityboards.csv
-# --verify: the join must produce rows. A schema/dtype problem can leave joinp with an empty
-# result while still exiting 0, which times as a big speedup.
+# --verify: each join must produce exactly the expected number of rows. A schema/dtype problem can
+# leave joinp with an empty or partial result while still exiting 0, which times as a big speedup.
+# The counts are for the fixed benchmark data and communityboards.csv, cross-checked with `qsv
+# join` and DuckDB. community_board is unique in communityboards.csv, so a left join keeps every
+# row, and inner + left-anti = rowcount.
 # shellcheck disable=SC2016 # expanded later, by the bash -c that runs the check
-verify_has_rows='test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" -gt 0'
-run --verify "$verify_has_rows" joinp "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv
-run --verify "$verify_has_rows" joinp_streaming "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --streaming
-run --verify "$verify_has_rows" joinp_left "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left
-run joinp_left_anti "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left-anti
+verify_joinp_inner='test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" = 883470'
+# shellcheck disable=SC2016
+verify_joinp_left='test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" = "$QSVBM_ROWCOUNT"'
+# shellcheck disable=SC2016
+verify_joinp_left_anti='test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" = 116530'
+run --verify "$verify_joinp_inner" joinp "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv
+run --verify "$verify_joinp_inner" joinp_streaming "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --streaming
+run --verify "$verify_joinp_left" joinp_left "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left
+run --verify "$verify_joinp_left_anti" joinp_left_anti "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv --left-anti
 run jsonl "$qsv_bin" jsonl benchmark_data.jsonl
 run jsonl_batchall "$qsv_bin" jsonl benchmark_data.jsonl --batch 0
 run jsonl_j1 "$qsv_bin" jsonl -j 1 benchmark_data.jsonl

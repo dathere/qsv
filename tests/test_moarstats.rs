@@ -7974,3 +7974,128 @@ fn moarstats_reused_partial_cache_of_duplicates_leaves_them_empty() {
     assert_eq!(&got[1][field], "a");
     assert!(got[1][pct].is_empty(), "the ambiguous `a` row stays empty");
 }
+
+/// Keeps the "Statistics at a Glance" table in `docs/STATS_DEFINITIONS.md` honest: each row's
+/// column count is measured from real output, so adding a statistic column to stats, moarstats,
+/// pragmastat or frequency fails here until the doc's table and headline total are updated.
+#[test]
+fn stats_definitions_at_a_glance_counts() {
+    fn header_of(csv_text: &str) -> Vec<String> {
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(csv_text.as_bytes());
+        rdr.headers().unwrap().iter().map(String::from).collect()
+    }
+
+    let wrk = Workdir::new("stats_definitions_at_a_glance_counts");
+    wrk.load_test_file("boston311-100.csv");
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--everything", "--infer-dates", "boston311-100.csv"]);
+    wrk.assert_success(&mut cmd);
+    let stats_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
+    // minus the `field`/`type` identifiers, plus `median`, which `--everything` replaces with
+    // `q2_median` (the doc counts the union across all flags)
+    let stats_cols = stats_hdr.len() - 2 + 1;
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.args([
+        "--advanced",
+        "--bivariate",
+        "--bivariate-stats",
+        "all",
+        "boston311-100.csv",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let moar_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
+    let moarstats_cols = moar_hdr.len() - stats_hdr.len();
+    let biv_hdr = header_of(
+        &wrk.read_to_string("boston311-100.stats.bivariate.csv")
+            .unwrap(),
+    );
+    let bivariate_cols = biv_hdr
+        .iter()
+        .filter(|h| *h != "field1" && *h != "field2")
+        .count();
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("boston311-100.csv");
+    wrk.assert_success(&mut cmd);
+    let ps_hdr = header_of(&wrk.read_to_string("boston311-100.stats.csv").unwrap());
+    let one_sample = ps_hdr.iter().filter(|h| h.starts_with("ps_")).count();
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--twosample", "--select", "1,2", "boston311-100.csv"]);
+    let two_sample_hdr = header_of(&wrk.stdout::<String>(&mut cmd));
+    let two_sample = two_sample_hdr
+        .iter()
+        .filter(|h| *h != "field_x" && *h != "field_y")
+        .count();
+    let pragmastat_cols = one_sample + two_sample;
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("boston311-100.csv");
+    let freq_hdr = header_of(&wrk.stdout::<String>(&mut cmd));
+    let frequency_cols = freq_hdr
+        .iter()
+        .filter(|h| *h != "field" && *h != "value")
+        .count();
+
+    let measured = [
+        ("stats", stats_cols),
+        ("moarstats", moarstats_cols),
+        ("moarstats --bivariate", bivariate_cols),
+        ("pragmastat", pragmastat_cols),
+        ("frequency", frequency_cols),
+    ];
+    let measured_total: usize = measured.iter().map(|(_, n)| n).sum();
+
+    let doc_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/STATS_DEFINITIONS.md");
+    let doc = std::fs::read_to_string(doc_path).unwrap();
+    let section = doc
+        .split("## Statistics at a Glance")
+        .nth(1)
+        .expect("docs/STATS_DEFINITIONS.md lost its \"Statistics at a Glance\" section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+
+    let mut documented = Vec::new();
+    let mut documented_total = None;
+    for line in section.lines() {
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        if cells.len() < 3 {
+            continue;
+        }
+        if let Some(rest) = cells[1].strip_prefix("[`")
+            && let Some((label, _)) = rest.split_once("`]")
+        {
+            documented.push((label.to_string(), cells[2].parse::<usize>().unwrap()));
+        } else if cells[1] == "**Total**" {
+            documented_total = Some(cells[2].trim_matches('*').parse::<usize>().unwrap());
+        }
+    }
+
+    for (label, n) in measured {
+        let doc_n = documented
+            .iter()
+            .find(|(l, _)| l == label)
+            .unwrap_or_else(|| panic!("no `{label}` row in the at-a-glance table"))
+            .1;
+        assert_eq!(
+            doc_n, n,
+            "docs/STATS_DEFINITIONS.md at-a-glance: `{label}` documents {doc_n} columns, output \
+             has {n}"
+        );
+    }
+    assert_eq!(
+        documented.len(),
+        measured.len(),
+        "unexpected rows: {documented:?}"
+    );
+    assert_eq!(documented_total, Some(measured_total), "table Total row");
+    assert!(
+        section.contains(&format!("**{measured_total} statistic")),
+        "the section's headline should say **{measured_total} statistic columns**"
+    );
+}

@@ -480,7 +480,7 @@ serde_urlencoded = { version = "0.7", optional = true }
 sha2 = { version = "0.11", optional = true }
 simdutf8 = "0.1"
 spreadsheet-ods = { version = "1", optional = true }
-toml = "1.1"
+toml = "1.2.0+spec-1.1.0"
 toon-format = { version = "0.7", default-features = false }
 smallvec = "1"
 snap = "1"

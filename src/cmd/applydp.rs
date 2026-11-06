@@ -409,12 +409,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // reuse batch buffers
     let batchsize: usize = if args.flag_batch == 0 {
-        util::count_rows(&rconfig)? as usize
+        if rconfig.is_stdin() {
+            // we can't pre-count stdin rows without consuming the stream,
+            // so read until EOF to honor "0 = entire file in one batch"
+            usize::MAX
+        } else {
+            util::count_rows(&rconfig)? as usize
+        }
     } else {
         args.flag_batch
     };
-    let mut batch = Vec::with_capacity(batchsize);
-    let mut batch_results = Vec::with_capacity(batchsize);
+    // capped: usize::MAX (stdin with --batch 0) can't be preallocated
+    let mut batch = Vec::with_capacity(batchsize.min(50_000));
+    let mut batch_results = Vec::with_capacity(batchsize.min(50_000));
 
     util::njobs(args.flag_jobs);
 

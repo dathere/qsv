@@ -2706,3 +2706,53 @@ fn sample_stdin_cluster_skips_stats_cache() {
     let got = sample_stdin(&wrk, &["--cluster", "control_number", "9"], csv, false);
     assert_eq!(got, csv);
 }
+
+// Single-pass methods must stream stdin, not spool it. Observable through autoindexing: a
+// spooled stdin.csv is a file, so QSV_AUTOINDEX_SIZE indexes it and default sampling turns
+// into INDEXED sampling, which picks the same seed's rows in a different order than the
+// reservoir sampling that streamed stdin gets.
+#[test]
+fn sample_stdin_streams_single_pass_methods() {
+    let wrk = Workdir::new("sample_stdin_streams_single_pass_methods");
+    let mut csv = String::from("n\n");
+    for i in 1..=50 {
+        csv.push_str(&format!("{i}\n"));
+    }
+    wrk.create_from_string("in.csv", &csv);
+    wrk.create_from_string("in_indexed.csv", &csv);
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(["--seed", "42", "3", "in.csv"]);
+    let reservoir: String = wrk.stdout(&mut cmd);
+
+    let mut cmd = wrk.command("sample");
+    cmd.env("QSV_AUTOINDEX_SIZE", "1")
+        .args(["--seed", "42", "3", "in_indexed.csv"]);
+    let indexed: String = wrk.stdout(&mut cmd);
+    // otherwise this test can't tell streaming from spooling
+    assert_ne!(reservoir, indexed);
+
+    let mut cmd = wrk.command("sample");
+    cmd.env("QSV_AUTOINDEX_SIZE", "1")
+        .args(["--seed", "42", "3"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(csv.as_bytes())
+            .unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim_end(),
+        reservoir,
+        "integer-size default sampling spooled stdin instead of streaming it"
+    );
+}

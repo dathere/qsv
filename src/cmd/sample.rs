@@ -465,7 +465,7 @@ macro_rules! with_rng {
     };
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum SamplingMethod {
     Bernoulli,
     Systematic,
@@ -1079,7 +1079,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let temp_download = NamedTempFile::new()?;
-    let stdin_spool_dir = tempfile::tempdir()?;
+    // created only when stdin is spooled; must outlive every reader of the spooled file
+    let mut stdin_spool_dir: Option<tempfile::TempDir> = None;
 
     args.arg_input = match args.arg_input {
         Some(ref uri) if Url::parse(uri).is_ok() && uri.starts_with("http") => {
@@ -1111,8 +1112,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // cluster/weighted second pass), so spool it to a temp file unless the method is
         // known to make a single pass.
         _ if !streams_stdin(&sampling_method, args.arg_sample_size) => {
-            let spooled =
-                util::process_input(vec![std::path::PathBuf::from("-")], &stdin_spool_dir, "")?;
+            let spool_dir = stdin_spool_dir.insert(tempfile::tempdir()?);
+            let spooled = util::process_input(vec![std::path::PathBuf::from("-")], spool_dir, "")?;
             // safety: process_input returns at least one path or an error
             Some(spooled[0].to_string_lossy().into_owned())
         },
@@ -2451,4 +2452,39 @@ fn sample_sketch_merge(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SamplingMethod, streams_stdin};
+
+    #[test]
+    fn streams_stdin_allowlist() {
+        // single-pass: stdin is read as it arrives, never spooled to disk
+        for method in [
+            SamplingMethod::Bernoulli,
+            SamplingMethod::Stratified,
+            SamplingMethod::Timeseries,
+        ] {
+            assert!(streams_stdin(&method, 0.5), "{method:?} 0.5");
+            assert!(streams_stdin(&method, 10.0), "{method:?} 10");
+        }
+        // integer sizes stream; fractional sizes count rows first
+        for method in [
+            SamplingMethod::Default,
+            SamplingMethod::VarOpt,
+            SamplingMethod::MergeableReservoir,
+        ] {
+            assert!(streams_stdin(&method, 10.0), "{method:?} 10");
+            assert!(!streams_stdin(&method, 0.5), "{method:?} 0.5");
+        }
+        // second pass or row count: always spooled
+        for method in [
+            SamplingMethod::Cluster,
+            SamplingMethod::Weighted,
+            SamplingMethod::Systematic,
+        ] {
+            assert!(!streams_stdin(&method, 10.0), "{method:?} 10");
+        }
+    }
 }

@@ -102,10 +102,11 @@ to a temporary file before sampling begins for all sampling methods except Berno
 streams the file as it samples it, stopping when the desired sample size is reached or the
 end of the file is reached.
 
-Sampling from stdin is also supported for all sampling methods. Bernoulli, stratified,
-timeseries, and integer-size default, varopt and mergeable-reservoir sampling stream stdin.
-The others (cluster, weighted, systematic and fractional sample sizes) read the input twice,
-so stdin is first copied to a temporary file, which needs disk space for the whole input.
+Sampling from stdin is supported for all methods that read CSV, i.e. all but sketch-in.
+Bernoulli, stratified, timeseries, and integer-size default, varopt and mergeable-reservoir
+sampling stream stdin. The others (cluster, weighted, systematic and fractional sample
+sizes) read the input twice, so stdin is first copied to a temporary file, which needs
+disk space for the whole input.
 
 If a stats cache is available, it will be used to do extra checks on systematic,
 weighted and cluster sampling, and to speed up sampling in general.

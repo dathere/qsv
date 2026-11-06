@@ -102,8 +102,10 @@ to a temporary file before sampling begins for all sampling methods except Berno
 streams the file as it samples it, stopping when the desired sample size is reached or the
 end of the file is reached.
 
-Sampling from stdin is also supported for all sampling methods, copying stdin to a in-memory
-buffer first before sampling begins.
+Sampling from stdin is also supported for all sampling methods. Bernoulli, stratified,
+timeseries, and integer-size default, varopt and mergeable-reservoir sampling stream stdin.
+The others (cluster, weighted, systematic and fractional sample sizes) read the input twice,
+so stdin is first copied to a temporary file, which needs disk space for the whole input.
 
 If a stats cache is available, it will be used to do extra checks on systematic,
 weighted and cluster sampling, and to speed up sampling in general.
@@ -463,7 +465,7 @@ macro_rules! with_rng {
     };
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum SamplingMethod {
     Bernoulli,
     Systematic,
@@ -710,6 +712,15 @@ fn check_stats_cache(
     if args.flag_force {
         return Ok((None, None));
     }
+    // A fresh stdin spool has no cache, so this would compute exact cardinality for every
+    // column (memory ~ distinct values) just to pre-check; skip it, as stdin always did.
+    if args
+        .arg_input
+        .as_deref()
+        .is_some_and(|p| crate::config::is_stdin_spool(std::path::Path::new(p)))
+    {
+        return Ok((None, None));
+    }
 
     // We returned early above when flag_force was set, so this is always
     // false here. Asserting (rather than hard-coding the literal) keeps the
@@ -948,6 +959,19 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
     Ok(wtr.flush()?)
 }
 
+/// Whether `method` reads its input exactly once, so stdin can be sampled without spooling it.
+/// An allowlist on purpose: anything not listed (including future methods) gets spooled, which
+/// costs disk space but is never wrong. Fractional sizes count rows first, a second read.
+fn streams_stdin(method: &SamplingMethod, sample_size: f64) -> bool {
+    match method {
+        SamplingMethod::Bernoulli | SamplingMethod::Stratified | SamplingMethod::Timeseries => true,
+        SamplingMethod::Default | SamplingMethod::VarOpt | SamplingMethod::MergeableReservoir => {
+            sample_size >= 1.0
+        },
+        _ => false,
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -1055,6 +1079,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let temp_download = NamedTempFile::new()?;
+    // created only when stdin is spooled; must outlive every reader of the spooled file
+    let mut stdin_spool_dir: Option<tempfile::TempDir> = None;
 
     args.arg_input = match args.arg_input {
         Some(ref uri) if Url::parse(uri).is_ok() && uri.starts_with("http") => {
@@ -1081,8 +1107,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // safety: temp_download is a NamedTempFile, so we know can unwrap.to_string
             Some(temp_download.path().to_str().unwrap().to_string())
         },
-        Some(uri) => Some(uri), // local file
-        None => None,
+        Some(uri) if uri != "-" => Some(uri), // local file
+        // stdin can only be read once, but several methods read the input twice (row count,
+        // cluster/weighted second pass), so spool it to a temp file unless the method is
+        // known to make a single pass.
+        _ if !streams_stdin(&sampling_method, args.arg_sample_size) => {
+            let spool_dir = stdin_spool_dir.insert(tempfile::tempdir()?);
+            let spooled = util::process_input(vec![std::path::PathBuf::from("-")], spool_dir, "")?;
+            // safety: process_input returns at least one path or an error
+            Some(spooled[0].to_string_lossy().into_owned())
+        },
+        stdin => stdin,
     };
 
     let rconfig = Config::new(args.arg_input.as_ref())
@@ -2417,4 +2452,39 @@ fn sample_sketch_merge(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SamplingMethod, streams_stdin};
+
+    #[test]
+    fn streams_stdin_allowlist() {
+        // single-pass: stdin is read as it arrives, never spooled to disk
+        for method in [
+            SamplingMethod::Bernoulli,
+            SamplingMethod::Stratified,
+            SamplingMethod::Timeseries,
+        ] {
+            assert!(streams_stdin(&method, 0.5), "{method:?} 0.5");
+            assert!(streams_stdin(&method, 10.0), "{method:?} 10");
+        }
+        // integer sizes stream; fractional sizes count rows first
+        for method in [
+            SamplingMethod::Default,
+            SamplingMethod::VarOpt,
+            SamplingMethod::MergeableReservoir,
+        ] {
+            assert!(streams_stdin(&method, 10.0), "{method:?} 10");
+            assert!(!streams_stdin(&method, 0.5), "{method:?} 0.5");
+        }
+        // second pass or row count: always spooled
+        for method in [
+            SamplingMethod::Cluster,
+            SamplingMethod::Weighted,
+            SamplingMethod::Systematic,
+        ] {
+            assert!(!streams_stdin(&method, 10.0), "{method:?} 10");
+        }
+    }
 }

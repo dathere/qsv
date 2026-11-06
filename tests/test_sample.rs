@@ -2611,3 +2611,81 @@ fn sample_varopt_and_weighted_are_mutually_exclusive() {
         "expected method-collision error, got: {stderr}"
     );
 }
+
+/// Run `qsv sample <args>` reading `csv` from piped stdin (`-` appended when `dash`).
+fn sample_stdin(wrk: &Workdir, args: &[&str], csv: &str, dash: bool) -> String {
+    use std::io::Write;
+
+    let mut cmd = wrk.command("sample");
+    cmd.args(args);
+    if dash {
+        cmd.arg("-");
+    }
+    cmd.stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(csv.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "sample {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+// https://github.com/dathere/qsv/issues/4999: methods that count rows or make a second pass
+// over the input returned only the header when the input was piped on stdin.
+#[test]
+fn sample_stdin_matches_file() {
+    let wrk = Workdir::new("sample_stdin_matches_file");
+    let csv = "id,cluster,w\n1,a,1\n2,b,5\n3,b,2\n4,c,9\n5,c,3\n6,d,4\n7,d,8\n8,e,6\n";
+    wrk.create_from_string("in.csv", csv);
+
+    let cases: &[&[&str]] = &[
+        &["--cluster", "cluster", "2"],
+        &["--weighted", "w", "3"],
+        &["--weighted", "w", "0.5"],
+        &["--systematic", "first", "2"],
+        &["0.5"],
+        &["--mergeable-reservoir", "0.5"],
+        &["--varopt", "w", "0.5"],
+    ];
+    for case in cases {
+        let mut args = vec!["--seed", "42"];
+        args.extend_from_slice(case);
+
+        let mut cmd = wrk.command("sample");
+        cmd.args(&args).arg("in.csv");
+        let from_file: String = wrk.stdout(&mut cmd);
+        assert!(
+            from_file.lines().count() > 1,
+            "{case:?}: file sample should have data rows, got {from_file:?}"
+        );
+
+        for dash in [false, true] {
+            let from_stdin = sample_stdin(&wrk, &args, csv, dash);
+            assert_eq!(
+                from_stdin.trim_end(),
+                from_file,
+                "{case:?} (dash: {dash}): stdin sample differs from file sample"
+            );
+        }
+    }
+}
+
+#[test]
+fn sample_stdin_cluster_issue_4999() {
+    let wrk = Workdir::new("sample_stdin_cluster_issue_4999");
+    let csv = "control_number,title\n1,foo\n2,bar\n2,baaz\n3,quux\n";
+
+    // all 3 clusters requested, so every row comes back regardless of seed
+    let got = sample_stdin(&wrk, &["--cluster", "control_number", "3"], csv, false);
+    assert_eq!(got, csv);
+}

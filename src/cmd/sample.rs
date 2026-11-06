@@ -102,8 +102,8 @@ to a temporary file before sampling begins for all sampling methods except Berno
 streams the file as it samples it, stopping when the desired sample size is reached or the
 end of the file is reached.
 
-Sampling from stdin is also supported for all sampling methods, copying stdin to a in-memory
-buffer first before sampling begins.
+Sampling from stdin is also supported for all sampling methods. Stdin is first copied to a
+temporary file before sampling begins, except for Bernoulli, which streams it.
 
 If a stats cache is available, it will be used to do extra checks on systematic,
 weighted and cluster sampling, and to speed up sampling in general.
@@ -1055,6 +1055,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let temp_download = NamedTempFile::new()?;
+    let stdin_spool_dir = tempfile::tempdir()?;
 
     args.arg_input = match args.arg_input {
         Some(ref uri) if Url::parse(uri).is_ok() && uri.starts_with("http") => {
@@ -1081,8 +1082,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // safety: temp_download is a NamedTempFile, so we know can unwrap.to_string
             Some(temp_download.path().to_str().unwrap().to_string())
         },
-        Some(uri) => Some(uri), // local file
-        None => None,
+        Some(uri) if uri != "-" => Some(uri), // local file
+        // stdin can only be read once, but several methods read the input twice (row count,
+        // cluster/weighted second pass), so spool it to a temp file. Bernoulli streams.
+        _ if sampling_method != SamplingMethod::Bernoulli => {
+            let spooled =
+                util::process_input(vec![std::path::PathBuf::from("-")], &stdin_spool_dir, "")?;
+            // safety: process_input returns at least one path or an error
+            Some(spooled[0].to_string_lossy().into_owned())
+        },
+        stdin => stdin,
     };
 
     let rconfig = Config::new(args.arg_input.as_ref())

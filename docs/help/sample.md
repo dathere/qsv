@@ -114,8 +114,8 @@ to a temporary file before sampling begins for all sampling methods except Berno
 streams the file as it samples it, stopping when the desired sample size is reached or the
 end of the file is reached.
 
-Sampling from stdin is also supported for all sampling methods, copying stdin to a in-memory
-buffer first before sampling begins.
+Sampling from stdin is also supported for all sampling methods. Stdin is first copied to a
+temporary file before sampling begins, except for Bernoulli, which streams it.
 
 If a stats cache is available, it will be used to do extra checks on systematic,
 weighted and cluster sampling, and to speed up sampling in general.

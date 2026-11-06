@@ -202,7 +202,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let tmpdir = tempfile::tempdir()?;
 
     // If no input is provided, default to stdin
-    if args.arg_input.is_empty() {
+    let implicit_stdin = args.arg_input.is_empty();
+    if implicit_stdin {
         args.arg_input.push(PathBuf::from("-"));
     }
 
@@ -210,6 +211,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         util::process_input_with_sources(args.arg_input, &tmpdir, "")?
             .into_iter()
             .unzip();
+
+    // With no input given, empty stdin is an error (as before stdin became the default), so a
+    // script whose file list came up empty fails instead of silently writing nothing. An
+    // explicit `-` with empty stdin still succeeds.
+    if implicit_stdin && std::fs::metadata(&args.arg_input[0])?.len() == 0 {
+        return fail_clierror!(
+            "No data on stdin. Please provide at least one input file or pipe data to stdin."
+        );
+    }
+
     if args.cmd_rows {
         args.cat_rows()
     } else if args.cmd_rowskey {

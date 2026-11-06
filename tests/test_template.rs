@@ -665,7 +665,9 @@ fn template_contrib_functions() {
         .arg(concat!(
             "pluralize: You have {{ num_messages }} message{{ num_messages|int|pluralize }}\n",
             "now: {{now()|datetimeformat|length > 2}}\n", // Just verify we get a non-empty string
-            "dtformat: {{date_col|datetimeformat(format=\"long\", tz=\"EST\")}}\n",
+            // Etc/GMT+5 is fixed UTC-5 (POSIX sign inversion). Avoid legacy aliases like "EST":
+            // Ubuntu 26.04 moved them to the optional tzdata-legacy package.
+            "dtformat: {{date_col|datetimeformat(format=\"long\", tz=\"Etc/GMT+5\")}}\n",
             "\n\n"
         ))
         .arg("data.csv");

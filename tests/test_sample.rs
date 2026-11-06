@@ -2656,6 +2656,9 @@ fn sample_stdin_matches_file() {
         &["0.5"],
         &["--mergeable-reservoir", "0.5"],
         &["--varopt", "w", "0.5"],
+        // worked from stdin before the spool; guard that it still does
+        &["3"],
+        &["--stratified", "cluster", "1"],
     ];
     for case in cases {
         let mut args = vec!["--seed", "42"];

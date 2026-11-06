@@ -1602,7 +1602,10 @@ fn cat_empty_stdin_without_dash_errors() {
         let output = cmd.output().unwrap();
         assert!(!output.status.success(), "cat {subcmd}: {output:?}");
         assert!(
-            String::from_utf8_lossy(&output.stderr).contains("No data on stdin"),
+            // the full 28.0.0 message, so a rewording is caught
+            String::from_utf8_lossy(&output.stderr).trim()
+                == "No data on stdin. Please provide at least one input file or pipe data to \
+                    stdin.",
             "cat {subcmd}: {output:?}"
         );
 

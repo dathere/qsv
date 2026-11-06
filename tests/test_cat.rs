@@ -1556,3 +1556,37 @@ fn cat_rows_stdin_default_delimiter_env() {
         "a|bb\nccc|d"
     );
 }
+
+#[test]
+fn cat_stdin_without_dash() {
+    // <input> is optional: with none given, piped stdin is read, as `headers` does. It used to
+    // fail with "No data on stdin" because only an explicit `-` was read.
+    use std::io::Write;
+
+    let wrk = Workdir::new("cat_stdin_without_dash");
+    for (subcmd, expected) in [
+        ("rows", "a,b\n1,2\n3,4"),
+        ("rowskey", "a,b\n1,2\n3,4"),
+        ("columns", "a,b\n1,2\n3,4"),
+    ] {
+        let mut cmd = wrk.command("cat");
+        cmd.arg(subcmd)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = cmd.spawn().unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"a,b\n1,2\n3,4\n")
+            .unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "cat {subcmd}: {output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            expected,
+            "cat {subcmd}"
+        );
+    }
+}

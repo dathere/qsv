@@ -48,6 +48,32 @@ fn applydp_ops_upper() {
 }
 
 #[test]
+fn applydp_batch_zero_stdin() {
+    // --batch 0 pre-counted rows, which consumed stdin and left only the header
+    use std::io::Write;
+
+    let wrk = Workdir::new("applydp_batch_zero_stdin");
+    let mut cmd = wrk.command("applydp");
+    cmd.args(["operations", "upper", "name", "--batch", "0"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"name\nJohn\nMary\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "name\nJOHN\nMARY"
+    );
+}
+
+#[test]
 fn applydp_ops_escape() {
     let wrk = Workdir::new("applydp");
     wrk.create(

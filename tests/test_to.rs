@@ -1750,6 +1750,22 @@ fn to_parquet_stdin_default_delimiter_env() {
 }
 
 #[test]
+fn to_no_input_errmsg() {
+    // stdin is only read for an explicit `-`, so with no input the message must say what's
+    // missing rather than claim stdin was empty
+    let wrk = Workdir::new("to_no_input_errmsg");
+    for (subcmd, dest) in [("xlsx", "out.xlsx"), ("parquet", "outdir")] {
+        let mut cmd = wrk.command("to");
+        cmd.args([subcmd, dest]);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("No input CSV given") && stderr.contains("`-` to read stdin"),
+            "to {subcmd}: {stderr}"
+        );
+    }
+}
+
+#[test]
 #[cfg(feature = "polars")]
 fn to_parquet_table_rename_stdin_default_delimiter_env() {
     // --table copies piped stdin to `<table>.csv` before the delimiter was looked up, so the

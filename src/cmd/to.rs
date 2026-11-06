@@ -343,8 +343,11 @@ impl From<csvs_convert::DescribeError> for CliError {
     }
 }
 
-static EMPTY_STDIN_ERRMSG: &str =
-    "No data on stdin. Need to add connection string as first argument then the input CSVs";
+// process_input reads stdin only for an explicit `-`, so this fires when no input was given,
+// even if data was piped
+static EMPTY_STDIN_ERRMSG: &str = "No input CSV given. List the input CSV(s) after the \
+                                   destination (connection string or output path), or use `-` to \
+                                   read stdin.";
 
 #[cfg(feature = "polars")]
 static DEFAULT_GZIP_COMPRESSION_LEVEL: u8 = 6;
@@ -510,7 +513,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         debug!("conversion to ODS complete");
     } else if args.cmd_parquet {
         debug!("converting to Parquet");
-        arg_input = process_input(arg_input, &tmpdir, "")?;
+        arg_input = process_input(arg_input, &tmpdir, EMPTY_STDIN_ERRMSG)?;
         // Each input's delimiter, as other commands read it: --delimiter, else Config's
         // (QSV_SNIFF_DELIMITER, extension, or QSV_DEFAULT_DELIMITER for spooled stdin and other
         // files). Resolved before --table renames the input, which would hide that it is

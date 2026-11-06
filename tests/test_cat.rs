@@ -1590,3 +1590,28 @@ fn cat_stdin_without_dash() {
         );
     }
 }
+
+#[test]
+fn cat_empty_stdin_without_dash_errors() {
+    // with no input given, empty stdin errors (as in 28.0.0), so a script whose file list came
+    // up empty fails instead of silently writing nothing; an explicit `-` still succeeds
+    let wrk = Workdir::new("cat_empty_stdin_without_dash_errors");
+    for subcmd in ["rows", "rowskey", "columns"] {
+        let mut cmd = wrk.command("cat");
+        cmd.arg(subcmd).stdin(std::process::Stdio::null());
+        let output = cmd.output().unwrap();
+        assert!(!output.status.success(), "cat {subcmd}: {output:?}");
+        assert!(
+            // the full 28.0.0 message, so a rewording is caught
+            String::from_utf8_lossy(&output.stderr).trim()
+                == "No data on stdin. Please provide at least one input file or pipe data to \
+                    stdin.",
+            "cat {subcmd}: {output:?}"
+        );
+
+        let mut cmd = wrk.command("cat");
+        cmd.args([subcmd, "-"]).stdin(std::process::Stdio::null());
+        let output = cmd.output().unwrap();
+        assert!(output.status.success(), "cat {subcmd} -: {output:?}");
+    }
+}

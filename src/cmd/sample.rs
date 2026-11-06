@@ -102,8 +102,10 @@ to a temporary file before sampling begins for all sampling methods except Berno
 streams the file as it samples it, stopping when the desired sample size is reached or the
 end of the file is reached.
 
-Sampling from stdin is also supported for all sampling methods. Stdin is first copied to a
-temporary file before sampling begins, except for Bernoulli, which streams it.
+Sampling from stdin is also supported for all sampling methods. Bernoulli, stratified,
+timeseries, and integer-size default, varopt and mergeable-reservoir sampling stream stdin.
+The others (cluster, weighted, systematic and fractional sample sizes) read the input twice,
+so stdin is first copied to a temporary file, which needs disk space for the whole input.
 
 If a stats cache is available, it will be used to do extra checks on systematic,
 weighted and cluster sampling, and to speed up sampling in general.
@@ -957,6 +959,19 @@ async fn stream_bernoulli_sampling(uri: &str, args: &Args, rng_kind: &RngKind) -
     Ok(wtr.flush()?)
 }
 
+/// Whether `method` reads its input exactly once, so stdin can be sampled without spooling it.
+/// An allowlist on purpose: anything not listed (including future methods) gets spooled, which
+/// costs disk space but is never wrong. Fractional sizes count rows first, a second read.
+fn streams_stdin(method: &SamplingMethod, sample_size: f64) -> bool {
+    match method {
+        SamplingMethod::Bernoulli | SamplingMethod::Stratified | SamplingMethod::Timeseries => true,
+        SamplingMethod::Default | SamplingMethod::VarOpt | SamplingMethod::MergeableReservoir => {
+            sample_size >= 1.0
+        },
+        _ => false,
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
@@ -1093,8 +1108,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
         Some(uri) if uri != "-" => Some(uri), // local file
         // stdin can only be read once, but several methods read the input twice (row count,
-        // cluster/weighted second pass), so spool it to a temp file. Bernoulli streams.
-        _ if sampling_method != SamplingMethod::Bernoulli => {
+        // cluster/weighted second pass), so spool it to a temp file unless the method is
+        // known to make a single pass.
+        _ if !streams_stdin(&sampling_method, args.arg_sample_size) => {
             let spooled =
                 util::process_input(vec![std::path::PathBuf::from("-")], &stdin_spool_dir, "")?;
             // safety: process_input returns at least one path or an error

@@ -2692,3 +2692,15 @@ fn sample_stdin_cluster_issue_4999() {
     let got = sample_stdin(&wrk, &["--cluster", "control_number", "3"], csv, false);
     assert_eq!(got, csv);
 }
+
+// The stdin spool must not trigger a stats-cache run (exact cardinality of every column, so
+// memory grows with distinct values). With a file, that run's cardinality makes asking for
+// more clusters than exist an error; from stdin it is skipped, so all clusters come back.
+#[test]
+fn sample_stdin_cluster_skips_stats_cache() {
+    let wrk = Workdir::new("sample_stdin_cluster_skips_stats_cache");
+    let csv = "control_number,title\n1,foo\n2,bar\n2,baaz\n3,quux\n";
+
+    let got = sample_stdin(&wrk, &["--cluster", "control_number", "9"], csv, false);
+    assert_eq!(got, csv);
+}

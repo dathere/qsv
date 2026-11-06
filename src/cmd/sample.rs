@@ -710,6 +710,15 @@ fn check_stats_cache(
     if args.flag_force {
         return Ok((None, None));
     }
+    // A fresh stdin spool has no cache, so this would compute exact cardinality for every
+    // column (memory ~ distinct values) just to pre-check; skip it, as stdin always did.
+    if args
+        .arg_input
+        .as_deref()
+        .is_some_and(|p| crate::config::is_stdin_spool(std::path::Path::new(p)))
+    {
+        return Ok((None, None));
+    }
 
     // We returned early above when flag_force was set, so this is always
     // false here. Asserting (rather than hard-coding the literal) keeps the

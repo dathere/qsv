@@ -2185,12 +2185,19 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     // reuse batch buffers
     let batchsize: usize = if args.flag_batch == 0 {
-        std::cmp::max(1000, util::count_rows_regular(&rconfig)? as usize)
+        if rconfig.is_stdin() {
+            // counting stdin's rows would consume the stream that `rdr` reads, so read
+            // until EOF to honor "0 = all rows in one batch" (as census/geoclient do)
+            usize::MAX
+        } else {
+            std::cmp::max(1000, util::count_rows_regular(&rconfig)? as usize)
+        }
     } else {
         args.flag_batch
     };
-    let mut batch = Vec::with_capacity(batchsize);
-    let mut batch_results = Vec::with_capacity(batchsize);
+    // capped: usize::MAX (stdin with --batch 0) can't be preallocated
+    let mut batch = Vec::with_capacity(batchsize.min(50_000));
+    let mut batch_results = Vec::with_capacity(batchsize.min(50_000));
     // values that found no match inside --admin1, reported once at the end (issue #4687): the
     // filter is strict, so without a count the misses would vanish into unchanged cells
     let admin1_misses = std::sync::atomic::AtomicU64::new(0);

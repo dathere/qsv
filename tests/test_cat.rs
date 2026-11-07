@@ -1615,3 +1615,29 @@ fn cat_empty_stdin_without_dash_errors() {
         assert!(output.status.success(), "cat {subcmd} -: {output:?}");
     }
 }
+
+#[test]
+fn cat_rowskey_empty_input_writes_nothing() {
+    // empty inputs have no columns; rowskey used to write a lone `""` header, unlike rows/columns
+    let wrk = Workdir::new("cat_rowskey_empty_input_writes_nothing");
+    wrk.create_from_string("empty.csv", "");
+
+    let mut cmd = wrk.command("cat");
+    cmd.args(["rowskey", "empty.csv"]);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+
+    let mut cmd = wrk.command("cat");
+    cmd.args(["rowskey", "-"])
+        .stdin(std::process::Stdio::null());
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty(), "{output:?}");
+
+    // the grouping column is real, so its header is still written
+    let mut cmd = wrk.command("cat");
+    cmd.args(["rowskey", "--group", "fname", "empty.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "file");
+}

@@ -401,7 +401,8 @@ impl Args {
             .writer()?;
         let mut new_row = csv::ByteRecord::with_capacity(4096, num_columns_global);
 
-        if !self.flag_no_headers {
+        // with no columns at all (empty inputs), a header-only record would be written as `""`
+        if !self.flag_no_headers && num_columns_global > 0 {
             for c in &columns_global {
                 new_row.push_field(c);
             }

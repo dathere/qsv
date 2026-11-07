@@ -41,6 +41,45 @@ fn geocode_suggest() {
 }
 
 #[test]
+fn geocode_suggest_batch_zero_stdin() {
+    // --batch 0 pre-counted rows with a second reader, which consumed the piped stdin past
+    // what the main reader had already buffered, so rows were silently dropped. The input
+    // has to exceed the 128 KiB read buffer to show it.
+    use std::io::Write;
+
+    const ROWS: usize = 25_000;
+    let mut input = String::from("Location\n");
+    for _ in 0..ROWS {
+        input.push_str("Boston\n");
+    }
+    assert!(input.len() > 128 * 1024);
+
+    let wrk = Workdir::new("geocode_suggest_batch_zero_stdin");
+    let mut cmd = wrk.command("geocode");
+    cmd.args(["suggest", "Location", "--batch", "0"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    let output = child.wait_with_output().unwrap();
+    writer.join().unwrap().unwrap();
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next(), Some("Location"));
+    let rows: Vec<&str> = lines.collect();
+    assert_eq!(rows.len(), ROWS);
+    assert!(
+        rows.iter().all(|r| *r == "\"(42.35843, -71.05977)\""),
+        "{:?}",
+        &rows[..3]
+    );
+}
+
+#[test]
 fn geocode_suggest_select() {
     let wrk = Workdir::new("geocode_suggest_select");
     wrk.create(

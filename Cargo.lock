@@ -1481,6 +1481,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "compact_bytes"
+version = "0.2.1"
+source = "git+https://github.com/jqnatividad/compact_bytes?branch=main#651006e934c5d4700c6b0b75aa94fcc26b7f79cc"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "compact_str"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2016,7 +2024,7 @@ dependencies = [
  "pdatastructs",
  "petgraph",
  "postgres",
- "qsv-stats",
+ "qsv-stats 0.56.1",
  "rand 0.10.3",
  "rayon",
  "regex",
@@ -7077,7 +7085,7 @@ dependencies = [
  "pragmastat",
  "pyo3",
  "qsv-dateparser",
- "qsv-stats",
+ "qsv-stats 0.57.0",
  "qsv-tabwriter",
  "qsv_currency",
  "qsv_docopt",
@@ -7152,6 +7160,19 @@ version = "0.56.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be6b7857266d4ceae3dd6022eec0fa4a030ab81362db7f83129c8bbda82b0f34"
 dependencies = [
+ "hashbrown 0.17.1",
+ "num-traits",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "qsv-stats"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acb010e011dd606752a228b203748e26fb3b6bf78a7495e8c048606a084c206f"
+dependencies = [
+ "compact_bytes",
  "hashbrown 0.17.1",
  "num-traits",
  "rayon",

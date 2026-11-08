@@ -422,7 +422,7 @@ pyo3 = { version = "0.30", features = ["auto-initialize"], optional = true }
 yaml_serde = { version = "0.10", optional = true }
 qsv-dateparser = "0.20"
 qsv_docopt = "1.10"
-qsv-stats = "0.56"
+qsv-stats = "0.57"
 qsv_currency = "0.8"
 qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
@@ -578,6 +578,12 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 # only a BUILD dependency of plotly_static (its build.rs fetches chromedriver), which this
 # patch still reaches. Drop the patch once plotly_static requires a release with zip 9.
 webdriver-downloader = { git = "https://github.com/jqnatividad/webdriver-downloader", rev = "19795f9006f77ea3592bbc0ea26e00247a3df4c3" }
+
+# compact_bytes 0.2.1 + Ord/From<&[u8]>/Borrow<[u8]>, serde, edition 2024, and the
+# CompactBytesSlice::into_boxed_slice fix (upstream ParkMyCar/compact_bytes#11).
+# Pulled in by qsv-stats' ByteKey (0.57+). Same version as upstream, so crates.io
+# builds (`cargo install qsv`) use upstream 0.2.1; the hot paths are identical.
+compact_bytes = { git = "https://github.com/jqnatividad/compact_bytes", branch = "main" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases

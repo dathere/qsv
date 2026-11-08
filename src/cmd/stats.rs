@@ -4370,7 +4370,7 @@ struct WhichStats {
     /// function rejects the bad combinations.
     approx_quantiles:     bool,
     /// When true, use the Apache `DataSketches` `HyperLogLog` engine for the cardinality
-    /// column instead of the exact `Frequencies<Vec<u8>>` / `HashMap<Vec<u8>, f64>` tracker.
+    /// column instead of the exact `Frequencies<ByteKey>` / `HashMap<Vec<u8>, f64>` tracker.
     /// `--infer-boolean` forces this off in `run()` (HLL's ~1.5% RSE breaks
     /// `cardinality == 2` checks). Independent of `approx_quantiles`.
     approx_cardinality:   bool,
@@ -4622,8 +4622,8 @@ struct Stats {
     // CACHE LINE 4+: Mode and cardinality computation
     // Counted-runs frequency map: one entry per UNIQUE value (vs the previous
     // Unsorted<Vec<u8>> which buffered every sample - one alloc+copy per row).
-    modes:          Option<Frequencies<Vec<u8>>>, // 48 bytes - used for mode/cardinality
-    weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
+    modes:          Option<Frequencies<stats::ByteKey>>, // 48 bytes - used for mode/cardinality
+    weighted_modes: Option<HashMap<Vec<u8>, f64>>,       // 48 bytes - weighted mode/antimode
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]

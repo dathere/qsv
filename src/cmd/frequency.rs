@@ -1059,18 +1059,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
     }
 
-    // save stdin to a tempfile so we can derive stats: the <ALL_UNIQUE> shortcut and JSON
+    // save stdin to a temp file so we can derive stats: the <ALL_UNIQUE> shortcut and JSON
     // output need the stats cache's cardinalities and a row count, and stdin can be read only
-    // once
-    let mut stdin_temp_file;
+    // once. process_input registers the spool as stdin's, so stdin's delimiter rules still
+    // apply, and the TempDir (which also holds the stats cache files) is removed when run()
+    // returns. The Frequent Items sketch streams stdin and skips stats, so its CSV output
+    // isn't spooled.
+    let _stdin_spool_dir;
     let is_json = args.flag_json || args.flag_pretty_json || args.flag_toon;
-    if is_stdin {
-        let temp_dir = std::env::temp_dir();
-        stdin_temp_file = tempfile::Builder::new()
-            .suffix(".csv")
-            .tempfile_in(&temp_dir)?;
-        io::copy(&mut io::stdin(), &mut stdin_temp_file)?;
-        args.arg_input = Some(stdin_temp_file.path().to_string_lossy().to_string());
+    let is_frequent_items = args
+        .flag_sketch_method
+        .eq_ignore_ascii_case("frequent_items");
+    if is_stdin && (is_json || !is_frequent_items) {
+        let spool_dir = tempfile::tempdir()?;
+        let spooled = util::process_input(vec![std::path::PathBuf::from("-")], &spool_dir, "")?;
+        // safety: process_input returns at least one path or an error
+        args.arg_input = Some(spooled[0].to_string_lossy().into_owned());
+        _stdin_spool_dir = spool_dir;
         rconfig = args.rconfig();
     }
 

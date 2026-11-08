@@ -9490,3 +9490,22 @@ fn frequency_all_unique_piped_stdin() {
     let grp_rows = stdout.lines().filter(|l| l.starts_with("grp,")).count();
     assert_eq!(grp_rows, 4);
 }
+
+#[test]
+fn frequency_piped_stdin_keeps_default_delimiter() {
+    // stdin is saved to a temp file for the stats pass; that spool must still be read with
+    // stdin's delimiter (QSV_DEFAULT_DELIMITER), not as a comma-delimited .csv
+    let wrk = Workdir::new("frequency_piped_stdin_keeps_default_delimiter");
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";");
+    let output = wrk.output_with_piped_stdin(&mut cmd, b"a;b\n1;x\n2;y\n2;y\n".to_vec());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let fields: std::collections::BTreeSet<&str> = stdout
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split(';').next())
+        .collect();
+    assert_eq!(fields, ["a", "b"].into_iter().collect(), "{stdout}");
+}

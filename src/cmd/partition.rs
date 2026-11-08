@@ -101,35 +101,16 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
-    // stdin (no input, or `-`) is read more than once (key pass + write passes), so save
-    // it to a temp file
+    // stdin (no input, or `-`) is read more than once (key pass + write passes), so save it
+    // to a temp file. process_input registers the spool as stdin's, so stdin's delimiter
+    // rules still apply; the TempDir is removed when run() returns.
+    let _stdin_spool_dir;
     if matches!(args.arg_input.as_deref(), None | Some("-")) {
-        // Get or initialize temp directory that persists until program exit
-        let temp_dir =
-            crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
-
-        // Create a temporary file with .csv extension to store stdin input
-        let mut temp_file = tempfile::Builder::new()
-            .suffix(".csv")
-            .tempfile_in(temp_dir)?;
-        io::copy(&mut io::stdin(), &mut temp_file)?;
-
-        // Keep temp file from being deleted when it goes out of scope;
-        // it will be deleted when the program exits when TEMP_FILE_DIR is cleaned up.
-        let (_, temp_path) = temp_file
-            .keep()
-            .map_err(|e| format!("Failed to keep temporary stdin file: {e}"))?;
-
-        // Round-tripping through `String` requires UTF-8; bail out cleanly on
-        // exotic temp paths instead of panicking or silently corrupting via
-        // lossy conversion.
-        let temp_path_str = temp_path.to_str().ok_or_else(|| {
-            format!(
-                "Temporary stdin file path is not valid UTF-8: {}",
-                temp_path.display()
-            )
-        })?;
-        args.arg_input = Some(temp_path_str.to_owned());
+        let spool_dir = tempfile::tempdir()?;
+        let spooled = util::process_input(vec![std::path::PathBuf::from("-")], &spool_dir, "")?;
+        // safety: process_input returns at least one path or an error
+        args.arg_input = Some(spooled[0].to_string_lossy().into_owned());
+        _stdin_spool_dir = spool_dir;
     }
 
     fs::create_dir_all(&args.arg_outdir)?;

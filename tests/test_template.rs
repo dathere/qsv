@@ -665,8 +665,8 @@ fn template_contrib_functions() {
         .arg(concat!(
             "pluralize: You have {{ num_messages }} message{{ num_messages|int|pluralize }}\n",
             "now: {{now()|datetimeformat|length > 2}}\n", // Just verify we get a non-empty string
-            // Etc/GMT+5 is fixed UTC-5 (POSIX sign inversion). Avoid legacy aliases like "EST":
-            // Ubuntu 26.04 moved them to the optional tzdata-legacy package.
+            // Etc/GMT+5 is fixed UTC-5 (POSIX sign inversion). Legacy aliases like "EST" are
+            // covered by template_legacy_tz_aliases_fall_back_to_bundled_tzdb.
             "dtformat: {{date_col|datetimeformat(format=\"long\", tz=\"Etc/GMT+5\")}}\n",
             "\n\n"
         ))
@@ -681,6 +681,40 @@ fn template_contrib_functions() {
         "pluralize: You have 2 messages\n",
         "now: True\n",
         "dtformat: December 23 1999 23:37:22",
+    );
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn template_legacy_tz_aliases_fall_back_to_bundled_tzdb() {
+    let wrk = Workdir::new("template_legacy_tz_aliases");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["date_col"],
+            svec!["2023-06-24T16:37:22+00:00"],
+            svec!["1999-12-24T16:37:22+12:00"],
+        ],
+    );
+    // a zoneinfo dir without the legacy aliases, like Ubuntu 26.04 without tzdata-legacy.
+    // jiff honors TZDIR on every platform; without jiff's bundled tzdb these fail with
+    // "unknown timezone" (minijinja#1008)
+    wrk.create_subdir("zoneinfo").unwrap();
+    wrk.create_from_string("zoneinfo/README", "no zones here\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.env("TZDIR", wrk.path("zoneinfo"))
+        .arg("--template")
+        .arg(concat!(
+            "{{date_col|datetimeformat(format=\"long\", tz=\"EST\")}} | ",
+            "{{date_col|datetimeformat(format=\"long\", tz=\"US/Eastern\")}}\n\n"
+        ))
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = concat!(
+        "June 24 2023 11:37:22 | June 24 2023 12:37:22\n",
+        "December 23 1999 23:37:22 | December 23 1999 23:37:22",
     );
     assert_eq!(got, expected);
 }

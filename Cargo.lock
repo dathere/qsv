@@ -4138,6 +4138,7 @@ checksum = "14ed8250fe4472173a765b89fea4b46f2c4aa12adc12a3e310f1dc6c108e041b"
 dependencies = [
  "jiff-core",
  "jiff-static",
+ "jiff-tzdb",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
@@ -7051,6 +7052,7 @@ dependencies = [
  "jaq-core",
  "jaq-json",
  "jaq-std",
+ "jiff",
  "jsonschema",
  "libc",
  "log",

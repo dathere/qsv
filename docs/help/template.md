@@ -76,10 +76,10 @@ qsv template --template-file template.tpl data.csv
 > Booleans render as `True`/`False` and none (e.g. a JSON null reached via `fromjson`)
 >  renders as `None`, matching Jinja2. Use `{{ v or "" }}` for an empty string instead —
 >  a bare `{{ v|default("") }}` does NOT substitute for none, only for undefined.
-> Time zones (e.g. `datetimeformat(tz=...)`) are looked up in the OS time zone database.
->  Use canonical IANA names such as "America/New_York" or "Etc/GMT+5". Legacy aliases
->  like "EST" or "US/Eastern" are missing on systems without them (e.g. Ubuntu 26.04
->  without the tzdata-legacy package) and fail with "unknown timezone".
+> Time zones (e.g. `datetimeformat(tz=...)`) are looked up in the OS time zone database,
+>  falling back to qsv's bundled copy for names the OS lacks, so legacy aliases like "EST"
+>  or "US/Eastern" work even on systems without them (e.g. Ubuntu 26.04 without the
+>  tzdata-legacy package). Canonical IANA names such as "America/New_York" are preferred.
 
 Additional qsv-specific data-wrangling filters/functions (available in all binary variants):  
 ```

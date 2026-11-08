@@ -101,8 +101,9 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
-    // if no input file is provided, use stdin and save to a temp file
-    if args.arg_input.is_none() {
+    // stdin (no input, or `-`) is read more than once (key pass + write passes), so save
+    // it to a temp file
+    if matches!(args.arg_input.as_deref(), None | Some("-")) {
         // Get or initialize temp directory that persists until program exit
         let temp_dir =
             crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());

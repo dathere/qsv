@@ -592,3 +592,29 @@ fn test_input_sniff_preamble_without_autoskip() {
     ];
     assert_eq!(got, expected);
 }
+
+#[test]
+fn input_skip_lastlines_piped_stdin() {
+    // --skip-lastlines counted the rows with a second reader, which consumed piped stdin,
+    // so no rows were written (exit 0)
+    let wrk = Workdir::new("input_skip_lastlines_piped_stdin");
+    let mut cmd = wrk.command("input");
+    cmd.args(["--skip-lastlines", "5", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    // the header counts as a line here: input reads with --no-headers semantics
+    assert_eq!(lines.len(), crate::workdir::PIPED_STDIN_ROWS + 1 - 5);
+    assert_eq!(lines[0], "id,grp,txt");
+    assert_eq!(
+        lines.last().unwrap(),
+        &format!(
+            "{n},g{g},row {n} of the piped stdin input",
+            // ids run 0..PIPED_STDIN_ROWS, so the last kept id is 5 + 1 below the end
+            n = crate::workdir::PIPED_STDIN_ROWS - 6,
+            g = (crate::workdir::PIPED_STDIN_ROWS - 6) % 4
+        )
+    );
+}

@@ -1059,11 +1059,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_clierror!("--frequency-jsonl requires a file input, not stdin.");
     }
 
-    // if stdin and args.flag_json is true, save stdin to tempfile
-    // so we can derive stats
+    // save stdin to a tempfile so we can derive stats: the <ALL_UNIQUE> shortcut and JSON
+    // output need the stats cache's cardinalities and a row count, and stdin can be read only
+    // once
     let mut stdin_temp_file;
     let is_json = args.flag_json || args.flag_pretty_json || args.flag_toon;
-    if is_stdin && is_json {
+    if is_stdin {
         let temp_dir = std::env::temp_dir();
         stdin_temp_file = tempfile::Builder::new()
             .suffix(".csv")

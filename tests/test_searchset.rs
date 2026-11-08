@@ -771,3 +771,30 @@ fn searchset_from_zip_parallel_autoindexed() {
         "searchset over a .zip input must equal searchset over the same data uncompressed"
     );
 }
+
+#[test]
+fn searchset_piped_stdin_large() {
+    // the record count for --json/progress used a second reader, which consumed piped stdin
+    // past the main reader's 128 KiB buffer and failed with a CSV field-count error
+    let wrk = Workdir::new("searchset_piped_stdin_large");
+    wrk.create_from_string("regex.txt", "^g1$\n");
+    let mut cmd = wrk.command("searchset");
+    cmd.args(["regex.txt", "-s", "grp", "--json"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next(), Some("id,grp,txt"));
+    let rows: Vec<&str> = lines.collect();
+    assert_eq!(rows.len(), crate::workdir::PIPED_STDIN_ROWS / 4);
+    assert!(rows.iter().all(|r| r.contains(",g1,")));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let summary: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap();
+    assert_eq!(summary["record_count"], crate::workdir::PIPED_STDIN_ROWS);
+    assert_eq!(
+        summary["rows_with_matches"],
+        crate::workdir::PIPED_STDIN_ROWS / 4
+    );
+}

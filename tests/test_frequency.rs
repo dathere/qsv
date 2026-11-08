@@ -9466,3 +9466,27 @@ fn frequency_parallel_worker_panic_is_an_error() {
         );
     }
 }
+
+#[test]
+fn frequency_all_unique_piped_stdin() {
+    // CSV output didn't save stdin to a temp file (only JSON output did), so the stats cache
+    // and row count behind the <ALL_UNIQUE> shortcut were unavailable and an all-unique
+    // column printed its top values instead, unlike the same data from a file
+    let wrk = Workdir::new("frequency_all_unique_piped_stdin");
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["-s", "id,grp", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let id_rows: Vec<&str> = stdout.lines().filter(|l| l.starts_with("id,")).collect();
+    assert_eq!(
+        id_rows,
+        [format!(
+            "id,<ALL_UNIQUE>,{},100,0",
+            crate::workdir::PIPED_STDIN_ROWS
+        )]
+    );
+    let grp_rows = stdout.lines().filter(|l| l.starts_with("grp,")).count();
+    assert_eq!(grp_rows, 4);
+}

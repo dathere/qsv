@@ -938,3 +938,18 @@ fn sniff_indexed_small() {
     assert!(got.contains(r#""num_records":5"#));
     assert!(got.contains(r#""sampled_records":5"#));
 }
+
+#[test]
+fn sniff_dash_piped_stdin() {
+    // `-` was treated as a file path ("No such file or directory"); only omitting the input
+    // read stdin
+    let wrk = Workdir::new("sniff_dash_piped_stdin");
+    let mut cmd = wrk.command("sniff");
+    cmd.args(["--json", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let sniffed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(sniffed["num_records"], crate::workdir::PIPED_STDIN_ROWS);
+    assert_eq!(sniffed["num_fields"], 3);
+}

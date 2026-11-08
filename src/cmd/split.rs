@@ -187,8 +187,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     fs::create_dir_all(&args.arg_outdir)?;
 
-    // if no input file is provided, use stdin and save to a temp file
-    if args.arg_input.is_none() {
+    // stdin (no input, or `-`) can be read only once, but --chunks counts the rows first,
+    // so save it to a temp file
+    if matches!(args.arg_input.as_deref(), None | Some("-")) {
         // Get or initialize temp directory that persists until program exit
         let temp_dir =
             crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());

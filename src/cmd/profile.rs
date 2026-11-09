@@ -125,6 +125,18 @@ profile options:
                               `/projection/title`, beating inference and
                               discovery). Forced values for slots the profile
                               does not surface are silently dropped (no-op).
+                              `dataset_info` keys are JSON Pointers into the
+                              output (e.g. `/projection/title`): the value
+                              replaces what is there, and missing objects
+                              are created. Inside an array, use an existing
+                              index, or a final `-` to append (e.g.
+                              `/projection/hasQualityMeasurement/-` adds a
+                              measurement after the computed ones). An
+                              override that cannot be applied (not a
+                              pointer, an index out of range, `-` with no
+                              array to append to) is reported in
+                              projection_warnings (or, with --no-projection,
+                              on stderr) and fails --strict.
                               See tests/resources/profile/dcat-init-context.README.md
                               for a fully-populated example.
     --no-projection           Skip the metadata projection block (dcat/croissant/
@@ -164,6 +176,9 @@ profile options:
                                            row's state (TIGERweb county
                                            names). A name several counties
                                            share is noted, not guessed.
+                                           A state column lists states only
+                                           when at least 90% of its values
+                                           are US states.
                                 both     - geonames and census.
                               Also adds the coordinates' centroid. A lookup
                               that cannot run is noted in projection_warnings;
@@ -216,11 +231,16 @@ profile options:
                               input (CSV structure + UTF-8), so a passing
                               file is declared UTF-8 encoded and its
                               syntactic validity is recorded as a
-                              quality measurement.
-    --strict                  With --validate, fail the command on
-                              Required-severity schema violations, or on
-                              non-Info external-validator findings,
-                              instead of just warning. Severity comes
+                              quality measurement. A file that fails it
+                              also gets a Required `syntacticValidity`
+                              warning.
+    --strict                  Fail the command, instead of just warning,
+                              when an --initial-context override cannot
+                              be applied, and, with --validate, when the
+                              input fails `qsv validate`, on
+                              Required-severity schema violations or on
+                              non-Info external-validator findings.
+                              Severity comes
                               from the DCAT-US v3 schema's own
                               requirementLevel annotations, so a missing
                               mandatory property aborts while a
@@ -282,7 +302,7 @@ Common options:
                               CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -818,10 +838,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // CKAN block, and formula output. Must run BEFORE schema
     // validation so an override that supplies a missing mandatory
     // field doesn't trip --strict. Per plan §4c.
+    let forced_pointers: HashSet<&str> = analysis
+        .forced_values
+        .iter()
+        .map(|(ptr, _)| ptr.as_str())
+        .collect();
+    let mut override_failures = Vec::new();
     if let Some(overrides) = analysis.dataset_info.as_object()
         && !overrides.is_empty()
     {
-        apply_pointer_overrides(&mut output, overrides);
+        override_failures.extend(apply_pointer_overrides(
+            &mut output,
+            overrides,
+            &forced_pointers,
+        ));
     }
 
     // §5.4: forced `(projection_pointer, value)` pairs from all three
@@ -834,7 +864,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // forced field can rescue --strict the same way dataset_info
     // entries do.
     if !analysis.forced_values.is_empty() {
-        apply_force_overrides(&mut output, &analysis.forced_values);
+        override_failures.extend(apply_force_overrides(&mut output, &analysis.forced_values));
+    }
+    // An override that could not be applied is a value the user asked
+    // for that is not in the output: --strict fails on it (with or
+    // without --validate), otherwise it is reported.
+    if !override_failures.is_empty() && args.flag_strict {
+        let summary = override_failures
+            .iter()
+            .map(|(ptr, reason)| format!("  - {ptr}: {reason}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(CliError::Other(format!(
+            "qsv profile --strict: {} --initial-context override(s) not applied:\n{summary}",
+            override_failures.len()
+        )));
+    }
+    let override_warnings: Vec<projection::ProjectionWarning> = override_failures
+        .into_iter()
+        .map(|(ptr, reason)| projection::ProjectionWarning {
+            message:  format!("--initial-context override `{ptr}` was not applied: {reason}"),
+            field:    ptr,
+            severity: projection::Severity::Required,
+        })
+        .collect();
+    if args.flag_no_projection {
+        for w in &override_warnings {
+            eprintln!("qsv profile: warning: {}", w.message);
+        }
     }
 
     // Phase 6 (post-override): JSON Schema validation runs on the
@@ -900,6 +957,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             && let Some(final_projection) = out_map.get("projection")
         {
             let validation = dcat_validate::validate(&profile, final_projection);
+            // The `qsv validate` pass (CSV structure + UTF-8) that
+            // --validate runs over the input. It is also recorded as the
+            // `syntacticValidity` measurement, but a measurement alone
+            // would let an invalid file pass --strict.
+            let syntax_failure = (analysis
+                .context
+                .pointer("/rfc4180/valid")
+                .and_then(Value::as_bool)
+                == Some(false))
+            .then(|| projection::ProjectionWarning {
+                field:    "syntacticValidity".to_string(),
+                severity: projection::Severity::Required,
+                message:  "the input failed `qsv validate` (consistent field counts and quoting, \
+                           UTF-8 encoding), or it could not run; run `qsv validate` on it for \
+                           details"
+                    .to_string(),
+            });
+            if let Some(w) = &syntax_failure
+                && args.flag_strict
+            {
+                return Err(CliError::Other(format!(
+                    "qsv profile --strict: {}",
+                    w.message
+                )));
+            }
             // --strict aborts on Required-severity findings only.
             //
             // It used to abort on ANY non-empty finding vector, which
@@ -938,6 +1020,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 !is_dup_of_schema_required(w, prefix, &validation)
             });
             projection_warnings.extend(validation);
+            projection_warnings.extend(syntax_failure);
 
             // Out-of-process validator (e.g. mlcroissant, pyshacl).
             // Runs in parallel to the built-in JSON-Schema validator;
@@ -1008,6 +1091,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 args.flag_delimiter,
             ));
         }
+
+        projection_warnings.extend(override_warnings);
 
         if !projection_warnings.is_empty() {
             out_map.insert(
@@ -1532,40 +1617,61 @@ fn strip_compound_csv_ext(path: &str) -> String {
 /// Apply `--initial-context.dataset_info` JSON-Pointer → Value
 /// overrides to the assembled output JSON. Each key in `overrides`
 /// must be an RFC 6901 JSON Pointer (e.g. `/projection/dct:title`); the
-/// value replaces whatever was at that path. Missing parents are
-/// created as objects on demand.
+/// value replaces whatever was at that path, and a final `-` inside an
+/// array appends to it. Missing parents are created as objects on demand.
 ///
-/// Out of scope: array-index intermediate-parent creation and
-/// `-`-suffix appending. Failures (non-pointer keys, traversal through
-/// non-object scalars) are silently skipped — overrides are
-/// best-effort, not an enforcement mechanism.
-fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String, Value>) {
+/// Pointers in `forced` are skipped: `apply_force_overrides` writes
+/// them afterwards, and writing them here too would append a forced
+/// `-` entry twice.
+///
+/// Returns each override that could not be applied, as
+/// `(key, reason)`, so it can be reported rather than lost.
+fn apply_pointer_overrides(
+    root: &mut Value,
+    overrides: &serde_json::Map<String, Value>,
+    forced: &HashSet<&str>,
+) -> Vec<(String, String)> {
+    let mut failures = Vec::new();
     for (ptr, new_value) in overrides {
-        if !ptr.starts_with('/') {
+        if forced.contains(ptr.as_str()) {
             continue;
         }
-        set_by_pointer(root, ptr, new_value.clone());
+        if let Err(reason) = apply_override(root, ptr, new_value) {
+            failures.push((ptr.clone(), reason));
+        }
     }
+    failures
 }
 
 /// §5.4: apply forced `(dcat_pointer, value)` pairs after
 /// `apply_pointer_overrides` so a user's `{value, force: true}`
-/// markings beat both inferred output AND discovered DCAT. Mirrors
-/// `apply_pointer_overrides`'s skip-non-pointer behaviour but takes
-/// a `&[(String, Value)]` instead of a Map so insertion order is
+/// markings beat both inferred output AND discovered DCAT. Takes a
+/// `&[(String, Value)]` instead of a Map so insertion order is
 /// preserved (matters when two forced leaves alias the same pointer
 /// via the active profile's `field_mappings:` table — last-write-wins).
 ///
 /// `forced_values` comes from `context::collect_forced_paths` and
 /// already has any `package/<key>` / `resource/<key>` pointers
-/// translated to their target counterparts.
-fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
+/// translated to their target counterparts. Returns the failures, as
+/// `apply_pointer_overrides` does.
+fn apply_force_overrides(
+    root: &mut Value,
+    forced_values: &[(String, Value)],
+) -> Vec<(String, String)> {
+    let mut failures = Vec::new();
     for (ptr, new_value) in forced_values {
-        if !ptr.starts_with('/') {
-            continue;
+        if let Err(reason) = apply_override(root, ptr, new_value) {
+            failures.push((ptr.clone(), reason));
         }
-        set_by_pointer(root, ptr, new_value.clone());
     }
+    failures
+}
+
+fn apply_override(root: &mut Value, ptr: &str, new_value: &Value) -> Result<(), String> {
+    if !ptr.starts_with('/') {
+        return Err("not a JSON Pointer (it must start with `/`)".to_string());
+    }
+    set_by_pointer(root, ptr, new_value.clone())
 }
 
 /// Returns true when the final projection block carries a non-null,
@@ -1644,7 +1750,7 @@ fn is_value_empty(v: &Value) -> bool {
     }
 }
 
-fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
+fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) -> Result<(), String> {
     // RFC 6901: split on '/', skip the leading empty token, unescape
     // ~1 → /, ~0 → ~ on each remaining token.
     let tokens: Vec<String> = pointer
@@ -1654,45 +1760,98 @@ fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
         .collect();
     if tokens.is_empty() {
         *root = value;
-        return;
+        return Ok(());
     }
+    // Check the whole path first, so a pointer that fails part-way
+    // leaves no half-created parent objects behind.
+    check_pointer(root, pointer, &tokens)?;
     let mut cursor: &mut Value = root;
     for (i, tok) in tokens.iter().enumerate() {
         let is_last = i + 1 == tokens.len();
         if let Value::Array(arr) = cursor {
-            // Traverse into an existing array via numeric segment. We
-            // never create or extend arrays here — that would require
+            // Arrays are never created or padded here — that would require
             // distinguishing array-vs-object intent at every missing
-            // parent, which RFC 6901 leaves to the caller. Out-of-range
-            // indices and non-numeric tokens are silently skipped so a
-            // typo in a single override doesn't corrupt the rest of
-            // the output.
-            let Ok(idx) = tok.parse::<usize>() else {
-                return;
+            // parent, which RFC 6901 leaves to the caller. `-` appends
+            // (RFC 6902 `add`); a numeric index replaces in place.
+            if tok == "-" {
+                arr.push(value);
+                return Ok(());
+            }
+            let Some(slot) = tok.parse::<usize>().ok().and_then(|idx| arr.get_mut(idx)) else {
+                return Err(format!("cannot follow `{pointer}`"));
             };
-            if idx >= arr.len() {
-                return;
-            }
             if is_last {
-                arr[idx] = value;
-                return;
+                *slot = value;
+                return Ok(());
             }
-            cursor = &mut arr[idx];
+            cursor = slot;
         } else {
             // Object (or any non-object scalar, which we replace with
-            // an empty object before descending). Same behaviour as
-            // before for object-typed parents.
+            // an empty object before descending).
             if !cursor.is_object() {
                 *cursor = json!({});
             }
             let map = cursor.as_object_mut().unwrap();
             if is_last {
                 map.insert(tok.clone(), value);
-                return;
+                return Ok(());
             }
             cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
         }
     }
+    Ok(())
+}
+
+/// Why `set_by_pointer` cannot write `pointer` into `root`, checked
+/// before anything is written. Inside an array a token must be an
+/// in-range index or a final `-` (append); a final `-` anywhere else
+/// has no array to append to.
+fn check_pointer(root: &Value, pointer: &str, tokens: &[String]) -> Result<(), String> {
+    let mut cursor = Some(root);
+    // The pointer up to (not including) the current token, as written.
+    let mut parent_len = 0;
+    for (i, (tok, raw)) in tokens.iter().zip(pointer.split('/').skip(1)).enumerate() {
+        let is_last = i + 1 == tokens.len();
+        let parent = if parent_len == 0 {
+            "/"
+        } else {
+            &pointer[..parent_len]
+        };
+        match cursor {
+            Some(Value::Array(arr)) => {
+                if tok == "-" {
+                    if is_last {
+                        return Ok(());
+                    }
+                    return Err("`-` (append) must be the last token".to_string());
+                }
+                let Ok(idx) = tok.parse::<usize>() else {
+                    return Err(format!(
+                        "`{parent}` is an array, so `{raw}` must be an index or `-` (append)"
+                    ));
+                };
+                if idx >= arr.len() {
+                    return Err(format!(
+                        "index {idx} is out of range: `{parent}` has {} item(s)",
+                        arr.len()
+                    ));
+                }
+                cursor = arr.get(idx);
+            },
+            other => {
+                if tok == "-" && is_last {
+                    return Err(if other.is_some() {
+                        format!("`{parent}` is not an array, so there is nothing to append to")
+                    } else {
+                        format!("`{parent}` does not exist, so there is nothing to append to")
+                    });
+                }
+                cursor = other.and_then(|v| v.get(tok));
+            },
+        }
+        parent_len += 1 + raw.len();
+    }
+    Ok(())
 }
 
 fn is_http_url(s: &str) -> bool {
@@ -1735,9 +1894,15 @@ mod tests {
         assert_eq!(http_date_to_zulu(""), None);
     }
 
+    use std::collections::HashSet;
+
     use serde_json::json;
 
-    use super::apply_pointer_overrides;
+    use super::{apply_force_overrides, apply_pointer_overrides};
+
+    fn failure_reasons(failures: &[(String, String)]) -> Vec<&str> {
+        failures.iter().map(|(_, reason)| reason.as_str()).collect()
+    }
 
     #[test]
     fn pointer_overrides_set_existing_leaf() {
@@ -1746,7 +1911,8 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        apply_pointer_overrides(&mut root, &overrides);
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert!(failures.is_empty(), "{failures:?}");
         assert_eq!(
             root.pointer("/projection/dct:title")
                 .and_then(|v| v.as_str()),
@@ -1761,7 +1927,8 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        apply_pointer_overrides(&mut root, &overrides);
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert!(failures.is_empty(), "{failures:?}");
         assert_eq!(
             root.pointer("/projection/dcat-us:bureauCode/0")
                 .and_then(|v| v.as_str()),
@@ -1770,15 +1937,21 @@ mod tests {
     }
 
     #[test]
-    fn pointer_overrides_skip_non_pointer_keys() {
+    fn pointer_overrides_report_non_pointer_keys() {
         let mut root = json!({"x": 1});
         let overrides = json!({"no-leading-slash": "ignored"})
             .as_object()
             .unwrap()
             .clone();
-        apply_pointer_overrides(&mut root, &overrides);
-        // Unchanged
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
         assert_eq!(root, json!({"x": 1}));
+        assert_eq!(
+            failures,
+            vec![(
+                "no-leading-slash".to_string(),
+                "not a JSON Pointer (it must start with `/`)".to_string()
+            )]
+        );
     }
 
     // merge_discovered tests removed — discovery merge now lives in
@@ -1973,7 +2146,8 @@ mod tests {
             .as_object()
             .unwrap()
             .clone();
-        apply_pointer_overrides(&mut root, &overrides);
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert!(failures.is_empty(), "{failures:?}");
         // Array shape must be preserved
         assert!(
             root.pointer("/projection/dcat:distribution")
@@ -1988,20 +2162,85 @@ mod tests {
     }
 
     #[test]
-    fn pointer_overrides_skip_out_of_range_array_index() {
+    fn pointer_overrides_report_out_of_range_array_index() {
         let mut root = json!({"arr": [1, 2, 3]});
         let overrides = json!({"/arr/99": 42}).as_object().unwrap().clone();
-        apply_pointer_overrides(&mut root, &overrides);
-        // Out-of-range index — silently skipped, array unchanged
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
         assert_eq!(root, json!({"arr": [1, 2, 3]}));
+        assert_eq!(
+            failure_reasons(&failures),
+            ["index 99 is out of range: `/arr` has 3 item(s)"]
+        );
     }
 
     #[test]
-    fn pointer_overrides_skip_non_numeric_array_token() {
+    fn pointer_overrides_report_non_numeric_array_token() {
         let mut root = json!({"arr": [{"k": "v"}]});
         let overrides = json!({"/arr/foo": "bar"}).as_object().unwrap().clone();
-        apply_pointer_overrides(&mut root, &overrides);
-        // Non-numeric token while traversing an array → silently skipped
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
         assert_eq!(root, json!({"arr": [{"k": "v"}]}));
+        assert_eq!(
+            failure_reasons(&failures),
+            ["`/arr` is an array, so `foo` must be an index or `-` (append)"]
+        );
+    }
+
+    #[test]
+    fn pointer_overrides_dash_appends_to_existing_array() {
+        let mut root = json!({"p": {"arr": [1, 2]}});
+        let overrides = json!({"/p/arr/-": 3}).as_object().unwrap().clone();
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(root, json!({"p": {"arr": [1, 2, 3]}}));
+    }
+
+    #[test]
+    fn pointer_overrides_dash_without_an_array_is_reported_and_writes_nothing() {
+        // Without the up-front check, these would leave {"-": ...} keys
+        // (or half-created parents) where an array was meant.
+        let mut root = json!({"p": {"obj": {"k": 1}}});
+        let overrides = json!({
+            "/p/missing/deeper/-": 1,
+            "/p/obj/-": 2,
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert_eq!(root, json!({"p": {"obj": {"k": 1}}}));
+        assert_eq!(
+            failure_reasons(&failures),
+            [
+                "`/p/missing/deeper` does not exist, so there is nothing to append to",
+                "`/p/obj` is not an array, so there is nothing to append to",
+            ]
+        );
+    }
+
+    #[test]
+    fn pointer_overrides_dash_must_be_last() {
+        let mut root = json!({"arr": [{"k": "v"}]});
+        let overrides = json!({"/arr/-/k": "x"}).as_object().unwrap().clone();
+        let failures = apply_pointer_overrides(&mut root, &overrides, &HashSet::new());
+        assert_eq!(root, json!({"arr": [{"k": "v"}]}));
+        assert_eq!(
+            failure_reasons(&failures),
+            ["`-` (append) must be the last token"]
+        );
+    }
+
+    #[test]
+    fn forced_dash_override_appends_once() {
+        // A `{value, force: true}` dataset_info entry is in both the
+        // normalized dataset_info map and forced_values; only the forced
+        // pass may write it, or `-` appends twice.
+        let mut root = json!({"arr": [1]});
+        let overrides = json!({"/arr/-": 2}).as_object().unwrap().clone();
+        let forced = vec![("/arr/-".to_string(), json!(2))];
+        let forced_ptrs: HashSet<&str> = forced.iter().map(|(p, _)| p.as_str()).collect();
+        let mut failures = apply_pointer_overrides(&mut root, &overrides, &forced_ptrs);
+        failures.extend(apply_force_overrides(&mut root, &forced));
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(root, json!({"arr": [1, 2]}));
     }
 }

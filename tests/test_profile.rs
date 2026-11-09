@@ -2669,6 +2669,328 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
     );
 }
 
+fn quality_measurements(out: &serde_json::Value) -> &Vec<serde_json::Value> {
+    out.pointer("/projection/dataset/0/hasQualityMeasurement")
+        .and_then(|v| v.as_array())
+        .expect("hasQualityMeasurement array")
+}
+
+/// `projection_warnings` entries reporting an unapplied override (their
+/// `field` is the override's key).
+fn override_warnings(out: &serde_json::Value) -> Vec<(String, String, String)> {
+    out.get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .map(|ws| {
+            ws.iter()
+                .filter(|w| {
+                    w.get("message")
+                        .and_then(|m| m.as_str())
+                        .is_some_and(|m| m.starts_with("--initial-context override"))
+                })
+                .map(|w| {
+                    let s = |k: &str| w.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    (s("field"), s("severity"), s("message"))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+const AGENCY_MEASUREMENT: &str = r#"{
+    "@type": "QualityMeasurement",
+    "isMeasurementOf": {"@type": "Metric", "definition": "Meets the agency's IQG."},
+    "value": "true"
+}"#;
+
+#[test]
+fn dataset_info_dash_appends_to_computed_array() {
+    // #4991: `-` appends to an array profile computed, instead of the
+    // override being dropped without a word.
+    let wrk = Workdir::new("profile_override_dash_append");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        format!(
+            r#"{{"dataset_info": {{"/projection/dataset/0/hasQualityMeasurement/-": {AGENCY_MEASUREMENT}}}}}"#
+        ),
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--validate",
+        "--catalog",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let qm = quality_measurements(&out);
+    // The 5 computed measurements are kept, the agency's comes last.
+    assert_eq!(qm.len(), 6, "{qm:#?}");
+    assert_eq!(
+        qm[5]
+            .pointer("/isMeasurementOf/definition")
+            .and_then(|v| v.as_str()),
+        Some("Meets the agency's IQG.")
+    );
+    assert!(
+        qm[..5]
+            .iter()
+            .all(|m| m.pointer("/isMeasurementOf/definition")
+                != Some(&serde_json::json!("Meets the agency's IQG."))),
+        "computed measurements must stay: {qm:#?}"
+    );
+    assert_eq!(override_warnings(&out), vec![]);
+}
+
+#[test]
+fn forced_dataset_info_dash_appends_once() {
+    // A {value, force: true} entry is applied by the forced pass only;
+    // applying it in the plain dataset_info pass too appended it twice.
+    let wrk = Workdir::new("profile_override_forced_dash_once");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        format!(
+            r#"{{"dataset_info": {{"/projection/dataset/0/hasQualityMeasurement/-":
+                {{"value": {AGENCY_MEASUREMENT}, "force": true}}}}}}"#
+        ),
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--validate",
+        "--catalog",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(quality_measurements(&out).len(), 6);
+}
+
+#[test]
+fn unapplied_dataset_info_overrides_are_reported() {
+    // #4991: each override that cannot be applied gets a
+    // projection_warnings entry naming the key and the reason.
+    let wrk = Workdir::new("profile_override_unapplied_reported");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "dataset_info": {
+                "/projection/dataset/1/title": "second dataset",
+                "/projection/dataset/title": "not an index",
+                "/projection/dataset/0/keywordz/-": "nothing to append to",
+                "title": "not a pointer"
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--catalog",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let expected = [
+        (
+            "/projection/dataset/0/keywordz/-",
+            "`/projection/dataset/0/keywordz` does not exist, so there is nothing to append to",
+        ),
+        (
+            "/projection/dataset/1/title",
+            "index 1 is out of range: `/projection/dataset` has 1 item(s)",
+        ),
+        (
+            "/projection/dataset/title",
+            "`/projection/dataset` is an array, so `title` must be an index or `-` (append)",
+        ),
+        ("title", "not a JSON Pointer (it must start with `/`)"),
+    ];
+    let mut got = override_warnings(&out);
+    got.sort();
+    assert_eq!(got.len(), expected.len(), "{got:#?}");
+    for ((field, severity, message), (ptr, reason)) in got.iter().zip(expected) {
+        assert_eq!(field, ptr);
+        assert_eq!(severity, "required");
+        assert_eq!(
+            message,
+            &format!("--initial-context override `{ptr}` was not applied: {reason}")
+        );
+    }
+    // Nothing was half-written: no second Dataset, no `keywordz` object.
+    assert_eq!(
+        out.pointer("/projection/dataset")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(1)
+    );
+    assert!(out.pointer("/projection/dataset/0/keywordz").is_none());
+}
+
+#[test]
+fn unapplied_dataset_info_override_fails_strict_without_validate() {
+    let wrk = Workdir::new("profile_override_unapplied_strict");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"dataset_info": {"/projection/distribution/3/title": "x"}}"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--strict",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains(
+            "qsv profile --strict: 1 --initial-context override(s) not applied:\n  - \
+             /projection/distribution/3/title: index 3 is out of range: \
+             `/projection/distribution` has 1 item(s)"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn unapplied_dataset_info_override_warns_on_stderr_without_projection() {
+    // With --no-projection there is no projection_warnings array, so the
+    // report goes to stderr instead.
+    let wrk = Workdir::new("profile_override_unapplied_no_projection");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(&ctx_path, r#"{"dataset_info": {"title": "x"}}"#).unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--no-projection",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains(
+            "qsv profile: warning: --initial-context override `title` was not applied: not a JSON \
+             Pointer (it must start with `/`)"
+        ),
+        "{stderr}"
+    );
+    assert!(read_output(&wrk, "out.json").get("projection").is_none());
+}
+
+/// A CSV that `qsv validate` rejects (invalid UTF-8) but `stats` reads.
+fn seed_invalid_utf8_csv(wrk: &Workdir) {
+    std::fs::write(wrk.path("bad.csv"), b"a,b\n1,x\xff\n2,y\n").unwrap();
+}
+
+fn full_seed_path() -> String {
+    format!(
+        "{}/tests/resources/profile/dcat-init-context.json",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
+#[test]
+fn validate_pass_failure_is_a_required_warning() {
+    // Before, a file failing --validate's `qsv validate` pass left only
+    // a syntacticValidity "false" measurement, with no warning.
+    let wrk = Workdir::new("profile_validate_pass_failure_warns");
+    seed_invalid_utf8_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "bad.csv",
+        "--validate",
+        "--initial-context",
+        &full_seed_path(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let ws: Vec<_> = out
+        .get("projection_warnings")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|w| w.get("field").and_then(|f| f.as_str()) == Some("syntacticValidity"))
+        .collect();
+    assert_eq!(ws.len(), 1, "{out:#}");
+    assert_eq!(
+        ws[0].get("severity").and_then(|v| v.as_str()),
+        Some("required")
+    );
+}
+
+#[test]
+fn validate_pass_failure_fails_strict() {
+    let wrk = Workdir::new("profile_validate_pass_failure_strict");
+    seed_invalid_utf8_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "bad.csv",
+        "--validate",
+        "--strict",
+        "--initial-context",
+        &full_seed_path(),
+        "-o",
+        "out.json",
+    ]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("qsv profile --strict: the input failed `qsv validate`"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn validate_pass_success_adds_no_syntax_warning() {
+    let wrk = Workdir::new("profile_validate_pass_success");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--validate",
+        "--strict",
+        "--initial-context",
+        &full_seed_path(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        !out.get("projection_warnings")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .any(|w| w.get("field").and_then(|f| f.as_str()) == Some("syntacticValidity")),
+        "{out:#}"
+    );
+}
+
 // =============================================================================
 // DCAT-US v3 comprehensive coverage (--catalog, force overrides, new fields,
 // GSA bundle validation).

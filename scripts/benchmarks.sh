@@ -44,7 +44,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=10.1.1
+bm_version=10.1.2
 
 # runs of a benchmark whose means are within this percentage of each other tie in the rank
 # column (see the delta & rank comments near the end)
@@ -1519,31 +1519,57 @@ run fmt "$qsv_bin" fmt --crlf "$data"
 run fmt_no_crlf "$qsv_bin" fmt "$data"
 run fmt_no_final_newline "$qsv_bin" fmt --no-final-newline "$data"
 run foreach "$qsv_bin" foreach City \"echo {}\" "$data"
-run frequency "$qsv_bin" frequency "$data"
-run --index frequency_index "$qsv_bin" frequency "$data"
-run --index frequency_index_stats_mode_auto env QSV_STATS_MODE=auto bash -c \'"$qsv_bin" frequency "$data"\'
-run --index frequency_index_stats_mode_force env QSV_STATS_MODE=force bash -c \'"$qsv_bin" frequency "$data"\'
-run --index frequency_index_stats_mode_none env QSV_STATS_MODE=none bash -c \'"$qsv_bin" frequency "$data"\'
-run --index frequency_index_frequency_cache "$qsv_bin" frequency --frequency-jsonl "$data"
-run frequency_no_limit "$qsv_bin" frequency --limit 0 "$data"
-run --index frequency_no_limit_index "$qsv_bin" frequency --limit 0 "$data"
-run frequency_other_sorted "$qsv_bin" frequency --other-sorted "$data"
-run --index frequency_other_sorted_index "$qsv_bin" frequency --other-sorted "$data"
-run frequency_selregex "$qsv_bin" frequency -s /^R/ "$data"
-run frequency_j1 "$qsv_bin" frequency -j 1 "$data"
-run frequency_ignorecase "$qsv_bin" frequency -i "$data"
-run --index frequency_ignorecase_index "$qsv_bin" frequency -i "$data"
-run frequency_selregex_ignorecase "$qsv_bin" frequency -s /^R/ -i "$data"
-run frequency_j1_ignorecase "$qsv_bin" frequency -j 1 -i "$data"
-run frequency_notrim "$qsv_bin" frequency --no-trim "$data"
-run --index frequency_notrim_index "$qsv_bin" frequency --no-trim "$data"
-run frequency_limit20 "$qsv_bin" frequency --limit 20 "$data"
-run --index frequency_limit20_index "$qsv_bin" frequency --limit 20 "$data"
-run frequency_sorted "$qsv_bin" frequency data_sorted.csv
-run --index frequency_sorted_index "$qsv_bin" frequency data_sorted.csv
-run frequency_sketch "$qsv_bin" frequency --sketch-method frequent_items "$data"
-run --index frequency_sketch_index "$qsv_bin" frequency --sketch-method frequent_items "$data"
-run frequency_weighted "$qsv_bin" frequency --weight "'X Coordinate (State Plane)'" "$data"
+# --verify: in a frequency table, each field's counts (its top values, "Other" and the empty
+# value) add up to the rows read, so every field must total $QSVBM_ROWCOUNT, and every selected
+# column must be there. That catches a partial scan or a dropped column, which still exits 0 and
+# would time as a speedup, without pinning ~25 version-dependent table sizes. It holds for
+# --limit 0, --other-sorted, -i, --no-trim and the frequent_items sketch too.
+# verify_frequency FIELDS [TOTAL]: TOTAL defaults to $QSVBM_ROWCOUNT. `select count,field`
+# puts count first, so a field name with a comma (quoted by select) can't shift the columns.
+function verify_frequency {
+  "$QSVBM_QSV" select count,field "$QSVBM_STDOUT" |
+    awk -F, -v fields="$1" -v total="${2:-$QSVBM_ROWCOUNT}" '
+      NR > 1 { sums[substr($0, length($1) + 2)] += $1 }
+      END {
+        n = 0
+        for (f in sums) { n++; if (sums[f] != total) exit 1 }
+        exit (n == fields) ? 0 : 1
+      }'
+}
+export -f verify_frequency
+freq_fields=$("$qsv_benchmarker_bin" headers --just-count "$data")
+freq_r_fields=$("$qsv_benchmarker_bin" headers --just-names "$data" | grep -c '^R')
+verify_freq="verify_frequency $freq_fields"
+verify_freq_r="verify_frequency $freq_r_fields"
+# --weight: the weight column is left out, and every other field totals the column's sum plus 1
+# for each of its 85,327 empty values ("Missing or unparsable weights default to 1.0"):
+# 919555108413 (DuckDB and `qsv stats` sum) + 85327 = 919555193740.
+verify_freq_weighted="verify_frequency $((freq_fields - 1)) 919555193740"
+run --verify "$verify_freq" frequency "$qsv_bin" frequency "$data"
+run --index --verify "$verify_freq" frequency_index "$qsv_bin" frequency "$data"
+run --index --verify "$verify_freq" frequency_index_stats_mode_auto env QSV_STATS_MODE=auto bash -c \'"$qsv_bin" frequency "$data"\'
+run --index --verify "$verify_freq" frequency_index_stats_mode_force env QSV_STATS_MODE=force bash -c \'"$qsv_bin" frequency "$data"\'
+run --index --verify "$verify_freq" frequency_index_stats_mode_none env QSV_STATS_MODE=none bash -c \'"$qsv_bin" frequency "$data"\'
+run --index --verify "$verify_freq" frequency_index_frequency_cache "$qsv_bin" frequency --frequency-jsonl "$data"
+run --verify "$verify_freq" frequency_no_limit "$qsv_bin" frequency --limit 0 "$data"
+run --index --verify "$verify_freq" frequency_no_limit_index "$qsv_bin" frequency --limit 0 "$data"
+run --verify "$verify_freq" frequency_other_sorted "$qsv_bin" frequency --other-sorted "$data"
+run --index --verify "$verify_freq" frequency_other_sorted_index "$qsv_bin" frequency --other-sorted "$data"
+run --verify "$verify_freq_r" frequency_selregex "$qsv_bin" frequency -s /^R/ "$data"
+run --verify "$verify_freq" frequency_j1 "$qsv_bin" frequency -j 1 "$data"
+run --verify "$verify_freq" frequency_ignorecase "$qsv_bin" frequency -i "$data"
+run --index --verify "$verify_freq" frequency_ignorecase_index "$qsv_bin" frequency -i "$data"
+run --verify "$verify_freq_r" frequency_selregex_ignorecase "$qsv_bin" frequency -s /^R/ -i "$data"
+run --verify "$verify_freq" frequency_j1_ignorecase "$qsv_bin" frequency -j 1 -i "$data"
+run --verify "$verify_freq" frequency_notrim "$qsv_bin" frequency --no-trim "$data"
+run --index --verify "$verify_freq" frequency_notrim_index "$qsv_bin" frequency --no-trim "$data"
+run --verify "$verify_freq" frequency_limit20 "$qsv_bin" frequency --limit 20 "$data"
+run --index --verify "$verify_freq" frequency_limit20_index "$qsv_bin" frequency --limit 20 "$data"
+run --verify "$verify_freq" frequency_sorted "$qsv_bin" frequency data_sorted.csv
+run --index --verify "$verify_freq" frequency_sorted_index "$qsv_bin" frequency data_sorted.csv
+run --verify "$verify_freq" frequency_sketch "$qsv_bin" frequency --sketch-method frequent_items "$data"
+run --index --verify "$verify_freq" frequency_sketch_index "$qsv_bin" frequency --sketch-method frequent_items "$data"
+run --verify "$verify_freq_weighted" frequency_weighted "$qsv_bin" frequency --weight "'X Coordinate (State Plane)'" "$data"
 run geocode_suggest "$qsv_bin" geocode suggest City --new-column geocoded_city "$data"
 run geocode_suggest_batchall "$qsv_bin" geocode suggest City --new-column geocoded_city --batch 0 "$data"
 run geocode_reverse "$qsv_bin" geocode reverse Location --new-column geocoded_location "$data"
@@ -1740,29 +1766,60 @@ run --index split_index "$qsv_bin" split --size 50000 split_tempdir_idx "$data"
 run --index split_index_j1 "$qsv_bin" split --size 50000 -j 1 split_tempdir_idx_j1 "$data"
 run --index split_chunks_index "$qsv_bin" split --chunks 20 split_tempdir_chunks_idx "$data"
 run --index split_chunks_index_j1 "$qsv_bin" split --chunks 20 -j 1 split_tempdir_chunks_idx_j1 "$data"
-run sqlp "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_aggregations "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
+# --verify: each sqlp query must return exactly the expected result. A dtype/inference problem
+# can leave a partial or empty result while still exiting 0, which times as a speedup. Counts
+# are for the fixed benchmark data, cross-checked with DuckDB:
+# - Noise in BROOKLYN: 5374 rows, whatever the output format. verify_sqlp_rows FORMAT COUNT
+#   reads the capture back with qsv itself: count (csv), json (json), sqlp read_parquet/read_ipc
+#   (parquet/arrow), and line count (jsonl). Avro has no reader in qsv, so it isn't checked.
+# - Noise by Borough: the six groups and their counts, in any order (the header, `len` here,
+#   depends on Polars' naming).
+# - expensive.sql: 118 Agency x Borough groups whose total_incidents add up to the rowcount.
+# The *_vs_duckdb benchmarks time DuckDB, not qsv, so they aren't checked.
+function verify_sqlp_rows {
+  local rows
+  case "$1" in
+    csv) rows=$("$QSVBM_QSV" count "$QSVBM_STDOUT") ;;
+    json) rows=$("$QSVBM_QSV" json "$QSVBM_STDOUT" | "$QSVBM_QSV" count) ;;
+    jsonl) rows=$(wc -l <"$QSVBM_STDOUT" | tr -d ' ') ;;
+    parquet | ipc)
+      rows=$("$QSVBM_QSV" sqlp SKIP_INPUT -q \
+        "select count(*) from read_$1('$QSVBM_STDOUT')" | tail -n 1) ;;
+    *) return 1 ;;
+  esac
+  test "$rows" = "$2"
+}
+function verify_sqlp_expensive {
+  test "$("$QSVBM_QSV" count "$QSVBM_STDOUT")" = 118 &&
+    test "$("$QSVBM_QSV" select total_incidents "$QSVBM_STDOUT" |
+      awk 'NR > 1 { s += $1 } END { print s }')" = "$QSVBM_ROWCOUNT"
+}
+export -f verify_sqlp_rows verify_sqlp_expensive
+# shellcheck disable=SC2016 # expanded later, by the bash -c that runs the check
+verify_sqlp_noise_by_borough='test "$(tail -n +2 "$QSVBM_STDOUT" | LC_ALL=C sort | tr "\n" "|")" = "BRONX,1249|BROOKLYN,5374|MANHATTAN,10092|QUEENS,3669|STATEN ISLAND,748|Unspecified,8|"'
+run --verify "verify_sqlp_rows csv 5374" sqlp "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "$verify_sqlp_noise_by_borough" sqlp_aggregations "$qsv_bin" sqlp "$data" -q --infer-len 100000 '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 # sqlp loads "$data".pschema.json automatically whenever it is newer than "$data", so the
 # schema this benchmark caches must be removed when it is done (--cleanup, i.e. after its own
 # timed runs have reused it). Otherwise every later sqlp benchmark on "$data" silently loads
 # it too: they measure a cached-schema read instead of what their names say, and from 16.0.0
 # to 24.0.0 - when --cache-schema wrote date columns Polars couldn't parse (#4746) - they all
 # failed in ~70ms, which hyperfine's -i recorded as timings.
-run --cleanup "rm -f $data.pschema.json" sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
+run --cleanup "rm -f $data.pschema.json" --verify "$verify_sqlp_noise_by_borough" sqlp_aggregations_use_schema_cache "$qsv_bin" sqlp "$data" -q --infer-len 100000 --cache-schema '"select Borough, count(*) from _t_1 where \"Complaint Type\"='\''Noise'\'' group by Borough"'
 run sqlp_aggregations_vs_duckdb duckdb :memory: '"select Borough, count(*) from read_csv_auto('\'''$data''\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
-run sqlp_parquet_input "$qsv_bin" sqlp SKIP_INPUT -q '"select Borough, count(*) from read_parquet('\''benchmark_data.parquet'\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
-run sqlp_aggregations_expensive "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 expensive.sql
-run sqlp_aggregations_expensive_streaming "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 --streaming expensive.sql
+run --verify "$verify_sqlp_noise_by_borough" sqlp_parquet_input "$qsv_bin" sqlp SKIP_INPUT -q '"select Borough, count(*) from read_parquet('\''benchmark_data.parquet'\'') where \"Complaint Type\"='\''Noise'\'' group by Borough"'
+run --verify verify_sqlp_expensive sqlp_aggregations_expensive "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 expensive.sql
+run --verify verify_sqlp_expensive sqlp_aggregations_expensive_streaming "$qsv_bin" sqlp SKIP_INPUT -q --infer-len 100000 --streaming expensive.sql
 run sqlp_aggregations_expensive_vs_duckdb duckdb :memory: -c \".read expensiveduckdb.sql\"
-run sqlp_format_arrow "$qsv_bin" sqlp --format arrow "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows ipc 5374" sqlp_format_arrow "$qsv_bin" sqlp --format arrow "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run sqlp_format_avro "$qsv_bin" sqlp --format avro "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_format_json "$qsv_bin" sqlp --format json "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_format_jsonl "$qsv_bin" sqlp --format jsonl "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_format_parquet "$qsv_bin" sqlp --format parquet "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_format_parquet_statistics "$qsv_bin" sqlp --format parquet --statistics "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_nooptimizations "$qsv_bin" sqlp "$data" -q --no-optimizations --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_tryparsedates "$qsv_bin" sqlp "$data" -q --try-parsedates --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
-run sqlp_tryparsedates_inferlen "$qsv_bin" sqlp "$data" -q --infer-len 10000 --try-parsedates '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows json 5374" sqlp_format_json "$qsv_bin" sqlp --format json "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows jsonl 5374" sqlp_format_jsonl "$qsv_bin" sqlp --format jsonl "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows parquet 5374" sqlp_format_parquet "$qsv_bin" sqlp --format parquet "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows parquet 5374" sqlp_format_parquet_statistics "$qsv_bin" sqlp --format parquet --statistics "$data" -q --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows csv 5374" sqlp_nooptimizations "$qsv_bin" sqlp "$data" -q --no-optimizations --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows csv 5374" sqlp_tryparsedates "$qsv_bin" sqlp "$data" -q --try-parsedates --infer-len 100000 '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
+run --verify "verify_sqlp_rows csv 5374" sqlp_tryparsedates_inferlen "$qsv_bin" sqlp "$data" -q --infer-len 10000 --try-parsedates '"select * from _t_1 where \"Complaint Type\"='\''Noise'\'' and Borough='\''BROOKLYN'\''"'
 run stats "$qsv_bin" stats --force "$data"
 # exact vs HyperLogLog cardinality on their own: under --everything the exact mode tracker
 # runs anyway, so the stats_everything_approx pair cannot show what HLL alone costs
@@ -2012,11 +2069,20 @@ function run_benchmark {
 
   # the untimed --verify run. hyperfine runs it, so the queued command string is parsed exactly
   # as in the timed runs. (--output needs a path with a "/", or it is read as a policy name.)
+  # hyperfine also sends --conclude/--cleanup stdout to --output, overwriting the command's (an
+  # `rm -f` hook left the capture empty), so only --prepare goes with it. The other two run
+  # once afterwards, through hyperfine too, so their strings are parsed as in the timed runs.
   local verify_reason=
   if [ -n "$verify" ]; then
     rm -f results/verify_stdout.csv
+    local verify_hooks=()
+    [ -n "$5" ] && verify_hooks+=(--prepare "$5")
     hyperfine -N --runs 1 -i --style none --output ./results/verify_stdout.csv \
-      "${hook_args[@]}" "$command" >/dev/null
+      "${verify_hooks[@]}" "$command" >/dev/null
+    local hook
+    for hook in "$6" "$7"; do
+      [ -n "$hook" ] && hyperfine -N --runs 1 -i --style none "$hook" >/dev/null
+    done
     if ! QSVBM_STDOUT=results/verify_stdout.csv QSVBM_QSV="$qsv_bin" bash -c "$verify"; then
       verify_reason="output check failed: $verify; "
     fi

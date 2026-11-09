@@ -1445,10 +1445,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut pivot_result = if pre_aggregate {
             // Aggregate each (index, pivot column) group FIRST, then pivot the grouped frame,
             // where every cell holds at most one row. Pivoting raw rows costs Polars one filtered
-            // aggregation per output column, ~1.4 MB each regardless of the input size
-            // (pola-rs/polars#30173): a 50 x 2000 pivot of a 65 MB CSV peaked at 3.9 GB. With
-            // `item` and EAGER flags Polars takes a direct path instead (here: 0.4 GB, 13x
-            // faster). group_by_stable keeps first-appearance order, so row order is unchanged.
+            // aggregation per output column (pola-rs/polars#30173). polars#30384 shrank that
+            // cost, but only `item` with EAGER flags takes Polars' direct path. A 50 x 2000 sum
+            // pivot of 2M rows: 1.0 GB / 1.1 s raw vs 0.39 GB / 0.09 s here; at 10k x 2000,
+            // 2.4 GB vs 0.88 GB. group_by_stable keeps first-appearance order, so row order is
+            // unchanged.
             lf.group_by_stable(
                 actual_index_cols
                     .iter()

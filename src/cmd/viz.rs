@@ -122,6 +122,9 @@ Examples:
   # Aggregate (sum) sales by region into a titled bar chart, opened in the browser
   qsv viz bar sales.csv --x region --y amount --agg sum --title "Sales by region" --open
 
+  # Chart piped CSV: pass - as the input (every chart type except smart)
+  qsv search -s region West sales.csv | qsv viz histogram --x amount - -o west.html
+
   # Scatter plot with a separate series (trace) per category
   qsv viz scatter data.csv --x age --y income --series gender -o scatter.html
 
@@ -248,6 +251,14 @@ Usage:
     qsv viz parcoords   [options] <input>
     qsv viz --help
 
+
+viz arguments:
+    <input>                The CSV/TSV file to chart, or - to read CSV from
+                           stdin. Every chart type accepts stdin except smart,
+                           which needs a file because it builds its panels from
+                           the file's cached statistics. When the GeoJSON is
+                           auto or census, stdin is first copied to a temp file
+                           (disk space equal to the input).
 
 viz options:
     -x, --x <col>          Column for the x-axis / category / bin / group.

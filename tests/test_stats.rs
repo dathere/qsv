@@ -10304,6 +10304,85 @@ fn stats_weighted_all_distinct_values_still_report_the_heaviest_mode() {
 }
 
 #[test]
+fn stats_weighted_modes_long_keys_merge_across_chunks() {
+    // The weighted tracker keys values by ByteKey, which stores up to 23 bytes inline and
+    // spills longer ones to the heap. Mix both kinds (long ones sharing a prefix), spread the
+    // repeats over every parallel chunk, and check the merged mode, cardinality and the
+    // sorted, truncated antimode list.
+    let wrk = Workdir::new("stats_weighted_modes_long_keys_merge_across_chunks");
+    let prefix = "a-value-long-enough-to-spill-to-the-heap-";
+    let mode_key = format!("{prefix}mode");
+    let runner_up = format!("{prefix}runner-up");
+    // 6 + 5 + 4 repeated rows, interleaved so each of the 3 chunks gets some of every key
+    let mut repeated = Vec::new();
+    for i in 0..6 {
+        repeated.push(mode_key.clone());
+        if i < 5 {
+            repeated.push(runner_up.clone());
+        }
+        if i < 4 {
+            repeated.push("short".to_string());
+        }
+    }
+    // 12 singletons (weight 1 each): 6 long, 6 short, so more than the 10 antimodes kept
+    let mut singletons: Vec<String> = (0..6).map(|i| format!("{prefix}single-{i:02}")).collect();
+    singletons.extend((0..6).map(|i| format!("s{i}")));
+
+    let mut data = vec![svec!["value", "weight"]];
+    let mut singles = singletons.iter();
+    for (i, v) in repeated.iter().enumerate() {
+        data.push(vec![v.clone(), "1".to_string()]);
+        if i % 2 == 1
+            && let Some(s) = singles.next()
+        {
+            data.push(vec![s.clone(), "1".to_string()]);
+        }
+    }
+    for s in singles {
+        data.push(vec![s.clone(), "1".to_string()]);
+    }
+    assert_eq!(data.len() - 1, 27);
+    wrk.create_indexed("data.csv", data);
+
+    let mut cmd = wrk.command("stats");
+    cmd.args([
+        "--weight",
+        "weight",
+        "--cardinality",
+        "--mode",
+        "--jobs",
+        "3",
+    ])
+    .arg("data.csv")
+    // CPU-based chunking: 3 chunks of 9 rows, so the chunk merge really runs
+    .env("QSV_STATS_CHUNK_MEMORY_MB", "-1")
+    .env("QSV_ANTIMODES_LEN", "0");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let headers = &got[0];
+    let row = &got[1];
+    let col = |name: &str| {
+        let idx = headers
+            .iter()
+            .position(|h| h == name)
+            .unwrap_or_else(|| panic!("missing column {name}"));
+        row[idx].as_str()
+    };
+
+    assert_eq!(col("field"), "value");
+    assert_eq!(col("cardinality"), "15");
+    assert_eq!(col("mode"), mode_key);
+    assert_eq!(col("mode_count"), "1");
+    assert_eq!(col("mode_occurrences"), "6");
+
+    let mut sorted = singletons.clone();
+    sorted.sort_unstable();
+    let expected_antimodes = format!("*PREVIEW: {}", sorted[..10].join("|"));
+    assert_eq!(col("antimode"), expected_antimodes);
+    assert_eq!(col("antimode_count"), "12");
+    assert_eq!(col("antimode_occurrences"), "1");
+}
+
+#[test]
 fn stats_antimodes_len_zero_disables_truncation_without_panicking() {
     // QSV_ANTIMODES_LEN=0 is documented as "disable length limiting"; it maps to usize::MAX,
     // which was also used as a String capacity and aborted with a capacity overflow.

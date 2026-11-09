@@ -1483,7 +1483,7 @@ dependencies = [
 [[package]]
 name = "compact_bytes"
 version = "0.2.1"
-source = "git+https://github.com/jqnatividad/compact_bytes?branch=main#651006e934c5d4700c6b0b75aa94fcc26b7f79cc"
+source = "git+https://github.com/jqnatividad/compact_bytes?branch=main#f21a6acee403159c5c0f58ef405a8dde53c3dadd"
 dependencies = [
  "serde",
 ]

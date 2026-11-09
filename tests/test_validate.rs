@@ -3399,6 +3399,66 @@ fn validate_with_ipv4_format_strict() {
     assert_eq!(invalid_records, expected_invalid);
 }
 
+// jsonschema 0.61 rejects `+ , - . /` where RFC 3339 requires a digit (jsonschema#1829);
+// 0.60 accepted rows 4-8.
+#[test]
+fn validate_date_time_formats_reject_non_digits() {
+    let wrk = Workdir::new("validate_date_time_formats_reject_non_digits").flexible(true);
+
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "ts", "d", "t"],
+            svec!["1", "2026-11-06T10:00:00Z", "2026-11-06", "10:00:00Z"],
+            svec![
+                "2",
+                "2026-11-06T10:00:00+01:30",
+                "2026-01-31",
+                "23:59:59+01:30"
+            ],
+            svec!["3", "2026-11-06T10:00:00.5Z", "2024-02-29", "10:00:00.5Z"],
+            svec!["4", "-----11-06T10:00:00Z", "2026-11-06", "10:00:00Z"],
+            svec!["5", "2026-11-0/T10:00:00Z", "2026-11-06", "10:00:00Z"],
+            svec!["6", "2026-11-06T10:00:00+01:3.", "2026-11-06", "10:00:00Z"],
+            svec!["7", "2026-11-06T10:00:00Z", "2026-11-0+", "10:00:00Z"],
+            svec!["8", "2026-11-06T10:00:00Z", "2026-11-06", "10:00:0/Z"],
+        ],
+    );
+
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "ts": { "type": "string", "format": "date-time" },
+                "d": { "type": "string", "format": "date" },
+                "t": { "type": "string", "format": "time" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    wrk.assert_err(&mut cmd);
+
+    let validation_errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert!(validation_errors.contains("is not a \"date-time\""));
+    assert!(validation_errors.contains("is not a \"date\""));
+    assert!(validation_errors.contains("is not a \"time\""));
+
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    let valid_ids: Vec<&str> = valid_records.iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(valid_ids, vec!["1", "2", "3"]);
+
+    let invalid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.invalid");
+    let invalid_ids: Vec<&str> = invalid_records.iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(invalid_ids, vec!["4", "5", "6", "7", "8"]);
+}
+
 #[test]
 fn validate_with_ipv6_format_strict() {
     let wrk = Workdir::new("validate_with_ipv6_format_strict").flexible(true);

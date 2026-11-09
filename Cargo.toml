@@ -560,13 +560,17 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use our patched fork of csvlens until our PR is merged
+# use our patched fork of csvlens until our PR is merged and released
+# https://github.com/YS-L/csvlens/pull/213 (arrow 60, clap-cargo 0.19). #196 and #202 are merged
+# but unreleased since 0.15.1; release ETA asked in https://github.com/YS-L/csvlens/issues/206
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "deps-bump-2026-11" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
+# https://github.com/kindly/csvs_convert/pull/23 (qsv-stats instead of streaming-stats, zip 9)
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats-redux", optional = true }
 
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
+# https://github.com/greyblake/whatlang-rs/pull/154 (hashbrown 0.16)
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
 # plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442: full plotly.js 3.7 trace coverage)
@@ -575,10 +579,12 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 plotly = { git = "https://github.com/dathere/plotly", rev = "d43be3786c32ab2790a6c0e927ee39d2bb99704c" }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
+# https://github.com/thscharler/spreadsheet-ods/pull/77
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }
 
 # compact_bytes 0.2.1 + Ord/From<&[u8]>/Borrow<[u8]>, serde, edition 2024, and the
-# CompactBytesSlice::into_boxed_slice fix (upstream ParkMyCar/compact_bytes#11).
+# CompactBytesSlice::into_boxed_slice fix (upstream ParkMyCar/compact_bytes#11), and the
+# big-endian heap-tag fix (ParkMyCar/compact_bytes#12).
 # Pulled in by qsv-stats' ByteKey (0.57+). Same version as upstream, so crates.io
 # builds (`cargo install qsv`) use upstream 0.2.1; the hot paths are identical.
 compact_bytes = { git = "https://github.com/jqnatividad/compact_bytes", branch = "main" }

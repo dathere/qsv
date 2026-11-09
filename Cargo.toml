@@ -268,7 +268,7 @@ jaq-std = "3"
 # not used directly: compiles in jiff's bundled tzdb so minijinja-contrib's datetime filters
 # can fall back to it for zone names missing from the OS database (minijinja#1008)
 jiff = { version = "0.2", features = ["tzdb-bundle-always"] }
-jsonschema = { version = "0.60", features = [
+jsonschema = { version = "0.61", features = [
     "idna",
     "resolve-file",
     "resolve-http",

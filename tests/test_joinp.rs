@@ -1368,7 +1368,18 @@ fn joinp_ignore_case_maintain_order_left() {
         .args(["--maintain-order", "left"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    let expected = vec![
+
+    // "left" only orders by the left row (see --maintain-order in the USAGE): BOSTON matches
+    // two right rows, which are tied, so their relative order is unspecified, and Polars does
+    // vary it between runs. Check the left order exactly, and the tied rows as a set.
+    let left_order: Vec<&str> = got.iter().skip(1).map(|row| row[0].as_str()).collect();
+    assert_eq!(
+        left_order,
+        ["BOSTON", "BOSTON", "new york", "San Francisco", "BUFFALO"]
+    );
+
+    let mut got_rows = got;
+    let mut expected = vec![
         svec!["city", "state", "city_right", "place"],
         svec!["BOSTON", "MA", "Boston", "Logan Airport"],
         svec!["BOSTON", "MA", "boston", "Boston Garden"],
@@ -1376,7 +1387,9 @@ fn joinp_ignore_case_maintain_order_left() {
         svec!["San Francisco", "CA", "san francisco", "Fisherman's Wharf"],
         svec!["BUFFALO", "NY", "BUFFALO", "Ralph Wilson Stadium"],
     ];
-    assert_eq!(got, expected);
+    got_rows[1..].sort();
+    expected[1..].sort();
+    assert_eq!(got_rows, expected);
 }
 
 #[test]

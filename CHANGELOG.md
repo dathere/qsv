@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **docs: "Statistics at a Glance" in [`docs/STATS_DEFINITIONS.md`](docs/STATS_DEFINITIONS.md)**: qsv compiles 159 statistic columns across `stats` (48), `moarstats` (76 + 14 bivariate), `pragmastat` (18) and `frequency` (3). A new test checks the table against real output, so the counts can't go stale silently ([#4996](https://github.com/dathere/qsv/pull/4996)).
+- **docs: the `viz` USAGE documents stdin input** ([#5018](https://github.com/dathere/qsv/pull/5018)). Pass `-` as `<input>` to chart piped CSV. Every chart type accepts it except `smart`, which needs a file for its cached statistics. With `--geojson auto` or `census`, stdin is first copied to a temp file. There's also a new piped-input example.
 
 ### Changed
 - **`stats`: `--cardinality`, `--mode` and `--everything` are faster and use less memory** ([#5011](https://github.com/dathere/qsv/pull/5011)). qsv-stats 0.57 stores short values inline when counting them (`ByteKey`). On a 1M-row file, `--cardinality --mode` is 16–27% faster, and `--everything` on an indexed file is 27% faster with 34% less peak memory. Output is unchanged; default `stats` is unaffected. On big-endian targets (s390x), values of 128 bytes or more were misread until a compact_bytes fix ([#5015](https://github.com/dathere/qsv/pull/5015)), so this was never released with the bug.

@@ -156,6 +156,17 @@ async function main() {
     check(`bundled skill JSON count matches source (${srcSkills})`, srcSkills === bundledSkills,
       `bundle has ${bundledSkills}`);
 
+    // devDependency-only packages (typescript, c8, archiver, ...) must not ship. The server
+    // start check below is what catches the opposite mistake, a runtime package left out.
+    const lockPackages = readJson(join(rootDir, 'package-lock.json')).packages ?? {};
+    const devOnly = Object.entries(lockPackages)
+      .filter(([path, info]) => path.startsWith('node_modules/') && info.dev === true)
+      .map(([path]) => path);
+    const shippedDev = devOnly.filter((path) => existsSync(join(mcpbDir, path)));
+    check(`no dev-only packages bundled (${devOnly.length} in lockfile)`, shippedDev.length === 0,
+      `bundled: ${shippedDev.slice(0, 8).join(', ')}${shippedDev.length > 8 ? ', ...' : ''}`);
+    check('node_modules/.bin not bundled', !existsSync(join(mcpbDir, 'node_modules', '.bin')));
+
     // ---- the check that actually matters ----
     console.log('\nServer starts from the extracted bundle');
     const started = await startsFromExtractedBundle(mcpbDir);

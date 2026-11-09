@@ -5,7 +5,7 @@
  * Creates a ZIP archive containing:
  * - manifest.json
  * - server/ (compiled JavaScript from dist/)
- * - node_modules/ (bundled dependencies)
+ * - node_modules/ (production dependencies only; dev-only packages are skipped)
  * - qsv/ (51 skill JSON definitions)
  * - .claude-plugin/ (plugin manifest)
  * - .mcp.json (MCP server configuration)
@@ -80,6 +80,7 @@ function validateFiles() {
     { path: join(rootDir, 'manifest.json'), name: 'manifest.json' },
     { path: join(rootDir, 'dist'), name: 'dist/' },
     { path: join(rootDir, 'node_modules'), name: 'node_modules/' },
+    { path: join(rootDir, 'package-lock.json'), name: 'package-lock.json' },
     { path: join(rootDir, 'qsv'), name: 'qsv/' }
   ];
 
@@ -115,8 +116,48 @@ const EXCLUDED_DIR_SEGMENTS = new Set([
  */
 const EXCLUDED_FILE_RE = /\.(?:map|d\.ts|d\.mts|d\.cts)$/i;
 
-function isExcludedFromNodeModules(entryName) {
+/**
+ * Packages npm marks `"dev": true` in package-lock.json: reachable ONLY through
+ * devDependencies (typescript, c8, archiver and everything under them), so the
+ * running server can never load them. node_modules holds them because packaging
+ * runs after a full `npm ci`; without this filter they were about half of the
+ * 28.0.0 .mcpb (5.3 of 11.4 MB), shipping e.g. three dev-only minimatch copies.
+ *
+ * A package present in node_modules but absent from the lockfile is kept, so a
+ * stale lockfile can only make the bundle bigger, never break it.
+ */
+function loadDevOnlyPackages() {
+  const lockPackages =
+    JSON.parse(readFileSync(join(rootDir, 'package-lock.json'), 'utf-8')).packages ?? {};
+  return new Set(
+    Object.entries(lockPackages)
+      .filter(([path, info]) => path.startsWith('node_modules/') && info.dev === true)
+      .map(([path]) => path),
+  );
+}
+
+/**
+ * The lockfile key of the innermost package that owns `path`
+ * (e.g. `node_modules/readdir-glob/node_modules/minimatch` for a file inside it).
+ */
+function owningPackage(path) {
+  const segments = path.split(/[\\/]/);
+  let owner = null;
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] !== 'node_modules') continue;
+    const end = i + (segments[i + 1]?.startsWith('@') ? 3 : 2);
+    if (end > segments.length) break;
+    owner = segments.slice(0, end).join('/');
+  }
+  return owner;
+}
+
+function isExcludedFromNodeModules(entryName, devOnlyPackages) {
   if (EXCLUDED_FILE_RE.test(entryName)) return true;
+  const path = entryName.startsWith('node_modules/') ? entryName : `node_modules/${entryName}`;
+  const owner = owningPackage(path);
+  // .bin only holds CLI links (tsc, c8, ...); the server is started with `node` directly
+  if (owner === 'node_modules/.bin' || devOnlyPackages.has(owner)) return true;
   return entryName
     .split(/[\\/]/)
     .some((segment) => EXCLUDED_DIR_SEGMENTS.has(segment.toLowerCase()));
@@ -187,8 +228,10 @@ async function createArchive() {
     // metadata, a FUNCTION is the filter hook (return false to skip). This was
     // previously `{ filter: fn }`, which took the object branch -- so the callback
     // never ran and every source map and .d.ts shipped (issue #4379).
+    const devOnlyPackages = loadDevOnlyPackages();
+    console.log(`   Skipping ${devOnlyPackages.size} dev-only packages and node_modules/.bin...`);
     archive.directory(join(rootDir, 'node_modules'), 'node_modules', (entry) =>
-      isExcludedFromNodeModules(entry.name) ? false : entry
+      isExcludedFromNodeModules(entry.name, devOnlyPackages) ? false : entry
     );
 
     // Add skill definitions

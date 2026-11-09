@@ -45,7 +45,7 @@
         "name": "input",
         "type": "file",
         "required": true,
-        "description": "Input CSV file."
+        "description": "The CSV/TSV file to chart, or - to read CSV from stdin. Every chart type accepts stdin except smart, which needs a file because it builds its panels from the file's cached statistics. When the GeoJSON is auto or census, stdin is first copied to a temp file (disk space equal to the input)."
       }
     ],
     "options": [
@@ -510,6 +510,10 @@
     {
       "description": "Aggregate (sum) sales by region into a titled bar chart, opened in the browser",
       "command": "qsv viz bar sales.csv --x region --y amount --agg sum --title \"Sales by region\" --open"
+    },
+    {
+      "description": "Chart piped CSV: pass - as the input (every chart type except smart)",
+      "command": "qsv search -s region West sales.csv | qsv viz histogram --x amount - -o west.html"
     },
     {
       "description": "Scatter plot with a separate series (trace) per category",

@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🌐](TableOfContents.md#legend "has web-aware options.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Geo Options](#geo-options) | [Choropleth Options](#choropleth-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Geo Options](#geo-options) | [Choropleth Options](#choropleth-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -157,6 +157,12 @@ qsv viz smart data.csv --smarter --bivariate -o dashboard.html
 
 ```console
 qsv viz bar sales.csv --x region --y amount --agg sum --title "Sales by region" --open
+```
+
+> Chart piped CSV: pass - as the input (every chart type except smart)
+
+```console
+qsv search -s region West sales.csv | qsv viz histogram --x amount - -o west.html
 ```
 
 > Scatter plot with a separate series (trace) per category
@@ -383,6 +389,14 @@ qsv viz parcats     [options] <input>
 qsv viz parcoords   [options] <input>
 qsv viz --help
 ```
+
+<a name="arguments"></a>
+
+## Arguments [↩](#nav)
+
+| Argument&nbsp; | Description |
+|----------|-------------|
+| &nbsp;`<input>`&nbsp; | The CSV/TSV file to chart, or - to read CSV from stdin. Every chart type accepts stdin except smart, which needs a file because it builds its panels from the file's cached statistics. When the GeoJSON is auto or census, stdin is first copied to a temp file (disk space equal to the input). |
 
 <a name="viz-options"></a>
 

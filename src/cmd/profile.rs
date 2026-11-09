@@ -232,8 +232,8 @@ profile options:
                               file is declared UTF-8 encoded and its
                               syntactic validity is recorded as a
                               quality measurement. A file that fails it
-                              also gets a Required `syntacticValidity`
-                              warning.
+                              (or a pass that cannot run) also gets a
+                              Required `syntacticValidity` warning.
     --strict                  Fail the command, instead of just warning,
                               when an --initial-context override cannot
                               be applied, and, with --validate, when the

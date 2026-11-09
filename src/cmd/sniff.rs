@@ -843,7 +843,11 @@ fn cleanup_tempfile(
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+    // `-` means stdin, the same as no input
+    if args.arg_input.as_deref() == Some("-") {
+        args.arg_input = None;
+    }
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(sniff_main(args))?;

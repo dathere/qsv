@@ -90,7 +90,11 @@ struct Args {
 const RW_BUFFER_CAPACITY: usize = 1_000_000; // 1 MB
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+    // `-` means stdin, the same as no input
+    if args.arg_input.as_deref() == Some("-") {
+        args.arg_input = None;
+    }
 
     // check if tmp dir exists
     let tmp_dir = match &args.flag_tmp_dir {

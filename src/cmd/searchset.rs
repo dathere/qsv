@@ -289,13 +289,20 @@ impl Args {
             wtr.write_record(&headers)?;
         }
 
-        let record_count = util::count_rows(rconfig)?;
         // prep progress bar
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         let show_progress = (self.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
             && !rconfig.is_stdin();
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+        // counting rows reads the input a second time, which would consume stdin before `rdr`
+        // reads it, so only count for the progress bar (which is never shown for stdin)
+        #[cfg(any(feature = "feature_capable", feature = "lite"))]
+        let record_count = if show_progress {
+            util::count_rows(rconfig)?
+        } else {
+            0
+        };
         #[cfg(any(feature = "feature_capable", feature = "lite"))]
         if show_progress {
             util::prep_progress(&progress, record_count);
@@ -408,7 +415,8 @@ impl Args {
             let json = json!({
                 "rows_with_matches": match_row_ctr,
                 "total_matches": total_matches,
-                "record_count": record_count,
+                // --json turns off --quick, so the loop read every record
+                "record_count": row_ctr,
             });
             eprintln!("{json}");
         } else {

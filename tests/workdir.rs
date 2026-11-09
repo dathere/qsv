@@ -277,6 +277,27 @@ impl Workdir {
         cmd.output().unwrap()
     }
 
+    /// Run `cmd` with `data` written to its stdin through a real pipe, from a separate
+    /// thread so large inputs can't deadlock against a full stdout pipe. A pipe, unlike a
+    /// `<` file redirect, can be read only once, which is what read-stdin-twice bugs need.
+    pub fn output_with_piped_stdin(
+        &self,
+        cmd: &mut process::Command,
+        data: Vec<u8>,
+    ) -> process::Output {
+        use std::io::Write;
+        cmd.stdin(process::Stdio::piped())
+            .stdout(process::Stdio::piped())
+            .stderr(process::Stdio::piped());
+        let mut child = cmd.spawn().unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let writer = std::thread::spawn(move || stdin.write_all(&data));
+        let output = child.wait_with_output().unwrap();
+        // a command may legitimately exit without reading all of stdin
+        let _ = writer.join().unwrap();
+        output
+    }
+
     pub fn run(&self, cmd: &mut process::Command) {
         self.output(cmd);
     }
@@ -617,4 +638,21 @@ pub fn build_large_oom_csv(name: &str) -> (Workdir, std::path::PathBuf) {
     drop(wtr);
     let _ = fs::File::open(&path).unwrap().sync_all();
     (wrk, path)
+}
+
+/// Data rows in `piped_stdin_csv()`.
+pub const PIPED_STDIN_ROWS: usize = 20_000;
+
+/// A CSV `id,grp,txt` larger than qsv's 128 KiB read buffer (`DEFAULT_RDR_BUFFER_CAPACITY`),
+/// for stdin tests: a command that reads piped stdin twice only loses data once the input
+/// outgrows what the first reader buffered. `id` is unique (0..PIPED_STDIN_ROWS), `grp`
+/// cycles through `g0`..`g3`.
+pub fn piped_stdin_csv() -> String {
+    use std::fmt::Write;
+    let mut csv = String::from("id,grp,txt\n");
+    for i in 0..PIPED_STDIN_ROWS {
+        writeln!(csv, "{i},g{},row {i} of the piped stdin input", i % 4).unwrap();
+    }
+    assert!(csv.len() > 128 * 1024);
+    csv
 }

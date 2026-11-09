@@ -700,3 +700,25 @@ PA,Philadelphia
 "
     );
 }
+
+#[test]
+fn partition_dash_piped_stdin() {
+    // with `-`, stdin wasn't saved to a temp file (only no input was), so partition's key
+    // pass consumed it: small inputs wrote no files, large ones hit a CSV field-count error
+    let wrk = Workdir::new("partition_dash_piped_stdin");
+    let mut cmd = wrk.command("partition");
+    cmd.args(["grp", "out", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let mut total_rows = 0;
+    for g in 0..4 {
+        let part = wrk.read_to_string(&format!("out/g{g}.csv")).unwrap();
+        let mut lines = part.lines();
+        assert_eq!(lines.next(), Some("id,grp,txt"));
+        let rows: Vec<&str> = lines.collect();
+        assert!(rows.iter().all(|r| r.contains(&format!(",g{g},"))));
+        total_rows += rows.len();
+    }
+    assert_eq!(total_rows, crate::workdir::PIPED_STDIN_ROWS);
+}

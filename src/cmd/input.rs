@@ -109,7 +109,7 @@ struct Args {
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
 
     let trim_setting = match (args.flag_trim_headers, args.flag_trim_fields) {
         (false, false) => csv::Trim::None,
@@ -146,6 +146,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 c.encode_utf8(&mut buf).as_bytes()[0]
             })
         });
+
+    // --skip-lastlines counts the rows before reading them, and stdin can be read only once,
+    // so spool stdin to a temp file first. The TempDir must outlive the reader below.
+    let _stdin_spool_dir;
+    if args.flag_skip_lastlines.is_some() && matches!(args.arg_input.as_deref(), None | Some("-")) {
+        let spool_dir = tempfile::tempdir()?;
+        let spooled = util::process_input(vec![std::path::PathBuf::from("-")], &spool_dir, "")?;
+        // safety: process_input returns at least one path or an error
+        args.arg_input = Some(spooled[0].to_string_lossy().into_owned());
+        _stdin_spool_dir = spool_dir;
+    }
 
     let mut rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)

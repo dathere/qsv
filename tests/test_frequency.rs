@@ -9466,3 +9466,46 @@ fn frequency_parallel_worker_panic_is_an_error() {
         );
     }
 }
+
+#[test]
+fn frequency_all_unique_piped_stdin() {
+    // CSV output didn't save stdin to a temp file (only JSON output did), so the stats cache
+    // and row count behind the <ALL_UNIQUE> shortcut were unavailable and an all-unique
+    // column printed its top values instead, unlike the same data from a file
+    let wrk = Workdir::new("frequency_all_unique_piped_stdin");
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["-s", "id,grp", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let id_rows: Vec<&str> = stdout.lines().filter(|l| l.starts_with("id,")).collect();
+    assert_eq!(
+        id_rows,
+        [format!(
+            "id,<ALL_UNIQUE>,{},100,0",
+            crate::workdir::PIPED_STDIN_ROWS
+        )]
+    );
+    let grp_rows = stdout.lines().filter(|l| l.starts_with("grp,")).count();
+    assert_eq!(grp_rows, 4);
+}
+
+#[test]
+fn frequency_piped_stdin_keeps_default_delimiter() {
+    // stdin is saved to a temp file for the stats pass; that spool must still be read with
+    // stdin's delimiter (QSV_DEFAULT_DELIMITER), not as a comma-delimited .csv
+    let wrk = Workdir::new("frequency_piped_stdin_keeps_default_delimiter");
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_DEFAULT_DELIMITER", ";");
+    let output = wrk.output_with_piped_stdin(&mut cmd, b"a;b\n1;x\n2;y\n2;y\n".to_vec());
+    assert!(output.status.success(), "{output:?}");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let fields: std::collections::BTreeSet<&str> = stdout
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split(';').next())
+        .collect();
+    assert_eq!(fields, ["a", "b"].into_iter().collect(), "{stdout}");
+}

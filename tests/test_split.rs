@@ -1897,3 +1897,26 @@ fn split_from_zip_parallel_autoindexed() {
         );
     }
 }
+
+#[test]
+fn split_chunks_dash_piped_stdin() {
+    // with `-`, stdin wasn't saved to a temp file (only no input was), so --chunks' row
+    // count consumed it: small inputs became 1 chunk ("Rows/chunk: 0"), large ones hit a
+    // CSV field-count error
+    let wrk = Workdir::new("split_chunks_dash_piped_stdin");
+    let mut cmd = wrk.command("split");
+    cmd.args(["out", "--chunks", "4", "-"]);
+    let output = wrk.output_with_piped_stdin(&mut cmd, crate::workdir::piped_stdin_csv().into());
+    assert!(output.status.success(), "{output:?}");
+
+    let chunk_rows = crate::workdir::PIPED_STDIN_ROWS / 4;
+    for chunk in 0..4 {
+        let start = chunk * chunk_rows;
+        let part = wrk.read_to_string(&format!("out/{start}.csv")).unwrap();
+        let mut lines = part.lines();
+        assert_eq!(lines.next(), Some("id,grp,txt"));
+        let rows: Vec<&str> = lines.collect();
+        assert_eq!(rows.len(), chunk_rows);
+        assert!(rows[0].starts_with(&format!("{start},")), "{}", rows[0]);
+    }
+}

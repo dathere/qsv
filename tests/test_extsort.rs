@@ -418,3 +418,28 @@ fn extsort_many_chunks_low_fd_limit() {
     let sorted_output: String = wrk.from_str(&wrk.path("out.csv"));
     assert_eq!(dos2unix(&sorted_output), expected);
 }
+
+#[test]
+fn extsort_dash_piped_stdin() {
+    // `-` was opened as a file path ("No such file or directory"); only omitting the input
+    // read stdin
+    let wrk = Workdir::new("extsort_dash_piped_stdin");
+    let data = crate::workdir::piped_stdin_csv();
+    wrk.create_from_string("in.csv", &data);
+
+    let mut file_cmd = wrk.command("extsort");
+    file_cmd.arg("in.csv");
+    let from_file = wrk.output(&mut file_cmd);
+    assert!(from_file.status.success(), "{from_file:?}");
+
+    let mut pipe_cmd = wrk.command("extsort");
+    pipe_cmd.arg("-");
+    let from_pipe = wrk.output_with_piped_stdin(&mut pipe_cmd, data.into());
+    assert!(from_pipe.status.success(), "{from_pipe:?}");
+
+    assert_eq!(from_pipe.stdout, from_file.stdout);
+    assert_eq!(
+        String::from_utf8_lossy(&from_pipe.stdout).lines().count(),
+        crate::workdir::PIPED_STDIN_ROWS + 1
+    );
+}

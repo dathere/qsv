@@ -4370,7 +4370,7 @@ struct WhichStats {
     /// function rejects the bad combinations.
     approx_quantiles:     bool,
     /// When true, use the Apache `DataSketches` `HyperLogLog` engine for the cardinality
-    /// column instead of the exact `Frequencies<ByteKey>` / `HashMap<Vec<u8>, f64>` tracker.
+    /// column instead of the exact `Frequencies<ByteKey>` / `HashMap<ByteKey, f64>` tracker.
     /// `--infer-boolean` forces this off in `run()` (HLL's ~1.5% RSE breaks
     /// `cardinality == 2` checks). Independent of `approx_quantiles`.
     approx_cardinality:   bool,
@@ -4623,7 +4623,7 @@ struct Stats {
     // Counted-runs frequency map: one entry per UNIQUE value (vs the previous
     // Unsorted<Vec<u8>> which buffered every sample - one alloc+copy per row).
     modes:          Option<Frequencies<stats::ByteKey>>, // 48 bytes - used for mode/cardinality
-    weighted_modes: Option<HashMap<Vec<u8>, f64>>,       // 48 bytes - weighted mode/antimode
+    weighted_modes: Option<HashMap<stats::ByteKey, f64>>, // 48 bytes - weighted mode/antimode
 
     // CACHE LINE 5+: Sorting-based statistics
     #[allow(clippy::struct_field_names)]
@@ -5381,14 +5381,14 @@ impl Stats {
             // Existing-key updates don't grow the map, so check the cap only on the
             // new-key branch — this preserves the get_mut fast path AND ensures the
             // tracker never exceeds `cap` entries (peak == cap exactly).
-            if let Some(val) = wm.get_mut(sample) {
+            if let Some(val) = wm.get_mut(stats::ByteKeyRef::new(sample)) {
                 *val += weight;
             } else if cap > 0 && wm.len() as u64 >= cap {
                 // Adding a new key would push len to cap + 1; drop instead.
                 self.weighted_modes = None;
                 self.modes_dropped = true;
             } else {
-                wm.insert(sample.to_vec(), weight);
+                wm.insert(stats::ByteKey::from_slice(sample), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
             // Unweighted modes: Frequencies::len() == unique values seen (true
@@ -5818,7 +5818,7 @@ impl Stats {
                         );
                     } else {
                         // Collect modes (values with max weight) in deterministic order
-                        let mut modes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                        let mut modes_keys: Vec<&stats::ByteKey> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - max_weight).abs() < 1e-10)
                             .map(|(value, _)| value)
@@ -5830,7 +5830,7 @@ impl Stats {
                         }
                         // Collect antimodes (values with min weight) in deterministic order
                         // Sort first, then truncate to MAX_ANTIMODES for deterministic output
-                        let mut antimodes_keys: Vec<&Vec<u8>> = weighted_modes_map
+                        let mut antimodes_keys: Vec<&stats::ByteKey> = weighted_modes_map
                             .iter()
                             .filter(|&(_, &weight)| (weight - min_weight).abs() < 1e-10)
                             .map(|(value, _)| value)
@@ -5845,7 +5845,7 @@ impl Stats {
 
                         let modes_count = modes_keys.len();
 
-                        // Format modes - work with &Vec<u8> references directly,
+                        // Format modes - work with &ByteKey references directly,
                         // avoiding heap allocation from .cloned().collect()
                         let modes_list = if visualize_ws {
                             modes_keys
@@ -5873,7 +5873,7 @@ impl Stats {
                             )
                         });
 
-                        // Format antimodes - work with &Vec<u8> references directly,
+                        // Format antimodes - work with &ByteKey references directly,
                         // avoiding heap allocation from .cloned().collect()
                         let antimodes_list = format_antimodes(
                             &antimodes_keys,
@@ -6038,8 +6038,8 @@ impl Stats {
                         let mut keys = wm.keys();
                         // safety: len() == 2 was just checked
                         (
-                            String::from_utf8_lossy(keys.next().unwrap()),
-                            String::from_utf8_lossy(keys.next().unwrap()),
+                            String::from_utf8_lossy(keys.next().unwrap().as_slice()),
+                            String::from_utf8_lossy(keys.next().unwrap().as_slice()),
                         )
                     },
                     _ => (

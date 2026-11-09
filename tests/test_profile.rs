@@ -4650,6 +4650,80 @@ fn profile_daily_series_infers_accrual_periodicity() {
     );
 }
 
+/// The `accrualPeriodicity` profile infers for a one-column series of
+/// `dates` (`Null` when it asserts none).
+fn accrual_for(name: &str, dates: &[String]) -> serde_json::Value {
+    let wrk = Workdir::new(name);
+    let mut rows = vec![svec!["date", "reading"]];
+    for (i, d) in dates.iter().enumerate() {
+        rows.push(vec![d.clone(), (i % 3).to_string()]);
+    }
+    wrk.create("in.csv", rows);
+    profile_projection(&wrk, &[])["projection"]["accrualPeriodicity"].clone()
+}
+
+#[test]
+fn profile_accrual_periodicity_documented_thresholds() {
+    // Pins what the USAGE/wiki document: at least 4 distinct dates, at
+    // least 90% of the gaps one exact calendar step, and only the 8
+    // mapped steps.
+    let days =
+        |ds: &[u32]| -> Vec<String> { ds.iter().map(|d| format!("2024-01-{d:02}")).collect() };
+    let null = serde_json::Value::Null;
+
+    // 3 distinct dates (2 gaps) are too few; 4 are enough.
+    assert_eq!(accrual_for("accrual_three_dates", &days(&[1, 2, 3])), null);
+    assert_eq!(
+        accrual_for("accrual_four_dates", &days(&[1, 2, 3, 4])),
+        "daily"
+    );
+
+    // 10 gaps: 9 one-day steps (90%) pass, 8 (80%) do not.
+    assert_eq!(
+        accrual_for(
+            "accrual_share_90",
+            &days(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12])
+        ),
+        "daily"
+    );
+    assert_eq!(
+        accrual_for(
+            "accrual_share_80",
+            &days(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13])
+        ),
+        null
+    );
+
+    // Mapped steps.
+    assert_eq!(
+        accrual_for("accrual_weekly", &days(&[1, 8, 15, 22, 29])),
+        "weekly"
+    );
+    let months = |ms: &[(u32, u32)]| -> Vec<String> {
+        ms.iter().map(|(y, m)| format!("{y}-{m:02}-01")).collect()
+    };
+    assert_eq!(
+        accrual_for(
+            "accrual_quarterly",
+            &months(&[(2023, 1), (2023, 4), (2023, 7), (2023, 10), (2024, 1)])
+        ),
+        "quarterly"
+    );
+    assert_eq!(
+        accrual_for(
+            "accrual_annually",
+            &months(&[(2020, 1), (2021, 1), (2022, 1), (2023, 1), (2024, 1)])
+        ),
+        "annually"
+    );
+
+    // A regular step that is not one of the 8 (every 3 days) gets none.
+    assert_eq!(
+        accrual_for("accrual_every_3_days", &days(&[1, 4, 7, 10, 13])),
+        null
+    );
+}
+
 #[test]
 fn profile_fixed_time_daily_series_is_daily_but_near_daily_is_not() {
     // A reading taken at 08:00 every day is a regular daily series.

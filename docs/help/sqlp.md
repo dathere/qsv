@@ -350,7 +350,7 @@ qsv sqlp --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑format`&nbsp; | string | The output format to use. Valid values are: csv, json, jsonl, parquet, arrow, avro | `csv` |
+| &nbsp;`‑‑format`&nbsp; | string | The output format to use. Valid values are: csv, json, jsonl, parquet, arrow, avro. Avro has fewer types than Polars, so avro output converts the rest: small and unsigned integers become int or long (a value above 2^63-1 is an error), zoned timestamps become UTC timestamps, nanosecond timestamps become microseconds, and TIME and durations become strings (durations in ISO 8601, e.g. P1DT2H3M4.5S). | `csv` |
 
 <a name="polars-csv-input-parsing-options"></a>
 

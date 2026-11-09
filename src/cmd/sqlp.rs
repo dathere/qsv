@@ -204,7 +204,13 @@ sqlp arguments:
 
 sqlp options:
     --format <arg>            The output format to use. Valid values are:
-                                csv, json, jsonl, parquet, arrow, avro
+                                csv, json, jsonl, parquet, arrow, avro.
+                              Avro has fewer types than Polars, so avro output converts the
+                              rest: small and unsigned integers become int or long (a value
+                              above 2^63-1 is an error), zoned timestamps become UTC
+                              timestamps, nanosecond timestamps become microseconds, and TIME
+                              and durations become strings (durations in ISO 8601, e.g.
+                              P1DT2H3M4.5S).
                               [default: csv]
 
                               POLARS CSV INPUT PARSING OPTIONS:
@@ -443,9 +449,11 @@ impl OutputMode {
                         QsvAvroCompression::Snappy => Some(AvroCompression::Snappy),
                     };
 
-                    AvroWriter::new(&mut w)
-                        .with_compression(avro_compression)
-                        .finish(&mut df)
+                    avro_compatible(df.clone()).and_then(|mut avro_df| {
+                        AvroWriter::new(&mut w)
+                            .with_compression(avro_compression)
+                            .finish(&mut avro_df)
+                    })
                 },
                 OutputMode::None => Ok(()),
             };
@@ -771,6 +779,68 @@ fn ipc_writer<W: Write>(w: W, args: &Args) -> IpcWriter<W> {
     };
 
     IpcWriter::new(w).with_compression(ipc_compression)
+}
+
+/// The dtype Polars' Avro writer can take instead of `dtype`, or `None` if `dtype` already works.
+/// The writer only implements signed 32/64-bit integers, f32/f64, decimals, strings, binary,
+/// booleans, dates, ms/us timestamps without a time zone, and lists/structs of those
+/// (polars-arrow `io/avro/write/schema.rs`). Anything else - a SMALLINT, any unsigned integer
+/// (which `--cache-schema` picks for non-negative integer columns), TIME, an interval - failed
+/// the whole write with "not yet implemented: write ... to avro" (#5020).
+fn avro_dtype(dtype: &DataType) -> Option<DataType> {
+    match dtype {
+        DataType::Int8 | DataType::Int16 | DataType::UInt8 | DataType::UInt16 => {
+            Some(DataType::Int32)
+        },
+        DataType::UInt32 | DataType::UInt64 => Some(DataType::Int64),
+        // Avro's largest integer is a signed 64-bit long, and a decimal holds 38 digits; these
+        // can have 39.
+        DataType::Int128 | DataType::UInt128 => Some(DataType::String),
+        DataType::Float16 => Some(DataType::Float32),
+        // Avro timestamps are UTC instants, so a zoned timestamp keeps its instant, in UTC.
+        DataType::Datetime(unit, tz) => {
+            let avro_unit = if *unit == TimeUnit::Nanoseconds {
+                TimeUnit::Microseconds
+            } else {
+                *unit
+            };
+            (tz.is_some() || avro_unit != *unit).then_some(DataType::Datetime(avro_unit, None))
+        },
+        DataType::Time | DataType::Duration(_) => Some(DataType::String),
+        dt if dt.is_categorical() || dt.is_enum() => Some(DataType::String),
+        DataType::List(inner) => avro_dtype(inner).map(|inner| DataType::List(Box::new(inner))),
+        _ => None,
+    }
+}
+
+/// Convert every column `AvroWriter` would reject (see [`avro_dtype`]) to one it writes. Every
+/// conversion keeps the value, except that nanosecond timestamps drop to microseconds. TIME is
+/// written as `HH:MM:SS[.fraction]` and durations as ISO 8601 (`P1DT2H3M4.5S`), since Avro has
+/// no type for either and Polars' plain cast to string drops TIME's fraction and refuses
+/// durations. A `UInt64` value above `i64::MAX` is an error, not a wrapped number.
+fn avro_compatible(mut df: DataFrame) -> PolarsResult<DataFrame> {
+    for idx in 0..df.width() {
+        let column = &df.columns()[idx];
+        let Some(target) = avro_dtype(column.dtype()) else {
+            continue;
+        };
+        let name = column.name().clone();
+        let converted = match column.dtype() {
+            DataType::Time => column
+                .as_materialized_series()
+                .time()?
+                .to_string("%H:%M:%S%.f")?
+                .into_column(),
+            DataType::Duration(_) => column.duration()?.to_string("iso")?.into_column(),
+            source => column.strict_cast(&target).map_err(|e| {
+                polars_err!(
+                    ComputeError: "can't write column '{name}' ({source}) to Avro as {target}: {e}"
+                )
+            })?,
+        };
+        df.replace_column(idx, converted.with_name(name))?;
+    }
+    Ok(df)
 }
 
 /// The output, shared by the streaming sink's callback and `stream_query`: the batched
@@ -1290,4 +1360,180 @@ pub fn compress_output_if_needed(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use polars::io::avro::AvroReader;
+
+    use super::*;
+
+    /// Convert with `avro_compatible`, write Avro to memory and read it back, so each test sees
+    /// what an Avro consumer gets.
+    fn avro_round_trip(df: DataFrame) -> DataFrame {
+        let mut converted = avro_compatible(df).unwrap();
+        let mut buf = Vec::new();
+        AvroWriter::new(&mut buf).finish(&mut converted).unwrap();
+        AvroReader::new(Cursor::new(buf)).finish().unwrap()
+    }
+
+    fn i64_values(column: &Column) -> Vec<Option<i64>> {
+        let column = column.cast(&DataType::Int64).unwrap();
+        let ca = column.i64().unwrap();
+        (0..ca.len()).map(|i| ca.get(i)).collect()
+    }
+
+    fn str_values(column: &Column) -> Vec<Option<String>> {
+        let ca = column.str().unwrap();
+        (0..ca.len())
+            .map(|i| ca.get(i).map(str::to_string))
+            .collect()
+    }
+
+    fn one_column(name: &str, series: Series) -> DataFrame {
+        DataFrame::new(
+            series.len(),
+            vec![series.with_name(name.into()).into_column()],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn avro_widens_unsupported_integers_without_changing_values() {
+        let df = DataFrame::new(
+            2,
+            vec![
+                Series::new("i8".into(), &[-128_i8, 127]).into_column(),
+                Series::new("i16".into(), &[-32_768_i16, 32_767]).into_column(),
+                Series::new("u8".into(), &[0_u8, 255]).into_column(),
+                Series::new("u16".into(), &[0_u16, 65_535]).into_column(),
+                Series::new("u32".into(), &[0_u32, u32::MAX]).into_column(),
+                Series::new("u64".into(), &[0_u64, i64::MAX as u64]).into_column(),
+            ],
+        )
+        .unwrap();
+        let back = avro_round_trip(df);
+        let ints = |name: &str| i64_values(back.column(name).unwrap());
+        for (name, dtype) in [
+            ("i8", DataType::Int32),
+            ("i16", DataType::Int32),
+            ("u8", DataType::Int32),
+            ("u16", DataType::Int32),
+            ("u32", DataType::Int64),
+            ("u64", DataType::Int64),
+        ] {
+            assert_eq!(back.column(name).unwrap().dtype(), &dtype, "{name}");
+        }
+        assert_eq!(ints("i8"), [Some(-128), Some(127)]);
+        assert_eq!(ints("i16"), [Some(-32_768), Some(32_767)]);
+        assert_eq!(ints("u8"), [Some(0), Some(255)]);
+        assert_eq!(ints("u16"), [Some(0), Some(65_535)]);
+        assert_eq!(ints("u32"), [Some(0), Some(i64::from(u32::MAX))]);
+        assert_eq!(ints("u64"), [Some(0), Some(i64::MAX)]);
+    }
+
+    #[test]
+    fn avro_uint64_above_i64_max_is_an_error_naming_the_column() {
+        let df = one_column("big", Series::new("".into(), &[u64::MAX]));
+        let err = avro_compatible(df).unwrap_err().to_string();
+        assert!(err.contains("column 'big'"), "{err}");
+        assert!(err.contains("to Avro as i64"), "{err}");
+    }
+
+    #[test]
+    fn avro_zoned_timestamp_keeps_its_instant_in_utc() {
+        // 2024-01-02 03:04:05.123456 UTC, which is 22:04:05.123456 the day before in New York.
+        let instant_us = 1_704_164_645_123_456_i64;
+        let tz = TimeZone::opt_try_new(Some("America/New_York")).unwrap();
+        let zoned = Series::new("".into(), &[instant_us])
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, tz))
+            .unwrap();
+        let back = avro_round_trip(one_column("ts", zoned));
+        let ts = back.column("ts").unwrap();
+        assert_eq!(
+            ts.dtype(),
+            &DataType::Datetime(TimeUnit::Microseconds, None)
+        );
+        assert_eq!(
+            ts.as_materialized_series()
+                .datetime()
+                .unwrap()
+                .physical()
+                .get(0),
+            Some(instant_us)
+        );
+    }
+
+    #[test]
+    fn avro_nanosecond_timestamp_becomes_microseconds() {
+        let ns = Series::new("".into(), &[1_704_164_645_123_456_789_i64])
+            .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
+            .unwrap();
+        let back = avro_round_trip(one_column("ts", ns));
+        let ts = back.column("ts").unwrap();
+        assert_eq!(
+            ts.dtype(),
+            &DataType::Datetime(TimeUnit::Microseconds, None)
+        );
+        assert_eq!(
+            ts.as_materialized_series()
+                .datetime()
+                .unwrap()
+                .physical()
+                .get(0),
+            Some(1_704_164_645_123_456)
+        );
+    }
+
+    #[test]
+    fn avro_time_is_a_string_that_keeps_its_fraction() {
+        // 03:04:05.123456789 and 03:04:05, as nanoseconds since midnight
+        let time = Series::new("".into(), &[11_045_123_456_789_i64, 11_045_000_000_000])
+            .cast(&DataType::Time)
+            .unwrap();
+        let back = avro_round_trip(one_column("t", time));
+        let t = str_values(back.column("t").unwrap());
+        assert_eq!(
+            t,
+            [
+                Some("03:04:05.123456789".to_string()),
+                Some("03:04:05".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn avro_duration_is_an_iso_8601_string() {
+        // 1 day, 3 h, 4 min, 5.123456 s, in microseconds
+        let micros = ((24 + 3) * 3600 + 4 * 60 + 5) * 1_000_000_i64 + 123_456;
+        let duration = Series::new("".into(), &[micros])
+            .cast(&DataType::Duration(TimeUnit::Microseconds))
+            .unwrap();
+        let back = avro_round_trip(one_column("d", duration));
+        let d = str_values(back.column("d").unwrap());
+        assert_eq!(d, [Some("P1DT3H4M5.123456S".to_string())]);
+    }
+
+    #[test]
+    fn avro_supported_types_pass_through_unchanged() {
+        for dtype in [
+            DataType::Int32,
+            DataType::Int64,
+            DataType::Float64,
+            DataType::String,
+            DataType::Boolean,
+            DataType::Date,
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            DataType::Datetime(TimeUnit::Milliseconds, None),
+            DataType::List(Box::new(DataType::Int64)),
+        ] {
+            assert_eq!(avro_dtype(&dtype), None, "{dtype}");
+        }
+        assert_eq!(
+            avro_dtype(&DataType::List(Box::new(DataType::UInt8))),
+            Some(DataType::List(Box::new(DataType::Int32)))
+        );
+    }
 }

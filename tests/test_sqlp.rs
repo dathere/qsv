@@ -7527,6 +7527,87 @@ fn sqlp_streaming_json_and_avro_still_collect() {
     assert!(wrk.path("out.avro").metadata().unwrap().len() > 0);
 }
 
+fn assert_is_avro(wrk: &Workdir, file: &str) {
+    let bytes = std::fs::read(wrk.path(file)).unwrap();
+    assert!(bytes.starts_with(b"Obj\x01"), "{file} is not an Avro file");
+}
+
+#[test]
+fn sqlp_avro_after_cache_schema() {
+    // #5020: --cache-schema types non-negative integer columns as UInt8..UInt64, which Polars'
+    // Avro writer doesn't implement, so every later Avro export of the file failed.
+    let wrk = Workdir::new("sqlp_avro_after_cache_schema");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "small", "name"],
+            svec!["100000", "1", "a"],
+            svec!["200000", "2", "b"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .arg("--cache-schema")
+        .arg("SELECT * FROM data");
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("data.csv.pschema.json").exists());
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv")
+        .args(["--format", "avro", "-o", "out.avro"])
+        .arg("SELECT * FROM data");
+    let shape = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(shape.trim(), "(2, 3)");
+    assert_is_avro(&wrk, "out.avro");
+}
+
+#[test]
+fn sqlp_avro_writes_types_its_writer_lacks() {
+    // #5020: each of these failed the whole write with "not yet implemented: write ... to avro".
+    // Their converted values are checked by the round-trip unit tests in src/cmd/sqlp.rs.
+    let wrk = Workdir::new("sqlp_avro_writes_types_its_writer_lacks");
+    wrk.create(
+        "x.csv",
+        vec![
+            svec!["i", "d", "ts", "t"],
+            svec!["5", "2024-01-02", "2024-01-02 03:04:05", "03:04:05.25"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("x.csv")
+        .args(["--format", "avro", "-o", "out.avro"])
+        .arg(
+            "SELECT CAST(i AS TINYINT) AS i8, CAST(i AS SMALLINT) AS i16, CAST(i AS UTINYINT) AS \
+             u8, CAST(i AS USMALLINT) AS u16, CAST(i AS UINT) AS u32, CAST(i AS UBIGINT) AS u64, \
+             CAST(t AS TIME) AS tm, CAST(ts AS TIMESTAMP) - CAST(d AS TIMESTAMP) AS dur, CAST(ts \
+             AS TIMESTAMPTZ) AS tstz, CAST(ts AS TIMESTAMP(9)) AS tsns FROM x",
+        );
+    let shape = wrk.stderr_on_success(&mut cmd);
+    assert_eq!(shape.trim(), "(1, 10)");
+    assert_is_avro(&wrk, "out.avro");
+}
+
+#[test]
+fn sqlp_avro_ubigint_above_i64_max_errors() {
+    // Avro's largest integer is a signed 64-bit long: an out-of-range UBIGINT must fail and
+    // name its column, not wrap around.
+    let wrk = Workdir::new("sqlp_avro_ubigint_above_i64_max_errors");
+    wrk.create("x.csv", vec![svec!["a"], svec!["1"]]);
+
+    // From a literal: the CSV reader would infer an Int64 column and fail on 2^64-1 itself.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("x.csv")
+        .args(["--format", "avro", "-o", "out.avro"])
+        .arg("SELECT CAST('18446744073709551615' AS UBIGINT) AS big FROM x");
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("can't write column 'big' (u64) to Avro as i64"),
+        "{err}"
+    );
+}
+
 #[test]
 fn sqlp_streaming_empty_result_writes_header() {
     let wrk = Workdir::new("sqlp_streaming_empty_result_writes_header");

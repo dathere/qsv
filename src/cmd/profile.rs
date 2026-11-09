@@ -234,6 +234,8 @@ profile options:
                               quality measurement. A file that fails it
                               (or a pass that cannot run) also gets a
                               Required `syntacticValidity` warning.
+                              Ignored, with a warning on stderr, when
+                              combined with --no-projection.
     --strict                  Fail the command, instead of just warning,
                               when an --initial-context override cannot
                               be applied, and, with --validate, when the
@@ -441,6 +443,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .as_deref()
         .map(locate::LocateMode::parse)
         .transpose()?;
+
+    if args.flag_validate && args.flag_no_projection {
+        eprintln!(
+            "qsv profile: warning: --validate is ignored with --no-projection: there is no \
+             projection to validate"
+        );
+    }
 
     let ctx_args = context::ContextArgs {
         input_path:      &input_path,

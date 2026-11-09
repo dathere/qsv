@@ -2991,6 +2991,41 @@ fn validate_pass_success_adds_no_syntax_warning() {
     );
 }
 
+#[test]
+fn validate_with_no_projection_warns_that_it_is_ignored() {
+    // --validate checks the projection block, so with --no-projection it
+    // runs nothing; say so rather than exit 0 as if the file was checked.
+    let wrk = Workdir::new("profile_validate_no_projection_warns");
+    seed_invalid_utf8_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "bad.csv",
+        "--validate",
+        "--strict",
+        "--no-projection",
+        "-o",
+        "out.json",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        stderr.contains(
+            "qsv profile: warning: --validate is ignored with --no-projection: there is no \
+             projection to validate"
+        ),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn validate_without_no_projection_does_not_warn_it_is_ignored() {
+    let wrk = Workdir::new("profile_validate_projection_no_ignore_warning");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--validate", "-o", "out.json"]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(!stderr.contains("--validate is ignored"), "{stderr}");
+}
+
 // =============================================================================
 // DCAT-US v3 comprehensive coverage (--catalog, force overrides, new fields,
 // GSA bundle validation).

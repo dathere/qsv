@@ -5,6 +5,11 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **The `.mcpb` no longer ships development-only packages** ([#5014](https://github.com/dathere/qsv/pull/5014)). The packager zipped all of `node_modules`, so the 28.0.0 bundle included typescript, c8, archiver and 116 other packages the server never loads, among them three minimatch copies flagged by GHSA-g3hv-75wg-m249. Packages that `package-lock.json` marks dev-only are now skipped, as is `node_modules/.bin`, and the download shrinks from 11.4 MB to 5.6 MB. `verify-bundles` checks that none of them is bundled.
+
 ## [28.0.0] - 2026-11-02
 Companion release to qsv 28.0.0, "The DCAT-US v3.0 neuro-symbolic FAIRification Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 28.0.0 because the regenerated `qsv-describegpt` skill describes `--forget` as removing the cached answers of the selected phases, which only the new binary does (27.0.1's `--forget` removed nothing). No options were added or removed, and the skill count stays at **57**. Update your qsv binary first.
 

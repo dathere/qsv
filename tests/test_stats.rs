@@ -10309,11 +10309,21 @@ fn stats_weighted_modes_long_keys_merge_across_chunks() {
     // spills longer ones to the heap. Mix both kinds (long ones sharing a prefix), spread the
     // repeats over every parallel chunk, and check the merged mode, cardinality and the
     // sorted, truncated antimode list.
+    // qsv caps --jobs/QSV_MAX_JOBS at the CPU count, and 1 job is a single chunk with no merge,
+    // so this needs >= 2 cores (same guard as frequency_parallel_worker_panic_is_an_error).
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    if cores < 2 {
+        eprintln!(
+            "skipping stats_weighted_modes_long_keys_merge_across_chunks: needs >= 2 cores to \
+             exercise the chunk merge (have {cores})"
+        );
+        return;
+    }
     let wrk = Workdir::new("stats_weighted_modes_long_keys_merge_across_chunks");
     let prefix = "a-value-long-enough-to-spill-to-the-heap-";
     let mode_key = format!("{prefix}mode");
     let runner_up = format!("{prefix}runner-up");
-    // 6 + 5 + 4 repeated rows, interleaved so each of the 3 chunks gets some of every key
+    // 6 + 5 + 4 repeated rows, interleaved so each chunk gets some of every key
     let mut repeated = Vec::new();
     for i in 0..6 {
         repeated.push(mode_key.clone());
@@ -10351,10 +10361,12 @@ fn stats_weighted_modes_long_keys_merge_across_chunks() {
         "--cardinality",
         "--mode",
         "--jobs",
-        "3",
+        "2",
     ])
     .arg("data.csv")
-    // CPU-based chunking: 3 chunks of 9 rows, so the chunk merge really runs
+    // pin 2 jobs regardless of the caller's QSV_MAX_JOBS, and use CPU-based chunking
+    // (2 chunks of 14 and 13 rows) so the chunk merge really runs
+    .env("QSV_MAX_JOBS", "2")
     .env("QSV_STATS_CHUNK_MEMORY_MB", "-1")
     .env("QSV_ANTIMODES_LEN", "0");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);

@@ -5978,7 +5978,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.15.0"
-source = "git+https://github.com/dathere/plotly?rev=3223bd7df96cb587e054c09cc70a1ee0c62ef52c#3223bd7df96cb587e054c09cc70a1ee0c62ef52c"
+source = "git+https://github.com/dathere/plotly?rev=d43be3786c32ab2790a6c0e927ee39d2bb99704c#d43be3786c32ab2790a6c0e927ee39d2bb99704c"
 dependencies = [
  "askama",
  "async-trait",
@@ -6000,7 +6000,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.15.0"
-source = "git+https://github.com/dathere/plotly?rev=3223bd7df96cb587e054c09cc70a1ee0c62ef52c#3223bd7df96cb587e054c09cc70a1ee0c62ef52c"
+source = "git+https://github.com/dathere/plotly?rev=d43be3786c32ab2790a6c0e927ee39d2bb99704c#d43be3786c32ab2790a6c0e927ee39d2bb99704c"
 dependencies = [
  "darling 0.24.1",
  "proc-macro2",
@@ -6011,7 +6011,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.2.0"
-source = "git+https://github.com/dathere/plotly?rev=3223bd7df96cb587e054c09cc70a1ee0c62ef52c#3223bd7df96cb587e054c09cc70a1ee0c62ef52c"
+source = "git+https://github.com/dathere/plotly?rev=d43be3786c32ab2790a6c0e927ee39d2bb99704c#d43be3786c32ab2790a6c0e927ee39d2bb99704c"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -9148,7 +9148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -10308,8 +10308,9 @@ dependencies = [
 
 [[package]]
 name = "webdriver-downloader"
-version = "0.17.0"
-source = "git+https://github.com/jqnatividad/webdriver-downloader?rev=19795f9006f77ea3592bbc0ea26e00247a3df4c3#19795f9006f77ea3592bbc0ea26e00247a3df4c3"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e581d25b8b575310437776af857b3b7d4085b32ab14c27d2983a466ebc94e691"
 dependencies = [
  "anyhow",
  "async-trait",

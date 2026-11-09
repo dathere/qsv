@@ -7603,7 +7603,7 @@ fn sqlp_avro_ubigint_above_i64_max_errors() {
         .arg("SELECT CAST('18446744073709551615' AS UBIGINT) AS big FROM x");
     let err = wrk.stderr_on_error(&mut cmd);
     assert!(
-        err.contains("can't write column 'big' (u64) to Avro as i64"),
+        err.contains("can't write column 'big' to Avro: u64 as i64"),
         "{err}"
     );
 }

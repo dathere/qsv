@@ -821,26 +821,34 @@ fn avro_dtype(dtype: &DataType) -> Option<DataType> {
 fn avro_compatible(mut df: DataFrame) -> PolarsResult<DataFrame> {
     for idx in 0..df.width() {
         let column = &df.columns()[idx];
-        let Some(target) = avro_dtype(column.dtype()) else {
+        if avro_dtype(column.dtype()).is_none() {
             continue;
-        };
+        }
         let name = column.name().clone();
-        let converted = match column.dtype() {
-            DataType::Time => column
-                .as_materialized_series()
-                .time()?
-                .to_string("%H:%M:%S%.f")?
-                .into_column(),
-            DataType::Duration(_) => column.duration()?.to_string("iso")?.into_column(),
-            source => column.strict_cast(&target).map_err(|e| {
-                polars_err!(
-                    ComputeError: "can't write column '{name}' ({source}) to Avro as {target}: {e}"
-                )
-            })?,
-        };
-        df.replace_column(idx, converted.with_name(name))?;
+        let converted = avro_series(column.as_materialized_series())
+            .map_err(|e| polars_err!(ComputeError: "can't write column '{name}' to Avro: {e}"))?;
+        df.replace_column(idx, converted.with_name(name).into_column())?;
     }
     Ok(df)
+}
+
+/// One column (or a list's inner values) converted for Avro. Lists recurse, so their TIME and
+/// duration elements get the same formatters as top-level columns, instead of a plain cast.
+fn avro_series(series: &Series) -> PolarsResult<Series> {
+    match series.dtype() {
+        DataType::Time => Ok(series.time()?.to_string("%H:%M:%S%.f")?.into_series()),
+        DataType::Duration(_) => Ok(series.duration()?.to_string("iso")?.into_series()),
+        DataType::List(_) => Ok(series
+            .list()?
+            .apply_to_inner(&|inner| avro_series(&inner))?
+            .into_series()),
+        source => match avro_dtype(source) {
+            Some(target) => series
+                .strict_cast(&target)
+                .map_err(|e| polars_err!(ComputeError: "{source} as {target}: {e}")),
+            None => Ok(series.clone()),
+        },
+    }
 }
 
 /// The output, shared by the streaming sink's callback and `stream_query`: the batched
@@ -1439,7 +1447,7 @@ mod tests {
         let df = one_column("big", Series::new("".into(), &[u64::MAX]));
         let err = avro_compatible(df).unwrap_err().to_string();
         assert!(err.contains("column 'big'"), "{err}");
-        assert!(err.contains("to Avro as i64"), "{err}");
+        assert!(err.contains("to Avro: u64 as i64"), "{err}");
     }
 
     #[test]
@@ -1514,6 +1522,48 @@ mod tests {
         let back = avro_round_trip(one_column("d", duration));
         let d = str_values(back.column("d").unwrap());
         assert_eq!(d, [Some("P1DT3H4M5.123456S".to_string())]);
+    }
+
+    #[test]
+    fn avro_lists_of_time_and_duration_use_the_same_formatters() {
+        // A plain cast would drop TIME's fraction inside the list and refuse the durations.
+        let times = Series::new("".into(), &[Some(11_045_123_456_789_i64), None])
+            .cast(&DataType::Time)
+            .unwrap();
+        let durations = Series::new("".into(), &[Some(5_500_000_i64), None])
+            .cast(&DataType::Duration(TimeUnit::Microseconds))
+            .unwrap();
+        let df = DataFrame::new(
+            1,
+            vec![
+                times
+                    .implode()
+                    .unwrap()
+                    .into_series()
+                    .with_name("t".into())
+                    .into_column(),
+                durations
+                    .implode()
+                    .unwrap()
+                    .into_series()
+                    .with_name("d".into())
+                    .into_column(),
+            ],
+        )
+        .unwrap();
+        let back = avro_round_trip(df);
+        let inner = |name: &str| {
+            let list = back
+                .column(name)
+                .unwrap()
+                .list()
+                .unwrap()
+                .get_as_series(0)
+                .unwrap();
+            str_values(&list.into_column())
+        };
+        assert_eq!(inner("t"), [Some("03:04:05.123456789".to_string()), None]);
+        assert_eq!(inner("d"), [Some("PT5.5S".to_string()), None]);
     }
 
     #[test]

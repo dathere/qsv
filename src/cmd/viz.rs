@@ -14899,10 +14899,6 @@ fn fullscreen_script() -> String {
             "__QSVI18N_CLICK_ZOOM__",
             &js_string_literal(&t!("viz.map.cluster_click_to_zoom")),
         )
-        .replace(
-            "__QSVI18N_SANDBOX_MAP__",
-            &js_string_literal(&t!("viz.map.sandboxed_notice")),
-        )
 }
 
 const FULLSCREEN_SCRIPT: &str = r#"<script>
@@ -15260,25 +15256,6 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
-  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
-  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
-  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
-  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
-  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
-  function sandboxNotice(gd) {
-    if (window.origin !== "null" || location.protocol === "file:") return;
-    var lay = (gd && gd.layout) || {};
-    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
-    var host = gd.parentNode;
-    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
-    var note = document.createElement("div");
-    note.className = "qsv-sandbox-map-note";
-    note.setAttribute("role", "note");
-    note.textContent = __QSVI18N_SANDBOX_MAP__;
-    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
-      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
-    host.insertBefore(note, gd);
-  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -15317,8 +15294,6 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
-      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
-      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);
@@ -17316,6 +17291,18 @@ static PLOTLY_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| 
 /// the `qsv:plotly-ready` event the bootstrap dispatches.
 const PLOTLY_STUB_SCRIPT: &str = r#"<script>window.__qsvPlotQ=[];window.Plotly={newPlot:function(){window.__qsvPlotQ.push(arguments)}};</script>"#;
 
+/// Lets MapLibre map panels load in a sandboxed frame without `allow-same-origin` (issue #4946),
+/// e.g. CKAN's recommended Webpage-view sandbox. There the page's `window.origin` is "null" while
+/// `location.origin` is still the URL's, and MapLibre's `blob:` worker reports "null": the
+/// MapLibre bundled in plotly.js 3.x drops every page<->worker message whose `origin` field
+/// differs from its own, so tiles never load and the panel stays blank with no error. Its filter
+/// exempts the literal origin "file://", so the wrapper stamps that on every message in both
+/// directions; the listener added in the constructor runs before MapLibre's own. Inert anywhere
+/// else (including file:// pages, which already work). Must run before plotly.js creates its
+/// workers, hence first in `plotly_js_block`. Retire once the vendored plotly.js bundles
+/// MapLibre >= 6.17 (maplibre-gl-js#8912), which handles opaque origins itself.
+const SANDBOX_WORKER_SHIM: &str = r#"<script>(function(){if(window.origin!=="null"||location.protocol==="file:"||typeof Worker!=="function")return;function qsvStampOrigin(d){if(d&&typeof d==="object"&&typeof d.origin==="string")d.origin="file://"}var W=window.Worker;window.Worker=class extends W{constructor(u,o){super(u,o);this.addEventListener("message",function(e){qsvStampOrigin(e.data)})}postMessage(m,t){qsvStampOrigin(m);return super.postMessage(m,t)}}})();</script>"#;
+
 /// Shared inflate helpers for the gzip-embedded payloads. `__qsvGunzip` pumps a payload tag
 /// through `DecompressionStream` with an explicit reader loop (`new Response(stream).text()` is
 /// unreliable on older Safari). `qsvNewPlotGz` renders one gzip-embedded figure — via the stub's
@@ -17497,6 +17484,10 @@ fn plotly_setlocale_js() -> String {
 }
 
 fn plotly_js_block() -> String {
+    format!("{SANDBOX_WORKER_SHIM}\n{}", plotly_bundle_block())
+}
+
+fn plotly_bundle_block() -> String {
     if viz_cdn() {
         // A classic (non-deferred, non-module) `<script src>` runs to completion before any
         // panel's `Plotly.newPlot` script, so `Plotly` is already defined: no `PLOTLY_STUB_SCRIPT`
@@ -59028,18 +59019,15 @@ mod tests {
     }
 
     #[test]
-    fn fullscreen_script_explains_maps_in_sandboxed_frames() {
-        let _locale = english_locale();
-        let js = fullscreen_script();
-        // only an opaque-origin page that is NOT a file:// page gets the note (file:// maps load)
+    fn plotly_js_block_installs_sandbox_worker_shim_first() {
+        // the shim must run before plotly.js creates MapLibre's workers (issue #4946), so it
+        // leads every variant of the bundle block: inline gzip, inline plain, and CDN
+        assert!(SANDBOX_WORKER_SHIM.contains(r#"d.origin="file://""#));
         assert!(
-            js.contains(
-                r#"if (window.origin !== "null" || location.protocol === "file:") return;"#
-            )
+            SANDBOX_WORKER_SHIM.contains(r#"window.origin!=="null"||location.protocol==="file:""#)
         );
-        assert!(js.contains("sandboxNotice(gd);"));
-        assert!(js.contains(&js_string_literal(&t!("viz.map.sandboxed_notice"))));
-        assert!(t!("viz.map.sandboxed_notice").contains("sandboxed frame"));
+        assert!(plotly_js_block().starts_with(SANDBOX_WORKER_SHIM));
+        assert!(plotly_bundle_block().contains("Plotly"));
     }
 
     #[test]

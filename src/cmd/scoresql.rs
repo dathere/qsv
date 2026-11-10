@@ -8,7 +8,7 @@ Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performan
 The report shows the query plan (EXPLAIN output from Polars or DuckDB) next to the score.
 
 Scoring factors include:
-  * Type optimization (String columns compared with numbers, mismatched join key types)
+  * Type optimization (String columns compared with numbers)
   * Join key cardinality and data distribution
   * Filter selectivity from frequency cache
   * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)
@@ -695,6 +695,10 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
         "AND", "OR", "NOT", "IS", "NULL", "IN", "BETWEEN", "LIKE", "OUTER", "AS", "TRUE", "FALSE",
     ];
     for m in ON_REGEX.find_iter(sql) {
+        // an odd number of `"` before the match puts it inside a quoted identifier (`a."on"`)
+        if sql[..m.start()].bytes().filter(|&b| b == b'"').count() % 2 == 1 {
+            continue;
+        }
         let after = &sql[m.end()..];
         // a `)` that closes more than the clause opened ends it: the join was inside a
         // subquery, and what follows (`) t`, `) AND status = ...`) belongs to the outer query
@@ -1347,34 +1351,6 @@ fn score_type_optimization(
                     cache.table_name, stat.field
                 ));
             }
-        }
-    }
-
-    // A join key typed String on one side and numeric on the other can't match without a cast.
-    for join_col in &sql_info.join_columns {
-        let typed: Vec<(&str, &str)> = caches
-            .iter()
-            .filter_map(|cache| {
-                cache
-                    .stats
-                    .iter()
-                    .find(|s| s.field.eq_ignore_ascii_case(join_col))
-                    .map(|s| (cache.table_name.as_str(), s.r#type.as_str()))
-            })
-            .collect();
-        let string_side = typed.iter().find(|(_, t)| *t == "String");
-        let numeric_side = typed
-            .iter()
-            .find(|(_, t)| matches!(*t, "Integer" | "Float"));
-        if let (Some((s_table, _)), Some((n_table, n_type))) = (string_side, numeric_side) {
-            score = score.saturating_sub(3);
-            issues.push(format!(
-                "join key {join_col} is String in {s_table} but {n_type} in {n_table}"
-            ));
-            suggestions.push(format!(
-                "Join key '{join_col}' is String in {s_table} but {n_type} in {n_table} — cast \
-                 one side so the key types match"
-            ));
         }
     }
 

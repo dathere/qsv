@@ -899,54 +899,6 @@ fn scoresql_string_column_vs_number_is_penalized() {
 }
 
 #[test]
-fn scoresql_join_key_type_mismatch_is_penalized() {
-    // Polars refuses to plan a join of an Integer key with a String one, so scoresql fails
-    // before scoring there. DuckDB plans it with an implicit cast, so the check applies.
-    if std::process::Command::new("duckdb")
-        .arg("--version")
-        .output()
-        .is_err()
-    {
-        eprintln!("Skipping: duckdb not found in PATH");
-        return;
-    }
-    let wrk = Workdir::new("scoresql_join_key_type_mismatch_is_penalized");
-    wrk.create(
-        "a.csv",
-        vec![
-            svec!["k", "v"],
-            svec!["1", "x"],
-            svec!["2", "y"],
-            svec!["3", "z"],
-        ],
-    );
-    wrk.create(
-        "b.csv",
-        vec![
-            svec!["k", "w"],
-            svec!["k1", "p"],
-            svec!["k2", "q"],
-            svec!["k3", "r"],
-        ],
-    );
-    let report = score_json(
-        &wrk,
-        &[
-            "--duckdb",
-            "a.csv",
-            "b.csv",
-            "SELECT a.v FROM a JOIN b ON a.k = b.k LIMIT 5",
-        ],
-    );
-    let (score, detail) = category(&report, "Type optimization");
-    assert!(score < 20, "{report}");
-    assert!(
-        detail.contains("join key k is String in b but Integer in a"),
-        "{detail}"
-    );
-}
-
-#[test]
 fn scoresql_finds_index_of_non_csv_extension() {
     let wrk = Workdir::new("scoresql_finds_index_of_non_csv_extension");
     wrk.create_from_string("data.tsv", "id\tname\n1\tAlice\n2\tBob\n3\tCarol\n");
@@ -1053,4 +1005,23 @@ fn scoresql_duckdb_bare_non_identifier_table_name() {
     let json: serde_json::Value =
         serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
     assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}
+
+#[test]
+fn scoresql_quoted_on_identifier_is_not_a_join_clause() {
+    let wrk = Workdir::new("scoresql_quoted_on_identifier_is_not_a_join_clause");
+    wrk.create(
+        "a.csv",
+        vec![svec!["id", "on"], svec!["1", "x"], svec!["2", "y"]],
+    );
+    wrk.create("b.csv", vec![svec!["k"], svec!["p"], svec!["q"]]);
+    let report = score_json(
+        &wrk,
+        &[
+            "a.csv",
+            "b.csv",
+            r#"SELECT a."on", a.id FROM a CROSS JOIN b LIMIT 5"#,
+        ],
+    );
+    assert_eq!(category(&report, "Join cardinality").0, 0, "{report}");
 }

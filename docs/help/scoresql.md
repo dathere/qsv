@@ -20,7 +20,7 @@ Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performan
 The report shows the query plan (EXPLAIN output from Polars or DuckDB) next to the score.
 
 Scoring factors include:  
-* Type optimization (String columns compared with numbers, mismatched join key types)
+* Type optimization (String columns compared with numbers)
 * Join key cardinality and data distribution
 * Filter selectivity from frequency cache
 * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)

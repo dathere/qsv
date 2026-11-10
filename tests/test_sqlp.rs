@@ -7384,7 +7384,7 @@ fn sqlp_stdin_default_delimiter_env() {
 #[test]
 fn sqlp_case_strict_cast_ignores_unselected_rows() {
     // pola-rs/polars#30682: the ELSE branch's strict CAST no longer sees the rows its WHEN
-    // selected. On a9bce97 the NULL `v` of the `a = true` rows was COALESCEd to -1 and failed
+    // selected. On a9bce97 the NULL `v` of the `a = true` rows was COALESCED to -1 and failed
     // the UTINYINT cast, although those rows take the THEN branch.
     let wrk = Workdir::new("sqlp_case_strict_cast_ignores_unselected_rows");
     wrk.create(

@@ -277,8 +277,13 @@ Validate options:
                                Each invalid field is a result, pointing at the line where its row
                                starts. Unlike the other output files, it is written even when all
                                rows are valid (with no results), so a CI run clears earlier
-                               findings. At most 25,000 results are written (GitHub's limit).
-                               Only for JSON Schema validation mode with a file input (not stdin).
+                               findings. Only for JSON Schema validation mode with a file input
+                               (not stdin).
+    --sarif-max-results <n>    The most results that --sarif writes; past it, the log notes that
+                               results were cut. The default is GitHub code scanning's limit per
+                               run, which rejects a log with more. Other tools may accept more.
+                               Set to 0 for no limit.
+                               [default: 25000]
     -j, --jobs <arg>           The number of jobs to run in parallel.
                                When not set, the number of jobs is set to the
                                number of CPUs detected.
@@ -445,6 +450,7 @@ struct Args {
     flag_pretty_json:          bool,
     flag_valid_output:         Option<String>,
     flag_sarif:                Option<String>,
+    flag_sarif_max_results:    usize,
     flag_jobs:                 Option<usize>,
     flag_batch:                usize,
     flag_no_headers:           bool,
@@ -2001,6 +2007,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         [path] => path.as_os_str() == "-",
         _ => false,
     };
+    // before spooling stdin, which waits for its end
+    if stdin_input && args.flag_sarif.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--sarif needs a file input: its results point at lines in that file."
+        );
+    }
     // stdin is read more than once (row count, validation, valid/invalid split), so it is
     // spooled to a temp file first; reading it directly let the row count drain it, and
     // validation then saw no rows and passed. Its outputs are still `stdin.csv.*` in the cwd.
@@ -2029,10 +2041,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         })?
     };
-    if stdin_input && args.flag_sarif.is_some() {
-        return fail_incorrectusage_clierror!(
-            "--sarif needs a file input: its results point at lines in that file."
-        );
+    if let Some(sarif_path) = &args.flag_sarif {
+        let sarif_path = Path::new(sarif_path);
+        let clobbers = |other: &Path| {
+            sarif_path.exists() && same_file::is_same_file(sarif_path, other).unwrap_or(false)
+        };
+        if clobbers(input_path)
+            || json_schema_arg
+                .as_deref()
+                .is_some_and(|s| clobbers(Path::new(s)))
+        {
+            return fail_incorrectusage_clierror!(
+                "--sarif {} would overwrite the input file or the JSON Schema.",
+                sarif_path.display()
+            );
+        }
     }
     // base name of the valid/invalid/validation-errors output files
     let output_base = if stdin_input {
@@ -2208,6 +2231,10 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     let mut validation_error_messages: Vec<String> = Vec::with_capacity(50);
     let mut sarif_results: Option<Vec<SarifResult>> = args.flag_sarif.as_ref().map(|_| Vec::new());
     let mut sarif_truncated = false;
+    let sarif_max_results = match args.flag_sarif_max_results {
+        0 => usize::MAX,
+        n => n,
+    };
     // A compressed or converted input is read as a different CSV than the bytes on disk, so its
     // rows have no line in the file: those results get no region.
     let sarif_lines = args.flag_sarif.is_some()
@@ -2363,7 +2390,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                     .join("\n"),
             );
             if let Some(sarif_results) = sarif_results.as_mut() {
-                if sarif_results.len() == SARIF_MAX_RESULTS {
+                if sarif_results.len() == sarif_max_results {
                     sarif_truncated = true;
                     continue;
                 }
@@ -2377,7 +2404,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                         )
                 });
                 for fe in field_errors {
-                    if sarif_results.len() == SARIF_MAX_RESULTS {
+                    if sarif_results.len() == sarif_max_results {
                         sarif_truncated = true;
                         break;
                     }
@@ -2414,11 +2441,16 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     if let (Some(sarif_path), Some(sarif_results)) = (&args.flag_sarif, sarif_results) {
         if sarif_truncated {
             wwarn!(
-                "--sarif: wrote the first {SARIF_MAX_RESULTS} results only; see \
+                "--sarif: wrote the first {sarif_max_results} results only; see \
                  {output_base}.validation-errors.tsv for all errors."
             );
         }
-        write_sarif_report(sarif_path, input_path, &sarif_results, sarif_truncated)?;
+        write_sarif_report(
+            sarif_path,
+            input_path,
+            &sarif_results,
+            sarif_truncated.then_some(sarif_max_results),
+        )?;
     }
 
     if invalid_count == 0 {
@@ -3280,9 +3312,6 @@ struct SarifResult {
     error: FieldError,
 }
 
-/// GitHub code scanning rejects a run with more results than this.
-const SARIF_MAX_RESULTS: usize = 25_000;
-
 const RAGGED_ROW_RULE: &str = "ragged-row";
 const OTHER_RULE: &str = "other";
 
@@ -3396,15 +3425,23 @@ fn sarif_row_line(
 }
 
 /// The input as a SARIF artifact URI. Code scanning tools resolve a relative URI against the
-/// repository checkout, so a file under the current directory gets a relative, percent-encoded
-/// URI with `/` separators; anything else gets an absolute `file://` URI.
+/// repository checkout, so a file in a git checkout gets a URI relative to the checkout's root
+/// (the nearest directory above it with a `.git` entry), whatever directory qsv runs in.
+/// Outside a checkout, it is relative to the current directory. The URI is percent-encoded
+/// with `/` separators; a file outside both gets an absolute `file://` URI.
 fn sarif_artifact_uri(path: &Path) -> String {
     let fallback = || path.to_string_lossy().replace('\\', "/");
     let Ok(abs_path) = path.canonicalize() else {
         return fallback();
     };
-    if let Ok(cwd) = env::current_dir().and_then(|d| d.canonicalize())
-        && let Ok(rel_path) = abs_path.strip_prefix(&cwd)
+    let base = abs_path
+        .ancestors()
+        .skip(1)
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
+        .or_else(|| env::current_dir().and_then(|d| d.canonicalize()).ok());
+    if let Some(base) = base
+        && let Ok(rel_path) = abs_path.strip_prefix(&base)
         && let Ok(mut url) = url::Url::parse("file:///")
     {
         if let Ok(mut segments) = url.path_segments_mut() {
@@ -3425,7 +3462,7 @@ fn write_sarif_report(
     sarif_path: &str,
     input_path: &Path,
     results: &[SarifResult],
-    truncated: bool,
+    truncated_at: Option<usize>,
 ) -> CliResult<()> {
     let uri = sarif_artifact_uri(input_path);
     let rules: Vec<serde_json::Value> = SARIF_RULES
@@ -3473,11 +3510,11 @@ fn write_sarif_report(
         })
         .collect();
     let mut invocation = json!({ "executionSuccessful": true });
-    if truncated {
+    if let Some(max_results) = truncated_at {
         invocation["toolExecutionNotifications"] = json!([{
             "level": "warning",
             "message": {
-                "text": format!("Only the first {SARIF_MAX_RESULTS} results were written.")
+                "text": format!("Only the first {max_results} results were written.")
             },
         }]);
     }

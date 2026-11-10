@@ -405,6 +405,8 @@ const SARIF_TEST_SCHEMA: &str = r#"{
 #[test]
 fn validate_sarif_schema_errors() {
     let wrk = Workdir::new("validate_sarif_schema_errors");
+    // the checkout root its artifact URI is relative to
+    wrk.create_subdir(".git").unwrap();
     wrk.create_from_string("schema.json", SARIF_TEST_SCHEMA);
     // CRLF, a quoted field spanning two lines, and a blank line: a row's line is where the row
     // itself starts, not where the reader's record position is
@@ -538,6 +540,7 @@ fn validate_sarif_split_ragged() {
 #[test]
 fn validate_sarif_custom_keywords_and_uri() {
     let wrk = Workdir::new("validate_sarif_custom_keywords_and_uri");
+    wrk.create_subdir(".git").unwrap();
     wrk.create_subdir("my dir").unwrap();
     wrk.create_from_string("ref.csv", "code\nA\nB\n");
     wrk.create_from_string(
@@ -571,7 +574,7 @@ fn validate_sarif_custom_keywords_and_uri() {
             ("uniqueCombinedWith".to_string(), 4)
         ]
     );
-    // relative to the current directory, percent-encoded, with `/` separators
+    // relative to the checkout root, percent-encoded, with `/` separators
     let log: serde_json::Value =
         serde_json::from_str(&wrk.read_to_string("out.sarif").unwrap()).unwrap();
     assert_eq!(
@@ -587,6 +590,7 @@ fn validate_sarif_compressed_input_has_no_region() {
     use std::io::Write;
 
     let wrk = Workdir::new("validate_sarif_compressed_input_has_no_region");
+    wrk.create_subdir(".git").unwrap();
     wrk.create_from_string("schema.json", SARIF_TEST_SCHEMA);
     let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     enc.write_all(b"id,name\n1,a\n-1,b\n").unwrap();
@@ -630,6 +634,90 @@ fn validate_sarif_caps_results() {
     assert_eq!(
         run["invocations"][0]["toolExecutionNotifications"][0]["message"]["text"],
         "Only the first 25000 results were written."
+    );
+}
+
+#[test]
+fn validate_sarif_max_results_option() {
+    let wrk = Workdir::new("validate_sarif_max_results_option");
+    wrk.create_from_string("schema.json", SARIF_TEST_SCHEMA);
+    wrk.create_from_string("data.csv", "id,name\n-1,a\n-2,b\n-3,c\n");
+    let run = |max_results: &str, sarif: &str| -> serde_json::Value {
+        let mut cmd = wrk.command("validate");
+        cmd.arg("data.csv").arg("schema.json").args([
+            "--sarif",
+            sarif,
+            "--sarif-max-results",
+            max_results,
+        ]);
+        wrk.assert_err(&mut cmd);
+        serde_json::from_str(&wrk.read_to_string(sarif).unwrap()).unwrap()
+    };
+
+    let log = run("2", "two.sarif");
+    let run_json = &log["runs"][0];
+    assert_eq!(run_json["results"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        run_json["invocations"][0]["toolExecutionNotifications"][0]["message"]["text"],
+        "Only the first 2 results were written."
+    );
+
+    // 0 is no limit
+    let log = run("0", "all.sarif");
+    let run_json = &log["runs"][0];
+    assert_eq!(run_json["results"].as_array().unwrap().len(), 3);
+    assert!(
+        run_json["invocations"][0]
+            .get("toolExecutionNotifications")
+            .is_none()
+    );
+}
+
+#[test]
+fn validate_sarif_uri_from_a_subdirectory() {
+    let wrk = Workdir::new("validate_sarif_uri_from_a_subdirectory");
+    wrk.create_subdir(".git").unwrap();
+    wrk.create_subdir("data").unwrap();
+    wrk.create_from_string("data/schema.json", SARIF_TEST_SCHEMA);
+    wrk.create_from_string("data/sales.csv", "id,name\n-1,a\n");
+    let mut cmd = wrk.command("validate");
+    cmd.current_dir(wrk.path("data"))
+        .arg("sales.csv")
+        .arg("schema.json")
+        .args(["--sarif", "out.sarif"]);
+    wrk.assert_err(&mut cmd);
+
+    // code scanning resolves the URI against the checkout root, not where qsv ran
+    let log: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("data/out.sarif").unwrap()).unwrap();
+    assert_eq!(
+        log["runs"][0]["artifacts"][0]["location"]["uri"],
+        "data/sales.csv"
+    );
+}
+
+#[test]
+fn validate_sarif_refuses_to_overwrite_inputs() {
+    let wrk = Workdir::new("validate_sarif_refuses_to_overwrite_inputs");
+    wrk.create_from_string("schema.json", SARIF_TEST_SCHEMA);
+    let data = "id,name\n1,a\n";
+    wrk.create_from_string("data.csv", data);
+
+    for target in ["data.csv", "schema.json", "./data.csv"] {
+        let mut cmd = wrk.command("validate");
+        cmd.arg("data.csv")
+            .arg("schema.json")
+            .args(["--sarif", target]);
+        assert!(
+            wrk.stderr_on_error(&mut cmd)
+                .contains("would overwrite the input file or the JSON Schema"),
+            "--sarif {target}"
+        );
+    }
+    assert_eq!(wrk.read_to_string("data.csv").unwrap(), data);
+    assert_eq!(
+        wrk.read_to_string("schema.json").unwrap(),
+        SARIF_TEST_SCHEMA
     );
 }
 

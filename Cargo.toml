@@ -587,7 +587,9 @@ spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", bran
 # CompactBytesSlice::into_boxed_slice fix (upstream ParkMyCar/compact_bytes#11), and the
 # big-endian heap-tag fix (ParkMyCar/compact_bytes#12; qsv #5015).
 # Pulled in by qsv-stats' ByteKey (0.57+; qsv #5011). Same version as upstream, so crates.io
-# builds (`cargo install qsv`) use upstream 0.2.1; the hot paths are identical.
+# builds (`cargo install qsv`) use upstream 0.2.1; the hot paths are identical. CAVEAT: on
+# big-endian targets (s390x, ppc64) upstream 0.2.1 still has the heap-tag bug (#12): a heap value
+# whose cap/len low byte is >= 0x80 is misread as inline (out-of-bounds read). Build from git there.
 compact_bytes = { git = "https://github.com/jqnatividad/compact_bytes", branch = "main" }
 
 # Polars has a much higher release tempo for its Python bindings compared

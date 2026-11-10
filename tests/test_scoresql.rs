@@ -1141,3 +1141,60 @@ fn scoresql_no_index_suggestion_for_stdin() {
         "{report}"
     );
 }
+
+/// 10 rows, `status` 80% "active", so a WHERE on it earns the skew note.
+fn setup_skewed(name: &str) -> Workdir {
+    let mut rows = vec![svec!["nowhere", "status"]];
+    for i in 0..10 {
+        let status = if i < 8 { "active" } else { "inactive" };
+        rows.push(vec![i.to_string(), status.to_string()]);
+    }
+    let wrk = Workdir::new(name);
+    wrk.create("w.csv", rows);
+    wrk
+}
+
+#[test]
+fn scoresql_where_inside_identifier_is_not_the_clause() {
+    let wrk = setup_skewed("scoresql_where_inside_identifier_is_not_the_clause");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status IS NOT NULL LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(detail.contains("w.status is highly skewed"), "{detail}");
+}
+
+#[test]
+fn scoresql_notes_when_only_the_first_filter_value_is_scored() {
+    let wrk = setup_skewed("scoresql_notes_when_only_the_first_filter_value_is_scored");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status = 'inactive' OR status = 'active' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(
+        detail.contains("w.status has 2 filter values — selectivity estimated from the first"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn scoresql_single_filter_value_has_no_first_value_note() {
+    let wrk = setup_skewed("scoresql_single_filter_value_has_no_first_value_note");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status = 'inactive' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(!detail.contains("filter values"), "{detail}");
+}

@@ -614,11 +614,16 @@ fn split_on_operators(token: &str) -> Vec<&str> {
 }
 
 fn extract_columns_after_keyword(sql: &str, keyword: &str) -> Vec<String> {
-    let upper = sql.to_ascii_uppercase();
-    let Some(pos) = upper.find(keyword) else {
+    // Match the keyword as whole words, so `WHERE` inside an identifier such as `nowhere`
+    // isn't taken for the clause; `ORDER BY` may span any whitespace.
+    let words: Vec<String> = keyword.split_whitespace().map(regex::escape).collect();
+    let Ok(keyword_re) = regex::Regex::new(&format!(r"(?i)\b{}\b", words.join(r"\s+"))) else {
         return Vec::new();
     };
-    let after = &sql[pos + keyword.len()..];
+    let Some(m) = keyword_re.find(sql) else {
+        return Vec::new();
+    };
+    let after = &sql[m.end()..];
     // Take tokens until next SQL keyword
     let stop_keywords = [
         "SELECT",
@@ -1496,6 +1501,15 @@ fn score_filter_selectivity(
         .map(|(c, _)| c.to_ascii_uppercase())
         .collect();
 
+    // Only a column's first literal is looked up: combining several (`s = 'a' OR s = 'b'`)
+    // needs the boolean structure, which this pattern-based parser doesn't have. Say so.
+    let mut literal_counts: HashMap<&str, usize> = HashMap::new();
+    for ((_, val_opt), col_upper) in sql_info.where_predicates.iter().zip(upper_cols.iter()) {
+        if val_opt.is_some() {
+            *literal_counts.entry(col_upper.as_str()).or_default() += 1;
+        }
+    }
+
     for ((_, val_opt), col_upper) in sql_info.where_predicates.iter().zip(upper_cols.iter()) {
         for (cache_idx, cache) in caches.iter().enumerate() {
             if !handled.insert((cache_idx, col_upper.as_str())) {
@@ -1555,6 +1569,14 @@ fn score_filter_selectivity(
                         "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends \
                          on filter value",
                         cache.table_name, freq.field, top.value, top.percentage
+                    ));
+                }
+                let n = literal_counts.get(col_upper.as_str()).copied().unwrap_or(0);
+                if n > 1 {
+                    details.push(format!(
+                        "{}.{} has {n} filter values — selectivity estimated from the first value \
+                         only",
+                        cache.table_name, freq.field
                     ));
                 }
             }

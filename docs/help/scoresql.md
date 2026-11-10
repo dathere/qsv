@@ -17,9 +17,10 @@ performance score with actionable optimization suggestions BEFORE running the qu
 Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performance report
 (default) or JSON (--json). Supports Polars mode (default) and DuckDB mode (--duckdb).
 
+The report shows the query plan (EXPLAIN output from Polars or DuckDB) next to the score.
+
 Scoring factors include:  
-* Query plan analysis (EXPLAIN output from Polars or DuckDB)
-* Type optimization (column types vs. usage in query)
+* Type optimization (String columns compared with numbers, mismatched join key types)
 * Join key cardinality and data distribution
 * Filter selectivity from frequency cache
 * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)

@@ -5,9 +5,10 @@ performance score with actionable optimization suggestions BEFORE running the qu
 Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performance report
 (default) or JSON (--json). Supports Polars mode (default) and DuckDB mode (--duckdb).
 
+The report shows the query plan (EXPLAIN output from Polars or DuckDB) next to the score.
+
 Scoring factors include:
-  * Query plan analysis (EXPLAIN output from Polars or DuckDB)
-  * Type optimization (column types vs. usage in query)
+  * Type optimization (String columns compared with numbers, mismatched join key types)
   * Join key cardinality and data distribution
   * Filter selectivity from frequency cache
   * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)
@@ -695,6 +696,9 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     ];
     for m in ON_REGEX.find_iter(sql) {
         let after = &sql[m.end()..];
+        // a `)` that closes more than the clause opened ends it: the join was inside a
+        // subquery, and what follows (`) t`, `) AND status = ...`) belongs to the outer query
+        let mut depth = 0i32;
         'on_clause: for token in after.split_whitespace() {
             // Split on operators to handle a.id=b.id patterns
             for part in split_on_operators(token) {
@@ -718,6 +722,16 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
                 {
                     columns.push(col.to_string());
                 }
+            }
+            for c in token.bytes() {
+                match c {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {},
+                }
+            }
+            if depth < 0 {
+                break;
             }
         }
     }
@@ -1178,7 +1192,42 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
         }
     }
 
-    let explain_query = format!("{setup}EXPLAIN {}", args.arg_sql);
+    // A table name that isn't a plain identifier (`nyc-311`) only parses quoted. Callers such as
+    // describegpt substitute the bare file stem, so quote it, leaving literals and quoted names.
+    let mut odd_names: Vec<&String> = table_names
+        .iter()
+        .filter(|n| {
+            !n.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                || !n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect();
+    let query = if odd_names.is_empty() {
+        Cow::Borrowed(args.arg_sql.as_str())
+    } else {
+        odd_names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+        let alternatives = odd_names
+            .iter()
+            .map(|n| {
+                let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+                let start = if word(n.chars().next()) { r"\b" } else { "" };
+                let end = if word(n.chars().last()) { r"\b" } else { "" };
+                format!("{start}{}{end}", regex::escape(n))
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        let re = regex::Regex::new(&format!(r#"'(?:[^']|'')*'|"(?:[^"]|"")*"|{alternatives}"#))
+            .map_err(|e| format!("Failed to compile DuckDB table-name regex: {e}"))?;
+        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
+            let matched = &caps[0];
+            if matched.starts_with(['\'', '"']) {
+                matched.to_string()
+            } else {
+                format!(r#""{}""#, matched.replace('"', "\"\""))
+            }
+        })
+    };
+
+    let explain_query = format!("{setup}EXPLAIN {query}");
     let output = Command::new(duckdb_path)
         .arg("-csv")
         .arg("-c")
@@ -1292,8 +1341,9 @@ fn score_type_optimization(
                     cache.table_name, stat.field
                 ));
                 suggestions.push(format!(
-                    "Column '{}.{}' is typed as String but compared with a number — the \
-                     comparison is textual; cast it, or check why its values aren't all numeric",
+                    "Column '{}.{}' is typed as String but compared with a number — that is not a \
+                     numeric comparison (DuckDB fails casting the non-numeric values); quote the \
+                     literal, or cast the column if its values should be numeric",
                     cache.table_name, stat.field
                 ));
             }

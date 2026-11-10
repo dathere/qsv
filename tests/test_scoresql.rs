@@ -994,3 +994,63 @@ fn scoresql_duckdb_qualified_column_references() {
     let plan = json["plan"].as_str().unwrap();
     assert!(plan.contains("READ_CSV"), "{plan}");
 }
+
+#[test]
+fn scoresql_join_inside_subquery_ends_at_its_closing_paren() {
+    let wrk = setup_join("scoresql_join_inside_subquery_ends_at_its_closing_paren");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "status"],
+            svec!["1", "active"],
+            svec!["2", "inactive"],
+            svec!["3", "active"],
+        ],
+    );
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "employees.csv",
+            "departments.csv",
+            "SELECT id FROM data WHERE id IN (SELECT e.id FROM employees e JOIN departments d ON \
+             e.dept_id = d.dept_id) AND status = 'active' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(detail.contains("dept_id"), "{detail}");
+    assert!(!detail.contains("status"), "{detail}");
+}
+
+#[test]
+fn scoresql_duckdb_bare_non_identifier_table_name() {
+    // describegpt scores its SQL with the bare file stem substituted in (`FROM nyc-311`)
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_bare_non_identifier_table_name");
+    wrk.create(
+        "nyc-311.csv",
+        vec![
+            svec!["id", "borough"],
+            svec!["1", "BRONX"],
+            svec!["2", "QUEENS"],
+        ],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "nyc-311.csv",
+        "SELECT nyc-311.id, 'nyc-311' AS src FROM nyc-311 WHERE nyc-311.borough = 'BRONX' LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}

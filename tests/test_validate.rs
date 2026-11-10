@@ -583,8 +583,8 @@ fn validate_sarif_custom_keywords_and_uri() {
     );
 }
 
-// qsvlite does not read .gz input
-#[cfg(not(feature = "lite"))]
+// reading .gz input needs polars (see util::convert_special_format)
+#[cfg(feature = "polars")]
 #[test]
 fn validate_sarif_compressed_input_has_no_region() {
     use std::io::Write;

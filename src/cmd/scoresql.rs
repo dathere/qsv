@@ -363,11 +363,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let dist_score = score_data_distribution(&sql_info, &input_caches, &mut suggestions);
     let pattern_score = score_query_patterns(&sql_info, &mut suggestions);
 
-    // Infrastructure suggestions
+    // Infrastructure suggestions. Polars and DuckDB don't read a qsv index; it only lets
+    // `stats`/`frequency` build the caches in parallel. Stdin input is a temp copy that is
+    // deleted on exit, so indexing it would be pointless.
     for cache in &input_caches {
-        if !cache.has_index {
+        let is_stdin = stdin_input.as_ref() == Some(&cache.file_path)
+            || crate::config::is_stdin_spool(&cache.file_path);
+        if !cache.has_index && !is_stdin {
             suggestions.push(format!(
-                "Run `qsv index {}` to create an index for faster access",
+                "Run `qsv index {}` to speed up building the stats and frequency caches (the \
+                 query itself doesn't use the index)",
                 cache.file_path.display()
             ));
         }

@@ -1095,3 +1095,49 @@ fn scoresql_duckdb_numeric_stem_leaves_matching_literal() {
         serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
     assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
 }
+
+#[test]
+fn scoresql_index_suggestion_says_what_the_index_is_for() {
+    let wrk = setup("scoresql_index_suggestion_says_what_the_index_is_for");
+    let report = score_json(&wrk, &["data.csv", "SELECT id FROM data LIMIT 2"]);
+    let suggestions = report["suggestions"].as_array().unwrap();
+    let index_tip = suggestions
+        .iter()
+        .filter_map(|s| s.as_str())
+        .find(|s| s.contains("qsv index"))
+        .unwrap_or_else(|| panic!("no index suggestion in {report}"));
+    assert!(
+        index_tip.contains("stats and frequency caches")
+            && index_tip.contains("the query itself doesn't use the index"),
+        "{index_tip}"
+    );
+}
+
+#[test]
+fn scoresql_no_index_suggestion_for_stdin() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("scoresql_no_index_suggestion_for_stdin");
+    let mut cmd = wrk.command("scoresql");
+    cmd.args(["-", "SELECT a FROM stdin LIMIT 2", "--json", "--quiet"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a,b\n1,2\n3,4\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let suggestions = report["suggestions"].as_array().unwrap();
+    assert!(
+        !suggestions
+            .iter()
+            .any(|s| s.as_str().unwrap_or_default().contains("qsv index")),
+        "{report}"
+    );
+}

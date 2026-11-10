@@ -695,17 +695,29 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
         "AND", "OR", "NOT", "IS", "NULL", "IN", "BETWEEN", "LIKE", "OUTER", "AS", "TRUE", "FALSE",
     ];
     for m in ON_REGEX.find_iter(sql) {
-        // an odd number of `"` before the match puts it inside a quoted identifier (`a."on"`)
-        if sql[..m.start()].bytes().filter(|&b| b == b'"').count() % 2 == 1 {
+        // a column named "on" (`a."on"`) is an identifier, not a join clause
+        if sql[..m.start()].ends_with('"') && sql[m.end()..].starts_with('"') {
             continue;
         }
         let after = &sql[m.end()..];
         // a `)` that closes more than the clause opened ends it: the join was inside a
-        // subquery, and what follows (`) t`, `) AND status = ...`) belongs to the outer query
+        // subquery, and what follows (`) t`, `)AND(status = ...)`) belongs to the outer query
         let mut depth = 0i32;
         'on_clause: for token in after.split_whitespace() {
+            let mut cut = token.len();
+            for (i, c) in token.bytes().enumerate() {
+                match c {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {},
+                }
+                if depth < 0 {
+                    cut = i;
+                    break;
+                }
+            }
             // Split on operators to handle a.id=b.id patterns
-            for part in split_on_operators(token) {
+            for part in split_on_operators(&token[..cut]) {
                 // a function argument (`lower(a.x)`) is the column
                 let part = part.rsplit('(').next().unwrap_or(part);
                 let clean =
@@ -725,13 +737,6 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
                     && !col.is_empty()
                 {
                     columns.push(col.to_string());
-                }
-            }
-            for c in token.bytes() {
-                match c {
-                    b'(' => depth += 1,
-                    b')' => depth -= 1,
-                    _ => {},
                 }
             }
             if depth < 0 {
@@ -1221,12 +1226,23 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
             .join("|");
         let re = regex::Regex::new(&format!(r#"'(?:[^']|'')*'|"(?:[^"]|"")*"|{alternatives}"#))
             .map_err(|e| format!("Failed to compile DuckDB table-name regex: {e}"))?;
-        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
-            let matched = &caps[0];
-            if matched.starts_with(['\'', '"']) {
-                matched.to_string()
+        // only in table positions — after FROM/JOIN, or as a qualifier (`nyc-311.id`) — so a
+        // numeric stem (`2024.csv`) doesn't quote the literal in `WHERE year > 2024`
+        let sql = args.arg_sql.as_str();
+        re.replace_all(sql, |caps: &regex::Captures| {
+            let m = caps.get(0).unwrap();
+            let before = sql[..m.start()].trim_end().to_ascii_uppercase();
+            let is_table = ["FROM", "JOIN"].iter().any(|kw| {
+                before.strip_suffix(kw).is_some_and(|rest| {
+                    !rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                })
+            }) || sql[m.end()..].strip_prefix('.').is_some_and(|rest| {
+                rest.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '"')
+            });
+            if m.as_str().starts_with(['\'', '"']) || !is_table {
+                m.as_str().to_string()
             } else {
-                format!(r#""{}""#, matched.replace('"', "\"\""))
+                format!(r#""{}""#, m.as_str().replace('"', "\"\""))
             }
         })
     };

@@ -1025,3 +1025,73 @@ fn scoresql_quoted_on_identifier_is_not_a_join_clause() {
     );
     assert_eq!(category(&report, "Join cardinality").0, 0, "{report}");
 }
+
+#[test]
+fn scoresql_join_inside_subquery_ends_at_unspaced_paren() {
+    let wrk = setup_join("scoresql_join_inside_subquery_ends_at_unspaced_paren");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "status"],
+            svec!["1", "active"],
+            svec!["2", "inactive"],
+            svec!["3", "active"],
+        ],
+    );
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "employees.csv",
+            "departments.csv",
+            "SELECT id FROM data WHERE id IN (SELECT e.id FROM employees e JOIN departments d ON \
+             e.dept_id = d.dept_id)AND(status='active') LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(detail.contains("dept_id"), "{detail}");
+    assert!(!detail.contains("status"), "{detail}");
+}
+
+#[test]
+fn scoresql_double_quote_in_comment_does_not_hide_join() {
+    let wrk = setup_join("scoresql_double_quote_in_comment_does_not_hide_join");
+    let report = score_json(
+        &wrk,
+        &[
+            "employees.csv",
+            "departments.csv",
+            r#"SELECT e.name /* 6" key */ FROM employees e JOIN departments d ON e.dept_id = d.dept_id LIMIT 5"#,
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(!detail.contains("cartesian"), "{detail}");
+}
+
+#[test]
+fn scoresql_duckdb_numeric_stem_leaves_matching_literal() {
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_numeric_stem_leaves_matching_literal");
+    wrk.create(
+        "2024.csv",
+        vec![svec!["id", "year"], svec!["1", "2023"], svec!["2", "2025"]],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "2024.csv",
+        "SELECT 2024.id FROM 2024 WHERE year > 2024 AND id < 2024.5 LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}

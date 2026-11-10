@@ -1,0 +1,57 @@
+# Example GitHub Actions workflow: validate a CSV against a JSON Schema with qsv and show
+# the invalid rows as code scanning alerts on the CSV file.
+#
+# Copy it to .github/workflows/ in your repository and change DATA_FILE and SCHEMA_FILE.
+# It needs a qsv release with `validate --sarif` (the release after 28.0.0).
+#
+# Files beside this one:
+#   sales.csv          sample data with one error of each kind
+#   sales.schema.json  the JSON Schema it is validated against
+#   sales.csv.sarif    what `qsv validate --sarif` writes for them
+name: Validate CSV data
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # to upload code scanning results
+      security-events: write
+    env:
+      DATA_FILE: resources/examples/validate-sarif/sales.csv
+      SCHEMA_FILE: resources/examples/validate-sarif/sales.schema.json
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install qsv
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo dathere/qsv \
+            --pattern 'qsv-*-x86_64-unknown-linux-gnu.zip' --output qsv.zip
+          unzip -q qsv.zip -d "$RUNNER_TEMP/qsv"
+          chmod +x "$RUNNER_TEMP/qsv/qsv"
+          echo "$RUNNER_TEMP/qsv" >> "$GITHUB_PATH"
+
+      # --split-ragged reports rows with the wrong number of fields instead of stopping at the
+      # first one, which would write no SARIF file. The step fails when any row is invalid; the
+      # upload still runs, and the last step fails the job.
+      - name: Validate
+        id: validate
+        continue-on-error: true
+        run: qsv validate --split-ragged "$DATA_FILE" "$SCHEMA_FILE" --sarif qsv-validate.sarif
+
+      - name: Upload results to code scanning
+        if: always() && hashFiles('qsv-validate.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: qsv-validate.sarif
+          category: qsv-validate
+
+      - name: Fail if the data is invalid
+        if: steps.validate.outcome == 'failure'
+        run: exit 1

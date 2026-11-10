@@ -33,6 +33,12 @@ perf.data*
 # library pins are recorded in src/cmd/assets/i18n/VENDORED.md.
 !src/cmd/assets/i18n/**/*.json
 
+# Exception: the `validate --sarif` example linked from the validate USAGE. The blanket *.csv*
+# and *.json above would drop its files, and `validate_sarif_example_is_current` reads them.
+!resources/examples/validate-sarif/sales.csv
+!resources/examples/validate-sarif/sales.schema.json
+!resources/examples/validate-sarif/sales.csv.sarif
+
 # Exception: allow Claude Code settings, skill definition JSON files, npm config, and TypeScript configs
 !.claude/settings.json
 !.claude/skills/qsv/*.json

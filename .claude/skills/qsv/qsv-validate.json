@@ -127,6 +127,17 @@
         "description": "Same as --json, but pretty printed."
       },
       {
+        "flag": "--sarif",
+        "type": "string",
+        "description": "Also write the validation errors to <file> as a SARIF 2.1.0 log, for code scanning tools (e.g. GitHub code scanning). Each invalid field is a result, pointing at the line where its row starts. Unlike the other output files, it is written even when all rows are valid (with no results), so a CI run clears earlier findings. Only for JSON Schema validation mode with a file input (not stdin)."
+      },
+      {
+        "flag": "--sarif-max-results",
+        "type": "number",
+        "description": "The most results that --sarif writes; past it, the log notes that results were cut. The default is GitHub code scanning's limit per run, which rejects a log with more. Other tools may accept more. Set to 0 for no limit.",
+        "default": 25000
+      },
+      {
         "flag": "--size-limit",
         "type": "number",
         "description": "Set the approximate size limit, in megabytes, of a compiled regex.",
@@ -197,6 +208,10 @@
     {
       "description": "Validate CSV files listed in a '.infile-list' file against a JSON Schema",
       "command": "qsv validate files.infile-list schema.json"
+    },
+    {
+      "description": "Also write the errors as a SARIF log, for code scanning tools like GitHub code scanning. --split-ragged reports ragged rows instead of stopping before the SARIF log is written.",
+      "command": "qsv validate --split-ragged data.csv schema.json --sarif validate.sarif"
     }
   ]
 }

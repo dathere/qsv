@@ -2056,6 +2056,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 sarif_path.display()
             );
         }
+        // a run that aborts writes no log, so it must not leave an earlier run's log behind
+        // for a CI step to upload as current
+        match std::fs::remove_file(sarif_path) {
+            Ok(()) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => {
+                return fail_clierror!("Cannot replace --sarif {}: {e}", sarif_path.display());
+            },
+        }
     }
     // base name of the valid/invalid/validation-errors output files
     let output_base = if stdin_input {

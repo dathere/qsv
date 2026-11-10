@@ -721,6 +721,80 @@ fn validate_sarif_refuses_to_overwrite_inputs() {
     );
 }
 
+#[test]
+fn validate_sarif_abort_leaves_no_log() {
+    let wrk = Workdir::new("validate_sarif_abort_leaves_no_log");
+    wrk.create_from_string("schema.json", SARIF_TEST_SCHEMA);
+    // without --split-ragged, a ragged row stops validation
+    wrk.create_from_string("data.csv", "id,name\n1,a\n2\n");
+    // a log from an earlier run must not survive to be uploaded as this run's
+    wrk.create_from_string("out.sarif", "{\"stale\": true}");
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv")
+        .arg("schema.json")
+        .args(["--sarif", "out.sarif"]);
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("out.sarif").exists());
+}
+
+#[test]
+fn validate_sarif_logs_match_the_sarif_schema() {
+    let read = |path: &str| -> serde_json::Value {
+        serde_json::from_str(
+            &std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR"))).unwrap(),
+        )
+        .unwrap()
+    };
+    // the official OASIS schema; see resources/test/sarif-schema-2.1.0.NOTICE.txt
+    let sarif_schema = read("resources/test/sarif-schema-2.1.0.json");
+    let validator = jsonschema::validator_for(&sarif_schema).unwrap();
+
+    // a fresh log with every optional part qsv writes: a result per rule kind, with and
+    // without a region, and the truncation notification
+    let wrk = Workdir::new("validate_sarif_logs_match_the_sarif_schema");
+    wrk.create_subdir(".git").unwrap();
+    let example_dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/examples/validate-sarif/"
+    );
+    for name in ["sales.csv", "sales.schema.json"] {
+        wrk.create_from_string(
+            name,
+            &std::fs::read_to_string(format!("{example_dir}{name}")).unwrap(),
+        );
+    }
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .arg("sales.csv")
+        .arg("sales.schema.json")
+        .args(["--sarif", "capped.sarif", "--sarif-max-results", "3"]);
+    wrk.assert_err(&mut cmd);
+    let capped: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("capped.sarif").unwrap()).unwrap();
+    assert!(
+        capped["runs"][0]["invocations"][0]
+            .get("toolExecutionNotifications")
+            .is_some()
+    );
+
+    for (name, log) in [
+        ("capped run", capped),
+        (
+            "resources/examples/validate-sarif/sales.csv.sarif",
+            read("resources/examples/validate-sarif/sales.csv.sarif"),
+        ),
+    ] {
+        let errors: Vec<String> = validator
+            .iter_errors(&log)
+            .map(|e| format!("{}: {e}", e.instance_path()))
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "{name} is not valid SARIF 2.1.0: {errors:#?}"
+        );
+    }
+}
+
 /// The example linked from the `validate` USAGE: its `sales.csv.sarif` must be what qsv
 /// writes for `sales.csv` and `sales.schema.json`.
 #[test]

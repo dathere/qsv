@@ -7379,6 +7379,45 @@ fn sqlp_stdin_default_delimiter_env() {
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "b\n2");
 }
 
+// Polars SQL behavior changed between a9bce97 and ff1b37d.
+
+#[test]
+fn sqlp_case_strict_cast_ignores_unselected_rows() {
+    // pola-rs/polars#30682: the ELSE branch's strict CAST no longer sees the rows its WHEN
+    // selected. On a9bce97 the NULL `v` of the `a = true` rows was COALESCED to -1 and failed
+    // the UTINYINT cast, although those rows take the THEN branch.
+    let wrk = Workdir::new("sqlp_case_strict_cast_ignores_unselected_rows");
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["a", "v"],
+            svec!["true", ""],
+            svec!["true", "3"],
+            svec!["false", "2"],
+            svec!["false", "5"],
+            svec!["true", ""],
+            svec!["false", "7"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT CASE WHEN a THEN 0 ELSE CAST(COALESCE(v, -1) AS UTINYINT) END AS r FROM t");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["r"],
+            svec!["0"],
+            svec!["0"],
+            svec!["2"],
+            svec!["5"],
+            svec!["0"],
+            svec!["7"],
+        ]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
 // ---------------------------------------------------------------------------

@@ -5,9 +5,10 @@ performance score with actionable optimization suggestions BEFORE running the qu
 Accepts the same input/SQL arguments as sqlp. Outputs a human-readable performance report
 (default) or JSON (--json). Supports Polars mode (default) and DuckDB mode (--duckdb).
 
+The report shows the query plan (EXPLAIN output from Polars or DuckDB) next to the score.
+
 Scoring factors include:
-  * Query plan analysis (EXPLAIN output from Polars or DuckDB)
-  * Type optimization (column types vs. usage in query)
+  * Type optimization (String columns compared with numbers)
   * Join key cardinality and data distribution
   * Filter selectivity from frequency cache
   * Query anti-pattern detection (SELECT *, missing LIMIT, cartesian joins, etc.)
@@ -189,9 +190,12 @@ enum WhereLiteral {
     /// SQL keyword: `TRUE`, `FALSE`, or `NULL`. Stored as upper-case canonical
     /// form so callers can match with `==`.
     Keyword(String),
-    /// Quoted string (already un-escaped) or numeric literal. Compared with
-    /// exact string equality against frequency-cache values.
+    /// Quoted string (already un-escaped). Compared with exact string equality
+    /// against frequency-cache values.
     Value(String),
+    /// Unquoted numeric literal, kept as written. Matched like `Value`; kept apart
+    /// so `score_type_optimization` can flag a String column compared with a number.
+    Number(String),
 }
 
 // ── Cache data per input file ──────────────────────────────────────────────
@@ -357,13 +361,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let join_score = score_join_cardinality(&sql_info, &input_caches, &mut suggestions);
     let filter_score = score_filter_selectivity(&sql_info, &input_caches, &mut suggestions);
     let dist_score = score_data_distribution(&sql_info, &input_caches, &mut suggestions);
-    let pattern_score = score_query_patterns(&sql_info, &plan, &mut suggestions);
+    let pattern_score = score_query_patterns(&sql_info, &mut suggestions);
 
-    // Infrastructure suggestions
+    // Infrastructure suggestions. Polars and DuckDB don't read a qsv index; it only lets
+    // `stats`/`frequency` build the caches in parallel. Stdin input is a temp copy that is
+    // deleted on exit, so indexing it would be pointless.
     for cache in &input_caches {
-        if !cache.has_index {
+        let is_stdin = stdin_input.as_ref() == Some(&cache.file_path)
+            || crate::config::is_stdin_spool(&cache.file_path);
+        if !cache.has_index && !is_stdin {
             suggestions.push(format!(
-                "Run `qsv index {}` to create an index for faster access",
+                "Run `qsv index {}` to speed up building the stats and frequency caches (the \
+                 query itself doesn't use the index)",
                 cache.file_path.display()
             ));
         }
@@ -502,8 +511,12 @@ fn parse_sql(sql: &str) -> SqlInfo {
     // Tracks quote state to avoid false positives from string literals
     // like `WHERE col = '(SELECT ...'`, and checks word boundaries to
     // avoid matching identifiers like `SELECTIVITY`.
+    //
+    // A paren opened right after `AS` (or `AS [NOT] MATERIALIZED`) is a CTE body
+    // (`WITH c AS (SELECT ...)`): its own SELECT is not a nested subquery, though a
+    // subquery inside it still counts. One flag per open paren tracks that.
     let has_subquery = {
-        let mut depth = 0i32;
+        let mut cte_body: Vec<bool> = Vec::new();
         let mut in_quote = false;
         let mut found = false;
         let bytes = upper.as_bytes();
@@ -519,10 +532,16 @@ fn parse_sql(sql: &str) -> SqlInfo {
                 continue;
             }
             if b == b'(' {
-                depth += 1;
+                let before = upper[..i].trim_end();
+                let opens_cte = ["AS", "MATERIALIZED"].iter().any(|kw| {
+                    before.strip_suffix(kw).is_some_and(|rest| {
+                        !rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                    })
+                });
+                cte_body.push(opens_cte);
             } else if b == b')' {
-                depth -= 1;
-            } else if depth > 0
+                cte_body.pop();
+            } else if cte_body.last() == Some(&false)
                 && b == b'S'
                 && (i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_'))
                 && bytes.get(i..i + select_bytes.len()) == Some(select_bytes)
@@ -595,11 +614,16 @@ fn split_on_operators(token: &str) -> Vec<&str> {
 }
 
 fn extract_columns_after_keyword(sql: &str, keyword: &str) -> Vec<String> {
-    let upper = sql.to_ascii_uppercase();
-    let Some(pos) = upper.find(keyword) else {
+    // Match the keyword as whole words, so `WHERE` inside an identifier such as `nowhere`
+    // isn't taken for the clause; `ORDER BY` may span any whitespace.
+    let words: Vec<String> = keyword.split_whitespace().map(regex::escape).collect();
+    let Ok(keyword_re) = regex::Regex::new(&format!(r"(?i)\b{}\b", words.join(r"\s+"))) else {
         return Vec::new();
     };
-    let after = &sql[pos + keyword.len()..];
+    let Some(m) = keyword_re.find(sql) else {
+        return Vec::new();
+    };
+    let after = &sql[m.end()..];
     // Take tokens until next SQL keyword
     let stop_keywords = [
         "SELECT",
@@ -653,27 +677,80 @@ fn extract_join_columns(sql: &str) -> Vec<String> {
     let upper = sql.to_ascii_uppercase();
     let mut columns = Vec::new();
 
-    // Look for ON clause
-    for (i, _) in upper.match_indices(" ON ") {
-        let after = &sql[i + 4..];
+    // Look for ON clauses. `ON` may start a line or follow a `)`, so match it as a word, not
+    // as " ON ". Join keys may be unqualified (`ON id = id2`) when the names are unambiguous.
+    static ON_REGEX: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)\bON\b").unwrap());
+    const ON_CLAUSE_END: [&str; 18] = [
+        "WHERE",
+        "ORDER",
+        "GROUP",
+        "HAVING",
+        "LIMIT",
+        "JOIN",
+        "INNER",
+        "LEFT",
+        "RIGHT",
+        "FULL",
+        "CROSS",
+        "NATURAL",
+        "UNION",
+        "EXCEPT",
+        "INTERSECT",
+        "WINDOW",
+        "SELECT",
+        "FROM",
+    ];
+    const ON_CLAUSE_SKIP: [&str; 12] = [
+        "AND", "OR", "NOT", "IS", "NULL", "IN", "BETWEEN", "LIKE", "OUTER", "AS", "TRUE", "FALSE",
+    ];
+    for m in ON_REGEX.find_iter(sql) {
+        // a column named "on" (`a."on"`) is an identifier, not a join clause
+        if sql[..m.start()].ends_with('"') && sql[m.end()..].starts_with('"') {
+            continue;
+        }
+        let after = &sql[m.end()..];
+        // a `)` that closes more than the clause opened ends it: the join was inside a
+        // subquery, and what follows (`) t`, `)AND(status = ...)`) belongs to the outer query
+        let mut depth = 0i32;
         'on_clause: for token in after.split_whitespace() {
+            let mut cut = token.len();
+            for (i, c) in token.bytes().enumerate() {
+                match c {
+                    b'(' => depth += 1,
+                    b')' => depth -= 1,
+                    _ => {},
+                }
+                if depth < 0 {
+                    cut = i;
+                    break;
+                }
+            }
             // Split on operators to handle a.id=b.id patterns
-            for part in split_on_operators(token) {
+            for part in split_on_operators(&token[..cut]) {
+                // a function argument (`lower(a.x)`) is the column
+                let part = part.rsplit('(').next().unwrap_or(part);
                 let clean =
                     part.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '.');
                 let upper_clean = clean.to_ascii_uppercase();
-                if ["WHERE", "ORDER", "GROUP", "HAVING", "LIMIT", "JOIN"]
-                    .contains(&upper_clean.as_str())
-                {
+                if ON_CLAUSE_END.contains(&upper_clean.as_str()) {
                     break 'on_clause;
                 }
-                if clean.contains('.')
-                    && let Some(col) = clean.split('.').next_back()
+                if clean.is_empty()
+                    || ON_CLAUSE_SKIP.contains(&upper_clean.as_str())
+                    || part.starts_with('\'')
+                    || clean.parse::<f64>().is_ok()
+                {
+                    continue;
+                }
+                if let Some(col) = clean.rsplit('.').next()
                     && !col.is_empty()
-                    && !["AND", "OR"].contains(&upper_clean.as_str())
                 {
                     columns.push(col.to_string());
                 }
+            }
+            if depth < 0 {
+                break;
             }
         }
     }
@@ -829,7 +906,7 @@ fn extract_where_predicates(sql: &str) -> Vec<(String, Option<WhereLiteral>)> {
             if matches!(upper.as_str(), "TRUE" | "FALSE" | "NULL") {
                 WhereLiteral::Keyword(upper)
             } else {
-                WhereLiteral::Value(val_raw.to_string())
+                WhereLiteral::Number(val_raw.to_string())
             }
         };
         preds.push((col, Some(value)));
@@ -883,8 +960,7 @@ fn load_or_generate_caches(
         };
 
     // Check for index
-    let idx_path = canonical.with_extension("csv.idx");
-    let has_index = idx_path.exists();
+    let has_index = util::idx_path(&canonical).exists();
 
     Ok(InputCacheData {
         file_path: input_path.to_path_buf(),
@@ -1116,62 +1192,72 @@ fn get_polars_plan(
 fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
     let duckdb_path = get_duckdb_path()?;
 
-    // Translate _t_N aliases and table names to read_csv('path').
-    // Process replacements longest-first to avoid partial matches
-    // (e.g., "data" matching inside "data2").
-    let mut replacements: Vec<(String, String)> = Vec::new();
+    // Register each input as views named after its table name and its _t_N alias, then
+    // EXPLAIN the query unchanged. Rewriting names in the SQL text instead turned qualified
+    // column references (`data.id`) into `read_csv_auto('...').id`, which DuckDB rejects.
+    let mut setup = String::new();
+    let mut registered: foldhash::HashSet<String> = foldhash::HashSet::default();
     for (idx, input) in args.arg_input.iter().enumerate() {
-        let alias = format!("_t_{}", idx + 1);
-        let table_name = &table_names[idx];
         let escaped = input.to_string_lossy().replace('\'', "''");
         let skip = crate::config::duckdb_skip_arg(input);
-        let read_csv = format!("read_csv_auto('{escaped}'{skip})");
-        replacements.push((alias, read_csv.clone()));
-        // Only add table_name replacement if it differs from the alias
-        if *table_name != format!("_t_{}", idx + 1) {
-            replacements.push((table_name.clone(), read_csv));
+        for name in [table_names[idx].clone(), format!("_t_{}", idx + 1)] {
+            if registered.insert(name.to_ascii_lowercase()) {
+                let _ = write!(
+                    setup,
+                    r#"CREATE VIEW "{}" AS SELECT * FROM read_csv_auto('{escaped}'{skip}); "#,
+                    name.replace('"', "\"\"")
+                );
+            }
         }
     }
-    // Sort by length descending so longer names are replaced first
-    replacements.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
-    // Deduplicate in case a table name equals an alias
-    replacements.dedup_by(|a, b| a.0 == b.0);
 
-    // Build a single combined regex for one-pass replacement.
-    // The regex matches single-quoted strings first (to skip them) OR table names/aliases.
-    // This prevents replacing table names that appear inside SQL string literals
-    // (e.g., inside an existing read_csv_auto('...') call in a .sql script).
-    let query = if replacements.is_empty() {
-        args.arg_sql.clone()
+    // A table name that isn't a plain identifier (`nyc-311`) only parses quoted. Callers such as
+    // describegpt substitute the bare file stem, so quote it, leaving literals and quoted names.
+    let mut odd_names: Vec<&String> = table_names
+        .iter()
+        .filter(|n| {
+            !n.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                || !n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect();
+    let query = if odd_names.is_empty() {
+        Cow::Borrowed(args.arg_sql.as_str())
     } else {
-        let alternatives: String = replacements
+        odd_names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+        let alternatives = odd_names
             .iter()
-            .map(|(name, _)| regex::escape(name))
+            .map(|n| {
+                let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+                let start = if word(n.chars().next()) { r"\b" } else { "" };
+                let end = if word(n.chars().last()) { r"\b" } else { "" };
+                format!("{start}{}{end}", regex::escape(n))
+            })
             .collect::<Vec<_>>()
             .join("|");
-        // Match single-quoted strings (including '' and \' escaped quotes) OR table names
-        let pattern = format!(r"'(?:[^'\\]|\\'|''|\\\\)*'|\b(?:{alternatives})\b");
-        let re = regex::Regex::new(&pattern)
-            .map_err(|e| format!("Failed to compile DuckDB alias regex: {e}"))?;
-
-        let replacement_lookup: HashMap<&str, &str> = replacements
-            .iter()
-            .map(|(name, target)| (name.as_str(), target.as_str()))
-            .collect();
-
-        re.replace_all(&args.arg_sql, |caps: &regex::Captures| {
-            let matched = caps.get(0).unwrap().as_str();
-            // If the match starts with a quote, it's a string literal — keep it as-is
-            if matched.starts_with('\'') {
-                matched.to_string()
+        let re = regex::Regex::new(&format!(r#"'(?:[^']|'')*'|"(?:[^"]|"")*"|{alternatives}"#))
+            .map_err(|e| format!("Failed to compile DuckDB table-name regex: {e}"))?;
+        // only in table positions — after FROM/JOIN, or as a qualifier (`nyc-311.id`) — so a
+        // numeric stem (`2024.csv`) doesn't quote the literal in `WHERE year > 2024`
+        let sql = args.arg_sql.as_str();
+        re.replace_all(sql, |caps: &regex::Captures| {
+            let m = caps.get(0).unwrap();
+            let before = sql[..m.start()].trim_end().to_ascii_uppercase();
+            let is_table = ["FROM", "JOIN"].iter().any(|kw| {
+                before.strip_suffix(kw).is_some_and(|rest| {
+                    !rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+                })
+            }) || sql[m.end()..].strip_prefix('.').is_some_and(|rest| {
+                rest.starts_with(|c: char| c.is_alphabetic() || matches!(c, '_' | '"' | '*'))
+            });
+            if m.as_str().starts_with(['\'', '"']) || !is_table {
+                m.as_str().to_string()
             } else {
-                replacement_lookup[matched].to_string()
+                format!(r#""{}""#, m.as_str().replace('"', "\"\""))
             }
         })
-        .into_owned()
     };
 
-    let explain_query = format!("EXPLAIN {query}");
+    let explain_query = format!("{setup}EXPLAIN {query}");
     let output = Command::new(duckdb_path)
         .arg("-csv")
         .arg("-c")
@@ -1265,31 +1351,29 @@ fn score_type_optimization(
     let mut score = WEIGHT_TYPE_OPT;
     let mut issues = Vec::new();
 
-    // Check columns used in WHERE/JOIN — ideally they should be numeric types for comparisons
-    let comparison_cols: Vec<&str> = sql_info
-        .where_columns
-        .iter()
-        .chain(sql_info.join_columns.iter())
-        .map(String::as_str)
-        .collect();
-
-    for cache in caches {
-        for stat in &cache.stats {
-            let col_upper = stat.field.to_ascii_uppercase();
-            let is_referenced = comparison_cols
+    // A String column is only a problem when the query treats it as a number. Comparing it
+    // with a string literal (`name = 'Bob'`) is the right type for the job.
+    let mut flagged: foldhash::HashSet<(&str, &str)> = foldhash::HashSet::default();
+    for (col, lit) in &sql_info.where_predicates {
+        if !matches!(lit, Some(WhereLiteral::Number(_))) {
+            continue;
+        }
+        for cache in caches {
+            if let Some(stat) = cache
+                .stats
                 .iter()
-                .any(|c| c.to_ascii_uppercase() == col_upper);
-
-            if is_referenced && stat.r#type == "String" {
-                // String type used in comparison — potential issue
+                .find(|s| s.r#type == "String" && s.field.eq_ignore_ascii_case(col))
+                && flagged.insert((cache.table_name.as_str(), stat.field.as_str()))
+            {
                 score = score.saturating_sub(3);
                 issues.push(format!(
-                    "{}.{} used in comparison but typed as String",
+                    "{}.{} compared with a number but typed as String",
                     cache.table_name, stat.field
                 ));
                 suggestions.push(format!(
-                    "Column '{}.{}' is typed as String but used in comparisons — consider casting \
-                     or ensuring proper type inference",
+                    "Column '{}.{}' is typed as String but compared with a number — that is not a \
+                     numeric comparison (DuckDB fails casting the non-numeric values); quote the \
+                     literal, or cast the column if its values should be numeric",
                     cache.table_name, stat.field
                 ));
             }
@@ -1417,6 +1501,15 @@ fn score_filter_selectivity(
         .map(|(c, _)| c.to_ascii_uppercase())
         .collect();
 
+    // Only a column's first literal is looked up: combining several (`s = 'a' OR s = 'b'`)
+    // needs the boolean structure, which this pattern-based parser doesn't have. Say so.
+    let mut literal_counts: HashMap<&str, usize> = HashMap::new();
+    for ((_, val_opt), col_upper) in sql_info.where_predicates.iter().zip(upper_cols.iter()) {
+        if val_opt.is_some() {
+            *literal_counts.entry(col_upper.as_str()).or_default() += 1;
+        }
+    }
+
     for ((_, val_opt), col_upper) in sql_info.where_predicates.iter().zip(upper_cols.iter()) {
         for (cache_idx, cache) in caches.iter().enumerate() {
             if !handled.insert((cache_idx, col_upper.as_str())) {
@@ -1446,7 +1539,9 @@ fn score_filter_selectivity(
                             .frequencies
                             .iter()
                             .find(|fv| fv.value.eq_ignore_ascii_case(k)),
-                        WhereLiteral::Value(v) => freq.frequencies.iter().find(|fv| fv.value == *v),
+                        WhereLiteral::Value(v) | WhereLiteral::Number(v) => {
+                            freq.frequencies.iter().find(|fv| fv.value == *v)
+                        },
                     })
                     .map(|fv| fv.percentage);
 
@@ -1474,6 +1569,14 @@ fn score_filter_selectivity(
                         "{}.{} is highly skewed (top value '{}' = {:.0}%) — selectivity depends \
                          on filter value",
                         cache.table_name, freq.field, top.value, top.percentage
+                    ));
+                }
+                let n = literal_counts.get(col_upper.as_str()).copied().unwrap_or(0);
+                if n > 1 {
+                    details.push(format!(
+                        "{}.{} has {n} filter values — selectivity estimated from the first value \
+                         only",
+                        cache.table_name, freq.field
                     ));
                 }
             }
@@ -1601,11 +1704,7 @@ fn score_data_distribution(
     (score, detail)
 }
 
-fn score_query_patterns(
-    sql_info: &SqlInfo,
-    plan: &str,
-    suggestions: &mut Vec<String>,
-) -> (u32, String) {
+fn score_query_patterns(sql_info: &SqlInfo, suggestions: &mut Vec<String>) -> (u32, String) {
     let mut score = WEIGHT_PATTERNS;
     let mut issues = Vec::new();
 
@@ -1641,13 +1740,6 @@ fn score_query_patterns(
     if sql_info.has_join && sql_info.join_columns.is_empty() {
         score = score.saturating_sub(5);
         issues.push("cartesian join — missing ON/WHERE clause".to_string());
-    }
-
-    // Check plan for full table scans
-    let plan_upper = plan.to_ascii_uppercase();
-    if plan_upper.contains("FULL SCAN") || plan_upper.contains("TABLE SCAN") {
-        score = score.saturating_sub(2);
-        issues.push("full table scan in query plan".to_string());
     }
 
     let detail = if issues.is_empty() {

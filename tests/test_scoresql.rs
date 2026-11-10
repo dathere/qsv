@@ -770,3 +770,463 @@ fn scoresql_duckdb_sniff_preamble_skips_preamble_lines() {
     let json: serde_json::Value = serde_json::from_str(&got).unwrap();
     assert!(json["score"].as_u64().is_some(), "{got}");
 }
+
+/// Run `scoresql --json` and return the parsed report.
+fn score_json(wrk: &Workdir, args: &[&str]) -> serde_json::Value {
+    let mut cmd = wrk.command("scoresql");
+    cmd.arg("--json").args(args);
+    let got: String = wrk.stdout(&mut cmd);
+    serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"))
+}
+
+/// `(score, detail)` of one scoring-breakdown category.
+fn category(report: &serde_json::Value, name: &str) -> (u64, String) {
+    let b = report["breakdown"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["category"] == name)
+        .unwrap_or_else(|| panic!("no {name} category in {report}"));
+    (
+        b["score"].as_u64().unwrap(),
+        b["detail"].as_str().unwrap().to_string(),
+    )
+}
+
+#[test]
+fn scoresql_join_on_at_line_start_is_not_cartesian() {
+    let wrk = setup_join("scoresql_join_on_at_line_start_is_not_cartesian");
+    let report = score_json(
+        &wrk,
+        &[
+            "employees.csv",
+            "departments.csv",
+            "SELECT e.name FROM employees e JOIN departments d\nON e.dept_id = d.dept_id LIMIT 5",
+        ],
+    );
+    let (score, detail) = category(&report, "Join cardinality");
+    assert!(!detail.contains("cartesian"), "{detail}");
+    assert!(score > 0, "{report}");
+}
+
+#[test]
+fn scoresql_join_unqualified_keys_are_not_cartesian() {
+    let wrk = setup_join("scoresql_join_unqualified_keys_are_not_cartesian");
+    let report = score_json(
+        &wrk,
+        &[
+            "employees.csv",
+            "departments.csv",
+            "SELECT name FROM employees JOIN (SELECT dept_id AS did, dept_name FROM departments) \
+             t ON dept_id = did LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(!detail.contains("cartesian"), "{detail}");
+    let (_, patterns) = category(&report, "Query patterns");
+    assert!(!patterns.contains("cartesian"), "{patterns}");
+}
+
+#[test]
+fn scoresql_cross_join_without_condition_is_still_cartesian() {
+    let wrk = setup_join("scoresql_cross_join_without_condition_is_still_cartesian");
+    let report = score_json(
+        &wrk,
+        &[
+            "employees.csv",
+            "departments.csv",
+            "SELECT name FROM employees CROSS JOIN departments LIMIT 5",
+        ],
+    );
+    assert_eq!(category(&report, "Join cardinality").0, 0, "{report}");
+}
+
+#[test]
+fn scoresql_cte_is_not_a_nested_subquery() {
+    let wrk = setup("scoresql_cte_is_not_a_nested_subquery");
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "WITH a AS (SELECT id, age FROM data) SELECT id FROM a WHERE age > 30 LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Query patterns");
+    assert!(!detail.contains("subquery"), "{detail}");
+}
+
+#[test]
+fn scoresql_subquery_inside_cte_is_still_nested() {
+    let wrk = setup("scoresql_subquery_inside_cte_is_still_nested");
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "WITH a AS (SELECT id FROM data WHERE id IN (SELECT id FROM data WHERE age > 30)) \
+             SELECT id FROM a LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Query patterns");
+    assert!(detail.contains("nested subquery"), "{detail}");
+}
+
+#[test]
+fn scoresql_string_column_vs_string_literal_is_not_penalized() {
+    let wrk = setup("scoresql_string_column_vs_string_literal_is_not_penalized");
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "SELECT id FROM data WHERE status = 'active' LIMIT 5",
+        ],
+    );
+    assert_eq!(category(&report, "Type optimization").0, 20, "{report}");
+}
+
+#[test]
+fn scoresql_string_column_vs_number_is_penalized() {
+    let wrk = setup("scoresql_string_column_vs_number_is_penalized");
+    let report = score_json(
+        &wrk,
+        &["data.csv", "SELECT id FROM data WHERE status = 1 LIMIT 5"],
+    );
+    let (score, detail) = category(&report, "Type optimization");
+    assert!(score < 20, "{report}");
+    assert!(
+        detail.contains("data.status compared with a number"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn scoresql_finds_index_of_non_csv_extension() {
+    let wrk = Workdir::new("scoresql_finds_index_of_non_csv_extension");
+    wrk.create_from_string("data.tsv", "id\tname\n1\tAlice\n2\tBob\n3\tCarol\n");
+    let mut index = wrk.command("index");
+    index.arg("data.tsv");
+    wrk.assert_success(&mut index);
+    assert!(wrk.path("data.tsv.idx").exists());
+
+    let report = score_json(&wrk, &["data.tsv", "SELECT id FROM data LIMIT 2"]);
+    assert_eq!(
+        report["cache_status"]["index_missing"],
+        serde_json::json!([]),
+        "{report}"
+    );
+    assert_eq!(
+        report["cache_status"]["index_available"],
+        serde_json::json!(["data"]),
+        "{report}"
+    );
+}
+
+#[test]
+fn scoresql_duckdb_qualified_column_references() {
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = setup_join("scoresql_duckdb_qualified_column_references");
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "employees.csv",
+        "departments.csv",
+        "SELECT employees.name, _t_2.dept_name, 'employees' AS label FROM employees JOIN _t_2 ON \
+         employees.dept_id = _t_2.dept_id LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    let plan = json["plan"].as_str().unwrap();
+    assert!(plan.contains("READ_CSV"), "{plan}");
+}
+
+#[test]
+fn scoresql_join_inside_subquery_ends_at_its_closing_paren() {
+    let wrk = setup_join("scoresql_join_inside_subquery_ends_at_its_closing_paren");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "status"],
+            svec!["1", "active"],
+            svec!["2", "inactive"],
+            svec!["3", "active"],
+        ],
+    );
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "employees.csv",
+            "departments.csv",
+            "SELECT id FROM data WHERE id IN (SELECT e.id FROM employees e JOIN departments d ON \
+             e.dept_id = d.dept_id) AND status = 'active' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(detail.contains("dept_id"), "{detail}");
+    assert!(!detail.contains("status"), "{detail}");
+}
+
+#[test]
+fn scoresql_duckdb_bare_non_identifier_table_name() {
+    // describegpt scores its SQL with the bare file stem substituted in (`FROM nyc-311`)
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_bare_non_identifier_table_name");
+    wrk.create(
+        "nyc-311.csv",
+        vec![
+            svec!["id", "borough"],
+            svec!["1", "BRONX"],
+            svec!["2", "QUEENS"],
+        ],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "nyc-311.csv",
+        "SELECT nyc-311.id, 'nyc-311' AS src FROM nyc-311 WHERE nyc-311.borough = 'BRONX' LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}
+
+#[test]
+fn scoresql_quoted_on_identifier_is_not_a_join_clause() {
+    let wrk = Workdir::new("scoresql_quoted_on_identifier_is_not_a_join_clause");
+    wrk.create(
+        "a.csv",
+        vec![svec!["id", "on"], svec!["1", "x"], svec!["2", "y"]],
+    );
+    wrk.create("b.csv", vec![svec!["k"], svec!["p"], svec!["q"]]);
+    let report = score_json(
+        &wrk,
+        &[
+            "a.csv",
+            "b.csv",
+            r#"SELECT a."on", a.id FROM a CROSS JOIN b LIMIT 5"#,
+        ],
+    );
+    assert_eq!(category(&report, "Join cardinality").0, 0, "{report}");
+}
+
+#[test]
+fn scoresql_join_inside_subquery_ends_at_unspaced_paren() {
+    let wrk = setup_join("scoresql_join_inside_subquery_ends_at_unspaced_paren");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "status"],
+            svec!["1", "active"],
+            svec!["2", "inactive"],
+            svec!["3", "active"],
+        ],
+    );
+    let report = score_json(
+        &wrk,
+        &[
+            "data.csv",
+            "employees.csv",
+            "departments.csv",
+            "SELECT id FROM data WHERE id IN (SELECT e.id FROM employees e JOIN departments d ON \
+             e.dept_id = d.dept_id)AND(status='active') LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(detail.contains("dept_id"), "{detail}");
+    assert!(!detail.contains("status"), "{detail}");
+}
+
+#[test]
+fn scoresql_double_quote_in_comment_does_not_hide_join() {
+    let wrk = setup_join("scoresql_double_quote_in_comment_does_not_hide_join");
+    let report = score_json(
+        &wrk,
+        &[
+            "employees.csv",
+            "departments.csv",
+            r#"SELECT e.name /* 6" key */ FROM employees e JOIN departments d ON e.dept_id = d.dept_id LIMIT 5"#,
+        ],
+    );
+    let (_, detail) = category(&report, "Join cardinality");
+    assert!(!detail.contains("cartesian"), "{detail}");
+}
+
+#[test]
+fn scoresql_duckdb_numeric_stem_leaves_matching_literal() {
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_numeric_stem_leaves_matching_literal");
+    wrk.create(
+        "2024.csv",
+        vec![svec!["id", "year"], svec!["1", "2023"], svec!["2", "2025"]],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "2024.csv",
+        "SELECT 2024.id FROM 2024 WHERE year > 2024 AND id < 2024.5 LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}
+
+#[test]
+fn scoresql_index_suggestion_says_what_the_index_is_for() {
+    let wrk = setup("scoresql_index_suggestion_says_what_the_index_is_for");
+    let report = score_json(&wrk, &["data.csv", "SELECT id FROM data LIMIT 2"]);
+    let suggestions = report["suggestions"].as_array().unwrap();
+    let index_tip = suggestions
+        .iter()
+        .filter_map(|s| s.as_str())
+        .find(|s| s.contains("qsv index"))
+        .unwrap_or_else(|| panic!("no index suggestion in {report}"));
+    assert!(
+        index_tip.contains("stats and frequency caches")
+            && index_tip.contains("the query itself doesn't use the index"),
+        "{index_tip}"
+    );
+}
+
+#[test]
+fn scoresql_no_index_suggestion_for_stdin() {
+    use std::{io::Write, process};
+
+    let wrk = Workdir::new("scoresql_no_index_suggestion_for_stdin");
+    let mut cmd = wrk.command("scoresql");
+    cmd.args(["-", "SELECT a FROM stdin LIMIT 2", "--json", "--quiet"])
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped())
+        .stderr(process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a,b\n1,2\n3,4\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let suggestions = report["suggestions"].as_array().unwrap();
+    assert!(
+        !suggestions
+            .iter()
+            .any(|s| s.as_str().unwrap_or_default().contains("qsv index")),
+        "{report}"
+    );
+}
+
+/// 10 rows, `status` 80% "active", so a WHERE on it earns the skew note.
+fn setup_skewed(name: &str) -> Workdir {
+    let mut rows = vec![svec!["nowhere", "status"]];
+    for i in 0..10 {
+        let status = if i < 8 { "active" } else { "inactive" };
+        rows.push(vec![i.to_string(), status.to_string()]);
+    }
+    let wrk = Workdir::new(name);
+    wrk.create("w.csv", rows);
+    wrk
+}
+
+#[test]
+fn scoresql_where_inside_identifier_is_not_the_clause() {
+    let wrk = setup_skewed("scoresql_where_inside_identifier_is_not_the_clause");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status IS NOT NULL LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(detail.contains("w.status is highly skewed"), "{detail}");
+}
+
+#[test]
+fn scoresql_notes_when_only_the_first_filter_value_is_scored() {
+    let wrk = setup_skewed("scoresql_notes_when_only_the_first_filter_value_is_scored");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status = 'inactive' OR status = 'active' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(
+        detail.contains("w.status has 2 filter values — selectivity estimated from the first"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn scoresql_single_filter_value_has_no_first_value_note() {
+    let wrk = setup_skewed("scoresql_single_filter_value_has_no_first_value_note");
+    let report = score_json(
+        &wrk,
+        &[
+            "w.csv",
+            "SELECT nowhere FROM w WHERE status = 'inactive' LIMIT 5",
+        ],
+    );
+    let (_, detail) = category(&report, "Filter selectivity");
+    assert!(!detail.contains("filter values"), "{detail}");
+}
+
+#[test]
+fn scoresql_duckdb_bare_non_identifier_wildcard_qualifier() {
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_bare_non_identifier_wildcard_qualifier");
+    wrk.create(
+        "nyc-311.csv",
+        vec![
+            svec!["id", "borough"],
+            svec!["1", "BRONX"],
+            svec!["2", "QUEENS"],
+        ],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "nyc-311.csv",
+        "SELECT nyc-311.* FROM nyc-311 LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}

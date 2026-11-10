@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sales orders",
+  "description": "Example schema for qsv validate --sarif. Each column exercises a different JSON Schema keyword.",
+  "type": "object",
+  "properties": {
+    "order_id": { "type": "integer", "minimum": 1 },
+    "order_date": { "type": "string", "format": "date" },
+    "sku": { "type": "string", "pattern": "^[A-Z]{3}-[0-9]{4}$" },
+    "region": { "type": "string", "enum": ["North", "South", "East", "West"] },
+    "quantity": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "unit_price": { "type": "string", "format": "currency" },
+    "customer_email": { "type": "string", "format": "email" },
+    "notes": { "type": ["string", "null"], "maxLength": 80 }
+  },
+  "uniqueCombinedWith": ["order_id"]
+}

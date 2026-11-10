@@ -1,0 +1,647 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "qsv",
+          "version": "28.0.0",
+          "informationUri": "https://github.com/dathere/qsv",
+          "rules": [
+            {
+              "id": "type",
+              "name": "type",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `type` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "enum",
+              "name": "enum",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `enum` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "const",
+              "name": "const",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `const` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "format",
+              "name": "format",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `format` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "pattern",
+              "name": "pattern",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `pattern` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "minimum",
+              "name": "minimum",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `minimum` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "maximum",
+              "name": "maximum",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `maximum` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "exclusiveMinimum",
+              "name": "exclusiveMinimum",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `exclusiveMinimum` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "exclusiveMaximum",
+              "name": "exclusiveMaximum",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `exclusiveMaximum` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "multipleOf",
+              "name": "multipleOf",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `multipleOf` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "minLength",
+              "name": "minLength",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `minLength` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "maxLength",
+              "name": "maxLength",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `maxLength` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "required",
+              "name": "required",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `required` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "additionalProperties",
+              "name": "additionalProperties",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `additionalProperties` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "propertyNames",
+              "name": "propertyNames",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `propertyNames` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "minProperties",
+              "name": "minProperties",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `minProperties` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "maxProperties",
+              "name": "maxProperties",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `maxProperties` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "not",
+              "name": "not",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `not` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "anyOf",
+              "name": "anyOf",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `anyOf` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "oneOf",
+              "name": "oneOf",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `oneOf` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "falseSchema",
+              "name": "falseSchema",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `falseSchema` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "contentEncoding",
+              "name": "contentEncoding",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `contentEncoding` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "contentMediaType",
+              "name": "contentMediaType",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `contentMediaType` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "unevaluatedProperties",
+              "name": "unevaluatedProperties",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `unevaluatedProperties` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "additionalItems",
+              "name": "additionalItems",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `additionalItems` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "contains",
+              "name": "contains",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `contains` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "minItems",
+              "name": "minItems",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `minItems` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "maxItems",
+              "name": "maxItems",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `maxItems` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "uniqueItems",
+              "name": "uniqueItems",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `uniqueItems` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "unevaluatedItems",
+              "name": "unevaluatedItems",
+              "shortDescription": {
+                "text": "Value fails the JSON Schema `unevaluatedItems` keyword"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "ref",
+              "name": "ref",
+              "shortDescription": {
+                "text": "Value fails a $ref'd JSON Schema"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "dynamicEnum",
+              "name": "dynamicEnum",
+              "shortDescription": {
+                "text": "Value is not in the dynamicEnum reference list"
+              },
+              "helpUri": "https://github.com/dathere/qsv/blob/master/docs/help/validate.md",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "uniqueCombinedWith",
+              "name": "uniqueCombinedWith",
+              "shortDescription": {
+                "text": "Combination of column values is not unique"
+              },
+              "helpUri": "https://github.com/dathere/qsv/blob/master/docs/help/validate.md",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "ragged-row",
+              "name": "ragged-row",
+              "shortDescription": {
+                "text": "Row has a different number of fields than the header"
+              },
+              "helpUri": "https://github.com/dathere/qsv/blob/master/docs/help/validate.md",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "other",
+              "name": "other",
+              "shortDescription": {
+                "text": "Row fails the JSON Schema"
+              },
+              "helpUri": "https://json-schema.org/understanding-json-schema/reference",
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "artifacts": [
+        {
+          "location": {
+            "uri": "resources/examples/validate-sarif/sales.csv"
+          }
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "format",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "Row 3, column \"order_date\": \"2026-13-02\" is not a \"date\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "pattern",
+          "ruleIndex": 4,
+          "level": "error",
+          "message": {
+            "text": "Row 4, column \"sku\": \"abc-77\" does not match \"^[A-Z]{3}-[0-9]{4}$\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 6
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "enum",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Row 5, column \"region\": \"Central\" is not one of \"North\", \"South\" or 2 other candidates"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "minimum",
+          "ruleIndex": 5,
+          "level": "error",
+          "message": {
+            "text": "Row 6, column \"quantity\": 0 is less than the minimum of 1"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 8
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "maximum",
+          "ruleIndex": 6,
+          "level": "error",
+          "message": {
+            "text": "Row 7, column \"quantity\": 5000 is greater than the maximum of 1000"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 9
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "type",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Row 8, column \"quantity\": \"two\" is not of type \"integer\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 10
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "format",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "Row 9, column \"unit_price\": \"TBD\" is not a \"currency\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 11
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "format",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "Row 10, column \"customer_email\": \"jay-at-example.com\" is not a \"email\""
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "uniqueCombinedWith",
+          "ruleIndex": 32,
+          "level": "error",
+          "message": {
+            "text": "Row 11: Combination of values for columns order_id is not unique"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "ragged-row",
+          "ruleIndex": 33,
+          "level": "error",
+          "message": {
+            "text": "Row 12: found 6 fields, but expected 8"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 14
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "maxLength",
+          "ruleIndex": 11,
+          "level": "error",
+          "message": {
+            "text": "Row 13, column \"notes\": \"This note runs past the eighty-character limit that the schema sets on the notes column\" is longer than 80 characters"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "resources/examples/validate-sarif/sales.csv",
+                  "index": 0
+                },
+                "region": {
+                  "startLine": 15
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

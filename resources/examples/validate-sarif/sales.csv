@@ -1,0 +1,16 @@
+order_id,order_date,sku,region,quantity,unit_price,customer_email,notes
+1001,2026-10-01,ABC-1234,North,5,$19.99,ana@example.com,
+1002,2026-10-02,ABC-1235,South,12,$4.50,ben@example.com,"Gift wrap,
+deliver after 5pm"
+1003,2026-13-02,ABC-1236,East,3,$7.25,cara@example.com,
+1004,2026-10-04,abc-77,West,1,$2.00,dev@example.com,
+1005,2026-10-05,ABC-1238,Central,8,$3.10,eli@example.com,
+1006,2026-10-06,ABC-1239,North,0,$9.99,fay@example.com,
+1007,2026-10-07,ABC-1240,South,5000,$9.99,gus@example.com,
+1008,2026-10-08,ABC-1241,East,two,$1.00,hal@example.com,
+1009,2026-10-09,ABC-1242,West,4,TBD,ivy@example.com,
+1010,2026-10-10,ABC-1243,North,2,$5.00,jay-at-example.com,
+1002,2026-10-11,ABC-1244,South,1,$6.00,kim@example.com,
+1012,2026-10-12,ABC-1245,East,7,$8.00
+1013,2026-10-13,ABC-1246,West,9,$1.50,lee@example.com,This note runs past the eighty-character limit that the schema sets on the notes column
+1014,2026-10-14,ABC-1247,North,3,$2.25,mo@example.com,

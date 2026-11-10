@@ -209,6 +209,14 @@ Examples:
   # Validate CSV files listed in a '.infile-list' file against a JSON Schema
   qsv validate files.infile-list schema.json
 
+  # Also write the errors as a SARIF log, for code scanning tools like GitHub code scanning.
+  # --split-ragged reports ragged rows instead of stopping before the SARIF log is written.
+  qsv validate --split-ragged data.csv schema.json --sarif validate.sarif
+
+  # For a sample CSV, its schema, the SARIF log qsv writes for them and a GitHub Actions
+  # workflow that uploads it to code scanning, see
+  # https://github.com/dathere/qsv/tree/master/resources/examples/validate-sarif
+
 For more examples, see the tests included in this file (denoted by '#[test]') or see
 https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
 See also https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate
@@ -264,6 +272,13 @@ Validate options:
                                Setting this will override the default behavior of creating
                                a valid file only when there are invalid records.
                                To send valid records to stdout, use `-` as the filename.
+    --sarif <file>             Also write the validation errors to <file> as a SARIF 2.1.0 log,
+                               for code scanning tools (e.g. GitHub code scanning).
+                               Each invalid field is a result, pointing at the line where its row
+                               starts. Unlike the other output files, it is written even when all
+                               rows are valid (with no results), so a CI run clears earlier
+                               findings. At most 25,000 results are written (GitHub's limit).
+                               Only for JSON Schema validation mode with a file input (not stdin).
     -j, --jobs <arg>           The number of jobs to run in parallel.
                                When not set, the number of jobs is set to the
                                number of CPUs detected.
@@ -348,7 +363,7 @@ use std::{
     env,
     fmt::Write as _,
     fs::File,
-    io::{BufReader, BufWriter, IsTerminal, Read, Write},
+    io::{BufRead, BufReader, BufWriter, IsTerminal, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     str,
     sync::{
@@ -385,7 +400,10 @@ use crate::lookup;
 use crate::lookup::{LookupTableOptions, load_lookup_table};
 use crate::{
     CliError, CliResult,
-    config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{
+        Config, DEFAULT_RDR_BUFFER_CAPACITY, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat,
+        get_special_format, is_snappy_extension,
+    },
     util::{self, InputSource},
 };
 
@@ -426,6 +444,7 @@ struct Args {
     flag_json:                 bool,
     flag_pretty_json:          bool,
     flag_valid_output:         Option<String>,
+    flag_sarif:                Option<String>,
     flag_jobs:                 Option<usize>,
     flag_batch:                usize,
     flag_no_headers:           bool,
@@ -1881,6 +1900,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Ordering::Relaxed,
     );
 
+    if args.flag_sarif.is_some() && args.cmd_schema {
+        return fail_incorrectusage_clierror!(
+            "--sarif reports CSV validation errors; it does not apply to `validate schema`."
+        );
+    }
+
     // Is the JSON Schema file valid?
     if args.cmd_schema {
         if let Some(ref schema) = args.arg_json_schema {
@@ -1928,6 +1953,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "A .json file is present in the input list but is not the last argument. Falling \
                  back to RFC 4180 validation. Move the schema file to the end if you intended \
                  JSON Schema validation."
+            );
+        }
+        if args.flag_sarif.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--sarif is only supported in JSON Schema validation mode."
             );
         }
         // For RFC 4180 validation mode, we support Extended Input Support
@@ -1999,6 +2029,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
         })?
     };
+    if stdin_input && args.flag_sarif.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--sarif needs a file input: its results point at lines in that file."
+        );
+    }
     // base name of the valid/invalid/validation-errors output files
     let output_base = if stdin_input {
         "stdin.csv".to_string()
@@ -2169,8 +2204,30 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     let mut valid_flags: BitVec = BitVec::with_capacity(record_count as usize);
     let batch_size = util::optimal_batch_size(&rconfig, args.flag_batch, num_jobs);
     let mut batch = Vec::with_capacity(batch_size);
-    let mut batch_validation_results: Vec<Option<String>> = Vec::with_capacity(batch_size);
+    let mut batch_validation_results: Vec<Option<Vec<FieldError>>> = Vec::with_capacity(batch_size);
     let mut validation_error_messages: Vec<String> = Vec::with_capacity(50);
+    let mut sarif_results: Option<Vec<SarifResult>> = args.flag_sarif.as_ref().map(|_| Vec::new());
+    let mut sarif_truncated = false;
+    // A compressed or converted input is read as a different CSV than the bytes on disk, so its
+    // rows have no line in the file: those results get no region.
+    let sarif_lines = args.flag_sarif.is_some()
+        && !is_snappy_extension(input_path)
+        && matches!(get_special_format(input_path), SpecialFormat::Unknown);
+    // for sarif_row_line
+    let mut sarif_peek_file = if sarif_lines {
+        // small buffer: it is refilled after a seek for each invalid row
+        File::open(input_path)
+            .ok()
+            .map(|f| BufReader::with_capacity(256, f))
+    } else {
+        None
+    };
+    let comment_char = rconfig.comment;
+    let (preamble_bytes, preamble_lines) = if sarif_peek_file.is_some() {
+        rconfig.preamble_offset()?
+    } else {
+        (0, 0)
+    };
     let flag_trim = args.flag_trim;
     let flag_fail_fast = args.flag_fail_fast;
     let split_ragged = args.flag_split_ragged;
@@ -2215,7 +2272,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 
         // do actual validation via Rayon parallel iterator
         // validation_results vector should have same row count and in same order as input CSV
-        let validate_record = |record: &ByteRecord| -> Option<String> {
+        let validate_record = |record: &ByteRecord| -> Option<Vec<FieldError>> {
             // --split-ragged: a ragged row has a field count != header_len. Because we append
             // the row number as an extra field, a well-formed row here has exactly
             // header_len + 1 fields. Ragged rows are always marked invalid (quarantined) and
@@ -2224,14 +2281,14 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
             // --split-ragged is set, so this never fires otherwise.
             if split_ragged && record.len() != header_len + 1 {
                 std::hint::cold_path();
-                // the row number is always the last appended field, regardless of raggedness
-                // safety: row number was appended via itoa, so it is always valid ASCII
-                let row_number_string =
-                    simdutf8::basic::from_utf8(&record[record.len() - 1]).unwrap();
-                return Some(format!(
-                    "{row_number_string}\t<RECORD>\tfound {} fields, but expected {header_len}",
-                    record.len() - 1
-                ));
+                return Some(vec![FieldError {
+                    field:   "<RECORD>".to_string(),
+                    rule:    RAGGED_ROW_RULE,
+                    message: format!(
+                        "found {} fields, but expected {header_len}",
+                        record.len() - 1
+                    ),
+                }]);
             }
 
             // Decodes the row once and borrows from it.
@@ -2252,22 +2309,17 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
                 return None;
             }
             std::hint::cold_path();
-            // safety: row number was appended as the last field via itoa, so it is
-            // always valid ASCII; the unwrap can never fire in practice.
-            let row_number_string = simdutf8::basic::from_utf8(&record[header_len]).unwrap();
-
-            // there can be multiple validation errors for a single record,
-            // squash multiple errors into one long String with linebreaks
-            let error_messages: Vec<String> = errors
-                .iter()
-                .map(|e| {
-                    format!(
-                        "{row_number_string}\t{field}\t{e}",
-                        field = instance_field(e.instance_path())
-                    )
-                })
-                .collect();
-            Some(error_messages.join("\n"))
+            // there can be multiple validation errors for a single record
+            Some(
+                errors
+                    .iter()
+                    .map(|e| FieldError {
+                        field:   instance_field(e.instance_path()),
+                        rule:    sarif_rule_for_keyword(e.kind().keyword()),
+                        message: e.to_string(),
+                    })
+                    .collect(),
+            )
         };
         if has_unique_combined {
             // uniqueCombinedWith accepts whichever row with a combination it sees first, so
@@ -2290,12 +2342,51 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
         // extend by the actual batch length, not batch_size — the last batch may be partial,
         // and over-extending would leave trailing `true` flags for nonexistent rows.
         valid_flags.extend(std::iter::repeat_n(true, batch_len));
-        for (i, result) in batch_validation_results.iter().enumerate() {
-            if let Some(validation_error_msg) = result {
-                invalid_count += 1;
-                // safe set(): negligible cost on this path (dominated by validator work)
-                valid_flags.set(start_idx + i, false);
-                validation_error_messages.push(validation_error_msg.to_owned());
+        for (i, result) in batch_validation_results.drain(..).enumerate() {
+            let Some(field_errors) = result else {
+                continue;
+            };
+            invalid_count += 1;
+            // safe set(): negligible cost on this path (dominated by validator work)
+            valid_flags.set(start_idx + i, false);
+            let record = &batch[i];
+            // the row number is always the last appended field, regardless of raggedness
+            // safety: row number was appended via itoa, so it is always valid ASCII
+            let row_number_string = simdutf8::basic::from_utf8(&record[record.len() - 1]).unwrap();
+            // there can be multiple validation errors for a single record,
+            // squash them into one String with linebreaks
+            validation_error_messages.push(
+                field_errors
+                    .iter()
+                    .map(|fe| format!("{row_number_string}\t{}\t{}", fe.field, fe.message))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
+            if let Some(sarif_results) = sarif_results.as_mut() {
+                if sarif_results.len() == SARIF_MAX_RESULTS {
+                    sarif_truncated = true;
+                    continue;
+                }
+                let line = record.position().filter(|_| sarif_lines).map_or(0, |pos| {
+                    preamble_lines
+                        + sarif_row_line(
+                            pos.byte() + preamble_bytes,
+                            pos.line(),
+                            sarif_peek_file.as_mut(),
+                            comment_char,
+                        )
+                });
+                for fe in field_errors {
+                    if sarif_results.len() == SARIF_MAX_RESULTS {
+                        sarif_truncated = true;
+                        break;
+                    }
+                    sarif_results.push(SarifResult {
+                        row: row_number_string.to_string(),
+                        line,
+                        error: fe,
+                    });
+                }
             }
         }
 
@@ -2317,6 +2408,17 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
             HumanCount(progress.length().unwrap())
         ));
         util::finish_progress(&progress);
+    }
+
+    // written before any of the returns below, so it exists whether or not rows were invalid
+    if let (Some(sarif_path), Some(sarif_results)) = (&args.flag_sarif, sarif_results) {
+        if sarif_truncated {
+            wwarn!(
+                "--sarif: wrote the first {SARIF_MAX_RESULTS} results only; see \
+                 {output_base}.validation-errors.tsv for all errors."
+            );
+        }
+        write_sarif_report(sarif_path, input_path, &sarif_results, sarif_truncated)?;
     }
 
     if invalid_count == 0 {
@@ -3161,6 +3263,245 @@ fn write_error_report(input_path: &str, validation_error_messages: Vec<String>) 
     // flush error report; file gets closed automagically when out-of-scope
     output_writer.flush()?;
 
+    Ok(())
+}
+
+/// One failed check on a row: the column, the SARIF rule it maps to and the message.
+struct FieldError {
+    field:   String,
+    rule:    &'static str,
+    message: String,
+}
+
+/// A `--sarif` result: a field error with the row number and the line the row starts on.
+struct SarifResult {
+    row:   String,
+    line:  u64,
+    error: FieldError,
+}
+
+/// GitHub code scanning rejects a run with more results than this.
+const SARIF_MAX_RESULTS: usize = 25_000;
+
+const RAGGED_ROW_RULE: &str = "ragged-row";
+const OTHER_RULE: &str = "other";
+
+/// The closed set of `--sarif` rule IDs: the JSON Schema keywords that can fail (`$ref` as
+/// `ref`), qsv's custom keywords, ragged rows and a catch-all. The IDs have no `/`, as Codacy
+/// turns `/` in a rule ID into `_` when matching it to one of its patterns.
+const SARIF_RULES: &[&str] = &[
+    "type",
+    "enum",
+    "const",
+    "format",
+    "pattern",
+    "minimum",
+    "maximum",
+    "exclusiveMinimum",
+    "exclusiveMaximum",
+    "multipleOf",
+    "minLength",
+    "maxLength",
+    "required",
+    "additionalProperties",
+    "propertyNames",
+    "minProperties",
+    "maxProperties",
+    "not",
+    "anyOf",
+    "oneOf",
+    "falseSchema",
+    "contentEncoding",
+    "contentMediaType",
+    "unevaluatedProperties",
+    "additionalItems",
+    "contains",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "unevaluatedItems",
+    "ref",
+    "dynamicEnum",
+    "uniqueCombinedWith",
+    RAGGED_ROW_RULE,
+    OTHER_RULE,
+];
+
+fn sarif_rule_for_keyword(keyword: &str) -> &'static str {
+    let keyword = if keyword == "$ref" { "ref" } else { keyword };
+    SARIF_RULES
+        .iter()
+        .find(|id| **id == keyword)
+        .copied()
+        .unwrap_or(OTHER_RULE)
+}
+
+fn sarif_rule_description(rule: &str) -> String {
+    match rule {
+        RAGGED_ROW_RULE => "Row has a different number of fields than the header".to_string(),
+        OTHER_RULE => "Row fails the JSON Schema".to_string(),
+        "dynamicEnum" => "Value is not in the dynamicEnum reference list".to_string(),
+        "uniqueCombinedWith" => "Combination of column values is not unique".to_string(),
+        "ref" => "Value fails a $ref'd JSON Schema".to_string(),
+        _ => format!("Value fails the JSON Schema `{rule}` keyword"),
+    }
+}
+
+/// The 1-based line a row starts on. A record's position is where the reader started reading
+/// it, which can be before the row itself: on the `\n` still on the previous line in a CRLF
+/// file (the reader ends a record at its `\r`), or on blank or comment lines it skipped. Peek
+/// at the input there and step past those to the row's own line.
+fn sarif_row_line(
+    byte: u64,
+    mut line: u64,
+    peek: Option<&mut BufReader<File>>,
+    comment: Option<u8>,
+) -> u64 {
+    let Some(peek) = peek else {
+        return line;
+    };
+    if peek.seek(SeekFrom::Start(byte)).is_err() {
+        return line;
+    }
+    while let Some(&first) = peek.fill_buf().ok().and_then(|buf| buf.first()) {
+        if first == b'\n' {
+            // a CRLF file's leftover `\n`, or a blank line
+            peek.consume(1);
+            line += 1;
+        } else if first == b'\r' {
+            // the start of a blank CRLF line; its `\n` is counted next
+            peek.consume(1);
+        } else if Some(first) == comment {
+            // skip the comment line through its `\n`
+            loop {
+                let Ok(buf) = peek.fill_buf() else {
+                    return line;
+                };
+                if buf.is_empty() {
+                    return line;
+                }
+                if let Some(newline_idx) = memchr::memchr(b'\n', buf) {
+                    peek.consume(newline_idx + 1);
+                    line += 1;
+                    break;
+                }
+                let buf_len = buf.len();
+                peek.consume(buf_len);
+            }
+        } else {
+            break;
+        }
+    }
+    line
+}
+
+/// The input as a SARIF artifact URI. Code scanning tools resolve a relative URI against the
+/// repository checkout, so a file under the current directory gets a relative, percent-encoded
+/// URI with `/` separators; anything else gets an absolute `file://` URI.
+fn sarif_artifact_uri(path: &Path) -> String {
+    let fallback = || path.to_string_lossy().replace('\\', "/");
+    let Ok(abs_path) = path.canonicalize() else {
+        return fallback();
+    };
+    if let Ok(cwd) = env::current_dir().and_then(|d| d.canonicalize())
+        && let Ok(rel_path) = abs_path.strip_prefix(&cwd)
+        && let Ok(mut url) = url::Url::parse("file:///")
+    {
+        if let Ok(mut segments) = url.path_segments_mut() {
+            segments.clear().extend(
+                rel_path
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+            );
+        }
+        return url.path()[1..].to_string();
+    }
+    url::Url::from_file_path(&abs_path).map_or_else(|()| fallback(), |u| u.to_string())
+}
+
+/// Write the `--sarif` report: one run, every rule in `SARIF_RULES`, and a result per field
+/// error located at the line its row starts on.
+fn write_sarif_report(
+    sarif_path: &str,
+    input_path: &Path,
+    results: &[SarifResult],
+    truncated: bool,
+) -> CliResult<()> {
+    let uri = sarif_artifact_uri(input_path);
+    let rules: Vec<serde_json::Value> = SARIF_RULES
+        .iter()
+        .map(|rule| {
+            let help_uri = match *rule {
+                "dynamicEnum" | "uniqueCombinedWith" | RAGGED_ROW_RULE => {
+                    "https://github.com/dathere/qsv/blob/master/docs/help/validate.md"
+                },
+                _ => "https://json-schema.org/understanding-json-schema/reference",
+            };
+            json!({
+                "id": rule,
+                "name": rule,
+                "shortDescription": { "text": sarif_rule_description(rule) },
+                "helpUri": help_uri,
+                "defaultConfiguration": { "level": "error" },
+            })
+        })
+        .collect();
+    let results: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            let FieldError {
+                field,
+                rule,
+                message,
+            } = &r.error;
+            let text = if field.is_empty() || field == "<RECORD>" {
+                format!("Row {}: {message}", r.row)
+            } else {
+                format!("Row {}, column \"{field}\": {message}", r.row)
+            };
+            let mut physical_location = json!({ "artifactLocation": { "uri": uri, "index": 0 } });
+            if r.line > 0 {
+                physical_location["region"] = json!({ "startLine": r.line });
+            }
+            json!({
+                "ruleId": rule,
+                "ruleIndex": SARIF_RULES.iter().position(|id| id == rule),
+                "level": "error",
+                "message": { "text": text },
+                "locations": [{ "physicalLocation": physical_location }],
+            })
+        })
+        .collect();
+    let mut invocation = json!({ "executionSuccessful": true });
+    if truncated {
+        invocation["toolExecutionNotifications"] = json!([{
+            "level": "warning",
+            "message": {
+                "text": format!("Only the first {SARIF_MAX_RESULTS} results were written.")
+            },
+        }]);
+    }
+    let sarif_log = json!({
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "qsv",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "informationUri": "https://github.com/dathere/qsv",
+                    "rules": rules,
+                },
+            },
+            "invocations": [invocation],
+            "artifacts": [{ "location": { "uri": uri } }],
+            "results": results,
+        }],
+    });
+    let mut sarif_writer = BufWriter::new(File::create(sarif_path)?);
+    serde_json::to_writer(&mut sarif_writer, &sarif_log)?;
+    sarif_writer.write_all(b"\n")?;
+    sarif_writer.flush()?;
     Ok(())
 }
 

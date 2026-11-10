@@ -934,6 +934,15 @@ impl Config {
         }
     }
 
+    /// Bytes and raw lines the sniffed preamble takes up, to map a position from a reader
+    /// that started past it back to the file itself. (0, 0) for stdin.
+    pub fn preamble_offset(&self) -> io::Result<(u64, u64)> {
+        match self.path {
+            Some(ref p) => self.preamble_span(p),
+            None => Ok((0, 0)),
+        }
+    }
+
     /// Open `path` positioned past any sniffed preamble rows. A reader of it reports byte
     /// positions relative to that start, but seeking the file is absolute: only use it where
     /// nothing seeks by a recorded position (with a preamble, `index_files` gives no index).

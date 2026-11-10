@@ -1198,3 +1198,35 @@ fn scoresql_single_filter_value_has_no_first_value_note() {
     let (_, detail) = category(&report, "Filter selectivity");
     assert!(!detail.contains("filter values"), "{detail}");
 }
+
+#[test]
+fn scoresql_duckdb_bare_non_identifier_wildcard_qualifier() {
+    if std::process::Command::new("duckdb")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        eprintln!("Skipping: duckdb not found in PATH");
+        return;
+    }
+    let wrk = Workdir::new("scoresql_duckdb_bare_non_identifier_wildcard_qualifier");
+    wrk.create(
+        "nyc-311.csv",
+        vec![
+            svec!["id", "borough"],
+            svec!["1", "BRONX"],
+            svec!["2", "QUEENS"],
+        ],
+    );
+    let mut cmd = wrk.command("scoresql");
+    cmd.env_remove("QSV_DUCKDB_PATH").args([
+        "--duckdb",
+        "--json",
+        "nyc-311.csv",
+        "SELECT nyc-311.* FROM nyc-311 LIMIT 5",
+    ]);
+    let got: String = wrk.stdout(&mut cmd);
+    let json: serde_json::Value =
+        serde_json::from_str(&got).unwrap_or_else(|e| panic!("{e}: {got}"));
+    assert!(json["plan"].as_str().unwrap().contains("READ_CSV"), "{got}");
+}

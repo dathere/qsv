@@ -1247,7 +1247,7 @@ fn get_duckdb_plan(args: &Args, table_names: &[String]) -> CliResult<String> {
                     !rest.ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
                 })
             }) || sql[m.end()..].strip_prefix('.').is_some_and(|rest| {
-                rest.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '"')
+                rest.starts_with(|c: char| c.is_alphabetic() || matches!(c, '_' | '"' | '*'))
             });
             if m.as_str().starts_with(['\'', '"']) || !is_table {
                 m.as_str().to_string()

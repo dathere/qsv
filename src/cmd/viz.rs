@@ -17301,6 +17301,15 @@ const PLOTLY_STUB_SCRIPT: &str = r#"<script>window.__qsvPlotQ=[];window.Plotly={
 /// else (including file:// pages, which already work). Must run before plotly.js creates its
 /// workers, hence first in `plotly_js_block`. Retire once the vendored plotly.js bundles
 /// MapLibre >= 6.17 (maplibre-gl-js#8912), which handles opaque origins itself.
+///
+/// UPGRADE TRAP: this shim does NOT help plotly.js 4.x builds that bundle MapLibre < 6.17
+/// (4.1.2 and 4.2.0 pin 6.11.2). Those load the worker as a module `blob:` script, which
+/// Chrome and Safari refuse outright in an opaque origin, so sandboxed map panels go blank
+/// again. The shim tests (`plotly_js_block_installs_sandbox_worker_shim_first` and
+/// `test_viz::viz_sandbox_worker_shim_precedes_plotly_bundle`) only check that the shim is
+/// emitted, not that a map renders: before shipping a plotly.js bump, load a `viz map` page
+/// in Chrome, Firefox and Safari inside an `<iframe sandbox="allow-scripts">` and confirm
+/// the tiles draw.
 const SANDBOX_WORKER_SHIM: &str = r#"<script>(function(){if(window.origin!=="null"||location.protocol==="file:"||typeof Worker!=="function")return;function qsvStampOrigin(d){if(d&&typeof d==="object"&&typeof d.origin==="string")d.origin="file://"}var W=window.Worker;window.Worker=class extends W{constructor(u,o){super(u,o);this.addEventListener("message",function(e){qsvStampOrigin(e.data)})}postMessage(m,t){qsvStampOrigin(m);return super.postMessage(m,t)}}})();</script>"#;
 
 /// Shared inflate helpers for the gzip-embedded payloads. `__qsvGunzip` pumps a payload tag

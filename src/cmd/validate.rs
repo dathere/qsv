@@ -273,12 +273,14 @@ Validate options:
                                a valid file only when there are invalid records.
                                To send valid records to stdout, use `-` as the filename.
     --sarif <file>             Also write the validation errors to <file> as a SARIF 2.1.0 log,
-                               for code scanning tools (e.g. GitHub code scanning).
+                               the standard format for static analysis results. Code scanning
+                               tools (e.g. GitHub code scanning) and other SARIF viewers can read
+                               it, so it also works as a general data validation report.
                                Each invalid field is a result, pointing at the line where its row
                                starts. Unlike the other output files, it is written even when all
                                rows are valid (with no results), so a CI run clears earlier
                                findings. Only for JSON Schema validation mode with a file input
-                               (not stdin).
+                               (not stdin). See https://www.oasis-open.org/standard/sarif-v2-1-0/
     --sarif-max-results <n>    The most results that --sarif writes; past it, the log notes that
                                results were cut. The default is GitHub code scanning's limit per
                                run, which rejects a log with more. Other tools may accept more.

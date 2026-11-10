@@ -129,7 +129,7 @@
       {
         "flag": "--sarif",
         "type": "string",
-        "description": "Also write the validation errors to <file> as a SARIF 2.1.0 log, for code scanning tools (e.g. GitHub code scanning). Each invalid field is a result, pointing at the line where its row starts. Unlike the other output files, it is written even when all rows are valid (with no results), so a CI run clears earlier findings. Only for JSON Schema validation mode with a file input (not stdin)."
+        "description": "Also write the validation errors to <file> as a SARIF 2.1.0 log, the standard format for static analysis results. Code scanning tools (e.g. GitHub code scanning) and other SARIF viewers can read it, so it also works as a general data validation report. Each invalid field is a result, pointing at the line where its row starts. Unlike the other output files, it is written even when all rows are valid (with no results), so a CI run clears earlier findings. Only for JSON Schema validation mode with a file input (not stdin). See https://www.oasis-open.org/standard/sarif-v2-1-0/"
       },
       {
         "flag": "--sarif-max-results",

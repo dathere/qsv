@@ -6267,6 +6267,57 @@ fn viz_map_basic() {
     assert!(html.contains(r#""zoom""#));
 }
 
+// issue #4946: MapLibre map panels stay blank in a sandboxed frame without allow-same-origin
+// unless the page wraps `Worker` before plotly.js creates its workers, so the wrapper must lead
+// the plotly.js bundle on every page path and in every bundle mode.
+#[test]
+fn viz_sandbox_worker_shim_precedes_plotly_bundle() {
+    let wrk = Workdir::new("viz_sandbox_worker_shim_precedes_plotly_bundle");
+    quakes(&wrk);
+
+    let check = |html: &str, bundle_marker: &str, what: &str| {
+        let shim = html
+            .find("qsvStampOrigin")
+            .unwrap_or_else(|| panic!("{what}: no sandbox worker shim"));
+        let bundle = html
+            .find(bundle_marker)
+            .unwrap_or_else(|| panic!("{what}: no plotly bundle marker {bundle_marker:?}"));
+        assert!(
+            shim < bundle,
+            "{what}: the shim must precede the plotly.js bundle"
+        );
+    };
+
+    for (env, marker) in [
+        (None, r#"id="qsv-plotly-gz""#),
+        (Some("QSV_VIZ_NO_COMPRESS"), "plotly.js v"),
+        (Some("QSV_VIZ_CDN"), "cdn.plot.ly"),
+    ] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["map", "quakes.csv", "--lat", "lat", "--lon", "lon"]);
+        if let Some(var) = env {
+            cmd.env(var, "1");
+        }
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        check(
+            &String::from_utf8_lossy(&out.stdout),
+            marker,
+            &format!("viz map ({})", env.unwrap_or("default")),
+        );
+    }
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    check(
+        &String::from_utf8_lossy(&out.stdout),
+        r#"id="qsv-plotly-gz""#,
+        "viz smart",
+    );
+}
+
 #[test]
 fn viz_map_color_scale() {
     let wrk = Workdir::new("viz_map_color_scale");

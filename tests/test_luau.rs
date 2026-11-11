@@ -3749,3 +3749,75 @@ fn luau_require_date_removed_after_failed_run() {
     wrk.assert_err(&mut cmd);
     assert!(!wrk.path("date.lua").exists());
 }
+
+#[test]
+fn luau_insertrecord_no_headers_unnamed_columns() {
+    // headerless map with unnamed table columns: the mapped row sets the insert width
+    let wrk = Workdir::new("luau_insertrecord_no_headers_unnamed");
+    wrk.create("data.csv", vec![svec!["a", "13"], svec!["b", "24"]]);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg(r#"if col[1] == "a" then qsv_insertrecord("p") end; return {1, 2}"#)
+        .arg("--no-headers")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["a", "13", "1", "2"],
+        svec!["p", "", "", ""],
+        svec!["b", "24", "1", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_filter_error_does_not_keep_later_rows_random_access() {
+    let wrk = Workdir::new("luau_filter_error_later_rows_ra");
+    wrk.create_indexed(
+        "data.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "x"],
+            svec!["2", "y"],
+            svec!["3", "z"],
+            svec!["4", "w"],
+        ],
+    );
+    let mut cmd = wrk.command("luau");
+    cmd.arg("filter")
+        .arg(
+            r#"local keep = tonumber(a) > 2
+_INDEX = _INDEX + 1
+if a == "1" then error("boom") end
+return keep"#,
+        )
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_error(&mut cmd);
+    let expected = vec![
+        svec!["a", "b"],
+        svec!["1", "x"],
+        svec!["3", "z"],
+        svec!["4", "w"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_end_error_exits_nonzero_random_access() {
+    let wrk = Workdir::new("luau_end_error_exit_ra");
+    wrk.create_indexed(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["1", "x"], svec!["2", "y"]],
+    );
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--end")
+        .arg("return nosuch.x")
+        .arg("_INDEX = _INDEX + 1; return 1")
+        .arg("data.csv");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("END error"), "stderr: {stderr}");
+}

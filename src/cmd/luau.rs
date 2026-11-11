@@ -259,8 +259,8 @@ Common options:
                            number of rows processed.
                            In RANDOM ACCESS MODE, the progress bar will show
                            the position of the current row being processed.
-                           Enabling this option will also suppress stderr output
-                           from the END script.
+                           Output from the END script is printed after the
+                           progress bar finishes.
 "#;
 
 use std::{
@@ -729,9 +729,6 @@ fn sequential_mode(
     // in the MAIN/END scripts
     luau.globals().raw_set(QSV_INSERTRECORD_TBL, Value::Nil)?;
 
-    #[cfg(feature = "datapusher_plus")]
-    let show_progress = false;
-
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     let show_progress =
         (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
@@ -882,7 +879,13 @@ fn sequential_mode(
                     // _QSV_IR_TBL is populated, we have a record to insert
                     insertrecord.clear();
 
-                    create_insertrecord(&insertrecord_table, &mut insertrecord, headers_count)?;
+                    // headerless map columns may be unnamed: the mapped row gives the width
+                    let insert_width = if no_headers {
+                        record.len()
+                    } else {
+                        headers_count
+                    };
+                    create_insertrecord(&insertrecord_table, &mut insertrecord, insert_width)?;
 
                     if QSV_SKIP.load(Ordering::Relaxed) {
                         if debug_enabled {
@@ -1121,9 +1124,6 @@ fn random_access_mode(
     let mut error_count = 0_usize;
     let mut processed_count = 0_usize;
 
-    #[cfg(feature = "datapusher_plus")]
-    let show_progress = false;
-
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     let show_progress = !skip_main
         && (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR"))
@@ -1255,7 +1255,13 @@ fn random_access_mode(
                     // QSV_INSERTRECORD_TBL is populated, we have a record to insert
                     insertrecord.clear();
 
-                    create_insertrecord(&insertrecord_table, &mut insertrecord, headers_count)?;
+                    // headerless map columns may be unnamed: the mapped row gives the width
+                    let insert_width = if no_headers {
+                        record.len()
+                    } else {
+                        headers_count
+                    };
+                    create_insertrecord(&insertrecord_table, &mut insertrecord, insert_width)?;
 
                     if QSV_SKIP.load(Ordering::Relaxed) {
                         if !debug_enabled {

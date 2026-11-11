@@ -96,8 +96,8 @@ With "luau map", if the MAIN script is invalid for a row, "<ERROR>" followed by 
 detailed error message is returned for that row.
 With "luau filter", if the MAIN script is invalid for a row, that row is not filtered.
 
-If any row has an invalid result, an exitcode of 1 is returned and an error count
-is logged.
+If any row has an invalid result, or the END script fails, an exitcode of 1 is
+returned and an error count is logged.
 
 SPECIAL VARIABLES:
   "_IDX" - a READ-only variable that is zero during the BEGIN script and
@@ -136,6 +136,9 @@ For security and safety reasons as a purpose-built embeddable interpreter,
 Luau's standard library is relatively minimal (https://luau-lang.org/library).
 That's why qsv bundles & preloads LuaDate v2.2.1 as date manipulation is a common task.
 See https://tieske.github.io/date/ on how to use the LuaDate library.
+To use it, add 'date = require "./date"' to a script. qsv writes the library to
+date.lua in the current directory for the run, and deletes it afterwards.
+If a date.lua already exists there, it is used instead and left untouched.
 
 Additional libraries can be loaded using Luau's "require" function.
 See https://github.com/LewisJEllis/awesome-lua for a list of other libraries.
@@ -413,8 +416,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let comment_remover_re = regex::Regex::new(r"(?m)(^\s*?--.*?$)").unwrap();
     luau_script = comment_remover_re.replace_all(&luau_script, "").to_string();
 
-    let mut index_file_used =
-        luau_script.contains(QSV_V_INDEX) || luau_script.contains(QSV_V_LASTROW);
+    // word boundaries, so identifiers that merely contain these names
+    // (e.g. a PRICE_INDEX column, or a "returns" column) don't trigger them
+    let index_var_re = regex::Regex::new(r"\b(?:_INDEX|_LASTROW)\b").unwrap();
+    let return_re = regex::Regex::new(r"\breturn\b").unwrap();
+
+    let mut index_file_used = index_var_re.is_match(&luau_script);
 
     // check if the main script has BEGIN and END blocks
     // and if so, extract them and remove them from the main script
@@ -439,7 +446,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     luau_script = main_script;
 
     // if the main script is a single expression, we need to prepend a return statement
-    let mut main_script = if luau_script.contains("return") {
+    let mut main_script = if return_re.is_match(&luau_script) {
         String::new()
     } else {
         String::from("return ")
@@ -485,9 +492,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
 
     // check if the BEGIN script uses _INDEX
-    index_file_used = index_file_used
-        || begin_script.contains(QSV_V_INDEX)
-        || begin_script.contains(QSV_V_LASTROW);
+    index_file_used = index_file_used || index_var_re.is_match(&begin_script);
 
     let qsv_register_lookup_used = begin_script.contains("qsv_register_lookup(");
     debug!("BEGIN script: {begin_script:?}");
@@ -520,8 +525,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         embedded_end_script.trim().to_string()
     };
     // check if the END script uses _INDEX
-    index_file_used =
-        index_file_used || end_script.contains(QSV_V_INDEX) || end_script.contains(QSV_V_LASTROW);
+    index_file_used = index_file_used || index_var_re.is_match(&end_script);
     debug!("END script: {end_script:?}");
 
     // check if 'require "./date"' was used in the scripts.
@@ -529,15 +533,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         || begin_script.contains(REQUIRE_DATE)
         || end_script.contains(REQUIRE_DATE);
 
-    let mut luadate_path: Option<PathBuf> = None;
     // 'require "./date"' was used in the scripts, so we need to prepare luadate library
-    // and write it to the current directory.
-    if require_date_used {
-        // Prepare luadate so users can just use 'date = require "./date"' in their scripts
+    // and write it to the current directory. An existing ./date.lua is the user's file:
+    // use it as-is and never overwrite or delete it. The one we write is removed on drop,
+    // so it doesn't outlive a failed run either.
+    let _luadate_guard = if require_date_used {
         let luadate_library = include_bytes!("../../resources/luau/vendor/luadate/date.lua");
-        luadate_path = Some(std::env::current_dir()?.join("date.lua"));
-        fs::write(luadate_path.clone().unwrap(), luadate_library)?;
-    }
+        let luadate_path = std::env::current_dir()?.join("date.lua");
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&luadate_path)
+        {
+            Ok(mut file) => {
+                let guard = RemoveOnDrop(luadate_path);
+                file.write_all(luadate_library)?;
+                Some(guard)
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                log::warn!(
+                    "{} already exists - using it instead of the bundled LuaDate library.",
+                    luadate_path.display()
+                );
+                None
+            },
+            Err(e) => return fail_clierror!("Cannot write {}: {e}", luadate_path.display()),
+        }
+    } else {
+        None
+    };
 
     // -------- setup Luau environment --------
     let luau = Lua::new();
@@ -621,12 +645,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         )?;
     }
 
-    if require_date_used {
-        // delete the luadate library
-        fs::remove_file(luadate_path.unwrap())?;
-    }
-
     Ok(())
+}
+
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 // ------------ SEQUENTIAL MODE ------------
@@ -648,7 +675,6 @@ fn sequential_mode(
     let mut headers = rdr.headers()?.to_owned();
     let mut remap_headers = csv::StringRecord::new();
     let mut new_column_count = 0_usize;
-    let mut headers_count = headers.len();
     let debug_enabled = log_enabled!(log::Level::Debug);
 
     if !rconfig.no_headers {
@@ -670,11 +696,11 @@ fn sequential_mode(
 
         if args.flag_remap {
             wtr.write_record(&remap_headers)?;
-            headers_count = remap_headers.len();
         } else {
             wtr.write_record(&headers)?;
         }
     }
+    let headers_count = output_width(rconfig, args, &headers, &remap_headers);
 
     // we initialize the special vars _IDX and _ROWCOUNT
     globals.raw_set(QSV_V_IDX, 0)?;
@@ -818,6 +844,7 @@ fn sequential_mode(
             luau.load(&main_bytecode).eval()
         };
 
+        let row_errored = computed_result.is_err();
         computed_value = match computed_result {
             Ok(computed) => computed,
             Err(e) => {
@@ -866,7 +893,9 @@ fn sequential_mode(
                         wtr.write_record(&record)?;
                     }
                     wtr.write_record(&insertrecord)?;
-                    insertrecord_table.clear()?;
+                    // unset, not just emptied: an empty table would still insert a blank row on
+                    // later rows
+                    luau.globals().raw_set(QSV_INSERTRECORD_TBL, Value::Nil)?;
                 },
                 Ok(_) | Err(_) => {
                     if QSV_SKIP.load(Ordering::Relaxed) {
@@ -878,7 +907,8 @@ fn sequential_mode(
             }
         } else {
             // filter subcommand
-            must_keep_row = if error_count > 0 {
+            // a row whose script errored is kept; other rows are judged on their own result
+            must_keep_row = if row_errored {
                 true
             } else {
                 match computed_value {
@@ -900,6 +930,8 @@ fn sequential_mode(
         }
     }
 
+    // printed only after the progress bar is finished, so the bar can't swallow it
+    let mut end_output = String::new();
     if !end_script.is_empty() {
         // at the END, set a convenience variable named _ROWCOUNT;
         // true, _ROWCOUNT is equal to _IDX at this point, but this
@@ -922,6 +954,7 @@ fn sequential_mode(
                 let err_msg = format!("<ERROR> END error: Cannot evaluate \"{end_script}\".\n{e}");
                 log::error!("{err_msg}");
                 log::error!("END globals: {globals:?}");
+                error_count += 1;
 
                 mlua::Value::String(luau.create_string(&err_msg)?)
             },
@@ -942,15 +975,16 @@ fn sequential_mode(
                 );
             },
         };
-        if !end_string.is_empty() && !show_progress {
-            winfo!("{end_string}");
-        }
+        end_output = end_string;
     }
 
     wtr.flush()?;
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
         util::finish_progress(&progress);
+    }
+    if !end_output.is_empty() {
+        winfo!("{end_output}");
     }
     info!("SEQUENTIAL MODE: Processed {idx} record/s.");
 
@@ -1003,7 +1037,6 @@ fn random_access_mode(
     let mut headers = idx_file.headers()?.to_owned();
     let mut remap_headers = csv::StringRecord::new();
     let mut new_column_count = 0_usize;
-    let mut headers_count = headers.len();
     let debug_enabled = log_enabled!(log::Level::Debug);
 
     if !rconfig.no_headers {
@@ -1024,11 +1057,11 @@ fn random_access_mode(
 
         if args.flag_remap {
             wtr.write_record(&remap_headers)?;
-            headers_count = remap_headers.len();
         } else {
             wtr.write_record(&headers)?;
         }
     }
+    let headers_count = output_width(rconfig, args, &headers, &remap_headers);
 
     // unlike sequential_mode, we actually know the row_count at the BEGINning.
     // saturating_sub guards against underflow when the input CSV is empty.
@@ -1109,7 +1142,7 @@ fn random_access_mode(
         progress.set_message(format!("{row_count} records"));
 
         // draw progress bar for the first time using RANDOM ACCESS style
-        progress.set_length(curr_record);
+        progress.set_length(row_count);
     } else {
         progress.set_draw_target(ProgressDrawTarget::hidden());
     }
@@ -1190,6 +1223,7 @@ fn random_access_mode(
             luau.load(&main_bytecode).eval()
         };
 
+        let row_errored = computed_result.is_err();
         computed_value = match computed_result {
             Ok(computed) => computed,
             Err(e) => {
@@ -1234,7 +1268,9 @@ fn random_access_mode(
                         wtr.write_record(&record)?;
                     }
                     wtr.write_record(&insertrecord)?;
-                    insertrecord_table.clear()?;
+                    // unset, not just emptied: an empty table would still insert a blank row on
+                    // later rows
+                    luau.globals().raw_set(QSV_INSERTRECORD_TBL, Value::Nil)?;
                 },
                 Ok(_) | Err(_) => {
                     if QSV_SKIP.load(Ordering::Relaxed) {
@@ -1246,7 +1282,8 @@ fn random_access_mode(
             }
         } else {
             // filter subcommand
-            must_keep_row = if error_count > 0 {
+            // a row whose script errored is kept; other rows are judged on their own result
+            must_keep_row = if row_errored {
                 true
             } else {
                 match computed_value {
@@ -1279,6 +1316,8 @@ fn random_access_mode(
         curr_record = next_record;
     } // main loop
 
+    // printed only after the progress bar is finished, so the bar can't swallow it
+    let mut end_output = String::new();
     if !end_script.is_empty() {
         info!("Compiling and executing END script. _ROWCOUNT: {row_count}");
         Stage::End.set_current();
@@ -1289,6 +1328,7 @@ fn random_access_mode(
                 let err_msg = format!("<ERROR> END error: Cannot evaluate \"{end_script}\".\n{e}");
                 log::error!("{err_msg}");
                 log::error!("END globals: {globals:?}");
+                error_count += 1;
 
                 mlua::Value::String(luau.create_string(&err_msg)?)
             },
@@ -1309,9 +1349,7 @@ fn random_access_mode(
                 );
             },
         };
-        if !end_string.is_empty() && !show_progress {
-            winfo!("{end_string}");
-        }
+        end_output = end_string;
     }
 
     wtr.flush()?;
@@ -1319,6 +1357,9 @@ fn random_access_mode(
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
         progress.abandon_with_message(msg.clone());
+    }
+    if !end_output.is_empty() {
+        winfo!("{end_output}");
     }
     info!("{msg}");
 
@@ -1332,6 +1373,36 @@ fn random_access_mode(
 // UTILITY FUNCTIONS
 // -----------------------------------------------------------------------------
 
+/// The number of fields in every output row: what `qsv_insertrecord()` pads/truncates to.
+/// `headers` must already include the new map columns (when there is a header row).
+fn output_width(
+    rconfig: &Config,
+    args: &Args,
+    headers: &csv::StringRecord,
+    remap_headers: &csv::StringRecord,
+) -> usize {
+    if !args.cmd_map {
+        return headers.len();
+    }
+    if !rconfig.no_headers {
+        return if args.flag_remap {
+            remap_headers.len()
+        } else {
+            headers.len()
+        };
+    }
+    // without a header row, the new columns were not appended to `headers`
+    let new_columns = args
+        .arg_new_columns
+        .as_deref()
+        .map_or(1, |cols| cols.split(',').count());
+    if args.flag_remap {
+        new_columns
+    } else {
+        headers.len() + new_columns
+    }
+}
+
 #[inline]
 fn map_computedvalue(
     computed_value: &Value,
@@ -1339,6 +1410,11 @@ fn map_computedvalue(
     flag_remap: bool,
     new_column_count: usize,
 ) -> Result<(), CliError> {
+    if flag_remap {
+        // we're in remap mode, so we clear the record
+        // and only write the new columns to output
+        record.clear();
+    }
     match computed_value {
         Value::String(string) => match simdutf8::basic::from_utf8(&string.as_bytes()) {
             Ok(utf8) => {
@@ -1361,11 +1437,6 @@ fn map_computedvalue(
             record.push_field("");
         },
         Value::Table(table) => {
-            if flag_remap {
-                // we're in remap mode, so we clear the record
-                // and only write the new columns to output
-                record.clear();
-            }
             let mut columns_inserted = 0_usize;
             table.for_each::<String, Value>(|_k, v| {
                 if new_column_count > 0 && columns_inserted >= new_column_count {
@@ -1418,14 +1489,12 @@ fn create_insertrecord(
     let mut columns_inserted = 0_usize;
 
     for v in insertrecord_table.clone().sequence_values::<String>() {
-        let v = v?;
-        insertrecord.push_field(&v);
-
-        columns_inserted += 1;
-        if columns_inserted > headers_count {
-            // we ignore table values more than the number of new columns defined
+        if columns_inserted >= headers_count {
+            // we ignore table values beyond the output row width
             break;
         }
+        insertrecord.push_field(&v?);
+        columns_inserted += 1;
     }
     // on the other hand, if there are less table values than expected
     // we fill it up with empty fields
@@ -2084,10 +2153,16 @@ fn setup_helpers(
         let mut idx = 1_u16;
 
         while let Some(val) = args.pop_front() {
-            let val = luau.from_value::<serde_json::Value>(val)?;
-            let val_str = val.as_str().unwrap_or_default();
+            // stringified the same way map_computedvalue() renders MAIN return values
+            let val_str = match val {
+                Value::String(s) => s.to_string_lossy(),
+                Value::Integer(i) => itoa::Buffer::new().format(i).to_owned(),
+                Value::Number(n) => zmij::Buffer::new().format_finite(n).to_owned(),
+                Value::Boolean(b) => (if b { "true" } else { "false" }).to_owned(),
+                _ => String::new(),
+            };
 
-            insertrecord_table.raw_set(idx, val_str).unwrap();
+            insertrecord_table.raw_set(idx, val_str)?;
             idx += 1;
 
             if idx == u16::MAX {

@@ -1084,7 +1084,8 @@ END {
         .arg("file:testqsvcmd.luau")
         .arg("data.csv");
 
-    let output_stderr = wrk.stderr_on_success(&mut cmd);
+    // the disallowed command raises an END error, which fails the run
+    let output_stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         output_stderr.starts_with("<ERROR>")
             && output_stderr.contains("runtime error: Invalid shell command: \"rm\".")
@@ -3505,4 +3506,246 @@ fn luau_autoindex_sniff_preamble_does_not_index_the_skipped_view() {
     ]);
     wrk.assert_err(&mut cmd);
     assert!(!wrk.path("p.csv.idx").exists());
+}
+
+fn luau_review_data(wrk: &Workdir) {
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "x"],
+            svec!["2", "y"],
+            svec!["3", "z"],
+            svec!["4", "w"],
+        ],
+    );
+}
+
+#[test]
+fn luau_filter_error_does_not_keep_later_rows() {
+    // regression: an error on one row used to make filter keep EVERY later row
+    let wrk = Workdir::new("luau_filter_error_later_rows");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("filter")
+        .arg(r#"if a == "1" then error("boom") end; return tonumber(a) > 2"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_error(&mut cmd);
+    let expected = vec![
+        svec!["a", "b"],
+        svec!["1", "x"], // the errored row is kept
+        svec!["3", "z"],
+        svec!["4", "w"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_insertrecord_pads_to_output_width_with_two_new_columns() {
+    // regression: insertrecord padded to the INPUT width, not the output width
+    let wrk = Workdir::new("luau_insertrecord_pad_two_cols");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c,d")
+        .arg(r#"if a == "1" then qsv_insertrecord("p") end; return {1, 2}"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["a", "b", "c", "d"],
+        svec!["1", "x", "1", "2"],
+        svec!["p", "", "", ""],
+        svec!["2", "y", "1", "2"],
+        svec!["3", "z", "1", "2"],
+        svec!["4", "w", "1", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_insertrecord_truncates_to_output_width() {
+    // regression: the truncation check let one excess value through
+    let wrk = Workdir::new("luau_insertrecord_truncate");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c,d")
+        .arg("--begin")
+        .arg(r#"qsv_insertrecord("p", "q", "r", "s", "t", "u")"#)
+        .arg("return {1, 2}")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["a", "b", "c", "d"]);
+    assert_eq!(got[1], svec!["p", "q", "r", "s"]);
+    assert_eq!(got.len(), 6);
+}
+
+#[test]
+fn luau_filter_begin_insertrecord() {
+    let wrk = Workdir::new("luau_filter_begin_insertrecord");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("filter")
+        .arg("--begin")
+        .arg(r#"qsv_insertrecord("p", "q", "r")"#)
+        .arg(r#"return a == "4""#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["a", "b"], svec!["p", "q"], svec!["4", "w"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_insertrecord_no_headers() {
+    let wrk = Workdir::new("luau_insertrecord_no_headers");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--no-headers")
+        .arg("--begin")
+        .arg(r#"qsv_insertrecord("p")"#)
+        .arg("return 1")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["p", "", ""]);
+    assert_eq!(got[1], svec!["a", "b", "1"]);
+}
+
+#[test]
+fn luau_insertrecord_stringifies_numbers_and_booleans() {
+    // regression: non-string values were inserted as empty fields
+    let wrk = Workdir::new("luau_insertrecord_stringify");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--end")
+        .arg("qsv_insertrecord(42, 2.5, true)")
+        .arg("return 1")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.last().unwrap(), &svec!["42", "2.5", "true"]);
+}
+
+#[test]
+fn luau_map_remap_scalar_return() {
+    // regression: --remap only dropped the input columns for table returns
+    let wrk = Workdir::new("luau_map_remap_scalar");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--remap")
+        .arg("return a * 2")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["c"], svec!["2"], svec!["4"], svec!["6"], svec!["8"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn luau_end_error_exits_nonzero() {
+    // regression: an END script error used to exit 0
+    let wrk = Workdir::new("luau_end_error_exit");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--end")
+        .arg("return nosuch.x")
+        .arg("return 1")
+        .arg("data.csv");
+
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(stderr.contains("END error"), "stderr: {stderr}");
+}
+
+#[test]
+fn luau_end_output_shown_with_progressbar() {
+    // regression: END output was suppressed whenever --progressbar was on
+    let wrk = Workdir::new("luau_end_output_progressbar");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--progressbar")
+        .arg("--end")
+        .arg(r#"return "TOTAL=" .. tot"#)
+        .arg("tot = (tot or 0) + a; return tot")
+        .arg("data.csv");
+
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("TOTAL=10"), "stderr: {stderr}");
+}
+
+#[test]
+fn luau_map_return_substring_in_column_name() {
+    // regression: a column named "returns" suppressed the implicit `return`
+    let wrk = Workdir::new("luau_return_substring");
+    wrk.create("data.csv", vec![svec!["returns"], svec!["5"]]);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map").arg("c").arg("returns * 2").arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["returns", "c"], svec!["5", "10"]]);
+}
+
+#[test]
+fn luau_index_substring_in_column_name_stays_sequential() {
+    // regression: a PRICE_INDEX column switched on RANDOM ACCESS MODE
+    let wrk = Workdir::new("luau_index_substring");
+    wrk.create("data.csv", vec![svec!["PRICE_INDEX"], svec!["5"]]);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("return PRICE_INDEX * 2")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["PRICE_INDEX", "c"], svec!["5", "10"]]);
+}
+
+#[test]
+fn luau_require_date_keeps_existing_date_lua() {
+    // regression: an existing ./date.lua was overwritten, then deleted
+    let wrk = Workdir::new("luau_require_date_existing");
+    luau_review_data(&wrk);
+    wrk.create_from_string("date.lua", "return {mine = true}\n");
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg(r#"local date = require "./date"; return tostring(date.mine)"#)
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[1], svec!["1", "x", "true"]);
+    assert_eq!(
+        wrk.read_to_string("date.lua").unwrap(),
+        "return {mine = true}\n"
+    );
+}
+
+#[test]
+fn luau_require_date_removed_after_failed_run() {
+    // regression: the bundled date.lua was left behind when the run failed
+    let wrk = Workdir::new("luau_require_date_failed_run");
+    luau_review_data(&wrk);
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("c")
+        .arg("--begin")
+        .arg(r#"error("fail")"#)
+        .arg(r#"local date = require "./date"; return 1"#)
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("date.lua").exists());
 }

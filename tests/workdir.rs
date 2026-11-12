@@ -206,6 +206,7 @@ impl Workdir {
     /// Run `cmd` ONCE and return `(stdout parsed as T, stderr)`. The
     /// non-CSV counterpart of `read_stdout_and_stderr`; stdout is trimmed of
     /// trailing CR/LF exactly as `stdout` does.
+    #[cfg_attr(feature = "datapusher_plus", allow(dead_code))]
     pub fn stdout_and_stderr<T: FromStr>(&self, cmd: &mut process::Command) -> (T, String) {
         let o = self.run_once(cmd, None);
         (
@@ -258,6 +259,7 @@ impl Workdir {
     /// Run `cmd`, assert it exited with a non-zero status, and return its stdout
     /// parsed as CSV. For commands that emit partial output and THEN fail — the
     /// rows and the failure must come from the same run to mean anything.
+    #[cfg_attr(feature = "datapusher_plus", allow(dead_code))]
     pub fn read_stdout_on_error<T: Csv>(&self, cmd: &mut process::Command) -> T {
         let o = self.run_once(cmd, Some(false));
         Self::csv_from_stdout(&o.stdout)

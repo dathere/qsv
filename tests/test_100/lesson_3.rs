@@ -1,6 +1,7 @@
 // Lesson 3: qsv and JSON
 // https://100.dathere.com/lessons/3
 
+#[cfg(not(feature = "datapusher_plus"))]
 use crate::workdir::Workdir;
 
 // Task 1

@@ -1,7 +1,9 @@
 // Lesson 2: Piping commands
 // https://100.dathere.com/lessons/2
 
-use std::{io::Write, process};
+#[cfg(not(feature = "datapusher_plus"))]
+use std::io::Write;
+use std::process;
 
 use crate::workdir::Workdir;
 

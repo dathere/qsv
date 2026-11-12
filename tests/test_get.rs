@@ -344,7 +344,7 @@ impl GetWebServer {
     }
 
     fn url(&self, path: &str) -> String {
-        let path = path.strip_prefix('/').unwrap_or(path);
+        let path = path.trim_prefix('/');
         // Plain HTTP to the in-process test mock server (not production code).
         format!("http://{}/{path}", self.addr) // DevSkim: ignore DS137138
     }

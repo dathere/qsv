@@ -2539,7 +2539,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
 /// `~1` must be decoded before `~0`, or a literal `~1` in a name (escaped `~01`) becomes `/`.
 fn instance_field(location: &Location) -> String {
     let pointer = location.as_str();
-    let field = pointer.strip_prefix('/').unwrap_or(pointer);
+    let field = pointer.trim_prefix('/');
     if field.contains('~') {
         field.replace("~1", "/").replace("~0", "~")
     } else {

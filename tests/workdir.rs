@@ -570,7 +570,7 @@ pub fn sorted_rows(mut rows: Vec<Vec<String>>) -> Vec<Vec<String>> {
 #[allow(dead_code)]
 pub fn sorted_lines(s: &str) -> String {
     let trailing_nl = s.ends_with('\n');
-    let mut lines: Vec<&str> = s.strip_suffix('\n').unwrap_or(s).split('\n').collect();
+    let mut lines: Vec<&str> = s.trim_suffix('\n').split('\n').collect();
     if lines.len() > 1 {
         lines[1..].sort_unstable();
     }

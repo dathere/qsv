@@ -2155,7 +2155,7 @@ impl SampleWebServer {
     /// slash on the path is optional — both `"foo.csv"` and `"/foo.csv"`
     /// produce the same URL.
     fn url(&self, path: &str) -> String {
-        let path = path.strip_prefix('/').unwrap_or(path);
+        let path = path.trim_prefix('/');
         format!("http://{}/{path}", self.addr)
     }
 }

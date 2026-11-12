@@ -11,7 +11,7 @@ categories    = ["command-line-utilities", "parser-implementations"]
 license       = "MIT"
 autotests     = false
 edition       = "2024"
-rust-version  = "1.99"
+rust-version  = "1.100"
 resolver      = "3"
 autobins      = false
 
@@ -185,7 +185,7 @@ censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
 console = { version = "0.16", optional = true }
-const_format = "0.2"
+const_format = { version = "0.2", optional = true }
 cpc = { version = "5", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
@@ -205,7 +205,7 @@ csvs_convert = { version = "0.13", default-features = false, features = [
 dns-lookup = { version = "4", optional = true }
 directories = "6.0"
 dotenvy = "0.15"
-dunce = "1"
+dunce = { version = "1", optional = true }
 dynfmt2 = { version = "0.4", default-features = false, features = ["curly"] }
 # only used to validate --default-encoding labels up front (fetch/fetchpost).
 # reqwest's charset feature does the actual decoding, but Encoding::for_label()
@@ -215,7 +215,7 @@ dynfmt2 = { version = "0.4", default-features = false, features = ["curly"] }
 # simd-accel (+ std, which multiversions more x86 code paths) for the whole dep tree.
 encoding_rs = "0.8"
 eudex = { version = "0.1", optional = true }
-ext-sort = { version = "0.1", default-features = false, features = ["memory-limit"] }
+ext-sort = { version = "0.1", default-features = false, features = ["memory-limit"], optional = true }
 fake = { version = "5", features = [
     "derive",
     "chrono",
@@ -250,9 +250,9 @@ geozero = { version = "0.15", features = [
     "with-shp",
 ], optional = true }
 governor = { version = "0.10", optional = true }
-grex = { version = "1.4", default-features = false }
+grex = { version = "1.4", default-features = false, optional = true }
 gzp = { version = "2", default-features = false, features = ["snappy_default"] }
-hostname-validator = "1.1"
+hostname-validator = { version = "1.1", optional = true }
 human-panic = "2"
 iana-time-zone = "0.1"
 indexmap = { version = "2.14", features = ["serde"] }
@@ -263,7 +263,7 @@ iso_currency = "0.7"
 itertools = "0.15"
 itoa = "1"
 jaq-core = "3"
-jaq-json = { version = "2", features = ["serde"] }
+jaq-json = { version = "2", features = ["serde"], optional = true }
 jaq-std = "3"
 # not used directly: compiles in jiff's bundled tzdb so minijinja-contrib's datetime filters
 # can fall back to it for zone names missing from the OS database (minijinja#1008)
@@ -298,7 +298,7 @@ minijinja-contrib = { version = "3.0", features = [
     "unicode_wordwrap",
     "wordcount",
     "wordwrap",
-] }
+], optional = true }
 mlua = { version = "0.12", features = [
     "luau",
     "luau-jit",
@@ -476,7 +476,7 @@ self_update = { version = "1.2", features = [
     "rustls",
     "signatures",
 ], default-features = false, optional = true }
-semver = "1"
+semver = { version = "1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
@@ -761,7 +761,7 @@ python = ["pyo3"]
 # evaluation; polars (SQL context) backs the SQL-requiring helpers
 # (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
 # scheming spec YAML. See `qsv profile --help`.
-profile = ["dep:sha2", "polars", "yaml_serde"]
+profile = ["dep:sha2", "minijinja-contrib", "polars", "yaml_serde"]
 # geoconnex: bundled SHACL-validated linked-data profile for hydrologic
 # features (https://docs.geoconnex.us/). Embeds the Geoconnex SHACL
 # shapes (~10KB Turtle bundle) so `qsv profile --profile geoconnex
@@ -807,7 +807,8 @@ viz = [
 # `qsvmcp` uses plain `viz`: publish.yml builds qsvmcp on Windows with --features=qsvmcp.
 viz_static = ["viz", "plotly/static_export_default"]
 lens = ["csvlens"]
-lite = []
+# deps used by commands that qsvlite shares with qsv (extsort/json/schema/split) but qsvdp lacks
+lite = ["dunce", "ext-sort", "grex", "hostname-validator", "jaq-json"]
 datapusher_plus = [
     "base64-simd",
     "geocode",
@@ -819,12 +820,26 @@ datapusher_plus = [
 ]
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
+self_update = ["dep:self_update", "semver"]
 # feature_capable backs the always-compiled commands that consume lookup tables
 # (validate/template/describegpt). Pull flate2 + zstd so their remote lookups
 # auto-decompress .gz/.zlib/.zst (alongside the always-available .zip/.sz). #1417.
 # base64-simd backs describegpt's multimodal --context-file (base64-encoding image/PDF
 # attachments for the LLM); it's always available wherever describegpt is (non-lite).
-feature_capable = ["base64-simd", "flate2", "zstd"]
+# The remaining deps back code only the full `qsv`/qsvmcp binaries compile; the lite/dp
+# binaries gate them via `lite`/`profile`/`self_update` (cargo's unused_dependencies lint).
+feature_capable = [
+    "base64-simd",
+    "const_format",
+    "dunce",
+    "ext-sort",
+    "flate2",
+    "grex",
+    "hostname-validator",
+    "jaq-json",
+    "minijinja-contrib",
+    "zstd",
+]
 nightly = [
     "crc32fast/nightly",
     "pyo3/nightly",

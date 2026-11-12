@@ -44432,7 +44432,7 @@ fn smart_grid_top(row_units: f64, has_subtitles: bool) -> f64 {
 /// `dc:` prefix of a `qsv get` disk-cache handle, which means nothing to a reader of the page.
 fn dataset_display_name(input: Option<&str>) -> &str {
     let input = input.unwrap_or("data");
-    let input = input.strip_prefix("dc:").unwrap_or(input);
+    let input = input.trim_prefix("dc:");
     std::path::Path::new(input)
         .file_name()
         .and_then(|s| s.to_str())

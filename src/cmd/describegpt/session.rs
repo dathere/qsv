@@ -184,7 +184,7 @@ pub(super) fn load_session(session_path: &Path) -> CliResult<SessionState> {
             while i < lines.len() && !lines[i].trim().starts_with("##") {
                 let line = lines[i].trim();
                 if line.starts_with("- ") {
-                    let error = line.strip_prefix("- ").unwrap_or(line).to_string();
+                    let error = line.trim_prefix("- ").to_string();
                     state.sql_errors.push(error);
                 }
                 i += 1;

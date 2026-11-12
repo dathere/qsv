@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs: the `profile --locate census` USAGE gives the state-column threshold** ([#5025](https://github.com/dathere/qsv/pull/5025)): a state column lists states only when at least 90% of its values are US states.
 
 ### Changed
-- **`viz smart`: the guided Tour's vendored [driver.js](https://driverjs.com) is now [1.12.1](https://github.com/nilbuild/driver.js/releases/tag/1.12.1)** (was 1.10.2):
+- **`viz smart`: the guided Tour's vendored [driver.js](https://driverjs.com) is now [1.12.1](https://github.com/nilbuild/driver.js/releases/tag/1.12.1)** (was 1.10.2; [#5038](https://github.com/dathere/qsv/pull/5038)):
   - **Enter moves to the next step on every step.** Each popover focuses Next instead of the close button, and the Tour no longer moves focus off Next on the first step. Before, Enter did nothing on the first step and ended the tour on every later one.
   - Escape pressed in a text field inside the spotlighted element, such as the data viewer's search box, goes to that field, and the drawer stays open. Before, it ended the tour. While a tour runs, the dictionary and data drawers leave Escape to the tour, so Escape anywhere else ends the tour and closes the open drawer, as before.
   - Elements inside the spotlighted area keep their own `pointer-events: none`; before, driver.js forced every one of them to `auto`.

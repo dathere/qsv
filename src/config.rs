@@ -56,6 +56,7 @@ pub fn stdin_spool() -> Option<&'static PathBuf> {
 /// readers that open files themselves (Polars' `with_skip_lines`, `DuckDB`'s `skip`) to skip,
 /// as the `Config` readers skip them. 0 when the env var is unset, so the sniff only runs
 /// when it matters.
+#[cfg(not(feature = "lite"))]
 pub fn sniffed_preamble_lines(path: &Path) -> usize {
     if !util::get_envvar_flag("QSV_SNIFF_PREAMBLE") {
         return 0;
@@ -118,6 +119,7 @@ pub fn sniffed_preamble_rows(path: &Path) -> u64 {
 
 /// The `, skip=N` argument for `DuckDB`'s `read_csv_auto` that skips `path`'s sniffed preamble
 /// lines (see [`sniffed_preamble_lines`]), or "" when there are none.
+#[cfg(not(feature = "lite"))]
 pub fn duckdb_skip_arg(path: &Path) -> String {
     match sniffed_preamble_lines(path) {
         0 => String::new(),
@@ -150,6 +152,7 @@ pub fn default_delimiter() -> u8 {
 /// The delimiter `path` is read with when no `--delimiter` is given, worked out from its name
 /// alone (no reading, decompressing or converting): spooled stdin and unrecognized extensions
 /// take `QSV_DEFAULT_DELIMITER`; a compressed CSV/TSV/SSV takes its inner extension's.
+#[cfg(all(feature = "to", feature = "feature_capable"))]
 pub fn read_delimiter(path: &Path) -> u8 {
     let default = default_delimiter();
     if is_stdin_spool(path) {
@@ -927,6 +930,7 @@ impl Config {
 
     /// Raw lines the sniffed preamble takes up, for readers that skip lines rather than rows
     /// (Polars' `with_skip_lines`, `DuckDB`'s `skip`). 0 for stdin.
+    #[cfg(not(feature = "lite"))]
     pub fn preamble_lines(&self) -> io::Result<usize> {
         match self.path {
             Some(ref p) => Ok(self.preamble_span(p)?.1 as usize),

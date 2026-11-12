@@ -1365,6 +1365,7 @@ fn generate_schema_reuses_stats_cache_with_default_delimiter_env() {
 }
 
 // a file whose header sits below two preamble lines, as QSV_SNIFF_PREAMBLE detects them
+#[cfg(feature = "polars")]
 fn preamble_csv() -> String {
     let mut csv = String::from("Report generated 2026-10-24\nSource: city clerk\nid,name,amount\n");
     for i in 1..=40 {

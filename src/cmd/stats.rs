@@ -842,6 +842,11 @@ where
 /// wait for a regeneration that may never come. A date column has no numeric quartile, whatever
 /// the cache claims.
 #[inline]
+#[cfg(any(
+    feature = "luau",
+    all(feature = "viz", feature = "feature_capable"),
+    test
+))]
 fn stat_rendering_f64(rendering: Option<&String>, field_type: &str) -> Option<f64> {
     if matches!(field_type, "Date" | "DateTime") {
         return None;
@@ -1058,6 +1063,11 @@ impl StatsData {
     }
 
     /// The numeric value of `mean`, or `None` when the column's mean is a date rendering.
+    #[cfg(any(
+        feature = "luau",
+        all(feature = "viz", feature = "feature_capable"),
+        test
+    ))]
     #[inline]
     pub fn mean_f64(&self) -> Option<f64> {
         stat_rendering_f64(self.mean.as_ref(), &self.r#type)

@@ -28,6 +28,7 @@ impl SelectColumns {
 
     /// True for the empty selector a missing select option deserializes to, which
     /// `selection` expands to every column.
+    #[cfg(any(feature = "feature_capable", feature = "lite"))]
     pub const fn is_unspecified(&self) -> bool {
         self.selectors.is_empty() && !self.invert
     }

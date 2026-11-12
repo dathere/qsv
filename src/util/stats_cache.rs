@@ -1246,13 +1246,28 @@ pub fn get_stats_csv_path(input_path: &std::path::Path) -> crate::CliResult<std:
 /// `pivotp --agg smart`). Shared so both commands build - and reuse - the same persistent cache.
 /// Must stay compatible with `StatsMode::ProfileSchema`, which writes that cache too.
 /// `--infer-boolean` is deliberately absent: it would retype 0/1 measures as Boolean.
+#[cfg(any(
+    all(feature = "viz", feature = "feature_capable"),
+    all(
+        feature = "polars",
+        any(feature = "feature_capable", feature = "datapusher_plus")
+    )
+))]
 pub const ADVANCED_STATS_OPTIONS: &str = "--infer-dates --cardinality --mode --mad --quartiles \
                                           --percentiles --zero-padded-numeric --force \
                                           --stats-jsonl --dates-whitelist sniff";
 
 /// `stats` columns an advanced-enriched cache must have (from `ADVANCED_STATS_OPTIONS`), and the
 /// column only `moarstats --advanced` adds.
+#[cfg(all(
+    feature = "polars",
+    any(feature = "feature_capable", feature = "datapusher_plus")
+))]
 const ADVANCED_BASELINE_COLUMNS: [&str; 3] = ["q1", "mode_count", "mad"];
+#[cfg(all(
+    feature = "polars",
+    any(feature = "feature_capable", feature = "datapusher_plus")
+))]
 const ADVANCED_MARKER_COLUMN: &str = "moment_skewness";
 
 /// Make sure `input`'s stats cache carries `moarstats --advanced` statistics, running moarstats
@@ -1271,6 +1286,10 @@ const ADVANCED_MARKER_COLUMN: &str = "moment_skewness";
 /// stale, from another qsv version, built with approximate cardinality or non-default parsing
 /// options, or its JSONL is missing or outdated, it runs with `--force` so the cache is rebuilt
 /// with `ADVANCED_STATS_OPTIONS`.
+#[cfg(all(
+    feature = "polars",
+    any(feature = "feature_capable", feature = "datapusher_plus")
+))]
 pub fn ensure_advanced_stats_cache(input: &str) -> CliResult<bool> {
     let env_mode = env::var("QSV_STATSCACHE_MODE")
         .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())

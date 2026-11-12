@@ -1,6 +1,4 @@
-#![cfg_attr(
-    clippy,
-    allow(
+#![allow(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
         clippy::cast_sign_loss,
@@ -30,7 +28,6 @@
         clippy::use_self,
         clippy::cognitive_complexity,
         clippy::option_if_let_else,
-    )
 )]
 use std::{env, time::Instant};
 

@@ -14189,7 +14189,7 @@ fn viz_smart_has_tour_by_default() {
         "tour relaunch pill chrome missing"
     );
     // attribution: machine-readable comment + human credits footer
-    assert!(html.contains("driver.js 1.10.2 - (c) Kamran Ahmed - MIT"));
+    assert!(html.contains("driver.js 1.12.1 - (c) Kamran Ahmed - MIT"));
     assert!(html.contains(
         r#"<a href="https://driverjs.com/" target="_blank" rel="noopener">driver.js</a> (MIT)"#
     ));
@@ -14239,6 +14239,35 @@ fn viz_smart_tour_skip_button_is_localized() {
         "--language de must localize the skip-to-panels button"
     );
     assert!(!html.contains(r#""Skip to panels &rarr;""#));
+}
+
+#[test]
+fn viz_smart_tour_owns_keyboard_while_active() {
+    let wrk = Workdir::new("viz_smart_tour_owns_keyboard_while_active");
+    fruits(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // The data drawer's Esc handler must stand down during a tour. Otherwise Esc in the
+    // spotlighted search box closes the drawer under a still-running tour.
+    assert!(
+        html.contains(
+            r#"if (document.body.classList.contains("driver-active")) return;
+      var drawer = document.getElementById("qsv-data-drawer");"#
+        ),
+        "the data drawer's Esc handler must ignore Esc while a tour is active"
+    );
+    // Focus that a drawer opener left outside the popover moves to Next on every step (not
+    // only the first), so Enter advances on the data-viewer step too.
+    assert!(html.contains("var next = popover && popover.nextButton;"));
+    assert!(
+        !html.contains("if (!focusFirstPopover) return;"),
+        "per-step focus handling must not be gated on the first popover"
+    );
 }
 
 #[test]
@@ -14416,6 +14445,10 @@ fn viz_smart_tour_honors_x_qsv_tour_overrides() {
     assert!(html.contains("TOUR-OVERRIDE-STATUS story."));
     // with --dict-info the dictionary chapter is present
     assert!(html.contains(r#""open":"qsvOpenDict""#));
+    // ...whose Esc handler stands down while the tour is active (the tour owns Esc then)
+    assert!(html.contains(
+        r#"if (e.key === "Escape" && !document.body.classList.contains("driver-active")) qsvCloseDict();"#
+    ));
     // ...and the dictionary page renders the narration COLLAPSED (a plain <details>, no `open`)
     assert!(html.contains(r#"<details class="qsv-dict-tour">"#));
     assert!(!html.contains(r#"<details class="qsv-dict-tour" open"#));

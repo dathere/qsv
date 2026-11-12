@@ -17674,19 +17674,19 @@ fn datatables_lib_block() -> String {
 /// `driverjs_cdn_sri_matches_the_vendored_bundle`).
 const DRIVERJS_JS: &str = include_str!("assets/driverjs.min.js");
 const DRIVERJS_CSS: &str = include_str!("assets/driverjs.min.css");
-const DRIVERJS_CDN_VERSION: &str = "1.10.2";
+const DRIVERJS_CDN_VERSION: &str = "1.12.1";
 const DRIVERJS_CDN_JS_SRI: &str =
-    "sha384-5g481DgM/VdK19dNiL3kmTG/tz1fQriwUvSide6vc77uYGaXh0s5GLQCUN6dgI8n";
+    "sha384-6TconHWzj1pkc91Tj9TrFXMQoqTwo4Xj0OakPdymcJawvjZDm1tnRlazMkqUH1fa";
 const DRIVERJS_CDN_CSS_SRI: &str =
-    "sha384-q84NOjxOvSzdVT3EjRGos6w4J4t7ysF+ueMkf5CCMevHRH2IkF+sEvNvofEU67dW";
+    "sha384-d9oDl4f4CyHExY0wCz8kI/Fv+E1sqodsvcsFN2V9CG0CqeZzj1by6U3Va3ANbNOD";
 
-/// The driver.js bundle gzipped at max compression + base64 (~25 KB -> ~9 KB b64), computed
+/// The driver.js bundle gzipped at max compression + base64 (~45 KB -> ~19 KB b64), computed
 /// once per process like `DATATABLES_GZ_B64`. Empty on (never-expected) gzip failure — callers
 /// then emit the plain bundle.
 static DRIVERJS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DRIVERJS_JS.as_bytes(), flate2::Compression::best()));
 
-/// Like `DRIVERJS_GZ_B64` but for the stylesheet (~3 KB -> ~1.3 KB b64).
+/// Like `DRIVERJS_GZ_B64` but for the stylesheet (~7.4 KB -> ~2.5 KB b64).
 static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| gzip_b64(DRIVERJS_CSS.as_bytes(), flate2::Compression::best()));
 
@@ -17699,8 +17699,9 @@ static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
 /// Two properties of the bundle that the surrounding code relies on:
 ///   * it exposes `window.driverHints.hints` and never references `window.driver`, so it is
 ///     load-order independent of the core engine (and inflates on its own, see `tour_script`);
-///   * `hints.css` is not a supplement but carries a byte-identical DUPLICATE of driver.css's whole
-///     `.driver-popover*` block, so loading both is safe in either order — and `TOUR_SCRIPT`'s
+///   * `hints.css` is not a supplement but repeats driver.css's `.driver-popover*` rules
+///     byte-for-byte — minus the tour-only action-step/nudge/waiting/feedback rules, which only
+///     driver.css carries — so loading both is safe in either order — and `TOUR_SCRIPT`'s
 ///     higher-specificity `body.qsv-dark .driver-popover` rules re-theme the hint popovers for
 ///     free.
 ///
@@ -17717,16 +17718,16 @@ static DRIVERJS_CSS_GZ_B64: std::sync::LazyLock<String> =
 const DRIVERJS_HINTS_JS: &str = include_str!("assets/driverjs-hints.min.js");
 const DRIVERJS_HINTS_CSS: &str = include_str!("assets/driverjs-hints.min.css");
 const DRIVERJS_HINTS_CDN_JS_SRI: &str =
-    "sha384-AbaQVT/io7rTQxGfXPHFMep4Omjv0lZLl2SEXmaZwTTUy1NPXqO6XhMleUYGdeAZ";
+    "sha384-W+/r0gC8penxIowxhlX4IE7VNe1/CzBZPp/b34HT05bH9cyOJ4fehStrpQfg/HnH";
 const DRIVERJS_HINTS_CDN_CSS_SRI: &str =
-    "sha384-E0PcnW6wtGAssOxWd7JDpsYR8eKlinn6frHOAW2KS8pwV0kXreVNT1weNM8rMHQP";
+    "sha384-+iVToXMiLWYhN1QqObLiwSQnqlRAU1Mmgz04t6Ullfco7iBiOg1VB6uABx+5WIpB";
 
-/// Like `DRIVERJS_GZ_B64` but for the hints bundle (~15 KB -> ~6.3 KB b64).
+/// Like `DRIVERJS_GZ_B64` but for the hints bundle (~17 KB -> ~8.1 KB b64).
 static DRIVERJS_HINTS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     gzip_b64(DRIVERJS_HINTS_JS.as_bytes(), flate2::Compression::best())
 });
 
-/// Like `DRIVERJS_HINTS_GZ_B64` but for its stylesheet (~3.7 KB -> ~1.5 KB b64).
+/// Like `DRIVERJS_HINTS_GZ_B64` but for its stylesheet (~4.2 KB -> ~1.8 KB b64).
 static DRIVERJS_HINTS_CSS_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     gzip_b64(DRIVERJS_HINTS_CSS.as_bytes(), flate2::Compression::best())
 });
@@ -18740,8 +18741,8 @@ const TOUR_SCRIPT: &str = r##"<style>
   var navBusy = false;
   // teardown generation: async continuations capture it and bail if a teardown intervened
   var tourGen = 0;
-  // one-shot, armed per tour start: focus the first popover so the browser scrolls it into
-  // view if off-screen and keyboard users land in the tour dialog immediately
+  // one-shot, armed per tour start: reveal the first popover to an embedding gallery (focus
+  // handling runs on every step, see onPopoverRender)
   var focusFirstPopover = false;
 
   // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
@@ -18879,19 +18880,34 @@ const TOUR_SCRIPT: &str = r##"<style>
         onDestroyStarted: function () { endTour(); },
         onHighlighted: function () { navBusy = false; },
         // NOT onHighlighted: that hook fires before the popover DOM exists. onPopoverRender
-        // hands us the built popover, and the tick deferral lets driver's own
-        // focus-first-button call (synchronous, later in its render) run first so ours wins.
+        // hands us the built popover, and the tick deferral lets driver's own focus call
+        // (synchronous, later in its render) run first. Driver focuses Next — but leaves focus
+        // alone when it already sits inside the spotlighted element, which is where a drawer
+        // chapter's opener puts it (it focuses the drawer it opens). So on EVERY step,
+        // move focus that ended up outside the popover onto Next, so Enter advances; a text
+        // field keeps its focus.
         onPopoverRender: function (popover) {
           addSkipButton(popover);
-          if (!focusFirstPopover) return;
+          var reveal = focusFirstPopover;
           focusFirstPopover = false;
           var gen = tourGen;
           setTimeout(function () {
             if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
             var pop = (popover && popover.wrapper) || document.querySelector(".driver-popover");
             if (!pop) return;
-            pop.setAttribute("tabindex", "-1");
-            pop.focus();
+            var cur = document.activeElement;
+            var inField = cur && cur.matches &&
+              cur.matches("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+            if (!pop.contains(cur) && !inField) {
+              var next = popover && popover.nextButton;
+              if (next && next.isConnected && next.style.display !== "none" && !next.disabled) {
+                next.focus();
+              } else {
+                pop.setAttribute("tabindex", "-1");
+                pop.focus();
+              }
+            }
+            if (!reveal) return;
             // Inside a content-sized embed (the gallery's scrolling="no" iframes) the popover
             // is position:fixed within the iframe's full-height "viewport", so neither focus()
             // nor scrollIntoView() scrolls the OUTER page — the browser already considers a
@@ -24830,7 +24846,9 @@ function qsvCloseDict() {
   window.dispatchEvent(new Event("resize"));
 }
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape") qsvCloseDict();
+  // during a guided tour Esc belongs to the tour: it ends the tour (whose teardown closes this
+  // drawer), or stays with a text field inside the spotlight
+  if (e.key === "Escape" && !document.body.classList.contains("driver-active")) qsvCloseDict();
 });
 (function () {
   var tries = 0;
@@ -25937,6 +25955,9 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       // an open Buttons popover (the SearchBuilder "Filter" panel) owns this Esc — Buttons
       // dismisses it itself; only a bare Esc closes the drawer
       if (document.querySelector("div.dt-button-collection")) return;
+      // during a guided tour Esc belongs to the tour: it ends the tour (whose teardown closes
+      // this drawer), or stays with a text field inside the spotlight, e.g. the search box
+      if (document.body.classList.contains("driver-active")) return;
       var drawer = document.getElementById("qsv-data-drawer");
       if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
     }

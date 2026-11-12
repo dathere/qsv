@@ -21,7 +21,7 @@ fn clean_absent_from_qsvlite_list() {
     // not a mere substring (a description elsewhere could contain "clean").
     let has_clean_cmd = combined
         .lines()
-        .any(|l| l.trim_start().split_whitespace().next() == Some("clean"));
+        .any(|l| l.split_whitespace().next() == Some("clean"));
     assert!(
         !has_clean_cmd,
         "qsvlite --list must not list the clean command:\n{combined}"

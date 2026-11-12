@@ -18741,9 +18741,8 @@ const TOUR_SCRIPT: &str = r##"<style>
   var navBusy = false;
   // teardown generation: async continuations capture it and bail if a teardown intervened
   var tourGen = 0;
-  // one-shot, armed per tour start: make sure focus is inside the first popover (so the
-  // browser scrolls it into view and keyboard users land in the tour dialog immediately), and
-  // reveal it to an embedding gallery
+  // one-shot, armed per tour start: reveal the first popover to an embedding gallery (focus
+  // handling runs on every step, see onPopoverRender)
   var focusFirstPopover = false;
 
   // walk to the next/previous VISIBLE step (a sub-step whose target vanished — e.g. no
@@ -18882,22 +18881,33 @@ const TOUR_SCRIPT: &str = r##"<style>
         onHighlighted: function () { navBusy = false; },
         // NOT onHighlighted: that hook fires before the popover DOM exists. onPopoverRender
         // hands us the built popover, and the tick deferral lets driver's own focus call
-        // (synchronous, later in its render) run first. Driver focuses Next, so Enter advances
-        // from the first step on; only when focus didn't land inside the popover do we focus
-        // the popover itself.
+        // (synchronous, later in its render) run first. Driver focuses Next — but leaves focus
+        // alone when it already sits inside the spotlighted element, which is where a drawer
+        // chapter's opener puts it (it focuses the drawer it opens). So on EVERY step,
+        // move focus that ended up outside the popover onto Next, so Enter advances; a text
+        // field keeps its focus.
         onPopoverRender: function (popover) {
           addSkipButton(popover);
-          if (!focusFirstPopover) return;
+          var reveal = focusFirstPopover;
           focusFirstPopover = false;
           var gen = tourGen;
           setTimeout(function () {
             if (gen !== tourGen || !driverObj || !driverObj.isActive()) return;
             var pop = (popover && popover.wrapper) || document.querySelector(".driver-popover");
             if (!pop) return;
-            if (!pop.contains(document.activeElement)) {
-              pop.setAttribute("tabindex", "-1");
-              pop.focus();
+            var cur = document.activeElement;
+            var inField = cur && cur.matches &&
+              cur.matches("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
+            if (!pop.contains(cur) && !inField) {
+              var next = popover && popover.nextButton;
+              if (next && next.isConnected && next.style.display !== "none" && !next.disabled) {
+                next.focus();
+              } else {
+                pop.setAttribute("tabindex", "-1");
+                pop.focus();
+              }
             }
+            if (!reveal) return;
             // Inside a content-sized embed (the gallery's scrolling="no" iframes) the popover
             // is position:fixed within the iframe's full-height "viewport", so neither focus()
             // nor scrollIntoView() scrolls the OUTER page — the browser already considers a
@@ -24836,7 +24846,9 @@ function qsvCloseDict() {
   window.dispatchEvent(new Event("resize"));
 }
 document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape") qsvCloseDict();
+  // during a guided tour Esc belongs to the tour: it ends the tour (whose teardown closes this
+  // drawer), or stays with a text field inside the spotlight
+  if (e.key === "Escape" && !document.body.classList.contains("driver-active")) qsvCloseDict();
 });
 (function () {
   var tries = 0;
@@ -25943,6 +25955,9 @@ const DATA_DRAWER_SCRIPT: &str = r##"<style>
       // an open Buttons popover (the SearchBuilder "Filter" panel) owns this Esc — Buttons
       // dismisses it itself; only a bare Esc closes the drawer
       if (document.querySelector("div.dt-button-collection")) return;
+      // during a guided tour Esc belongs to the tour: it ends the tour (whose teardown closes
+      // this drawer), or stays with a text field inside the spotlight, e.g. the search box
+      if (document.body.classList.contains("driver-active")) return;
       var drawer = document.getElementById("qsv-data-drawer");
       if (drawer && drawer.classList.contains("open")) window.qsvCloseData();
     }

@@ -1004,7 +1004,7 @@ impl UsageParser {
             // docopt's repeating indicator belongs to the declaration, not to
             // the description
             let tail = &tail[1..];
-            rest = tail.strip_prefix("...").unwrap_or(tail).trim_start();
+            rest = tail.trim_prefix("...").trim_start();
 
             // `<columns1> & <columns2> ...` - a separator followed by another
             // declaration continues the list; anything else begins the
@@ -1083,10 +1083,8 @@ impl UsageParser {
     /// `<arg>`, `=<arg>`, `[<arg>]` and `[=<arg>]` all yield `arg`. Returns
     /// `None` for prose and for anything that is not exactly one placeholder.
     fn placeholder_name(rest: &str) -> Option<&str> {
-        let inner = rest
-            .strip_prefix('[')
-            .map_or(rest, |r| r.strip_suffix(']').unwrap_or(r));
-        let inner = inner.strip_prefix('=').unwrap_or(inner);
+        let inner = rest.strip_prefix('[').map_or(rest, |r| r.trim_suffix(']'));
+        let inner = inner.trim_prefix('=');
         let name = inner.strip_prefix('<')?.strip_suffix('>')?;
         (!name.is_empty() && !name.contains(['<', '>']) && !name.contains(char::is_whitespace))
             .then_some(name)
@@ -1640,7 +1638,7 @@ impl UsageParser {
 
             // Command line. Recognize plain `qsv ...`, `$ qsv ...`, and pipe-prefixed
             // forms like `cat foo.csv | qsv ...` so stdin examples are not dropped.
-            let stripped_dollar = trimmed.strip_prefix("$ ").unwrap_or(trimmed);
+            let stripped_dollar = trimmed.trim_prefix("$ ");
             let is_command = stripped_dollar.starts_with("qsv ")
                 || stripped_dollar.contains("| qsv ")
                 || stripped_dollar.contains("|qsv ");

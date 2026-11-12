@@ -371,7 +371,7 @@ fn trim_ascii(cell: &[u8]) -> &[u8] {
 /// A leading `0` followed by another digit marks a padded code (`007`, `05.10`).
 /// A bare `0`, or `0.5`, is a real number.
 fn is_zero_padded(sample: &[u8]) -> bool {
-    let body = sample.strip_prefix(b"-").unwrap_or(sample);
+    let body = sample.trim_prefix(b"-");
     matches!(body, [b'0', second, ..] if second.is_ascii_digit())
 }
 

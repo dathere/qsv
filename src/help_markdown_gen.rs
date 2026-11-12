@@ -356,7 +356,7 @@ fn clean_readme_description(description: &str) -> String {
                 format!("](../{rest})")
             } else {
                 // Strip leading slash to avoid double slashes (e.g. /src/cmd/foo.rs)
-                let clean_path = path.strip_prefix('/').unwrap_or(path);
+                let clean_path = path.trim_prefix('/');
                 format!("](../../{clean_path})")
             }
         })
@@ -1581,7 +1581,7 @@ fn format_examples(lines: &[String]) -> String {
         // ALL-CAPS lines are headings (with optional trailing colon, e.g.
         // "USING THE HTTP-HEADER OPTION:" — must be multi-word to avoid matching
         // single-word capitalized values like "URL:").
-        let heading_body = trimmed.strip_suffix(':').unwrap_or(trimmed);
+        let heading_body = trimmed.trim_suffix(':');
         if heading_body.len() > 2
             && heading_body.contains(' ')
             && heading_body.chars().all(|c| {
@@ -1707,7 +1707,7 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = true;
             }
             // Remove leading "$ " if present
-            let cmd = trimmed.strip_prefix("$ ").unwrap_or(trimmed);
+            let cmd = trimmed.trim_prefix("$ ");
             md.push_str(cmd);
             md.push('\n');
             // If no continuation, close the code block
@@ -2513,8 +2513,7 @@ pub fn generate_help_markdown() -> CliResult<()> {
         };
 
         let source_path = cmd_file
-            .strip_prefix(&repo_root)
-            .unwrap_or(&cmd_file)
+            .trim_prefix(&repo_root)
             .to_string_lossy()
             .replace('\\', "/");
         let cmd_src = fs::read_to_string(&cmd_file).unwrap_or_default();

@@ -152,7 +152,7 @@ fn round_value(value: &Value, op: fn(f64) -> f64) -> Result<Value, Error> {
 // digits) — used to distinguish an out-of-range integer (which must error)
 // from a fractional/scientific value (which takes the f64 path).
 fn is_integer_syntax(s: &str) -> bool {
-    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+    let digits = s.trim_prefix(['+', '-']);
     !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 

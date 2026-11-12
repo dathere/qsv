@@ -4632,7 +4632,7 @@ mod census_mock {
             .filter_map(|part| {
                 let (head, content) = part.split_once("\r\n\r\n")?;
                 let name = head.split("name=\"").nth(1)?.split('"').next()?.to_string();
-                let content = content.strip_suffix("\r\n").unwrap_or(content);
+                let content = content.trim_suffix("\r\n");
                 Some((name, content.as_bytes().to_vec()))
             })
             .collect()

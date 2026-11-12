@@ -162,8 +162,8 @@ With "luau map", if the MAIN script is invalid for a row, "<ERROR>" followed by 
 detailed error message is returned for that row.
 With "luau filter", if the MAIN script is invalid for a row, that row is not filtered.
 
-If any row has an invalid result, an exitcode of 1 is returned and an error count
-is logged.
+If any row has an invalid result, or the END script fails, an exitcode of 1 is
+returned and an error count is logged.
 
 SPECIAL VARIABLES:  
 "_IDX" - a READ-only variable that is zero during the BEGIN script and
@@ -202,6 +202,9 @@ For security and safety reasons as a purpose-built embeddable interpreter,
 Luau's standard library is relatively minimal (<https://luau-lang.org/library>).
 That's why qsv bundles & preloads LuaDate v2.2.1 as date manipulation is a common task.
 See <https://tieske.github.io/date/> on how to use the LuaDate library.
+To use it, add 'date = require "./date"' to a script. qsv writes the library to
+date.lua in the current directory for the run, and deletes it afterwards.
+If a date.lua already exists there, it is used instead and left untouched.
 
 Additional libraries can be loaded using Luau's "require" function.
 See <https://github.com/LewisJEllis/awesome-lua> for a list of other libraries.
@@ -283,7 +286,7 @@ qsv luau --help
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Enabling this option will also suppress stderr output from the END script. |  |
+| &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Output from the END script is printed after the progress bar finishes. |  |
 
 ---
 **Source:** [`src/cmd/luau.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/luau.rs)

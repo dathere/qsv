@@ -1246,9 +1246,12 @@ pub fn get_stats_csv_path(input_path: &std::path::Path) -> crate::CliResult<std:
 /// `pivotp --agg smart`). Shared so both commands build - and reuse - the same persistent cache.
 /// Must stay compatible with `StatsMode::ProfileSchema`, which writes that cache too.
 /// `--infer-boolean` is deliberately absent: it would retype 0/1 measures as Boolean.
-#[cfg(all(
-    feature = "polars",
-    any(feature = "feature_capable", feature = "datapusher_plus")
+#[cfg(any(
+    all(feature = "viz", feature = "feature_capable"),
+    all(
+        feature = "polars",
+        any(feature = "feature_capable", feature = "datapusher_plus")
+    )
 ))]
 pub const ADVANCED_STATS_OPTIONS: &str = "--infer-dates --cardinality --mode --mad --quartiles \
                                           --percentiles --zero-padded-numeric --force \

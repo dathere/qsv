@@ -53,7 +53,7 @@ and then use that to generate the schema file.
 
 When the "polars" feature is enabled, the `--polars` option will generate a Polars schema
 instead of a JSON Schema. The generated Polars schema will be written to a file with the
-`.pschema.json` suffix appended to the input file stem.
+`.pschema.json` suffix appended to the full input file name (data.csv -> data.csv.pschema.json).
 
 The Polars schema is a JSON object that describes the schema of a CSV file. When present,
 the `sqlp`, `joinp`, and `pivotp` commands will use the Polars schema to read the CSV file

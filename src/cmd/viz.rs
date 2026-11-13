@@ -40938,13 +40938,12 @@ fn smart_grid_parts(
             // the funnel is horizontal like the lollipop, but its value axis is anchored at
             // zero and its categories run TOP-DOWN, matching the upstream-first arrays the
             // trace feeds (see the `panel_trace` arm).
-            let ticks: Vec<String> = stages.clone();
             let max = totals.iter().copied().fold(0.0_f64, f64::max);
             (
                 funnel_value_axis(max, theme)
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
-                lollipop_category_axis(theme, &ticks)
+                lollipop_category_axis(theme, stages, stages)
                     .domain(&geom.y_domain)
                     .anchor(xref.clone()),
             )
@@ -40963,6 +40962,7 @@ fn smart_grid_parts(
         } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
             let (floor, ceil) = lollipop_value_range(values);
             // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
+            let keys: Vec<String> = labels.iter().rev().cloned().collect();
             let ticks: Vec<String> = labels
                 .iter()
                 .rev()
@@ -40972,7 +40972,7 @@ fn smart_grid_parts(
                 lollipop_value_axis(floor, ceil, theme)
                     .domain(&geom.x_domain)
                     .anchor(yref.clone()),
-                lollipop_category_axis(theme, &ticks)
+                lollipop_category_axis(theme, &keys, &ticks)
                     .domain(&geom.y_domain)
                     .anchor(xref.clone()),
             )
@@ -42704,14 +42704,14 @@ fn inline_panel_plot_cartesian(
         ..
     } = &panel.kind
     {
-        let ticks: Vec<String> = stages.clone();
         let max = totals.iter().copied().fold(0.0_f64, f64::max);
         (
             funnel_value_axis(max, theme),
-            lollipop_category_axis(theme, &ticks),
+            lollipop_category_axis(theme, stages, stages),
         )
     } else if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
         let (floor, ceil) = lollipop_value_range(values);
+        let keys: Vec<String> = labels.iter().rev().cloned().collect();
         let ticks: Vec<String> = labels
             .iter()
             .rev()
@@ -42719,7 +42719,7 @@ fn inline_panel_plot_cartesian(
             .collect();
         (
             lollipop_value_axis(floor, ceil, theme),
-            lollipop_category_axis(theme, &ticks),
+            lollipop_category_axis(theme, &keys, &ticks),
         )
     } else {
         // per-axis log for a relationship panel (issue #4223); see the grid path for why the y
@@ -44805,8 +44805,22 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     (geoms, rows, height_px)
 }
 
-/// For a categorical bar panel, the display-only x-axis tick labels (in the same order as the
-/// bar's x data), which ALSO force the axis into category mode. Two panel kinds need this:
+/// Display-only tick labels for a category axis. `keys[i]` is the EXACT category value the trace
+/// feeds (so it is what `tickvals` must carry) and `text[i]` is the label shown under it.
+///
+/// `tickvals` must be the category names, not their integer positions: plotly.js resolves a
+/// category-axis tickval by NAME first and treats it as a position only when no category has
+/// that name. Integer positions therefore land on the wrong bars (or are dropped as collisions)
+/// whenever the categories look like small integers — a `day_of_week` coded "6","7",…,"0".
+#[derive(Debug, PartialEq)]
+struct CategoryTicks {
+    keys: Vec<String>,
+    text: Vec<String>,
+}
+
+/// For a categorical bar panel, the category keys and display-only x-axis tick labels (in the
+/// same order as the bar's x data), which ALSO force the axis into category mode. Two panel kinds
+/// need this:
 /// - `FreqBar`: long category names (full agency names, datetime strings) would otherwise rotate
 ///   into tall labels that squeeze the plot area and clip the top value labels, so they're
 ///   truncated here.
@@ -44816,22 +44830,25 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
 ///   dominant group's label was non-numeric (e.g. "6 SR").
 ///
 /// Returns `None` for non-bar panels (their axes are left untouched).
-fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
+fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<CategoryTicks> {
     match &panel.kind {
         PanelKind::FreqBar { idx } => {
-            let labels = freq
-                .get(idx)?
-                .iter()
-                .map(|b| escape_hover(&truncate_label(&b.label, BAR_LABEL_MAX_CHARS)))
-                .collect();
-            Some(labels)
+            let bars = freq.get(idx)?;
+            Some(CategoryTicks {
+                keys: bars.iter().map(|b| b.x_key.clone()).collect(),
+                text: bars
+                    .iter()
+                    .map(|b| escape_hover(&truncate_label(&b.label, BAR_LABEL_MAX_CHARS)))
+                    .collect(),
+            })
         },
-        PanelKind::MeasureByDim { labels, .. } => Some(
-            labels
+        PanelKind::MeasureByDim { labels, .. } => Some(CategoryTicks {
+            keys: labels.clone(),
+            text: labels
                 .iter()
                 .map(|l| escape_hover(&truncate_label(l, BAR_LABEL_MAX_CHARS)))
                 .collect(),
-        ),
+        }),
         _ => None,
     }
 }
@@ -44867,7 +44884,7 @@ fn styled_x_axis(
     auto_category: bool,
     log: bool,
     theme: Option<BuiltinTheme>,
-    tick_text: Option<Vec<String>>,
+    tick_text: Option<CategoryTicks>,
 ) -> Axis {
     let mut a = Axis::new()
         .show_grid(false)
@@ -44902,18 +44919,15 @@ fn styled_x_axis(
         a = a.type_(AxisType::Log);
     }
     // display-only truncated labels for categorical bar panels (freq bars, measure-by-dim). Force
-    // the axis to category mode:
-    // a category axis positions categories at integer indices 0..n in x-data order regardless
-    // of how the category strings look, so our integer `tickvals` line up with the bars. Without
-    // this, numeric ("10", "2") or date-like ("2026-06-21") category values could be inferred as
-    // a linear/date axis, leaving the ticks misaligned. The full x category values are unchanged.
-    if let Some(labels) = tick_text {
-        let positions: Vec<f64> = (0..labels.len()).map(|i| i as f64).collect();
+    // the axis to category mode, or numeric ("10", "2") or date-like ("2026-06-21") category
+    // values could be inferred as a linear/date axis. `tickvals` are the category KEYS, not
+    // positions (see `CategoryTicks`). The full x category values are unchanged.
+    if let Some(CategoryTicks { keys, text }) = tick_text {
         a = a
             .type_(AxisType::Category)
             .tick_mode(TickMode::Array)
-            .tick_values(positions)
-            .tick_text(labels);
+            .tick_values(keys)
+            .tick_text(text);
     }
     a
 }
@@ -45106,15 +45120,20 @@ fn funnel_value_axis(max: f64, theme: Option<BuiltinTheme>) -> Axis {
 /// distinct row); `tick_text` overrides only what's DISPLAYED with the caller's already-truncated
 /// labels (`tick_text[i]` labeling category position `i`, bottom-to-top). The full name still rides
 /// in each dot's hover template. `tick_text` is bottom-to-top (weakest-first), matching the
-/// reversed order the trace feeds its y-values.
-fn lollipop_category_axis(theme: Option<BuiltinTheme>, tick_text: &[String]) -> Axis {
+/// reversed order the trace feeds its y-values. `keys` are the trace's exact y-values in that same
+/// order; they are the `tickvals` (see `CategoryTicks` for why positions would misplace labels).
+fn lollipop_category_axis(
+    theme: Option<BuiltinTheme>,
+    keys: &[String],
+    tick_text: &[String],
+) -> Axis {
     let mut a = Axis::new()
         .type_(AxisType::Category)
         .show_grid(false)
         .zero_line(false)
         .show_line(false)
         .tick_mode(TickMode::Array)
-        .tick_values((0..tick_text.len()).map(|i| i as f64).collect())
+        .tick_values(keys.to_vec())
         // raw column names / dictionary stage names, rendered as plotly pseudo-HTML
         .tick_text(tick_text.iter().map(|t| escape_hover(t)).collect());
     if theme.is_none() {
@@ -56168,7 +56187,8 @@ mod tests {
         let freq: FreqMap = std::collections::HashMap::new();
         let ticks =
             freq_bar_tick_text(&panel, &freq).expect("MeasureByDim must supply category ticks");
-        assert_eq!(ticks, vec!["6 SR", "5.3", "(NULL)"]);
+        assert_eq!(ticks.keys, vec!["6 SR", "5.3", "(NULL)"]);
+        assert_eq!(ticks.text, vec!["6 SR", "5.3", "(NULL)"]);
 
         // a non-bar panel still leaves its axis untouched (returns None → autodetected axis)
         let other = Panel::new("c".to_string(), PanelKind::CyclicProfile { rings: vec![] });
@@ -56189,11 +56209,49 @@ mod tests {
             Some((-80.0, 120.0))
         );
         let ticks = freq_bar_tick_text(&panel, &FreqMap::new()).expect("bar ticks");
-        assert_eq!(ticks, vec!["profit &lt;b&gt;", "loss &amp; more"]);
+        // tickvals must be the RAW category values the trace feeds; only the text is escaped
+        assert_eq!(ticks.keys, vec!["profit <b>", "loss & more"]);
+        assert_eq!(ticks.text, vec!["profit &lt;b&gt;", "loss &amp; more"]);
 
         let axis = styled_y_axis(Some((-80.0, 120.0)), false, None);
         let json = serde_json::to_value(&axis).expect("axis should serialize");
         assert_eq!(json.get("range"), Some(&serde_json::json!([-92.0, 138.0])));
+    }
+
+    #[test]
+    fn category_tickvals_are_names_not_positions() {
+        // plotly.js resolves a category-axis tickval by NAME before treating it as a position, so
+        // integer positions over a "6","7","5",…,"0" axis put label "6" under category "0" and
+        // drop the colliding ones (seen on day_of_week in the pa_crashes gallery). The tickvals
+        // must be the exact category values, aggregate-bucket sentinel included.
+        let keys: Vec<String> = ["6", "7", "1", "0"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .chain(std::iter::once(format!("(NULL){AGG_KEY_SENTINEL}")))
+            .collect();
+        let text = vec!["6", "7", "1", "0", "(NULL)"]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
+        let axis = styled_x_axis(
+            false,
+            false,
+            false,
+            false,
+            None,
+            Some(CategoryTicks {
+                keys: keys.clone(),
+                text: text.clone(),
+            }),
+        );
+        let json = serde_json::to_value(&axis).expect("axis should serialize");
+        assert_eq!(json["tickvals"], serde_json::json!(keys));
+        assert_eq!(json["ticktext"], serde_json::json!(text));
+        assert_eq!(json["type"], serde_json::json!("category"));
+
+        let lollipop = lollipop_category_axis(None, &keys[..2], &text[..2]);
+        let json = serde_json::to_value(&lollipop).expect("axis should serialize");
+        assert_eq!(json["tickvals"], serde_json::json!(["6", "7"]));
     }
 
     #[test]

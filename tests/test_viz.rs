@@ -24781,3 +24781,44 @@ fn viz_pie_rejects_negative_slice_totals() {
     cmd.args(["pie", "ok.csv", "--x", "k", "--y", "v"]);
     wrk.assert_success(&mut cmd);
 }
+
+#[test]
+fn viz_smart_numeric_category_tickvals_are_names() {
+    // a frequency bar over integer-coded categories ("6","7",…,"0"): plotly.js resolves a
+    // category-axis tickval by NAME before treating it as a position, so integer tickvals put
+    // each label under the wrong bar (and drop the colliding ones). The tickvals must be the
+    // category values themselves.
+    let wrk = Workdir::new("viz_smart_numeric_category_tickvals_are_names");
+    let mut csv = String::from("day_of_week,region\n");
+    for (day, n) in [
+        ("6", 9),
+        ("7", 8),
+        ("5", 7),
+        ("4", 6),
+        ("3", 5),
+        ("2", 4),
+        ("1", 3),
+    ] {
+        for i in 0..n {
+            csv.push_str(&format!("{day},r{}\n", i % 3));
+        }
+    }
+    csv.push_str("0,r0\n");
+    wrk.create_from_string("dow.csv", &csv);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "dow.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        html.contains(r#""tickvals":["6","7","5","4","3","2","1","0"]"#),
+        "expected the day_of_week categories as tickvals"
+    );
+    assert!(
+        !html.contains(r#""tickvals":[0,"#) && !html.contains(r#""tickvals":[0.0,"#),
+        "no category axis may carry positional tickvals"
+    );
+}

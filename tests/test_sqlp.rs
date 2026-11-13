@@ -7418,6 +7418,139 @@ fn sqlp_case_strict_cast_ignores_unselected_rows() {
     );
 }
 
+// Polars SQL behavior changed between 8ecd1ca and 61fdb30.
+
+fn sides_fixture(wrk: &Workdir) {
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["side", "qty", "flag", "name", "s"],
+            svec!["buy", "10", "true", "alice", "abc123def"],
+            svec!["sell", "4", "false", "bob", "x9y"],
+            svec!["buy", "7", "true", "carol", "no digits"],
+            svec!["sell", "3", "false", "dave", "42"],
+            svec!["buy", "1", "true", "erin", "7up8"],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_signed_case_times_unsigned() {
+    // pola-rs/polars#30742: the supertype of `CASE ... THEN 1 ELSE -1 END` and an unsigned
+    // column is now signed. On 8ecd1ca the -1 rows came out NULL (and SUM skipped them: 18).
+    let wrk = Workdir::new("sqlp_signed_case_times_unsigned");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT CASE WHEN side = 'buy' THEN 1 ELSE -1 END * CAST(qty AS UINTEGER) AS x FROM t",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["x"],
+            svec!["10"],
+            svec!["-4"],
+            svec!["7"],
+            svec!["-3"],
+            svec!["1"],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT SUM(CASE WHEN side = 'buy' THEN 1 ELSE -1 END * CAST(qty AS UINTEGER)) AS x FROM t",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["x"], svec!["11"]]);
+}
+
+#[test]
+fn sqlp_bool_and_bool_or_count_if() {
+    // pola-rs/polars#30763 added BOOL_AND, BOOL_OR and COUNT_IF.
+    let wrk = Workdir::new("sqlp_bool_and_bool_or_count_if");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT side, BOOL_AND(flag) AS ba, BOOL_OR(qty > 5) AS bo, COUNT_IF(qty > 3) AS c FROM t \
+         GROUP BY side ORDER BY side",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["side", "ba", "bo", "c"],
+            svec!["buy", "true", "true", "2"],
+            svec!["sell", "false", "false", "1"],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT BOOL_AND(flag) AS ba, BOOL_OR(flag) AS bo, COUNT_IF(flag) AS c FROM t");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["ba", "bo", "c"], svec!["false", "true", "3"]]
+    );
+}
+
+#[test]
+fn sqlp_max_by_min_by_any_value() {
+    // pola-rs/polars#30763 added MAX_BY, MIN_BY and ANY_VALUE. `qty` has no ties, and
+    // ANY_VALUE is only asserted on a column that is constant within each group.
+    let wrk = Workdir::new("sqlp_max_by_min_by_any_value");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT side, MAX_BY(name, qty) AS mx, MIN_BY(name, qty) AS mn, ANY_VALUE(UPPER(side)) AS \
+         a FROM t GROUP BY side ORDER BY side",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["side", "mx", "mn", "a"],
+            svec!["buy", "alice", "erin", "BUY"],
+            svec!["sell", "bob", "dave", "SELL"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_regexp_extract() {
+    // pola-rs/polars#30763 added REGEXP_EXTRACT: the whole match by default, or the given
+    // capture group. A row with no match yields an empty string, not NULL.
+    let wrk = Workdir::new("sqlp_regexp_extract");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT REGEXP_EXTRACT(s, '[0-9]+') AS m, REGEXP_EXTRACT(s, '([a-z])([0-9])', 2) AS g \
+         FROM t",
+    );
+    let got = wrk.stdout::<String>(&mut cmd);
+    assert_eq!(got, "m,g\n123,1\n9,9\n\"\",\"\"\n42,\"\"\n7,8");
+}
+
+#[test]
+fn sqlp_approx_count_distinct() {
+    // pola-rs/polars#30763 added APPROX_COUNT_DISTINCT; qsv enables polars' `approx_unique`
+    // feature for it. HyperLogLog is exact at this cardinality.
+    let wrk = Workdir::new("sqlp_approx_count_distinct");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT APPROX_COUNT_DISTINCT(side) AS sides, APPROX_COUNT_DISTINCT(name) AS names FROM t",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["sides", "names"], svec!["2", "5"]]);
+}
+
 // ---------------------------------------------------------------------------
 // sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
 // ---------------------------------------------------------------------------

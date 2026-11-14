@@ -8169,3 +8169,27 @@ fn moarstats_recomputes_stats_written_with_another_stats_separator() {
     );
     assert!(!got[1][1].is_empty() && !got[1][2].is_empty(), "{got:?}");
 }
+
+#[test]
+fn moarstats_mode_zscore_of_a_single_mode_containing_the_separator() {
+    // a lone mode is not split: "-1.5" must stay whole when the separator is "." or "-"
+    let mut zscores = Vec::new();
+    for (name, separator) in [("pipe", "|"), ("dot", "."), ("dash", "-")] {
+        let wrk = Workdir::new(&format!(
+            "moarstats_mode_zscore_of_a_single_mode_containing_the_separator_{name}"
+        ));
+        wrk.create_from_string("d.csv", "v\n-1.5\n-1.5\n3\n4\n");
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_STATS_SEPARATOR", separator)
+            .args(["--everything", "--stats-jsonl", "d.csv"]);
+        wrk.assert_success(&mut cmd);
+        let mut cmd = wrk.command("moarstats");
+        cmd.env("QSV_STATS_SEPARATOR", separator).arg("d.csv");
+        wrk.assert_success(&mut cmd);
+
+        let got = stats_csv_columns(&wrk, "mode,mode_count,mode_zscore");
+        assert_eq!([&got[1][0], &got[1][1]], ["-1.5", "1"], "{name}");
+        zscores.push(got[1][2].clone());
+    }
+    assert_eq!(zscores, ["-0.9901"; 3]);
+}

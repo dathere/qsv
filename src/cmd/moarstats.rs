@@ -7211,9 +7211,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
             // Parse mode (may be a string, need to try parsing as float)
             // If there are multiple modes, try parsing the first one
+            let single_mode = mode_count_idx
+                .and_then(|idx| record.get(idx))
+                .is_some_and(|count| count == "1");
             let mode = mode_idx.and_then(|idx| record.get(idx)).and_then(|s| {
                 if s.is_empty() {
                     None
+                } else if single_mode {
+                    // a lone mode is the whole cell: splitting it would cut a number that
+                    // contains the separator (`1.5` under ".", `-2` under "-")
+                    parse_float_opt(s.trim())
                 } else {
                     // Multiple modes are joined with QSV_STATS_SEPARATOR - try the first one
                     // safety: `split` on a non-empty string always yields at least one element,

@@ -116,6 +116,15 @@ pub fn resolved_no_headers(flag: bool) -> bool {
     util::get_envvar_flag("QSV_NO_HEADERS") || (flag != util::get_envvar_flag("QSV_TOGGLE_HEADERS"))
 }
 
+/// The delimiter a `Config` for `path` resolves from a command's `--delimiter` flag (see
+/// `Config::configured_delimiter`), for code that must agree with a Config it does not hold -
+/// the stats cache records the resolved delimiter, and its readers compare against this.
+pub fn resolved_delimiter(path: &Path, flag: Option<Delimiter>) -> u8 {
+    Config::new(Some(&path.to_string_lossy().into_owned()))
+        .delimiter(flag)
+        .configured_delimiter()
+}
+
 /// The preamble rows (as the sniffer counts them) `QSV_SNIFF_PREAMBLE` finds above `path`'s
 /// header, as `Config::preamble_rows` records them; 0 when the env var is unset.
 pub fn sniffed_preamble_rows(path: &Path) -> u64 {
@@ -570,6 +579,14 @@ impl Config {
             self.write_delimiter = d.as_byte();
         }
         self
+    }
+
+    /// The delimiter this Config resolved from `--delimiter`, `QSV_SNIFF_DELIMITER`, the path's
+    /// extension and `QSV_DEFAULT_DELIMITER`, WITHOUT converting a special-format input (which
+    /// `get_delimiter` does). It is what the stats cache records, so that checking a cache
+    /// never decompresses anything.
+    pub const fn configured_delimiter(&self) -> u8 {
+        self.delimiter
     }
 
     pub fn get_delimiter(&self) -> u8 {

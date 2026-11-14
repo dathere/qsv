@@ -725,3 +725,34 @@ fn sortcheck_statscache_shortcircuit_under_qsv_no_headers_env() {
     cmd.args(["--select", "1"]).arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
+
+// the stats cache records the RESOLVED delimiter, so a cache built under QSV_SNIFF_DELIMITER
+// has to be accepted by a reader running under the same variable, and refused without it. The
+// tampered sort order shows the cache was used: a full scan finds the column unsorted.
+#[test]
+fn sortcheck_statscache_shortcircuit_under_qsv_sniff_delimiter_env() {
+    let wrk = Workdir::new("sortcheck_statscache_shortcircuit_under_qsv_sniff_delimiter_env");
+    let rows: String = (0..60)
+        // a String column: the shortcut only applies when sortcheck's comparison matches the
+        // cached column's type
+        .map(|i| format!("k{:02};{};row{i}\n", (i * 7) % 60, i * 2))
+        .collect();
+    wrk.create_from_string("in.csv", &format!("x;y;z\n{rows}"));
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .env("QSV_SNIFF_DELIMITER", "1")
+        .args(["in.csv", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+    tamper_sort_order(&wrk, "in", "x", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.env("QSV_SNIFF_DELIMITER", "1")
+        .args(["--select", "1"])
+        .arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    // without the variable the file is one comma-delimited column: full scan, not sorted
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "1"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}

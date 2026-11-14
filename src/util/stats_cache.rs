@@ -144,19 +144,15 @@ pub(super) fn stats_cache_parsing_opts_match(
         return false;
     }
 
-    // The effective delimiter must match. Both the cache and the command resolve an unset
-    // delimiter from the same file path, so compare resolved bytes: an explicit recorded/passed
-    // delimiter is a single ASCII byte, otherwise the extension default.
-    let ext_delim = {
-        let (_, d, _) = get_delim_by_extension(input_path, b',');
-        d
-    };
+    // The effective delimiter must match. The cache records the delimiter its Config RESOLVED
+    // (flag, QSV_SNIFF_DELIMITER, extension, QSV_DEFAULT_DELIMITER), so resolve the command's
+    // the same way. A cache written before that recorded only an explicit --delimiter, and an
+    // empty value there stands for the extension default.
     let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
         Some(s) if !s.is_empty() => s.as_bytes()[0],
-        _ => ext_delim,
+        _ => get_delim_by_extension(input_path, b',').1,
     };
-    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
-    cache_delim == cmd_delim
+    cache_delim == crate::config::resolved_delimiter(input_path, delimiter)
 }
 
 /// Was the stats cache beside `bases` built WITHOUT `--infer-dates`?

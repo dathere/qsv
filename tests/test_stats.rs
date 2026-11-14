@@ -10843,3 +10843,105 @@ fn stats_mode_of_a_column_with_no_rows_is_not_all_unique() {
         );
     }
 }
+
+/// 60 rows of `x;y;z`: a semicolon-separated file under a `.csv` name.
+fn semicolon_csv() -> String {
+    let rows: String = (0..60)
+        .map(|i| format!("{};{};row{i}\n", (i * 7) % 60, i * 2))
+        .collect();
+    format!("x;y;z\n{rows}")
+}
+
+#[test]
+fn stats_cache_not_reused_across_qsv_sniff_delimiter_env() {
+    // QSV_SNIFF_DELIMITER changes the delimiter without --delimiter: the cache key records the
+    // delimiter the reader resolved, not the flag alone
+    for everything in [false, true] {
+        let wrk = Workdir::new(&format!(
+            "stats_cache_not_reused_across_qsv_sniff_delimiter_env_{everything}"
+        ));
+        wrk.create_from_string("s.csv", &semicolon_csv());
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--cache-threshold", "1", "s.csv"]);
+        if everything {
+            cmd.arg("--everything");
+        }
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!([&got[1][0], &got[1][1]], ["x;y;z", "String"]);
+
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_SNIFF_DELIMITER", "1")
+            .args(["--cache-threshold", "1", "s.csv"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let fields_types: Vec<[&str; 2]> = got[1..]
+            .iter()
+            .map(|r| [r[0].as_str(), r[1].as_str()])
+            .collect();
+        assert_eq!(
+            fields_types,
+            [["x", "Integer"], ["y", "Integer"], ["z", "String"]],
+            "everything={everything}"
+        );
+    }
+}
+
+#[test]
+fn stats_cache_not_reused_across_qsv_default_delimiter_env() {
+    let wrk = Workdir::new("stats_cache_not_reused_across_qsv_default_delimiter_env");
+    wrk.create_from_string("f.txt", "x;y\n1;2\n3;4\n");
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+        .args(["--cache-threshold", "1", "f.txt"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!([&got[1][0], &got[1][1]], ["x;y", "String"]);
+
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1")
+        .env("QSV_DEFAULT_DELIMITER", ";")
+        .args(["--cache-threshold", "1", "--output", "out.csv", "f.txt"]);
+    wrk.assert_success(&mut cmd);
+    let got = std::fs::read_to_string(wrk.path("out.csv")).unwrap();
+    let fields_types: Vec<String> = got
+        .lines()
+        .skip(1)
+        .map(|l| l.split(',').take(2).collect::<Vec<_>>().join(","))
+        .collect();
+    assert_eq!(fields_types, ["x,Integer", "y,Integer"]);
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn stats_cache_hit_does_not_convert_a_compressed_input() {
+    // checking the cache reads the delimiter the Config resolved, which must not decompress
+    // the input: a cache hit exists to skip that work
+    let wrk = Workdir::new("stats_cache_hit_does_not_convert_a_compressed_input");
+    std::fs::copy(
+        wrk.load_test_file("boston311-100.csv.gz"),
+        wrk.path("b.csv.gz"),
+    )
+    .unwrap();
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--cache-threshold", "1", "b.csv.gz"]);
+    wrk.assert_success(&mut cmd);
+
+    let log_dir = wrk.path("logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_LOG_LEVEL", "info")
+        .env("QSV_LOG_DIR", &log_dir)
+        .args(["--cache-threshold", "1", "b.csv.gz"]);
+    wrk.assert_success(&mut cmd);
+
+    let log: String = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
+        .collect();
+    assert!(
+        log.contains("already exists and is current"),
+        "expected a cache hit: {log}"
+    );
+    assert!(
+        !log.contains("converted special-format input"),
+        "a cache hit converted the input: {log}"
+    );
+}

@@ -46,6 +46,7 @@ pedantic = [
     "-A", "clippy::struct_excessive_bools",
     "-A", "clippy::unnecessary_wraps",
     "-A", "clippy::map_unwrap_or",
+    "-A", "clippy::format_push_string",
     "-A", "clippy::needless_doctest_main",
     "-A", "clippy::missing_errors_doc",
     "-A", "clippy::use_self",

@@ -108,8 +108,10 @@ similar_names          = "allow"
 too_many_lines         = "allow"
 struct_excessive_bools = "allow"
 # preference
-unnecessary_wraps = "allow"
-map_unwrap_or     = "allow"
+unnecessary_wraps  = "allow"
+map_unwrap_or      = "allow"
+# no hot-path call sites; push_str(&format!()) reads better than write!().unwrap()
+format_push_string = "allow"
 # false positive
 needless_doctest_main = "allow"
 # noisy

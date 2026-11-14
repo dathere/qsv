@@ -581,6 +581,11 @@ struct StatsArgs {
     // cache reads as 0 and still matches runs without the env var.
     #[serde(default)]
     preamble_rows: u64,
+    // the separator joining multi-value cells (modes, antimodes, percentiles), from
+    // QSV_STATS_SEPARATOR: a cache rendered with another separator is another output. The
+    // default keeps a cache written before this field existed matching runs without the env var.
+    #[serde(default = "default_stats_separator")]
+    stats_separator: String,
     flag_output_snappy: bool,
     canonical_input_path: String,
     canonical_stats_path: String,
@@ -594,6 +599,15 @@ struct StatsArgs {
     field_count: u64,
     filesize_bytes: u64,
     hash: FileHash,
+}
+
+fn default_stats_separator() -> String {
+    DEFAULT_STATS_SEPARATOR.to_string()
+}
+
+/// The separator for multi-value cells: `QSV_STATS_SEPARATOR`, or the default when unset.
+fn stats_separator_from_env() -> String {
+    std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| default_stats_separator())
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -675,6 +689,7 @@ impl StatsArgs {
             flag_delimiter: get_str("flag_delimiter"),
             flag_flexible: get_bool("flag_flexible"),
             preamble_rows: get_u64("preamble_rows"),
+            stats_separator: get_str_or("stats_separator", DEFAULT_STATS_SEPARATOR),
             flag_output_snappy: get_bool("flag_output_snappy"),
             canonical_input_path: get_str("canonical_input_path"),
             canonical_stats_path: get_str("canonical_stats_path"),
@@ -1820,6 +1835,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_flexible: args.flag_flexible,
         // set from the resolved rconfig below
         preamble_rows: 0,
+        stats_separator: stats_separator_from_env(),
         // when we write to stdout, we don't use snappy compression
         // when we write to a file with the --output option, we use
         // snappy compression if the file ends with ".sz"
@@ -1871,6 +1887,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("{format_error}");
     }
     current_stats_args.preamble_rows = rconfig.preamble_rows;
+    // the RESOLVED setting, not the flag: QSV_NO_HEADERS turns the header row into data too, and
+    // a cache keyed on the flag alone was served across that change.
+    current_stats_args.flag_no_headers = rconfig.no_headers;
 
     // INVARIANT (issue #4462): `rconfig` below is the one and only resolved Config for this
     // run's input, and every stats path SHARES it - `sequential_stats` and `parallel_stats`
@@ -2155,6 +2174,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             // have another header than stats of the file as stored
                             && existing_stats_args_json.preamble_rows
                                 == current_stats_args.preamble_rows
+                            && existing_stats_args_json.stats_separator
+                                == current_stats_args.stats_separator
                             && existing_stats_args_json.flag_nulls == current_stats_args.flag_nulls
                             && existing_stats_args_json.flag_weight
                                 == current_stats_args.flag_weight
@@ -2388,7 +2409,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             wtr.write_record(&stats_headers_sr)?;
             let fields = headers.iter().zip(stats_sr_vec);
             for (i, (header, stat)) in fields.enumerate() {
-                let header = if args.flag_no_headers {
+                let header = if rconfig.no_headers {
                     i.to_string().into_bytes()
                 } else {
                     header.to_vec()
@@ -4324,6 +4345,13 @@ fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Op
     // literal keyword as the whitelist, breaking date inference. Requiring flag_infer_dates (and
     // guarding against the literal "sniff" value defensively) ensures the stored whitelist is a
     // genuinely resolved column set (or the _qsv_no_date_columns_found sentinel).
+    // Another qsv version may sniff another column set. The version mismatch makes the caller
+    // recompute and rewrite the sidecar, so reusing the old list there would carry it into the
+    // new cache, and into every later one, until the file changes.
+    if cached.qsv_version != env!("CARGO_PKG_VERSION") {
+        return None;
+    }
+
     if cached.flag_infer_dates
         && cached
             .flag_dates_whitelist_raw
@@ -5756,10 +5784,9 @@ impl Stats {
         // get the stats separator
         let stats_separator = STATS_SEPARATOR.get_or_init(|| {
             if self.which.mode || self.which.percentiles {
-                std::env::var("QSV_STATS_SEPARATOR")
-                    .unwrap_or_else(|_| DEFAULT_STATS_SEPARATOR.to_string())
+                stats_separator_from_env()
             } else {
-                DEFAULT_STATS_SEPARATOR.to_string()
+                default_stats_separator()
             }
         });
 

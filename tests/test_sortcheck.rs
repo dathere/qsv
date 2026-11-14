@@ -699,3 +699,29 @@ fn sortcheck_rejects_cache_whose_sidecar_cannot_prove_input_size() {
     cmd.args(["--select", "id"]).arg("--numeric").arg("sc2.csv");
     wrk.assert_err(&mut cmd);
 }
+
+// the stats cache records the RESOLVED no-headers setting, so a cache built under
+// QSV_NO_HEADERS has to be accepted by a reader running under the same variable. The
+// tampered sort order shows the cache was used: a full scan finds the column unsorted.
+#[test]
+fn sortcheck_statscache_shortcircuit_under_qsv_no_headers_env() {
+    let wrk = Workdir::new("sortcheck_statscache_shortcircuit_under_qsv_no_headers_env");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .env("QSV_NO_HEADERS", "1")
+        .args(["in.csv", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+    tamper_sort_order(&wrk, "in", "0", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args(["--select", "1"])
+        .arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    // without the variable the same cache describes another CSV: full scan, not sorted
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "1"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}

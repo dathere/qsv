@@ -10602,6 +10602,97 @@ fn stats_everything_cache_not_reused_across_sniff_preamble() {
     assert_eq!(fields, ["id", "name", "amount"]);
 }
 
+#[test]
+fn stats_cache_not_reused_across_qsv_no_headers_env() {
+    // QSV_NO_HEADERS turns the header row into data, like --no-headers: the cache key and the
+    // field labels follow the resolved setting, not the flag alone
+    for everything in [false, true] {
+        let wrk = Workdir::new(&format!(
+            "stats_cache_not_reused_across_qsv_no_headers_env_{everything}"
+        ));
+        wrk.create_from_string("d.csv", "x,y\n1,2\n3,4\n");
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--cache-threshold", "1", "d.csv"]);
+        if everything {
+            cmd.arg("--everything");
+        }
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!([&got[1][0], &got[1][1]], ["x", "Integer"]);
+
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_NO_HEADERS", "1")
+            .args(["--cache-threshold", "1", "d.csv"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let fields_types: Vec<[&str; 2]> = got[1..]
+            .iter()
+            .map(|r| [r[0].as_str(), r[1].as_str()])
+            .collect();
+        assert_eq!(
+            fields_types,
+            [["0", "String"], ["1", "String"]],
+            "everything={everything}"
+        );
+    }
+}
+
+#[test]
+fn stats_cache_not_reused_across_stats_separator_env() {
+    for everything in [false, true] {
+        let wrk = Workdir::new(&format!(
+            "stats_cache_not_reused_across_stats_separator_env_{everything}"
+        ));
+        wrk.create_from_string("d.csv", "x\na\na\nb\nb\nc\n");
+        let mode_of = |got: &[Vec<String>]| {
+            let idx = got[0].iter().position(|h| h == "mode").unwrap();
+            got[1][idx].clone()
+        };
+        let flag = if everything { "--everything" } else { "--mode" };
+
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--cache-threshold", "1", flag, "d.csv"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(mode_of(&got), "a|b");
+
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_STATS_SEPARATOR", ";")
+            .args(["--cache-threshold", "1", "--mode", "d.csv"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        assert_eq!(mode_of(&got), "a;b", "everything={everything}");
+    }
+}
+
+#[test]
+fn stats_sniff_whitelist_not_reused_from_another_qsv_version() {
+    // a sidecar written by another qsv version forces a recompute; its sniffed date-column list
+    // must be re-sniffed too, not carried into the new cache
+    let wrk = Workdir::new("stats_sniff_whitelist_not_reused_from_another_qsv_version");
+    wrk.create_from_string(
+        "d.csv",
+        "id,when,note\n1,2020-01-02,a\n2,2021-03-04,b\n3,2022-05-06,c\n",
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--infer-dates", "--cache-threshold", "1", "d.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    let sidecar = wrk.path("d.stats.csv.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(meta["flag_dates_whitelist"], "when");
+    meta["qsv_version"] = "0.0.1".into();
+    meta["flag_dates_whitelist"] = "note".into();
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--infer-dates", "--cache-threshold", "1", "d.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!([&got[2][0], &got[2][1]], ["when", "Date"]);
+
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(meta["flag_dates_whitelist"], "when");
+    assert_eq!(meta["qsv_version"], env!("CARGO_PKG_VERSION"));
+}
+
 /// `qsv stats <args> d.csv` on `csv`, as a map of each stats column to its value for row 1.
 fn stats_first_row(
     name: &str,

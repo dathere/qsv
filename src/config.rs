@@ -108,6 +108,14 @@ impl io::Seek for HeaderStart {
     }
 }
 
+/// The no-headers setting a `Config` resolves from a command's `--no-headers` flag: the flag
+/// (flipped by `QSV_TOGGLE_HEADERS`) or `QSV_NO_HEADERS`. Mirrors `Config::new` followed by
+/// `Config::no_headers_flag`, for code that must agree with a Config it does not hold - the
+/// stats cache records the resolved setting, and its readers compare against this.
+pub fn resolved_no_headers(flag: bool) -> bool {
+    util::get_envvar_flag("QSV_NO_HEADERS") || (flag != util::get_envvar_flag("QSV_TOGGLE_HEADERS"))
+}
+
 /// The preamble rows (as the sniffer counts them) `QSV_SNIFF_PREAMBLE` finds above `path`'s
 /// header, as `Config::preamble_rows` records them; 0 when the env var is unset.
 pub fn sniffed_preamble_rows(path: &Path) -> u64 {

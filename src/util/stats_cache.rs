@@ -119,7 +119,9 @@ pub(super) fn stats_cache_parsing_opts_match(
         .get("flag_no_headers")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
-        != no_headers
+        // the cache records the RESOLVED setting (flag or QSV_NO_HEADERS), so resolve the
+        // consumer's flag the same way
+        != crate::config::resolved_no_headers(no_headers)
     {
         return false;
     }

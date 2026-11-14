@@ -10945,3 +10945,91 @@ fn stats_cache_hit_does_not_convert_a_compressed_input() {
         "a cache hit converted the input: {log}"
     );
 }
+
+/// The stats columns that must not change when a "NaN" cell is added to a float column.
+const NAN_BLIND_STATS: [&str; 17] = [
+    "sum",
+    "mean",
+    "sem",
+    "stddev",
+    "variance",
+    "cv",
+    "q1",
+    "q2_median",
+    "q3",
+    "iqr",
+    "mad",
+    "skewness",
+    "lower_outer_fence",
+    "lower_inner_fence",
+    "upper_inner_fence",
+    "upper_outer_fence",
+    "percentiles",
+];
+
+#[test]
+fn stats_nan_cells_are_skipped_by_every_numeric_statistic() {
+    // a "NaN" cell parses as a float. The mean skips it, so the sum and the exact quantiles
+    // must skip it too: with the NaN row, they equal the stats of the file without it.
+    let without = stats_first_row(
+        "stats_nan_cells_are_skipped_without",
+        "v\n1.5\n3.5\n4.5\n",
+        &["--everything"],
+    );
+    for (name, nan) in [("upper", "NaN"), ("lower", "nan")] {
+        let with = stats_first_row(
+            &format!("stats_nan_cells_are_skipped_with_{name}"),
+            &format!("v\n1.5\n{nan}\n3.5\n4.5\n"),
+            &["--everything"],
+        );
+        for stat in NAN_BLIND_STATS {
+            assert!(!without[stat].is_empty(), "{stat} has no value to compare");
+            assert_eq!(with[stat], without[stat], "{stat} ({nan})");
+        }
+        // the NaN cell is a value, not a NULL
+        assert_eq!(
+            [
+                &with["type"],
+                &with["nullcount"],
+                &with["sparsity"],
+                &with["cardinality"]
+            ],
+            ["Float", "0", "0", "4"],
+            "{nan}"
+        );
+    }
+}
+
+#[test]
+fn stats_nan_cell_after_integers_keeps_the_integer_total() {
+    // the NaN switches the column to Float without adding to the sum
+    let row = stats_first_row(
+        "stats_nan_cell_after_integers_keeps_the_integer_total",
+        "v\n1\n2\nNaN\n",
+        &[],
+    );
+    assert_eq!(
+        [&row["type"], &row["sum"], &row["mean"]],
+        ["Float", "3", "1.5"]
+    );
+}
+
+#[test]
+fn stats_weighted_nan_cells_are_skipped() {
+    // one NaN value used to blank the weighted mean and stddev of the whole column
+    let args = ["--weight", "w", "--everything"];
+    let without = stats_first_row(
+        "stats_weighted_nan_cells_are_skipped_without",
+        "v,w\n1.5,1\n3.5,2\n4.5,1\n",
+        &args,
+    );
+    let with = stats_first_row(
+        "stats_weighted_nan_cells_are_skipped_with",
+        "v,w\n1.5,1\nNaN,1\n3.5,2\n4.5,1\n",
+        &args,
+    );
+    for stat in NAN_BLIND_STATS {
+        assert!(!without[stat].is_empty(), "{stat} has no value to compare");
+        assert_eq!(with[stat], without[stat], "{stat}");
+    }
+}

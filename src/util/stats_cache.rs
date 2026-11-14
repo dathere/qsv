@@ -312,6 +312,27 @@ pub fn stats_csv_version_mismatch(stats_csv_path: &Path) -> bool {
         })
 }
 
+/// Were the multi-value cells (modes, antimodes, percentiles) of the `<FILESTEM>.stats.csv`
+/// beside this path joined with a separator other than `separator`?
+///
+/// `moarstats` splits those cells with the current `QSV_STATS_SEPARATOR`. On a stats CSV written
+/// under another one it finds no percentile entries, and skips the columns derived from them
+/// without a word. The `stats` rerun this triggers rewrites the CSV with the current separator.
+///
+/// Only a readable sidecar counts, as in `stats_csv_version_mismatch`. A sidecar written before
+/// the separator was recorded reads as the default - and is a version mismatch anyway.
+pub fn stats_csv_separator_mismatch(stats_csv_path: &Path, separator: &str) -> bool {
+    std::fs::read_to_string(stats_csv_path.with_extension("csv.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|m| {
+            m.get("stats_separator")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(crate::cmd::stats::DEFAULT_STATS_SEPARATOR)
+                != separator
+        })
+}
+
 /// Does the stats cache's metadata sidecar POSTDATE the `.stats.csv.data.jsonl` beside it?
 ///
 /// If it does, the JSONL was produced by an earlier stats run and no longer describes the stats

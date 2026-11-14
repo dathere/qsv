@@ -2024,18 +2024,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // recompute the stats even if the args are the same.
         if stats_file.exists() && !args.flag_force {
             let stats_args_json_file = stats_file.with_extension("csv.json");
-            let existing_stats_args_json_str =
-                match fs::read_to_string(stats_args_json_file.clone()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::warn!(
-                            "Could not read {path_file_stem}.stats.csv.json: {e:?}, recomputing..."
-                        );
-                        // remove stats cache files silently even if they don't exists
-                        remove_stats_cache_pair(&stats_file);
-                        String::new()
-                    },
-                };
+            let existing_stats_args_json_str = match fs::read_to_string(stats_args_json_file) {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!(
+                        "Could not read {path_file_stem}.stats.csv.json: {e:?}, recomputing..."
+                    );
+                    // remove stats cache files silently even if they don't exists
+                    remove_stats_cache_pair(&stats_file);
+                    String::new()
+                },
+            };
 
             if !existing_stats_args_json_str.is_empty() {
                 let time_saved: u64;

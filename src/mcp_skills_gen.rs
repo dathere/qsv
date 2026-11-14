@@ -684,7 +684,7 @@ impl UsageParser {
                     args_map.insert(
                         arg_name.clone(),
                         Argument {
-                            name: arg_name.clone(),
+                            name: arg_name,
                             arg_type,
                             required,
                             description,

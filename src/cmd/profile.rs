@@ -744,7 +744,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
             }
         } else {
-            describegpt_json.clone()
+            describegpt_json
         };
         let llm_ctx = match llm_json.as_ref() {
             Some(dg) => {
@@ -790,7 +790,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // robust bbox, duplicate rows, ...) need the backend during the
         // projection pass too, not only during spec evaluation. The
         // guard clears it on every exit path.
-        let _sql_guard = formula_helpers::SqlBackendGuard::install(sql_backend.clone());
+        let _sql_guard = formula_helpers::SqlBackendGuard::install(sql_backend);
         // Always project in Dataset mode first, so the discovery merge
         // applies to the Dataset's top-level keys before the Catalog
         // envelope is wrapped around them (Roborev #2490 finding #1).
@@ -817,7 +817,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =
                 projection::wrap_in_catalog_envelope(&profile, merged_dataset, &projection_ctx)?;
-            let prefix = dataset_prefix.clone();
+            let prefix = dataset_prefix;
             inferred_snapshot.extend(inferred_values(&dataset_block, &inferred_paths, &prefix));
             // Catalog-envelope fields that came from a `fallback`.
             let catalog_inferred = projection::take_inferred_paths();

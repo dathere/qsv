@@ -5033,7 +5033,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_advanced || args.flag_bivariate {
         // index the RESOLVED path - an index beside the compressed source is useless,
         // since the data actually read is the converted temp
-        let rconfig = read_conf.clone();
+        let rconfig = &read_conf;
         let indexed_result = rconfig.indexed()?;
 
         if indexed_result.is_none() && !rconfig.is_stdin() {
@@ -5047,7 +5047,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                  to enable parallel processing..."
             );
 
-            match util::create_index_for_file(read_input_path, &rconfig) {
+            match util::create_index_for_file(read_input_path, rconfig) {
                 Ok(()) => {
                     log::info!("Index created successfully for statistics computation.");
                 },
@@ -6135,12 +6135,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Get record count to check for all-unique fields (cardinality == rowcount)
         let record_count: Option<u64> = {
             // the resolved Config, so the count is of the DATA, not the compressed container
-            let rconfig = read_conf.clone();
+            let rconfig = &read_conf;
             if let Ok(Some(idx)) = rconfig.indexed() {
                 Some(idx.count())
             } else if !rconfig.is_stdin() {
                 // Fall back to counting rows if no index
-                util::count_rows(&rconfig).ok()
+                util::count_rows(rconfig).ok()
             } else {
                 None // Can't get count from stdin
             }

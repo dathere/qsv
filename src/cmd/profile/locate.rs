@@ -731,7 +731,7 @@ fn county_column_regions(
             && table.name_for_geoid(&name).is_some()
             && state_fips.as_deref().is_none_or(|f| name.starts_with(f))
         {
-            Some(name.clone())
+            Some(name)
         } else {
             match table.resolve(&name, state_fips.as_deref()) {
                 CountyLookup::Resolved(geoid) => Some(geoid),

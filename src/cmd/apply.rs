@@ -1203,7 +1203,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
                 && !cs.content.starts_with("<ERROR:")
             {
                 cache
-                    .cache_set(cache_key.clone(), cs.clone())
+                    .cache_set(cache_key, cs.clone())
                     .map_err(|e| CliError::Other(format!("Disk cache error: {e:?}")))?;
             }
             cs

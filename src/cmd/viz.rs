@@ -11227,7 +11227,7 @@ fn choropleth_geocoded_locations(
                 rejected_units += value;
                 if exemplars.len() < 3 {
                     let where_found = if r.admin1_name.is_empty() {
-                        r.country_name.clone()
+                        r.country_name
                     } else {
                         format!("{}, {}", r.admin1_name, r.iso2)
                     };
@@ -27070,7 +27070,7 @@ fn render_dict_page_html(
     // (viz.title.data_schematic) — prefixing it again would read "Data Schematic — x.csv —
     // Data Schematic", so the brand prefix is reserved for custom titles that lack it.
     let doc_title = if title.contains(dict_page_title.as_ref()) {
-        title.to_string()
+        title
     } else {
         format!("{dict_page_title} — {title}")
     };

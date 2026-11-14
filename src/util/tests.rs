@@ -250,35 +250,62 @@ fn stats_cache_parsing_opts_match_rejects_mismatched_delimiter() {
 
 #[test]
 fn stats_cache_parsing_opts_match_resolves_unset_delimiter_from_extension() {
-    // an unset delimiter on BOTH sides resolves from the file extension, so a cache whose
-    // recorded delimiter is empty still matches a consumer that passed none
-    let meta = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ""});
+    // a consumer that passed no delimiter resolves it from the file extension, and that is
+    // compared with the delimiter the cache RECORDED
+    let comma = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ","});
     assert!(stats_cache_parsing_opts_match(
-        &meta,
+        &comma,
         Path::new("data.csv"),
         false,
         None,
         None,
         false
     ));
-    // ... and a .tsv input resolves to tab on both sides
+    // ... and a .tsv input resolves to tab
+    let tab = serde_json::json!({"flag_no_headers": false, "flag_delimiter": "\t"});
     assert!(stats_cache_parsing_opts_match(
-        &meta,
+        &tab,
         Path::new("data.tsv"),
         false,
         None,
         None,
         false
     ));
-    // but an explicit comma against a .tsv input is a genuine mismatch
     assert!(!stats_cache_parsing_opts_match(
-        &meta,
+        &comma,
+        Path::new("data.tsv"),
+        false,
+        None,
+        None,
+        false
+    ));
+    // but an explicit comma against a tab cache is a genuine mismatch
+    assert!(!stats_cache_parsing_opts_match(
+        &tab,
         Path::new("data.tsv"),
         false,
         Some(Delimiter(b',')),
         None,
         false
     ));
+}
+
+#[test]
+fn stats_cache_parsing_opts_match_refuses_an_unrecorded_delimiter() {
+    // a cache written before the resolved delimiter was recorded holds "" unless --delimiter
+    // was passed: it may have been read with the extension default, or with a delimiter
+    // QSV_SNIFF_DELIMITER / QSV_DEFAULT_DELIMITER chose. It cannot be verified, so it is
+    // refused even where the extension default would have matched.
+    let empty = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ""});
+    let missing = serde_json::json!({"flag_no_headers": false});
+    for meta in [&empty, &missing] {
+        for input in ["data.csv", "data.tsv"] {
+            assert!(
+                !stats_cache_parsing_opts_match(meta, Path::new(input), false, None, None, false),
+                "{meta} for {input}"
+            );
+        }
+    }
 }
 
 #[test]

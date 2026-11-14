@@ -1890,6 +1890,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // the RESOLVED setting, not the flag: QSV_NO_HEADERS turns the header row into data too, and
     // a cache keyed on the flag alone was served across that change.
     current_stats_args.flag_no_headers = rconfig.no_headers;
+    // Likewise the RESOLVED delimiter: QSV_SNIFF_DELIMITER and QSV_DEFAULT_DELIMITER change how
+    // the file is parsed without touching --delimiter. Not `get_delimiter()`, which converts a
+    // special-format input - a cache hit must not decompress anything.
+    current_stats_args.flag_delimiter = (rconfig.configured_delimiter() as char).to_string();
 
     // INVARIANT (issue #4462): `rconfig` below is the one and only resolved Config for this
     // run's input, and every stats path SHARES it - `sequential_stats` and `parallel_stats`

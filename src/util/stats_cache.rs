@@ -19,10 +19,7 @@ use super::{
 use crate::{
     CliError, CliResult,
     cmd::stats::{STATSDATA_TYPES_MAP, StatsData},
-    config::{
-        Config, DEFAULT_RDR_BUFFER_CAPACITY, Delimiter, SpecialFormat, get_delim_by_extension,
-        get_special_format,
-    },
+    config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, Delimiter, SpecialFormat, get_special_format},
 };
 
 /// get stats records from stats.csv.data.jsonl file, or if its invalid, by running the stats
@@ -144,19 +141,23 @@ pub(super) fn stats_cache_parsing_opts_match(
         return false;
     }
 
-    // The effective delimiter must match. Both the cache and the command resolve an unset
-    // delimiter from the same file path, so compare resolved bytes: an explicit recorded/passed
-    // delimiter is a single ASCII byte, otherwise the extension default.
-    let ext_delim = {
-        let (_, d, _) = get_delim_by_extension(input_path, b',');
-        d
+    // The effective delimiter must match. The cache records the delimiter its Config RESOLVED
+    // (flag, QSV_SNIFF_DELIMITER, extension, QSV_DEFAULT_DELIMITER), so resolve the command's
+    // the same way.
+    //
+    // An empty or missing value is refused. A cache written before the resolved delimiter was
+    // recorded holds only an explicit --delimiter, so "empty" there may be the extension
+    // default or a delimiter QSV_SNIFF_DELIMITER / QSV_DEFAULT_DELIMITER chose - there is no
+    // telling which. `stats` itself refuses such a cache too (empty never equals a resolved
+    // delimiter), and its rerun records the real one.
+    let Some(cache_delim) = metadata
+        .get("flag_delimiter")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.bytes().next())
+    else {
+        return false;
     };
-    let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
-        Some(s) if !s.is_empty() => s.as_bytes()[0],
-        _ => ext_delim,
-    };
-    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
-    cache_delim == cmd_delim
+    cache_delim == crate::config::resolved_delimiter(input_path, delimiter)
 }
 
 /// Was the stats cache beside `bases` built WITHOUT `--infer-dates`?

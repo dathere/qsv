@@ -5663,6 +5663,13 @@ impl Stats {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn add_numeric_value(&mut self, value: f64, weight: f64) {
+        // A "NaN" cell parses as a float, so it reaches here on a Float column. It is not a
+        // number to summarize: qsv-stats' OnlineStats and the t-digest both skip it already,
+        // so the buffers below must too, or the exact quantiles would be computed over a
+        // value the mean leaves out (and one NaN would poison the weighted mean for good).
+        if value.is_nan() {
+            return;
+        }
         if let Some(v) = self.unsorted_stats.as_mut() {
             v.add(value);
         }
@@ -7111,10 +7118,13 @@ impl TypedSum {
                 }
             },
             TFloat => {
+                // a "NaN" cell is skipped, as the mean skips it - it would turn the whole sum
+                // into NaN. It still switches the sum to floats, carrying the integer total.
+                let addend = if float_val.is_nan() { 0.0 } else { float_val };
                 if let Some(ref mut f) = self.float {
-                    *f += float_val;
+                    *f += addend;
                 } else {
-                    self.float = Some((self.integer as f64) + float_val);
+                    self.float = Some((self.integer as f64) + addend);
                 }
             },
             // TString length captured above; TNull / TDate / TDateTime have no

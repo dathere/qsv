@@ -353,7 +353,7 @@ fn sort_lines(
                 file,
             ))
         },
-        None => Box::new(io::BufReader::new(stdin().lock())),
+        None => Box::new(stdin().lock()),
     };
 
     let mut output_wtr: Box<dyn Write> = match &args.arg_output {

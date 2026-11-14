@@ -240,7 +240,7 @@ fn validate_input_file(path: &str) -> CliResult<()> {
 /// Open a buffered input reader from a file path, "-", or stdin (None).
 fn open_input_reader(input: Option<&str>) -> CliResult<Box<dyn BufRead>> {
     Ok(match input {
-        Some("-") | None => Box::new(BufReader::new(io::stdin())),
+        Some("-") | None => Box::new(io::stdin().lock()),
         Some(path) => {
             validate_input_file(path)?;
             Box::new(BufReader::new(File::open(path)?))

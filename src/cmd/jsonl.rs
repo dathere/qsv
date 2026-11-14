@@ -165,7 +165,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut rdr: Box<dyn BufRead> = match args.arg_input.clone() {
         None => {
             is_stdin = true;
-            Box::new(BufReader::new(io::stdin()))
+            Box::new(io::stdin().lock())
         },
         Some(p) => Box::new(BufReader::with_capacity(
             DEFAULT_RDR_BUFFER_CAPACITY,

@@ -228,7 +228,7 @@ fn dedup_lines(args: Args, mem_limited_buffer: u64) -> Result<u64, crate::clityp
                 file,
             ))
         },
-        None => Box::new(io::BufReader::new(stdin().lock())),
+        None => Box::new(stdin().lock()),
     };
     let mut output_writer: Box<dyn Write> = match &args.arg_output {
         Some(output_path) => Box::new(io::BufWriter::with_capacity(

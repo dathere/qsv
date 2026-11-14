@@ -580,7 +580,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 # plotly.rs 0.15.0 release-prep branch (plotly/plotly.rs#442: full plotly.js 3.7 trace coverage)
 # until 0.15.0 is on crates.io. This rev also moves plotly_static's build-dep to
 # webdriver-downloader 0.18 (zip 9; every zip 8.x is yanked). (#5027)
-plotly = { git = "https://github.com/dathere/plotly", rev = "d43be3786c32ab2790a6c0e927ee39d2bb99704c" }
+plotly = { git = "https://github.com/dathere/plotly", rev = "b652677502d667edb2caa09dc930a6fe294ce3f4" }
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 # https://github.com/thscharler/spreadsheet-ods/pull/77

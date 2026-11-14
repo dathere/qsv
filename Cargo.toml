@@ -109,6 +109,7 @@ too_many_lines         = "allow"
 struct_excessive_bools = "allow"
 # preference
 unnecessary_wraps = "allow"
+map_unwrap_or     = "allow"
 # false positive
 needless_doctest_main = "allow"
 # noisy

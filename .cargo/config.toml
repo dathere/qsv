@@ -23,3 +23,34 @@ rustflags = ["-C", "link-args=-Wl,-rpath,$ORIGIN"]
 # since there's only one kind of aarch64 CPU architecture for apple anyway
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-args=-Wl,-rpath,@loader_path", "-C", "target-cpu=native"]
+
+# `cargo +nightly pedantic`: clippy::pedantic on top of the [lints.clippy] allows in Cargo.toml.
+# A command-line `-W clippy::pedantic` overrides those allows, so they are repeated here;
+# keep this list in sync with Cargo.toml.
+[alias]
+pedantic = [
+    "clippy", "-F", "all_features", "--",
+    "-W", "clippy::pedantic",
+    "-A", "clippy::cast_possible_truncation",
+    "-A", "clippy::cast_possible_wrap",
+    "-A", "clippy::cast_sign_loss",
+    "-A", "clippy::needless_raw_string_hashes",
+    "-A", "clippy::cast_lossless",
+    "-A", "clippy::module_name_repetitions",
+    "-A", "clippy::type_complexity",
+    "-A", "clippy::zero_prefixed_literal",
+    "-A", "clippy::enum_glob_use",
+    "-A", "clippy::result_unit_err",
+    "-A", "clippy::similar_names",
+    "-A", "clippy::too_many_lines",
+    "-A", "clippy::struct_excessive_bools",
+    "-A", "clippy::unnecessary_wraps",
+    "-A", "clippy::map_unwrap_or",
+    "-A", "clippy::needless_doctest_main",
+    "-A", "clippy::missing_errors_doc",
+    "-A", "clippy::use_self",
+    "-A", "clippy::cognitive_complexity",
+    "-A", "clippy::option_if_let_else",
+    "-A", "clippy::implicit_clone",
+    "-A", "clippy::redundant_pub_crate",
+]

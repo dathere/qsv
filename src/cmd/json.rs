@@ -381,7 +381,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // If all expected headers exist, use the original order
         if first_dict_headers
             .iter()
-            .all(|&h| actual_headers.contains(&h.to_string()))
+            .all(|&h| actual_headers.iter().any(|i| i == h))
         {
             SelectColumns::parse(&first_dict_headers.join(",")).map_err(|e| {
                 CliError::Other(format!(

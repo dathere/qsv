@@ -4614,7 +4614,10 @@ struct Stats {
     // #[repr(u8)], so it is intentionally not asserted here)
 
     // Hot counters - all 8-byte aligned, accessed frequently
-    nullcount: u64, // 8 bytes - frequently updated counter
+    nullcount:          u64, // 8 bytes - frequently updated counter
+    /// --weight only: the rows whose weight is positive, i.e. the rows `weighted_modes` counts.
+    /// It is the row count the weighted all-unique (`*ALL`) check compares against.
+    weighted_mode_rows: u64, // 8 bytes
 
     // Configuration flags (accessed once during initialization, cold after init)
     which: WhichStats, // 32 bytes - read-only after initialization
@@ -5095,6 +5098,31 @@ fn weighted_percentiles(data: &[(f64, f64)], percentile_list: &[u8]) -> Option<V
     Some(results)
 }
 
+/// The number of decimal places in the shortest rendering of `value` that round-trips.
+///
+/// zmij renders a float below 1e-5 or from 1e16 up in exponent form (`1.5e-7`, `1e+21`), where
+/// the digits after the `.` are not the decimal places: `1.5e-7` is 0.00000015, which has 8.
+/// A whole number counts 1 place either way, as `2.0` does. Zero and non-finite values (a
+/// `NaN` or `inf` cell parses as a float) count none - `format_finite` leaves the rendering of
+/// a non-finite value unspecified.
+#[inline]
+fn float_decimal_places(value: f64) -> u16 {
+    if value == 0.0 || !value.is_finite() {
+        return 0;
+    }
+    let mut buffer = zmij::Buffer::new();
+    let rendered = buffer.format_finite(value);
+    let (mantissa, exponent) = match rendered.split_once('e') {
+        // the exponent is at most 3 digits with an optional sign, so the parse cannot fail
+        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().unwrap_or(0)),
+        None => (rendered, 0),
+    };
+    let fraction_len = mantissa
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len()) as i32;
+    (fraction_len - exponent).max(1) as u16
+}
+
 /// Converts a timestamp in milliseconds to RFC3339 format.
 ///
 /// This function converts a Unix timestamp (in milliseconds) to a human-readable
@@ -5254,17 +5282,23 @@ impl Stats {
                         .expect("t-digest k=200 is >= the minimum of 10"),
                 ));
             } else {
-                unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+                // one buffer, not both: a weighted run reads its quantiles from the weighted
+                // buffer only, and rows with a zero or negative weight are in neither
                 if use_weights {
                     weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+                } else {
+                    unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
                 }
             }
             #[cfg(target_endian = "big")]
             {
                 // Exact path is the only path here: t-digest is compiled out.
-                unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
+                // one buffer, not both: a weighted run reads its quantiles from the weighted
+                // buffer only, and rows with a zero or negative weight are in neither
                 if use_weights {
                     weighted_unsorted_stats = Some(Vec::with_capacity(record_count));
+                } else {
+                    unsorted_stats = Some(stats::Unsorted::with_capacity(record_count));
                 }
             }
         }
@@ -5304,6 +5338,7 @@ impl Stats {
             zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
+            weighted_mode_rows: 0,
             which,
             sum,
             online,
@@ -5370,8 +5405,11 @@ impl Stats {
         // guard a 0-weight value still became a mode-table key (inflating cardinality and
         // surfacing as an antimode with 0 occurrences). add_row maps non-finite weights to 1.0,
         // so `<= 0.0` is the complete exclusion test.
-        if self.which.use_weights && weight <= 0.0 {
-            return;
+        if self.which.use_weights {
+            if weight <= 0.0 {
+                return;
+            }
+            self.weighted_mode_rows += 1;
         }
 
         // HLL is independent of the mode-cardinality cap: feed every sample regardless
@@ -5572,21 +5610,8 @@ impl Stats {
                 // note that we are referring to number of decimal places,
                 // not the number of significant digits
                 if t == TFloat {
-                    let precision = if float_val == 0.0 {
-                        0
-                    } else {
-                        // safety: we know that f is a valid f64
-                        // so there will always be a fraction part, even if it's 0
-                        unsafe {
-                            zmij::Buffer::new()
-                                .format_finite(float_val)
-                                .split('.')
-                                .next_back()
-                                .unwrap_unchecked()
-                                .len() as u16
-                        }
-                    };
-                    self.max_precision = std::cmp::max(self.max_precision, precision);
+                    self.max_precision =
+                        std::cmp::max(self.max_precision, float_decimal_places(float_val));
                 }
             },
             TDateTime | TDate => {
@@ -5806,9 +5831,13 @@ impl Stats {
                     // The unweighted *ALL short-circuit holds because every count ties at 1.
                     // Weighted, distinct values can still carry different weights, so the
                     // short-circuit also needs every weight to tie - else the heaviest value
-                    // IS the mode.
+                    // IS the mode. "All distinct" is judged over the rows that carry a positive
+                    // weight: the others are not in the table, so the file's row count would
+                    // never match once a single row is weighted zero.
                     let unique_count = weighted_modes_map.len() as u64;
-                    if unique_count == record_count && (max_weight - min_weight).abs() < 1e-10 {
+                    if unique_count == self.weighted_mode_rows
+                        && (max_weight - min_weight).abs() < 1e-10
+                    {
                         // all values unique, all with the same weight
                         #[allow(clippy::cast_possible_truncation)]
                         let common_weight = min_weight.round() as u64;
@@ -5925,8 +5954,11 @@ impl Stats {
                 },
                 Some(v) => {
                     mc_pieces.reserve(8);
+                    // the tracker's count, whether or not the cardinality COLUMN was asked for:
+                    // the all-unique check below needs it under a bare --mode too
+                    let unique_count = v.cardinality();
                     if self.which.cardinality {
-                        cardinality = v.cardinality();
+                        cardinality = unique_count;
                         mc_pieces.push(itoa_buf.format(cardinality).to_owned());
                         // uniqueness_ratio = cardinality / record_count
                         #[allow(clippy::cast_precision_loss)]
@@ -5937,7 +5969,8 @@ impl Stats {
                     }
                     if self.which.mode {
                         // mode/s & antimode/s
-                        if cardinality == record_count {
+                        // (an empty column has no values to call all unique)
+                        if unique_count == record_count && record_count > 0 {
                             // all values unique
                             mc_pieces.extend_from_slice(
                                 // modes - short-circuit modes calculation as there is none
@@ -6671,6 +6704,7 @@ impl Commute for Stats {
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;
+        self.weighted_mode_rows += other.weighted_mode_rows;
         self.sum.merge(other.sum);
         self.modes.merge(other.modes);
         self.unsorted_stats.merge(other.unsorted_stats);

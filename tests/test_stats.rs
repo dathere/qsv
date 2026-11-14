@@ -2769,7 +2769,8 @@ fn stats_percentiles_edge_cases() {
             "1",
             "0",
             "4",
-            "4",
+            // 0.0000001 and 0.0000099 each have 7 decimal places
+            "7",
             "0",
             "10: -999999|25: 0|50: 0|75: 999999|90: 1000000"
         ],
@@ -10599,4 +10600,155 @@ fn stats_everything_cache_not_reused_across_sniff_preamble() {
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let fields: Vec<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
     assert_eq!(fields, ["id", "name", "amount"]);
+}
+
+/// `qsv stats <args> d.csv` on `csv`, as a map of each stats column to its value for row 1.
+fn stats_first_row(
+    name: &str,
+    csv: &str,
+    args: &[&str],
+) -> std::collections::HashMap<String, String> {
+    let wrk = Workdir::new(name);
+    wrk.create_from_string("d.csv", csv);
+    let mut cmd = wrk.command("stats");
+    cmd.args(args).arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got[0].iter().cloned().zip(got[1].iter().cloned()).collect()
+}
+
+#[test]
+fn stats_max_precision_exponent_form_floats() {
+    // floats below 1e-5 or from 1e16 up render in exponent form, where the digits after the
+    // "." are not the number of decimal places
+    for (value, expected) in [
+        ("0.000001", "6"),
+        ("1.5e-7", "8"),
+        ("0.0000125", "7"),
+        ("1e21", "1"),
+        ("123456789012345680000", "1"),
+        // plain-form values are unchanged
+        ("0.00001", "5"),
+        ("100.125", "3"),
+        ("2.0", "1"),
+    ] {
+        let row = stats_first_row(
+            &format!("stats_max_precision_exponent_form_floats_{value}"),
+            &format!("x\n{value}\n"),
+            &[],
+        );
+        assert_eq!(row["type"], "Float", "{value}");
+        assert_eq!(row["max_precision"], expected, "{value}");
+    }
+}
+
+#[test]
+fn stats_max_precision_ignores_non_finite_values() {
+    // "NaN" and "inf" cells parse as floats; they have no decimal places to count
+    let row = stats_first_row(
+        "stats_max_precision_ignores_non_finite_values",
+        "x\nNaN\ninf\n-inf\n",
+        &[],
+    );
+    assert_eq!(row["type"], "Float");
+    assert_eq!(row["max_precision"], "0");
+}
+
+#[test]
+fn stats_weighted_all_zero_weights_have_no_quantiles() {
+    // rows with a zero weight "do not contribute to the statistics": the quantiles must not
+    // fall back to the unweighted values
+    let row = stats_first_row(
+        "stats_weighted_all_zero_weights_have_no_quantiles",
+        "v,w\n1,0\n2,0\n3,0\n100,0\n",
+        &["--weight", "w", "--everything"],
+    );
+    for stat in [
+        "q1",
+        "q2_median",
+        "q3",
+        "iqr",
+        "mad",
+        "percentiles",
+        "skewness",
+    ] {
+        assert_eq!(row[stat], "", "{stat}");
+    }
+
+    let row = stats_first_row(
+        "stats_weighted_all_zero_weights_have_no_quantiles_median",
+        "v,w\n1,0\n2,0\n3,0\n100,0\n",
+        &["--weight", "w", "--median"],
+    );
+    assert_eq!(row["median"], "");
+}
+
+#[test]
+fn stats_weighted_all_unique_ignores_zero_weight_rows() {
+    // "all unique" is judged over the positively weighted rows, the ones the mode table counts
+    let row = stats_first_row(
+        "stats_weighted_all_unique_ignores_zero_weight_rows",
+        "v,w\na,1\nb,1\nc,1\nd,0\n",
+        &["--weight", "w", "--mode", "--cardinality"],
+    );
+    assert_eq!(row["cardinality"], "3");
+    assert_eq!(
+        [
+            &row["mode"],
+            &row["mode_count"],
+            &row["antimode"],
+            &row["antimode_occurrences"]
+        ],
+        ["", "0", "*ALL", "1"]
+    );
+
+    // a repeated value is not all unique, even when the summed weights tie
+    let row = stats_first_row(
+        "stats_weighted_all_unique_ignores_zero_weight_rows_repeat",
+        "v,w\na,1\na,1\nb,2\nd,0\n",
+        &["--weight", "w", "--mode"],
+    );
+    assert_eq!([&row["mode"], &row["antimode"]], ["a|b", "a|b"]);
+}
+
+#[test]
+fn stats_mode_without_cardinality_reports_all_unique() {
+    // the all-unique check must not depend on --cardinality being passed too
+    let csv = "x\na\nb\nc\nd\n";
+    let mode_only = stats_first_row(
+        "stats_mode_without_cardinality_all_unique",
+        csv,
+        &["--mode"],
+    );
+    let with_cardinality = stats_first_row(
+        "stats_mode_with_cardinality_all_unique",
+        csv,
+        &["--mode", "--cardinality"],
+    );
+    for stat in [
+        "mode",
+        "mode_count",
+        "mode_occurrences",
+        "antimode",
+        "antimode_count",
+        "antimode_occurrences",
+    ] {
+        assert_eq!(mode_only[stat], with_cardinality[stat], "{stat}");
+    }
+    assert_eq!(mode_only["antimode"], "*ALL");
+}
+
+#[test]
+fn stats_mode_of_a_column_with_no_rows_is_not_all_unique() {
+    for args in [&["--mode"][..], &["--mode", "--cardinality"][..]] {
+        let row = stats_first_row(
+            &format!("stats_mode_of_a_column_with_no_rows_{}", args.len()),
+            "x,y\n",
+            args,
+        );
+        assert_eq!(
+            [&row["mode"], &row["antimode"], &row["antimode_occurrences"]],
+            ["", "", "0"],
+            "{args:?}"
+        );
+    }
 }

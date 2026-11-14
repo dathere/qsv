@@ -8266,3 +8266,41 @@ fn moarstats_uses_stats_without_a_sidecar_as_they_are() {
     );
     assert!(stats_csv_columns(&wrk, "percentiles")[1][0].contains('|'));
 }
+
+#[test]
+fn moarstats_derived_statistics_skip_nan_cells() {
+    // the statistics moarstats derives from a float column are those of the column without
+    // its NaN cells. Count-based ones (cardinality, entropy, ...) are not compared: a NaN cell
+    // is still a value.
+    let values: Vec<String> = (1..=300)
+        .map(|i| {
+            format!(
+                "{:.2}",
+                f64::from((i * 37) % 101) * 0.5 + f64::from(i) / 9.0
+            )
+        })
+        .collect();
+    let mut with_nan = values.clone();
+    with_nan.insert(200, "NaN".to_string());
+    with_nan.insert(40, "NaN".to_string());
+
+    let cols = "kurtosis,gini_coefficient,median_mean_ratio,pearson_skewness,kelly_skewness,\
+                mad_stddev_ratio,quartile_coefficient_dispersion,percentile_ratio_90_10";
+    let mut derived = Vec::new();
+    for (name, rows) in [("without", &values), ("with", &with_nan)] {
+        let wrk = Workdir::new(&format!(
+            "moarstats_derived_statistics_skip_nan_cells_{name}"
+        ));
+        wrk.create_from_string("d.csv", &format!("v\n{}\n", rows.join("\n")));
+        let mut cmd = wrk.command("moarstats");
+        cmd.args(["--advanced", "d.csv"]);
+        wrk.assert_success(&mut cmd);
+        derived.push(stats_csv_columns(&wrk, cols));
+    }
+    assert!(
+        derived[0][1].iter().all(|v| !v.is_empty()),
+        "{:?}",
+        derived[0]
+    );
+    assert_eq!(derived[0], derived[1]);
+}

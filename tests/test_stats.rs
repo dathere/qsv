@@ -10976,7 +10976,7 @@ fn stats_nan_cells_are_skipped_by_every_numeric_statistic() {
         "v\n1.5\n3.5\n4.5\n",
         &["--everything"],
     );
-    for (name, nan) in [("upper", "NaN"), ("lower", "nan")] {
+    for (name, nan) in [("upper", "NaN"), ("lower", "nan"), ("allcaps", "NAN")] {
         let with = stats_first_row(
             &format!("stats_nan_cells_are_skipped_with_{name}"),
             &format!("v\n1.5\n{nan}\n3.5\n4.5\n"),
@@ -11031,5 +11031,107 @@ fn stats_weighted_nan_cells_are_skipped() {
     for stat in NAN_BLIND_STATS {
         assert!(!without[stat].is_empty(), "{stat} has no value to compare");
         assert_eq!(with[stat], without[stat], "{stat}");
+    }
+}
+
+#[test]
+fn stats_inf_cells_are_not_skipped() {
+    // only NaN is skipped. An "inf" cell is a value: it is the max, and the sum, mean and
+    // stddev it makes infinite render as empty - as before NaN cells were skipped.
+    let row = stats_first_row(
+        "stats_inf_cells_are_not_skipped",
+        "v\n1.5\ninf\n3.5\n4.5\n",
+        &["--everything"],
+    );
+    assert_eq!(
+        [
+            &row["type"],
+            &row["sum"],
+            &row["mean"],
+            &row["stddev"],
+            &row["min"],
+            &row["max"]
+        ],
+        ["Float", "", "", "", "1.5", "inf"]
+    );
+    assert_eq!(
+        [&row["q1"], &row["q2_median"], &row["n_positive"]],
+        ["2.5", "4", "4"]
+    );
+}
+
+#[test]
+fn stats_nan_cell_sums_like_a_float_cell_past_2_pow_53() {
+    // a NaN makes the column Float, and a Float column's sum is an f64: past 2^53 it is no
+    // longer exact, with a NaN cell just as with any float cell in its place. The all-integer
+    // column keeps its exact total.
+    let integers = stats_first_row(
+        "stats_nan_cell_sums_like_a_float_cell_integers",
+        "v\n9007199254740992\n1\n",
+        &[],
+    );
+    assert_eq!(
+        [&integers["type"], &integers["sum"]],
+        ["Integer", "9007199254740993"]
+    );
+
+    let with_float = stats_first_row(
+        "stats_nan_cell_sums_like_a_float_cell_float",
+        "v\n9007199254740992\n1\n0.0\n",
+        &[],
+    );
+    let with_nan = stats_first_row(
+        "stats_nan_cell_sums_like_a_float_cell_nan",
+        "v\n9007199254740992\n1\nNaN\n",
+        &[],
+    );
+    assert_eq!(
+        [&with_nan["type"], &with_nan["sum"]],
+        ["Float", "9007199254740992"]
+    );
+    assert_eq!(with_nan["sum"], with_float["sum"]);
+}
+
+#[test]
+fn stats_nan_cells_do_not_crash_the_exact_quantiles() {
+    // With enough rows, sorting a quantile buffer that holds a NaN panicked: Rust's sort
+    // detects a comparison that is not a total order. qsv 28.0.0 exits 101 on this file.
+    // A handful of rows is too few for the sort to notice, so this needs a few hundred.
+    let values: Vec<String> = (1..=300)
+        .map(|i| {
+            format!(
+                "{:.2}",
+                f64::from((i * 37) % 101) * 0.5 + f64::from(i) / 9.0
+            )
+        })
+        .collect();
+    let mut with_nan = values.clone();
+    with_nan.insert(200, "NaN".to_string());
+    with_nan.insert(40, "NaN".to_string());
+
+    for args in [
+        &["--median"][..],
+        &["--quartiles"][..],
+        &["--everything"][..],
+    ] {
+        let name = args[0].trim_start_matches('-');
+        let without = stats_first_row(
+            &format!("stats_nan_cells_do_not_crash_without_{name}"),
+            &format!("v\n{}\n", values.join("\n")),
+            args,
+        );
+        let with = stats_first_row(
+            &format!("stats_nan_cells_do_not_crash_with_{name}"),
+            &format!("v\n{}\n", with_nan.join("\n")),
+            args,
+        );
+        let median = if name == "median" {
+            "median"
+        } else {
+            "q2_median"
+        };
+        assert!(!without[median].is_empty(), "{name}");
+        assert_eq!(with[median], without[median], "{name}");
+        assert_eq!(with["sum"], without["sum"], "{name}");
     }
 }

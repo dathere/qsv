@@ -9509,3 +9509,38 @@ fn frequency_piped_stdin_keeps_default_delimiter() {
         .collect();
     assert_eq!(fields, ["a", "b"].into_iter().collect(), "{stdout}");
 }
+
+// A stats cache written before the resolved delimiter was recorded has an empty
+// `flag_delimiter` unless --delimiter was passed. This one was built under QSV_SNIFF_DELIMITER
+// (three semicolon-separated columns). `frequency` without the variable reads one
+// comma-delimited column, and must regenerate the stats instead of taking that cache: with
+// its own stats the all-unique column collapses to <ALL_UNIQUE>.
+#[test]
+fn frequency_refuses_a_stats_cache_with_an_unrecorded_delimiter() {
+    let wrk = Workdir::new("frequency_refuses_a_stats_cache_with_an_unrecorded_delimiter");
+    let rows: String = (0..60)
+        .map(|i| format!("k{:02};{};row{i}\n", (i * 7) % 60, i * 2))
+        .collect();
+    wrk.create_from_string("in.csv", &format!("x;y;z\n{rows}"));
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .env("QSV_SNIFF_DELIMITER", "1")
+        .args(["in.csv", "--everything", "--stats-jsonl"]);
+    wrk.assert_success(&mut stats_cmd);
+
+    let sidecar = wrk.path("in.stats.csv.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+    assert_eq!(meta["flag_delimiter"], ";");
+    meta["flag_delimiter"] = "".into();
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&meta).unwrap()).unwrap();
+    // rewrite the JSONL after the sidecar, so it is not the older of the two
+    let jsonl = wrk.path("in.stats.csv.data.jsonl");
+    std::fs::write(&jsonl, std::fs::read_to_string(&jsonl).unwrap()).unwrap();
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 2, "{got:?}");
+    assert_eq!([&got[1][0], &got[1][1]], ["x;y;z", "<ALL_UNIQUE>"]);
+}

@@ -8193,3 +8193,76 @@ fn moarstats_mode_zscore_of_a_single_mode_containing_the_separator() {
     }
     assert_eq!(zscores, ["-0.9901"; 3]);
 }
+
+/// The column names of `d.stats.csv`.
+fn stats_csv_headers(wrk: &Workdir) -> Vec<String> {
+    let mut cmd = wrk.command("headers");
+    cmd.args(["--just-names", "d.stats.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.into_iter().map(|row| row[0].clone()).collect()
+}
+
+fn separator_test_csv() -> String {
+    let rows: String = (1..=200)
+        .map(|i| format!("{}\n", (i * 37) % 101 + i / 7))
+        .collect();
+    format!("v\n{rows}")
+}
+
+#[test]
+fn moarstats_keeps_stats_whose_recorded_separator_matches() {
+    // the separator check must not recompute a baseline that already uses the current
+    // separator. `zero_padded_numeric` is only in the --everything baseline built here, so a
+    // rerun with moarstats' own stats options would drop it.
+    for (name, separator) in [("pipe", "|"), ("semicolon", ";")] {
+        let wrk = Workdir::new(&format!(
+            "moarstats_keeps_stats_whose_recorded_separator_matches_{name}"
+        ));
+        wrk.create_from_string("d.csv", &separator_test_csv());
+        let mut cmd = wrk.command("stats");
+        cmd.env("QSV_STATS_SEPARATOR", separator)
+            .args(["--everything", "--stats-jsonl", "d.csv"]);
+        wrk.assert_success(&mut cmd);
+        let meta: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(wrk.path("d.stats.csv.json")).unwrap())
+                .unwrap();
+        assert_eq!(meta["stats_separator"], separator, "{name}");
+
+        let mut cmd = wrk.command("moarstats");
+        cmd.env("QSV_STATS_SEPARATOR", separator)
+            .args(["--advanced", "d.csv"]);
+        wrk.assert_success(&mut cmd);
+
+        let headers = stats_csv_headers(&wrk);
+        assert!(
+            headers.iter().any(|h| h == "zero_padded_numeric"),
+            "{name}: the baseline stats were recomputed"
+        );
+        assert!(headers.iter().any(|h| h == "kelly_skewness"), "{name}");
+    }
+}
+
+#[test]
+fn moarstats_uses_stats_without_a_sidecar_as_they_are() {
+    // no sidecar means no recorded separator to compare: the stats CSV is not recomputed
+    let wrk = Workdir::new("moarstats_uses_stats_without_a_sidecar_as_they_are");
+    wrk.create_from_string("d.csv", &separator_test_csv());
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--everything", "d.csv"]);
+    wrk.assert_success(&mut cmd);
+    let _ = std::fs::remove_file(wrk.path("d.stats.csv.json"));
+    assert!(!wrk.path("d.stats.csv.json").exists());
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.env("QSV_STATS_SEPARATOR", ";")
+        .args(["--advanced", "d.csv"]);
+    wrk.assert_success(&mut cmd);
+
+    assert!(
+        stats_csv_headers(&wrk)
+            .iter()
+            .any(|h| h == "zero_padded_numeric"),
+        "the baseline stats were recomputed"
+    );
+    assert!(stats_csv_columns(&wrk, "percentiles")[1][0].contains('|'));
+}

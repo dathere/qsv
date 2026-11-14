@@ -7551,6 +7551,113 @@ fn sqlp_approx_count_distinct() {
     assert_eq!(got, vec![svec!["sides", "names"], svec!["2", "5"]]);
 }
 
+// Polars SQL behavior changed between 61fdb30 and 36ea0f9.
+
+#[test]
+fn sqlp_comma_separated_lateral_aggregates() {
+    // pola-rs/polars#30768: comma-separated LATERAL derived tables, and aggregates without
+    // GROUP BY inside them. On 61fdb30 both failed with "`LATERAL` clause is not supported".
+    let wrk = Workdir::new("sqlp_comma_separated_lateral_aggregates");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT t.name, hi.mx, lo.mn FROM t, LATERAL (SELECT MAX(qty) AS mx FROM t AS t2 WHERE \
+         t2.side = t.side) AS hi, LATERAL (SELECT MIN(qty) AS mn FROM t AS t3 WHERE t3.side = \
+         t.side) AS lo ORDER BY t.name",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "mx", "mn"],
+            svec!["alice", "10", "1"],
+            svec!["bob", "4", "3"],
+            svec!["carol", "10", "1"],
+            svec!["dave", "4", "3"],
+            svec!["erin", "10", "1"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_create_and_drop_view() {
+    // pola-rs/polars#30778 added CREATE VIEW and DROP VIEW (61fdb30: "statement type is not
+    // supported").
+    let wrk = Workdir::new("sqlp_create_and_drop_view");
+    sides_fixture(&wrk);
+    wrk.create_from_string(
+        "view.sql",
+        "CREATE VIEW buys AS SELECT name, qty FROM t WHERE side = 'buy';\nSELECT * FROM buys \
+         ORDER BY qty;\n",
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("view.sql");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "qty"],
+            svec!["erin", "1"],
+            svec!["carol", "7"],
+            svec!["alice", "10"],
+        ]
+    );
+
+    wrk.create_from_string(
+        "drop.sql",
+        "CREATE VIEW buys AS SELECT name FROM t WHERE side = 'buy';\nDROP VIEW buys;\nSELECT * \
+         FROM buys;\n",
+    );
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("drop.sql");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("relation 'buys' was not found"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn sqlp_describe_table() {
+    // pola-rs/polars#30778 added DESCRIBE (61fdb30: "statement type is not supported").
+    let wrk = Workdir::new("sqlp_describe_table");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("DESCRIBE t");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["column_name", "column_type"],
+            svec!["side", "str"],
+            svec!["qty", "i64"],
+            svec!["flag", "bool"],
+            svec!["name", "str"],
+            svec!["s", "str"],
+        ]
+    );
+}
+
+// std::env::home_dir() reads HOME on unix only; Windows uses the profile directory.
+#[cfg(unix)]
+#[test]
+fn sqlp_read_csv_expands_home_dir() {
+    // pola-rs/polars#30774: a leading `~` in a read_* table function path is the home
+    // directory. On 61fdb30 it was taken literally ("No such file or directory").
+    let wrk = Workdir::new("sqlp_read_csv_expands_home_dir");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("HOME", wrk.path(""))
+        .arg("t.csv")
+        .arg("SELECT COUNT(*) AS n FROM read_csv('~/t.csv')");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["5"]]);
+}
+
 // ---------------------------------------------------------------------------
 // sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
 // ---------------------------------------------------------------------------

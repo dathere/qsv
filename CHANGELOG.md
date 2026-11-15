@@ -22,11 +22,14 @@ Also in this release:
 - **The stats cache is no longer served stale** when `QSV_NO_HEADERS`, `QSV_STATS_SEPARATOR` or a sniffed or default delimiter changes, or after an upgrade with `--infer-dates` ([#5049](https://github.com/dathere/qsv/pull/5049), [#5051](https://github.com/dathere/qsv/pull/5051), [#5052](https://github.com/dathere/qsv/pull/5052)).
 - **`stats --cardinality`, `--mode` and `--everything` are 12–27% faster and use up to 36% less memory**, with and without `--weight` ([#5011](https://github.com/dathere/qsv/pull/5011), [#5013](https://github.com/dathere/qsv/pull/5013)).
 - **`sqlp` runs on a newer Polars** that adds correlated subqueries, `LATERAL`, `PERCENTILE_CONT`/`PERCENTILE_DISC`, `CREATE VIEW`, `BOOL_AND`, `COUNT_IF`, `MAX_BY`, `REGEXP_EXTRACT` and more. It also fixes two wrong results ([#5055](https://github.com/dathere/qsv/pull/5055) and earlier bumps).
-- **Dependency bumps for security fixes, including bundled libraries.**
-  - The SQLite that `to sqlite` bundles is now 3.54.1, which fixes [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459) ([#5022](https://github.com/dathere/qsv/pull/5022)).
-  - The Polars bump moves to zstd 0.14, which clears 13 "unsound" advisories ([#5021](https://github.com/dathere/qsv/pull/5021)).
-  - The MCP server takes `hono` and `@hono/node-server` security releases ([#5042](https://github.com/dathere/qsv/pull/5042), [#5043](https://github.com/dathere/qsv/pull/5043)).
-  - The bundled Luau is now 0.745, with native-code (`luau-jit`) crash and code-generation fixes ([#5026](https://github.com/dathere/qsv/pull/5026)).
+- **Dependency bumps for security fixes, and bundled-library updates.**
+  - Security:
+    - The SQLite that `to sqlite` bundles is now 3.54.1, which fixes [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459) ([#5022](https://github.com/dathere/qsv/pull/5022)).
+    - The Polars bump moves to zstd 0.14, which clears 13 "unsound" advisories ([#5021](https://github.com/dathere/qsv/pull/5021)).
+    - The MCP server takes `hono` and `@hono/node-server` security releases ([#5042](https://github.com/dathere/qsv/pull/5042), [#5043](https://github.com/dathere/qsv/pull/5043)).
+  - Bundled libraries:
+    - Luau is now 0.745, with native-code (`luau-jit`) crash and code-generation fixes ([#5026](https://github.com/dathere/qsv/pull/5026)).
+    - [driver.js](https://driverjs.com), the engine behind the Data Schematic Tour, is now 1.14.0 (from 1.10.2). Enter now advances every step, and the spotlight follows elements that scroll or re-render ([#5038](https://github.com/dathere/qsv/pull/5038), [#5057](https://github.com/dathere/qsv/pull/5057)).
 
 This is a major release because some `sqlp`, `validate`, `profile --strict`, `luau` and `stats` results and exit codes change. See [Breaking Changes](#v29-breaking-changes). The MSRV is now Rust 1.100.
 

@@ -109,4 +109,66 @@ row_number	field	error
 3	Category	"Mens" does not match "(Female|Male|Female and Male|Unisex|Male urinal|Children only|None)"
 ```
 
+### SARIF output for GitHub code scanning
+
+New in qsv 29.0.0 ([#5031](https://github.com/dathere/qsv/pull/5031)). `--sarif <file>` also writes the JSON Schema errors as a [SARIF 2.1.0](https://www.oasis-open.org/standard/sarif-v2-1-0/) log. SARIF is the format static analysis tools use, so GitHub code scanning and other SARIF viewers can show invalid rows as alerts on the CSV file, at the line where each row starts.
+
+The files below are in [`resources/examples/validate-sarif`](../resources/examples/validate-sarif). `sales.csv` has one error of each kind:
+
+```
+order_id,order_date,sku,region,quantity,unit_price,customer_email,notes
+1001,2026-10-01,ABC-1234,North,5,$19.99,ana@example.com,
+1002,2026-10-02,ABC-1235,South,12,$4.50,ben@example.com,"Gift wrap,
+deliver after 5pm"
+1003,2026-13-02,ABC-1236,East,3,$7.25,cara@example.com,
+1004,2026-10-04,abc-77,West,1,$2.00,dev@example.com,
+...
+```
+
+example run:
+
+```
+$ qsv validate --split-ragged sales.csv sales.schema.json --sarif sales.csv.sarif
+Writing invalid/valid/error files...
+11 out of 14 records invalid.
+```
+
+The usual `sales.csv.validation-errors.tsv` report is still written. The SARIF log holds the same 11 errors, one result each. This is the result for row 3, whose `order_date` isn't a valid date:
+
+```json
+{
+  "ruleId": "format",
+  "ruleIndex": 3,
+  "level": "error",
+  "message": {
+    "text": "Row 3, column \"order_date\": \"2026-13-02\" is not a \"date\""
+  },
+  "locations": [
+    {
+      "physicalLocation": {
+        "artifactLocation": {
+          "uri": "resources/examples/validate-sarif/sales.csv",
+          "index": 0
+        },
+        "region": {
+          "startLine": 5
+        }
+      }
+    }
+  ]
+}
+```
+
+* `ruleId` is the JSON Schema keyword that failed (`format`, `pattern`, `enum`, `minimum`, …), plus `dynamicEnum`, `uniqueCombinedWith` and `ragged-row` (with `--split-ragged`).
+* `startLine` is the file line where the row starts, not the row number. Row 2's quoted `notes` field spans two lines, so row 3 starts on line 5.
+* `uri` is relative to the root of the git checkout the CSV is in (here, the qsv repo), so results point at the right file wherever qsv runs. Outside a checkout, it is relative to the current directory.
+* The log is written even when every row is valid (with no results), so a CI run clears earlier alerts.
+* A run that stops early writes no SARIF file, and removes one left by an earlier run. Without `--split-ragged`, a row with the wrong number of fields stops validation, which is why the example uses it.
+* Output stops at 25,000 results by default, GitHub code scanning's limit per run. `--sarif-max-results <n>` sets another cap, and 0 means no limit.
+* `--sarif` works only in JSON Schema mode with a file input. RFC 4180 mode and stdin reject it.
+
+[`github-workflow.yml`](../resources/examples/validate-sarif/github-workflow.yml) in the same directory is a complete GitHub Actions workflow. It validates the CSV, uploads the log with `github/codeql-action/upload-sarif` (the job needs `security-events: write`), and then fails the job if any row was invalid. Run unchanged on a public repository with qsv 29.0.0, it raised one code scanning alert per error at the right line of `sales.csv`. On a pull request that added an invalid row, it flagged only that new error, with a review comment on its line. Code scanning on a private repository needs GitHub Advanced Security.
+
+See the [Validation & Schema wiki page](https://github.com/dathere/qsv/wiki/Validation-and-Schema) for more, including a walk-through of this example.
+
 

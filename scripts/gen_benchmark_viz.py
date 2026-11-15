@@ -698,7 +698,7 @@ schema-cache knob, throughput across every release, deep-dives into four flagshi
 commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
 without losing speed, and this release's biggest speedups.
 
-[![qsv benchmark Data Schematic]({url}hero.png)]({url})
+[![qsv benchmark Data Schematic]({url}hero.png)]({url}#trend)
 
 > **Note:** cross-version numbers are not strictly apples-to-apples — commands gain features
 > over time. Treat the historical trend as a broad trajectory, not an exact speedup.

@@ -1,3 +1,7 @@
+// Polars pins a nightly built before `str::trim_prefix`/`trim_suffix` were stabilized (1.100).
+// Drop once that pin moves past the stabilization.
+#![cfg_attr(feature = "nightly", feature(trim_prefix_suffix))]
+
 extern crate log;
 extern crate serde;
 

@@ -1,3 +1,7 @@
+// Polars pins a nightly built before `str::trim_prefix`/`trim_suffix` were stabilized (1.100).
+// Drop once that pin moves past the stabilization.
+#![cfg_attr(feature = "nightly", feature(trim_prefix_suffix))]
+
 use std::{env, time::Instant};
 
 extern crate qsv_docopt as docopt;

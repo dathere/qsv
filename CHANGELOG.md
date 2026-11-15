@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [29.0.0] - <TBD> 🛡️ The "Trust the numbers" Release ✅
+## [29.0.0] - 2026-11-14 🛡️ The "Trust the numbers" Release ✅
 
 ### Highlights
 
-~<TBD> commits since 28.0.0, and the theme is **correctness**. We develop qsv with the latest models from Anthropic and review every change adversarially with OpenAI's. [Codacy](https://www.codacy.com) adds one more layer of correctness review on top of that, and it gives us free access to its platform. With all three, we swept several core commands for correctness: `stats` and `moarstats`, `luau`, `profile`, `scoresql`, `sqlp --format avro`, and every command that reads piped stdin. Thank you, Codacy.
+~103 commits since 28.0.0, and the theme is **correctness**. We develop qsv with the latest models from Anthropic and review every change adversarially with OpenAI's. [Codacy](https://www.codacy.com) adds one more layer of correctness review on top of that, and it gives us free access to its platform. With all three, we swept several core commands for correctness: `stats` and `moarstats`, `luau`, `profile`, `scoresql`, `sqlp --format avro`, and every command that reads piped stdin. Thank you, Codacy.
 
 If you run `stats` on data written by pandas or numpy, upgrade:
 

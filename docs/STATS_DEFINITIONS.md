@@ -242,7 +242,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. `NaN` cells are skipped, as they are by every numeric statistic, including the exact median, quartiles, MAD, percentiles and the weighted statistics; they still count as values for `nullcount`, `sparsity` and `cardinality`. For Floats, positive infinity is written as "inf" and negative infinity as "-inf". |
+| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. `NaN` cells are skipped (a column of only `NaN` cells has no sum, as it has no mean), as they are by every numeric statistic, including the exact median, quartiles, MAD, percentiles and the weighted statistics; they still count as values for `nullcount`, `sparsity` and `cardinality`. For Floats, positive infinity is written as "inf" and negative infinity as "-inf". |
 | `min` | Variable | Minimum value found. | Tracks minimum value during the scan. |
 | `max` | Variable | Maximum value found. | Tracks maximum value during the scan. |
 | `range` | Variable | Difference between Max and Min. | `max - min`. |

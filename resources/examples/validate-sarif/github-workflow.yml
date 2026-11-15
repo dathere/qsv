@@ -2,7 +2,7 @@
 # the invalid rows as code scanning alerts on the CSV file.
 #
 # Copy it to .github/workflows/ in your repository and change DATA_FILE and SCHEMA_FILE.
-# It needs a qsv release with `validate --sarif` (the release after 28.0.0).
+# It needs qsv 29.0.0 or later, the first release with `validate --sarif`.
 #
 # Files beside this one:
 #   sales.csv          sample data with one error of each kind

@@ -4,11 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [29.0.0] - <TBD>
+## [29.0.0] - <TBD> 🛡️ The "Trust the numbers" Release ✅
 
 ### Highlights
 
-~<TBD> commits since 28.0.0. If you run `stats` on data written by pandas or numpy, upgrade:
+~<TBD> commits since 28.0.0, and the theme is **correctness**. We develop qsv with the latest models from Anthropic and review every change adversarially with OpenAI's. [Codacy](https://www.codacy.com) adds one more layer of correctness review on top of that, and it gives us free access to its platform. With all three, we swept several core commands for correctness: `stats` and `moarstats`, `luau`, `profile`, `scoresql`, `sqlp --format avro`, and every command that reads piped stdin. Thank you, Codacy.
+
+If you run `stats` on data written by pandas or numpy, upgrade:
 
 - **`stats` no longer crashes on `NaN` cells** ([#5053](https://github.com/dathere/qsv/pull/5053)). In qsv 28.0.0 and 27.0.1, `stats --median`, `--quartiles` or `--everything` panics on a float column of a few hundred rows or more that holds a `NaN`, `nan` or `NAN` cell, which is how pandas and numpy write missing values. So does `moarstats`, which runs `stats`. On smaller columns, the `sum` came out empty and the quartiles, MAD, IQR, fences and percentiles were empty or shifted. Every numeric statistic now skips `NaN` cells, as the mean and `--quantile-method approx` already did. A `NaN` cell still counts as a value for `nullcount`, `sparsity` and `cardinality`.
 
@@ -20,6 +22,11 @@ Also in this release:
 - **The stats cache is no longer served stale** when `QSV_NO_HEADERS`, `QSV_STATS_SEPARATOR` or a sniffed or default delimiter changes, or after an upgrade with `--infer-dates` ([#5049](https://github.com/dathere/qsv/pull/5049), [#5051](https://github.com/dathere/qsv/pull/5051), [#5052](https://github.com/dathere/qsv/pull/5052)).
 - **`stats --cardinality`, `--mode` and `--everything` are 12–27% faster and use up to 36% less memory**, with and without `--weight` ([#5011](https://github.com/dathere/qsv/pull/5011), [#5013](https://github.com/dathere/qsv/pull/5013)).
 - **`sqlp` runs on a newer Polars** that adds correlated subqueries, `LATERAL`, `PERCENTILE_CONT`/`PERCENTILE_DISC`, `CREATE VIEW`, `BOOL_AND`, `COUNT_IF`, `MAX_BY`, `REGEXP_EXTRACT` and more. It also fixes two wrong results ([#5055](https://github.com/dathere/qsv/pull/5055) and earlier bumps).
+- **Dependency bumps for security fixes, including bundled libraries.**
+  - The SQLite that `to sqlite` bundles is now 3.54.1, which fixes [RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459) ([#5022](https://github.com/dathere/qsv/pull/5022)).
+  - The Polars bump moves to zstd 0.14, which clears 13 "unsound" advisories ([#5021](https://github.com/dathere/qsv/pull/5021)).
+  - The MCP server takes `hono` and `@hono/node-server` security releases ([#5042](https://github.com/dathere/qsv/pull/5042), [#5043](https://github.com/dathere/qsv/pull/5043)).
+  - The bundled Luau is now 0.745, with native-code (`luau-jit`) crash and code-generation fixes ([#5026](https://github.com/dathere/qsv/pull/5026)).
 
 This is a major release because some `sqlp`, `validate`, `profile --strict`, `luau` and `stats` results and exit codes change. See [Breaking Changes](#v29-breaking-changes). The MSRV is now Rust 1.100.
 

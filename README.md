@@ -1,4 +1,4 @@
-## qsv: Blazing-fast Data-Wrangling toolkit
+## qsv: Blazing-fast Neuro-symbolic Data-Wrangling toolkit
 
 [![Linux build status](https://github.com/dathere/qsv/actions/workflows/rust.yml/badge.svg)](https://github.com/dathere/qsv/actions/workflows/rust.yml)
 [![Windows build status](https://github.com/dathere/qsv/actions/workflows/rust-windows.yml/badge.svg)](https://github.com/dathere/qsv/actions/workflows/rust-windows.yml)

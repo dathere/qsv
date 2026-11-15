@@ -7658,6 +7658,38 @@ fn sqlp_read_csv_expands_home_dir() {
     assert_eq!(got, vec![svec!["n"], svec!["5"]]);
 }
 
+// Polars SQL behavior changed between 36ea0f9 and 2d9938d.
+
+#[test]
+fn sqlp_explain_rejects_non_queries() {
+    // pola-rs/polars#30798: EXPLAIN takes queries only. On 36ea0f9, EXPLAIN over any other
+    // statement RAN it to get a plan (the view was created, the table dropped) and exited 0.
+    let wrk = Workdir::new("sqlp_explain_rejects_non_queries");
+    sides_fixture(&wrk);
+
+    for stmt in [
+        "DROP TABLE t",
+        "CREATE VIEW buys AS SELECT name FROM t WHERE side = 'buy'",
+        "CREATE TABLE t2 AS SELECT * FROM t",
+        "TRUNCATE TABLE t",
+        "SHOW TABLES",
+    ] {
+        let mut cmd = wrk.command("sqlp");
+        cmd.arg("t.csv").arg(format!("EXPLAIN {stmt}"));
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("EXPLAIN supports queries only"),
+            "{stmt}: {stderr}"
+        );
+    }
+
+    // a query is still explained
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("EXPLAIN SELECT name FROM t");
+    let plan: String = wrk.stdout_on_success(&mut cmd);
+    assert!(plan.contains("Csv SCAN"), "{plan}");
+}
+
 // ---------------------------------------------------------------------------
 // sqlp --streaming writes the result batch by batch (csv, jsonl, parquet, arrow).
 // ---------------------------------------------------------------------------

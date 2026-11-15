@@ -6165,7 +6165,7 @@ impl Stats {
         // sum
         let stotlen =
             if let Some((stotlen_work, sum)) = self.sum.as_ref().and_then(|sum| sum.show(typ)) {
-                if typ == FieldType::TFloat {
+                if typ == FieldType::TFloat && !sum.is_empty() {
                     if let Ok(f64_val) = fast_float2::parse::<f64, &[u8]>(sum.as_bytes()) {
                         record.push_field(&util::round_num(f64_val, round_places));
                     } else {
@@ -7084,11 +7084,15 @@ impl FieldType {
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct TypedSum {
-    float:   Option<f64>,
+    float:      Option<f64>,
     // i128 so that an intermediate total past i64 range can come back in range exactly: a
     // saturating i64 sum was order-dependent and printed plausible wrong totals
-    integer: i128,
-    stotlen: u64, // sum of the total length of strings
+    integer:    i128,
+    stotlen:    u64, // sum of the total length of strings
+    // false while only NaN cells were seen: skipping them leaves nothing summed, and that must
+    // print as no sum (like the mean), not as a total of 0
+    #[serde(default)]
+    has_number: bool,
 }
 
 impl TypedSum {
@@ -7111,6 +7115,7 @@ impl TypedSum {
         #[allow(clippy::cast_precision_loss)]
         match typ {
             TInteger => {
+                self.has_number = true;
                 if let Some(ref mut f) = self.float {
                     *f += float_val;
                 } else {
@@ -7120,7 +7125,12 @@ impl TypedSum {
             TFloat => {
                 // a "NaN" cell is skipped, as the mean skips it - it would turn the whole sum
                 // into NaN. It still switches the sum to floats, carrying the integer total.
-                let addend = if float_val.is_nan() { 0.0 } else { float_val };
+                let addend = if float_val.is_nan() {
+                    0.0
+                } else {
+                    self.has_number = true;
+                    float_val
+                };
                 if let Some(ref mut f) = self.float {
                     *f += addend;
                 } else {
@@ -7144,6 +7154,7 @@ impl TypedSum {
                     Err(_) => Some((self.stotlen, UNDERFLOW_STRING.to_string())),
                 }
             },
+            TFloat if !self.has_number => Some((self.stotlen, String::new())),
             TFloat => Some((
                 self.stotlen,
                 zmij::Buffer::new()
@@ -7166,6 +7177,7 @@ impl Commute for TypedSum {
             (None, None) => self.integer += other.integer,
         }
         self.stotlen = self.stotlen.saturating_add(other.stotlen);
+        self.has_number |= other.has_number;
     }
 }
 

@@ -218,6 +218,10 @@ sqlp options:
                               Note that if dates are not well-formatted in your CSV,
                               that you may want to try to set `--ignore-errors` to relax
                               the CSV parsing of dates.
+                              Polars reads slash, dash and dot dates as day-first, so
+                              01/05/2024 becomes 2024-05-01. So does CAST(col AS DATE).
+                              For month-first (US) dates, leave this off and use
+                              STRPTIME(col, '%m/%d/%Y') in the query instead.
     --infer-len <arg>         The number of rows to scan when inferring the schema of the CSV.
                               Set to 0 to do a full table scan (warning: can be slow).
                               [default: 10000]

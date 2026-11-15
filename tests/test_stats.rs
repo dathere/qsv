@@ -11001,6 +11001,45 @@ fn stats_nan_cells_are_skipped_by_every_numeric_statistic() {
 }
 
 #[test]
+fn stats_all_nan_column_has_no_sum() {
+    // skipping every NaN leaves nothing summed: the sum is empty, like the mean, not 0
+    let row = stats_first_row(
+        "stats_all_nan_column_has_no_sum",
+        "v\nNaN\nnan\nNAN\n",
+        &["--everything"],
+    );
+    assert_eq!(
+        [&row["type"], &row["sum"], &row["mean"], &row["nullcount"]],
+        ["Float", "", "", "0"]
+    );
+}
+
+#[test]
+fn stats_all_nan_chunks_merge_into_the_other_chunks_sum() {
+    // an indexed file is summed in parallel chunks; a chunk that saw only NaN cells must not
+    // hide the total of the chunks that saw numbers, and an all-NaN file must stay empty
+    let mut csv = String::from("v\n");
+    csv.push_str(&"NaN\n".repeat(3000));
+    csv.push_str(&"1.5\n".repeat(1000));
+    for (name, csv, sum) in [
+        ("mixed", csv, "1500"),
+        ("all_nan", format!("v\n{}", "NaN\n".repeat(4000)), ""),
+    ] {
+        let wrk = Workdir::new(&format!("stats_all_nan_chunks_merge_{name}"));
+        wrk.create_from_string("d.csv", &csv);
+        let mut idx = wrk.command("index");
+        idx.arg("d.csv");
+        wrk.assert_success(&mut idx);
+        let mut cmd = wrk.command("stats");
+        cmd.args(["--jobs", "4"]).arg("d.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        let row: std::collections::HashMap<_, _> =
+            got[0].iter().cloned().zip(got[1].iter().cloned()).collect();
+        assert_eq!(row["sum"], sum, "{name}");
+    }
+}
+
+#[test]
 fn stats_nan_cell_after_integers_keeps_the_integer_total() {
     // the NaN switches the column to Float without adding to the sum
     let row = stats_first_row(

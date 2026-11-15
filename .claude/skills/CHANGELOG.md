@@ -5,10 +5,16 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [29.0.0] - 2026-11-15
+Companion release to qsv 29.0.0, "The Trust the numbers Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 29.0.0 because the regenerated skills describe options and behavior that only the new binary has: `qsv-validate --sarif`, and `qsv-sqlp --format avro` converting the types Avro can't write. The skill count stays at **57**. Update your qsv binary first.
 
 ### Added
 - **`qsv-validate` describes `--sarif <file>`** ([#5031](https://github.com/dathere/qsv/pull/5031)): in JSON Schema mode, it writes the validation errors as a SARIF 2.1.0 log for code scanning tools. The skill was regenerated from the qsv USAGE. It needs a qsv binary with the option.
+
+### Changed
+- **`qsv-sqlp` describes how `--format avro` converts types** ([#5024](https://github.com/dathere/qsv/pull/5024)): Avro has fewer types than Polars, so small and unsigned integers become int or long (a value above 2^63-1 is an error), zoned timestamps become UTC, nanosecond timestamps become microseconds, and TIME and durations become strings (durations in ISO 8601).
+- **`qsv-sqlp` and `qsv-joinp` corrections** ([#5046](https://github.com/dathere/qsv/pull/5046)): `<=>` is described as the NULL-safe equality operator (same as `IS NOT DISTINCT FROM`), not a three-way comparison, and the `--cache-schema` text names the right Polars schema file.
+- **`qsv-viz` documents stdin input** ([#5018](https://github.com/dathere/qsv/pull/5018)): pass `-` to chart piped CSV with every chart type except `smart`, which needs a file. A piped-input example was added.
 
 ### Fixed
 - **The `.mcpb` no longer ships development-only packages** ([#5014](https://github.com/dathere/qsv/pull/5014)). The packager zipped all of `node_modules`, so the 28.0.0 bundle included typescript, c8, archiver and 116 other packages the server never loads, among them three minimatch copies flagged by GHSA-g3hv-75wg-m249. Packages that `package-lock.json` marks dev-only are now skipped, as is `node_modules/.bin`, and the download shrinks from 11.4 MB to 5.6 MB. `verify-bundles` checks that none of them is bundled.

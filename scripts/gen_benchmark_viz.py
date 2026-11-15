@@ -21,8 +21,9 @@ Usage (from the repo root), after a fresh benchmark run updates scripts/results/
 Set QSV_BIN to point at a specific binary; otherwise target/{debug,release}/qsv or a
 `qsv` on PATH is used.
 
-A static PNG (benchmarks/hero.png) for the Wiki thumbnail is rendered best-effort via the
-`viz_static` feature (needs a local Chrome/Firefox); it's skipped gracefully if unavailable.
+A static PNG (benchmarks/hero.png) for the Wiki thumbnail — the "long view" chart — is a
+best-effort headless-Chrome screenshot of benchmarks/trend.html (set BROWSER_PATH for a
+non-default Chrome/Chromium); it's skipped gracefully if no browser is found.
 
 Publishing the Wiki "Benchmarks" page is a separate MANUAL step (the wiki is its own
 repo and interactive Plotly can't render in wiki markdown, which strips <script>):
@@ -697,7 +698,7 @@ schema-cache knob, throughput across every release, deep-dives into four flagshi
 commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
 without losing speed, and this release's biggest speedups.
 
-[![qsv benchmark Data Schematic]({url}hero.png)]({url})
+[![qsv benchmark Data Schematic]({url}hero.png)]({url}#trend)
 
 > **Note:** cross-version numbers are not strictly apples-to-apples — commands gain features
 > over time. Treat the historical trend as a broad trajectory, not an exact speedup.
@@ -716,22 +717,37 @@ def write_wiki_stub(info, total):
         fh.write(md)
 
 
-def render_hero(index_src):
-    """Best-effort static PNG (benchmarks/hero.png) for the Wiki thumbnail — the index-advantage
-    chart. Needs the `viz_static` feature + a local Chrome/Firefox (webdriver auto-downloads), so
-    it is skipped gracefully if unavailable (the interactive Data Schematic never needs it)."""
+def find_chrome():
+    """BROWSER_PATH (the same override `qsv viz` honors), the macOS app bundle, then PATH."""
+    candidates = [os.environ.get("BROWSER_PATH"),
+                  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                  *(shutil.which(n) for n in ("google-chrome", "google-chrome-stable",
+                                              "chromium", "chromium-browser", "chrome"))]
+    return next((c for c in candidates if c and os.access(c, os.X_OK)), None)
+
+
+def render_hero():
+    """Best-effort static PNG (benchmarks/hero.png) for the Wiki thumbnail — a headless-Chrome
+    screenshot of the rendered "long view" chart (trend.html). A screenshot rather than a
+    `qsv viz ... -o hero.png` render, because the trend chart's log y-axis is patched into its HTML
+    after rendering (see set_log_y) and `viz line` has no flag for it. Skipped gracefully when no
+    Chrome/Chromium is found (the interactive Data Schematic never needs it)."""
     out = os.path.join(OUT, "hero.png")
-    env = {**os.environ, "QSV_PROGRESSBAR": "0"}
+    chrome = find_chrome()
+    if not chrome:
+        print("NOTE: skipped hero.png (no Chrome/Chromium found; set BROWSER_PATH)")
+        return
+    # 470 px tall stops just below the x-axis title, leaving out the page's notices footer.
+    # trend.html loads plotly.js from its CDN, so the budget covers that fetch plus the render.
+    cmd = [chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+           "--window-size=1200,470", "--virtual-time-budget=15000", f"--screenshot={out}",
+           "file://" + os.path.abspath(os.path.join(OUT, "trend.html"))]
     try:
-        subprocess.run([QSV, "viz", "bar", index_src, "--x", "command", "--y", "recs_per_sec",
-                        "--series", "index_status", "--width", "1200", "--height", "600",
-                        "--title", "The index advantage — qsv throughput with vs without an index",
-                        "--y-title", "records/sec", "-o", out],
-                       check=True, capture_output=True, text=True, env=env)
-        print("Wrote hero.png (static PNG for the Wiki)")
-    except subprocess.CalledProcessError as e:
-        print(f"NOTE: skipped hero.png (viz_static/browser unavailable): "
-              f"{(e.stderr or '').strip().splitlines()[-1] if e.stderr else e}")
+        subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        print(f"NOTE: skipped hero.png (headless Chrome screenshot failed): {e}")
+        return
+    print("Wrote hero.png (static PNG of the long-view chart for the Wiki)")
 
 
 def count_rows(path):
@@ -993,7 +1009,7 @@ def main():
                     "every point charted here is visible."))
 
     build_index(figs, info)
-    render_hero(index_src)
+    render_hero()
     write_wiki_stub(info, total)
     shutil.rmtree(TMP, ignore_errors=True)
     print(f"Wrote {len(figs)} charts + index.html to {OUT}")

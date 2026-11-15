@@ -177,7 +177,7 @@ The command supports various caching options to improve performance on subsequen
 
 ### Weighted Statistics
 
-When the `--weight <column>` option is specified, all statistics are computed using weighted algorithms. The weight column must be numeric and is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics.
+When the `--weight <column>` option is specified, all statistics are computed using weighted algorithms. The weight column must be numeric and is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics, so a column whose rows all have a zero or negative weight has no median, quartiles, MAD or percentiles.
 
 Weighted statistics use weighted versions of the standard algorithms:
 - **Weighted mean/variance/stddev**: Weighted Welford's algorithm (West, 1979)
@@ -242,7 +242,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. `NaN` cells are skipped (a column of only `NaN` cells has no sum, as it has no mean), as they are by every numeric statistic, including the exact median, quartiles, MAD, percentiles and the weighted statistics; they still count as values for `nullcount`, `sparsity` and `cardinality`. For Floats, positive infinity is written as "inf" and negative infinity as "-inf". |
+| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. `NaN` cells are skipped (a column of only `NaN` cells has no sum, as it has no mean), as they are by every numeric statistic, including the exact median, quartiles, MAD, percentiles and the weighted statistics; they still count as values for `nullcount`, `sparsity` and `cardinality`. An infinite Float total (from an `inf` or `-inf` cell) is empty with the default rounding; with `--round 9999` it is written as "inf" or "-inf". |
 | `min` | Variable | Minimum value found. | Tracks minimum value during the scan. |
 | `max` | Variable | Maximum value found. | Tracks maximum value during the scan. |
 | `range` | Variable | Difference between Max and Min. | `max - min`. |

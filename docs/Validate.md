@@ -163,7 +163,7 @@ The usual `sales.csv.validation-errors.tsv` report is still written. The SARIF l
 * `startLine` is the file line where the row starts, not the row number. Row 2's quoted `notes` field spans two lines, so row 3 starts on line 5.
 * `uri` is relative to the root of the git checkout the CSV is in (here, the qsv repo), so results point at the right file wherever qsv runs. Outside a checkout, it is relative to the current directory.
 * The log is written even when every row is valid (with no results), so a CI run clears earlier alerts.
-* A run that stops early writes no SARIF file, and removes one left by an earlier run. Without `--split-ragged`, a row with the wrong number of fields stops validation, which is why the example uses it.
+* A run that stops with an error writes no SARIF file, and removes one left by an earlier run. That happens on a CSV read error, or on a row with the wrong number of fields when `--split-ragged` isn't set, which is why the example uses it. `--fail-fast` is different: it stops after the first batch with an invalid row, but still writes the results for the rows it validated.
 * Output stops at 25,000 results by default, GitHub code scanning's limit per run. `--sarif-max-results <n>` sets another cap, and 0 means no limit.
 * `--sarif` works only in JSON Schema mode with a file input. RFC 4180 mode and stdin reject it.
 

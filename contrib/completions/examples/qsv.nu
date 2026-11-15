@@ -2857,6 +2857,8 @@ module completions {
     --pretty-json
     --progressbar(-p)
     --quiet(-q)
+    --sarif: string
+    --sarif-max-results: string
     --size-limit: string
     --split-ragged
     --timeout: string
@@ -2889,6 +2891,8 @@ module completions {
     --pretty-json
     --progressbar(-p)
     --quiet(-q)
+    --sarif: string
+    --sarif-max-results: string
     --size-limit: string
     --split-ragged
     --timeout: string

@@ -1,6 +1,6 @@
 # qsv Stats Definitions
 
-> **Applies to qsv 28.0.0.** This file is **hand-maintained** — it is not generated from the
+> **Applies to qsv 29.0.0.** This file is **hand-maintained** — it is not generated from the
 > source, so it can drift silently when a statistic's behavior or output changes. If you are
 > reading it against a newer qsv, treat the column *set* as authoritative only up to the
 > version above, and check `qsv stats --help` for anything that looks off.
@@ -242,7 +242,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 
 | Identifier | Level | Summary | Computation |
 |:---|:---:|:---|:---|
-| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. For Floats, returns NaN as the string "NaN", positive infinity as "inf", and negative infinity as "-inf". |
+| `sum` | Variable | Sum of all values in the column. | Rolling sum. Integers sum to Integer until a Float is encountered, then switches to Float. Integer sums are exact even when the running total passes the 64-bit range and comes back; only a final total outside it shows `*OVERFLOW*` or `*UNDERFLOW*`. `NaN` cells are skipped, as they are by every numeric statistic, including the exact median, quartiles, MAD, percentiles and the weighted statistics; they still count as values for `nullcount`, `sparsity` and `cardinality`. For Floats, positive infinity is written as "inf" and negative infinity as "-inf". |
 | `min` | Variable | Minimum value found. | Tracks minimum value during the scan. |
 | `max` | Variable | Maximum value found. | Tracks maximum value during the scan. |
 | `range` | Variable | Difference between Max and Min. | `max - min`. |
@@ -285,7 +285,7 @@ Computed using Welford's online algorithm for single-pass accuracy. When `--weig
 | `n_negative` | Variable | Count of negative values. | Computed for Integer and Float types only. |
 | `n_zero` | Variable | Count of zero values. | Computed for Integer and Float types only. |
 | `n_positive` | Variable | Count of positive values. | Computed for Integer and Float types only. |
-| `max_precision` | Variable | Maximum decimal precision found (Floats). | Tracks the maximum number of digits after the decimal point. |
+| `max_precision` | Variable | Maximum decimal precision found (Floats). | Tracks the maximum number of digits after the decimal point. Exponent-form values count like their decimal form: `0.000001` and `1e-6` report 6, and `1e21` reports 1. `NaN` and `inf` cells don't count. |
 | `sparsity` | Variable | Fraction of missing (NULL) values. | `nullcount / record_count`. |
 
 ### Median & Quartiles (Non-Streaming)
@@ -333,7 +333,7 @@ Multiple modes/antimodes are separated by the `QSV_STATS_SEPARATOR` environment 
 | `mode` | Variable | The most frequent value(s) in the column. | Value(s) with the highest frequency count. Weighted: value(s) with the highest weight, counting only positive weights. Multimodal-aware. If there are multiple modes, they are separated by `QSV_STATS_SEPARATOR`. Empty cells count as a value, shown as `NULL`. |
 | `mode_count` | Variable | Number of modes found. | Count of values tied for highest frequency. |
 | `mode_occurrences` | Variable | Frequency count of the mode. | Number of times the mode(s) appear. Weighted: maximum weight (rounded). |
-| `antimode` | Variable | The least frequent value(s) in the column. | Value(s) with the lowest frequency count (non-zero). Empty cells count as a value, shown as `NULL`. Returns `*ALL` if all values are unique and `cardinality` is computed too (`--cardinality` or `--everything`; with `--mode` alone the values are listed). Weighted, `*ALL` does not need `cardinality`, but it needs every value to have the same weight, which is then its `antimode_occurrences`; otherwise the heaviest value is the mode. Limited to first 10 values, truncating after 100 characters (configurable with `QSV_ANTIMODES_LEN`). If truncated, includes `*PREVIEW:` prefix. Weighted: value(s) with the lowest weight. If there are multiple antimodes, they are separated by `QSV_STATS_SEPARATOR`. |
+| `antimode` | Variable | The least frequent value(s) in the column. | Value(s) with the lowest frequency count (non-zero). Empty cells count as a value, shown as `NULL`. Returns `*ALL` if all values are unique, with or without `cardinality`; a column with no rows has no antimode. Weighted, `*ALL` needs every value to have the same weight, which is then its `antimode_occurrences`, and counts only rows with a positive weight; otherwise the heaviest value is the mode. Limited to first 10 values, truncating after 100 characters (configurable with `QSV_ANTIMODES_LEN`). If truncated, includes `*PREVIEW:` prefix. Weighted: value(s) with the lowest weight. If there are multiple antimodes, they are separated by `QSV_STATS_SEPARATOR`. |
 | `antimode_count` | Variable | Number of antimodes found. | Count of values tied for lowest frequency. |
 | `antimode_occurrences` | Variable | Frequency count of the antimode. | Number of times the antimode(s) appear. Weighted: minimum weight (rounded). |
 
@@ -396,6 +396,7 @@ The `stats` command is central to qsv and underpins other "smart" commands (`des
 - Statistics are cached in `<FILESTEM>.stats.csv` and optionally `<FILESTEM>.stats.csv.data.jsonl` (with `--stats-jsonl`)
 - The arguments and file-level metadata used to generate cached stats are saved in `<FILESTEM>.stats.csv.json`
 - If stats have already been computed with similar arguments and the file hasn't changed, stats are loaded from cache instead of recomputing
+- Settings are compared as resolved, not just as flags: the delimiter the file was read with (`--delimiter`, `QSV_SNIFF_DELIMITER` or `QSV_DEFAULT_DELIMITER`), whether it has headers (`--no-headers` or `QSV_NO_HEADERS`), and `QSV_STATS_SEPARATOR`. A change in any of them recomputes the stats. So does a qsv upgrade, which also re-sniffs the date columns for `--infer-dates`
 - Use `--force` to force recomputing stats even if valid cache exists
 - Use `--cache-threshold` to control caching behavior (default: 5000ms)
 

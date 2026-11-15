@@ -2453,6 +2453,8 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_su
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l email-min-subdomains -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l invalid -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l sarif -r
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l sarif-max-results -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l size-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and not __fish_seen_subcommand_from schema help" -l valid -r
@@ -2484,6 +2486,8 @@ complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcom
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l email-min-subdomains -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l invalid -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l sarif -r
+complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l sarif-max-results -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l size-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand validate; and __fish_seen_subcommand_from schema" -l valid -r

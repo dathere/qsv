@@ -14842,6 +14842,22 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--sarif",
+              isRepeatable: true,
+              args: {
+                name: "sarif",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--sarif-max-results",
+              isRepeatable: true,
+              args: {
+                name: "sarif-max-results",
+                isOptional: true,
+              },
+            },
+            {
               name: "--size-limit",
               isRepeatable: true,
               args: {
@@ -15013,6 +15029,22 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sarif",
+          isRepeatable: true,
+          args: {
+            name: "sarif",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sarif-max-results",
+          isRepeatable: true,
+          args: {
+            name: "sarif-max-results",
             isOptional: true,
           },
         },

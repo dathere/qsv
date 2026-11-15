@@ -4,7 +4,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [29.0.0] - <TBD>
+
+### Highlights
+
+~<TBD> commits since 28.0.0. If you run `stats` on data written by pandas or numpy, upgrade:
+
+- **`stats` no longer crashes on `NaN` cells** ([#5053](https://github.com/dathere/qsv/pull/5053)). In qsv 28.0.0 and 27.0.1, `stats --median`, `--quartiles` or `--everything` panics on a float column of a few hundred rows or more that holds a `NaN`, `nan` or `NAN` cell, which is how pandas and numpy write missing values. So does `moarstats`, which runs `stats`. On smaller columns, the `sum` came out empty and the quartiles, MAD, IQR, fences and percentiles were empty or shifted. Every numeric statistic now skips `NaN` cells, as the mean and `--quantile-method approx` already did. A `NaN` cell still counts as a value for `nullcount`, `sparsity` and `cardinality`.
+
+Also in this release:
+
+- **`validate --sarif` writes JSON Schema errors as a SARIF 2.1.0 log** for GitHub code scanning and other SARIF tools, with an example GitHub Actions workflow ([#5031](https://github.com/dathere/qsv/pull/5031)).
+- **Piped stdin works in eleven more places.** `sample`, `cat`, `applydp`, `geocode --batch 0`, `input --skip-lastlines`, `partition`, `split --chunks`, `searchset`, `frequency`, `sniff` and `extsort` dropped rows, wrote only the header, or rejected `-` when reading from a pipe, several of them with exit 0 ([#5003](https://github.com/dathere/qsv/pull/5003), [#5005](https://github.com/dathere/qsv/pull/5005), [#5009](https://github.com/dathere/qsv/pull/5009), [#5012](https://github.com/dathere/qsv/pull/5012)).
+- **Maps render in sandboxed iframes** such as CKAN's Webpage view. Before, every MapLibre map there stayed blank ([#5033](https://github.com/dathere/qsv/pull/5033)).
+- **The stats cache is no longer served stale** when `QSV_NO_HEADERS`, `QSV_STATS_SEPARATOR` or a sniffed or default delimiter changes, or after an upgrade with `--infer-dates` ([#5049](https://github.com/dathere/qsv/pull/5049), [#5051](https://github.com/dathere/qsv/pull/5051), [#5052](https://github.com/dathere/qsv/pull/5052)).
+- **`stats --cardinality`, `--mode` and `--everything` are 12–27% faster and use up to 36% less memory**, with and without `--weight` ([#5011](https://github.com/dathere/qsv/pull/5011), [#5013](https://github.com/dathere/qsv/pull/5013)).
+- **`sqlp` runs on a newer Polars** that adds correlated subqueries, `LATERAL`, `PERCENTILE_CONT`/`PERCENTILE_DISC`, `CREATE VIEW`, `BOOL_AND`, `COUNT_IF`, `MAX_BY`, `REGEXP_EXTRACT` and more. It also fixes two wrong results ([#5055](https://github.com/dathere/qsv/pull/5055) and earlier bumps).
+
+This is a major release because some `sqlp`, `validate`, `profile --strict`, `luau` and `stats` results and exit codes change. See [Breaking Changes](#v29-breaking-changes). The MSRV is now Rust 1.100.
+
+### 🙏 Contributors
+
+Thanks to everyone who made 29.0.0 possible:
+
+- [@acdha](https://github.com/acdha) for reporting that `sample` behaved differently on stdin ([#4999](https://github.com/dathere/qsv/issues/4999)). That report led to the stdin fixes across eleven commands.
+- [@mitsuhiko](https://github.com/mitsuhiko) for adding a bundled time zone database fallback to [MiniJinja](https://github.com/mitsuhiko/minijinja)'s datetime filters at our request ([mitsuhiko/minijinja#1008](https://github.com/mitsuhiko/minijinja/issues/1008)). With it, `template` handles legacy zone names such as `EST`.
+- [@ik1ne](https://github.com/ik1ne) for merging the zip 9 bump in [`webdriver-downloader`](https://github.com/ik1ne/webdriver-downloader) and releasing it as 0.18.0 ([ik1ne/webdriver-downloader#67](https://github.com/ik1ne/webdriver-downloader/pull/67)), which let qsv drop its fork patch
+
+---
+<a id="v29-changes" name="v29-changes"></a>
+
+<a id="v29-breaking-changes" name="v29-breaking-changes"></a>
+### Breaking Changes
+- **`sqlp`: `EXPLAIN` takes queries only** ([#5055](https://github.com/dathere/qsv/pull/5055), [pola-rs/polars#30798](https://github.com/pola-rs/polars/pull/30798)). `EXPLAIN DROP TABLE`, `EXPLAIN CREATE VIEW`, `EXPLAIN CREATE TABLE`, `EXPLAIN TRUNCATE TABLE` and `EXPLAIN SHOW TABLES` now fail with `EXPLAIN supports queries only`. Before, `EXPLAIN` ran such a statement to get its plan, so `EXPLAIN DROP TABLE t` dropped the table.
+- **`sqlp`: some results change with the Polars bump.** See the Polars entry under Changed for the full list:
+  - `IS DISTINCT FROM` binds tighter than `AND`/`OR` ([pola-rs/polars#30367](https://github.com/pola-rs/polars/pull/30367)).
+  - `POSITION`/`STRPOS` of a NULL string returns NULL, not `0`. String length, position and date-part functions return Int64 ([pola-rs/polars#30493](https://github.com/pola-rs/polars/pull/30493)).
+  - A window function query with no outer `ORDER BY` may return its rows in a different order ([pola-rs/polars#30494](https://github.com/pola-rs/polars/pull/30494)).
+- **`validate`: rows that passed can now fail** with jsonschema 0.61.2. The `date-time`, `date` and `time` formats require digits where RFC 3339 does. `.` in `pattern` no longer matches `\r`, U+2028 or U+2029. Whole floats past 2^53 are compared exactly against numeric bounds. See Fixed for the details.
+- **`profile --strict` fails in two new cases** ([#5025](https://github.com/dathere/qsv/pull/5025)). With `--validate`, it fails on a file that fails `qsv validate`, or when that pass cannot run. With or without `--validate`, it fails on an `--initial-context` override that cannot be applied. Before, both cases exited 0.
+- **`luau`: an END script error exits with 1** ([#5036](https://github.com/dathere/qsv/pull/5036)). Before, it printed the error and exited 0. BEGIN and MAIN script errors already exited with 1.
+- **`stats` output changes in three cases:**
+  - Every numeric statistic of a float column with `NaN` cells is now computed without them ([#5053](https://github.com/dathere/qsv/pull/5053)). Such a column is summarized as floats, so when its other values are all integers its `min` and `max` read `1.0`, not `1`.
+  - With `QSV_NO_HEADERS` set, fields are numbered `0`, `1`, …, as with `--no-headers`. Before, they were named after the first row while that row was also counted as data ([#5049](https://github.com/dathere/qsv/pull/5049)).
+  - `--mode` without `--cardinality` reports `*ALL` for an all-unique column, instead of listing its values ([#5050](https://github.com/dathere/qsv/pull/5050)).
 
 ### Added
 - **`validate --sarif <file>`: write JSON Schema validation errors as a SARIF 2.1.0 log** ([#5031](https://github.com/dathere/qsv/pull/5031)), for code scanning tools such as GitHub code scanning. Each invalid field becomes a result. The result has a rule per JSON Schema keyword (plus `dynamicEnum`, `uniqueCombinedWith` and `ragged-row` with `--split-ragged`) and points at the line its row starts on. That line accounts for multi-line quoted fields, CRLF line endings, blank and `QSV_COMMENT_CHAR` comment lines, and `QSV_SNIFF_PREAMBLE` preambles. A compressed or converted input (e.g. `.csv.gz`) has no such line, so its results name only the file. A run that stops early (on a ragged row without `--split-ragged`, or a read error) writes no SARIF file, and removes one left by an earlier run so it can't be uploaded as current. Invalid UTF-8 doesn't stop a JSON Schema run; it is reported like any other error. The file is written even when every row is valid (with no results), so a CI run clears earlier findings. Output stops at 25,000 results by default, GitHub code scanning's limit per run, with a notification when results are cut. `--sarif-max-results <n>` sets another cap for tools that accept more, and 0 means no limit. The file URI is relative to the root of the git checkout the CSV is in, so results point at the right file wherever qsv runs; outside a checkout, it is relative to the current directory. A `--sarif` path that is the input CSV or the schema (including through a link) is refused. The option works only in JSON Schema mode with a file input; RFC 4180 mode and stdin reject it. The `validation-errors.tsv` report is unchanged. An example is in [`resources/examples/validate-sarif`](resources/examples/validate-sarif): a sample CSV with one error of each kind, its schema, the SARIF log qsv writes for them (a test keeps it current), and a GitHub Actions workflow that uploads it to code scanning.
@@ -23,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - From 1.13.0 and 1.14.0: the spotlight and popover cover only the part of an element that is in view, so an element wider than its scrolling container is highlighted inside it. The highlight follows a panel that scrolls inside the page, and a step follows its element when the page re-renders it. The popover scrolls into view only as far as it needs to.
   - The bundle is larger: each Tour page embeds about 12.5 KB more (gzip + base64). The embedded payloads, the `QSV_VIZ_CDN` jsDelivr URLs and their SRI digests are updated together, and every gallery Data Schematic is regenerated with them.
 - **deps: the `webdriver-downloader` fork patch is gone** ([#5027](https://github.com/dathere/qsv/pull/5027)). [ik1ne/webdriver-downloader#67](https://github.com/ik1ne/webdriver-downloader/pull/67) (zip 9) was merged and released as 0.18.0. qsv's `plotly` pin moves to `dathere/plotly` rev [`d43be37`](https://github.com/dathere/plotly/commit/d43be3786c32ab2790a6c0e927ee39d2bb99704c), whose `plotly_static` build dependency requires 0.18, so `webdriver-downloader` now comes from crates.io. The fork was added in [#4828](https://github.com/dathere/qsv/pull/4828) because every zip 8.x was yanked.
+- **deps: other bumps**: `calamine` 0.38 (used by `excel` and `describegpt`'s spreadsheet context files), `rfd` 0.18 (used by `prompt`), `toml` 1.2. `csvlens` (used by `lens`) now comes from a fork with updated dependencies, until they reach [YS-L/csvlens](https://github.com/YS-L/csvlens).
 - **`luau`: Luau bumped to [0.745](https://github.com/luau-lang/luau/releases/tag/0.745)** (from 0.740, [#5026](https://github.com/dathere/qsv/pull/5026)). `luau0-src` 0.23.0+luau745 needs an unreleased mlua-sys, so `mlua` is patched to upstream rev [`a0ad453`](https://github.com/mlua-rs/mlua/commit/a0ad4535fc72ba89967a931c5be57b162b5f0f3f) until an mlua release includes it. The crate versions are unchanged (mlua 0.12.2, mlua-sys 0.13.0). The yank that reverted the 0.744 bump (#4923) is resolved: 0.23.0 replaces the yanked 0.22.1+luau744.
   - **Native code (`luau-jit`) fixes** ([0.744](https://github.com/luau-lang/luau/releases/tag/0.744)): an Arm64 crash in functions with more than 256 constants, a dead-store-elimination bug, a `FORGLOOP` register reservation bug, and `bit32`/integer correctness fixes (`lrotate`, `extract`, `replace`).
   - **Faster:** `string.gsub` with patterns that have no special characters (0.742), `table.find` (0.743), and `table.create`/`table.clear` as fast calls (0.745).
@@ -113,6 +157,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`sniff -` and `extsort -` read stdin** ([#5012](https://github.com/dathere/qsv/pull/5012)). `-` was treated as a file path ("No such file or directory"); omitting the input already worked.
 - **`to`: clearer error when no input is given** ([#5005](https://github.com/dathere/qsv/pull/5005)). It said "No data on stdin" even when data was piped. It now says no input CSV was given and to use `-` to read stdin.
 - **tests: `template_contrib_functions` no longer depends on the legacy `EST` zone alias** ([#5002](https://github.com/dathere/qsv/pull/5002)). `ubuntu-latest` is now Ubuntu 26.04, which ships aliases such as `EST` and `US/Eastern` only in the optional `tzdata-legacy` package, so the test failed on every Linux run. It now uses `Etc/GMT+5` (the same fixed UTC−5 offset). If you use `datetimeformat(tz=...)` in `template`, prefer canonical IANA names for the same reason.
+
+### CI/Actions
+- **The `scoresql --duckdb` tests run in CI** ([#5029](https://github.com/dathere/qsv/pull/5029)). They look for `duckdb` on `PATH` and were skipped in every job, since no workflow installed it. The macOS Polars workflow now does.
+- **`joinp_ignore_case_maintain_order_left` no longer asserts the order of tied matches** ([#5023](https://github.com/dathere/qsv/pull/5023)). `--maintain-order left` orders only by the left row. After the Polars `a598c51` bump, the test failed about a third of the time. It now checks the left order exactly and the matched rows as a set.
+- **qsvlite and qsvdp build without dead-code warnings** ([#5040](https://github.com/dathere/qsv/pull/5040)). Items those binaries never use are now gated like their callers, and the full `qsv` and `qsvmcp` builds compile exactly as before.
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/28.0.0...29.0.0
 
 ## [28.0.0] - 2026-11-01 🧠 The "DCAT-US v3.0 neuro-symbolic FAIRification" Release 🏛️
 

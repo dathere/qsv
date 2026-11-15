@@ -4255,6 +4255,8 @@ _arguments "${_arguments_options[@]}" : \
 '--invalid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--sarif=[]: :_default' \
+'--sarif-max-results=[]: :_default' \
 '--size-limit=[]: :_default' \
 '--timeout=[]: :_default' \
 '--valid=[]: :_default' \
@@ -4303,6 +4305,8 @@ _arguments "${_arguments_options[@]}" : \
 '--invalid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--sarif=[]: :_default' \
+'--sarif-max-results=[]: :_default' \
 '--size-limit=[]: :_default' \
 '--timeout=[]: :_default' \
 '--valid=[]: :_default' \

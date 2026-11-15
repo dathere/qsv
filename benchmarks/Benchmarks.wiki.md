@@ -25,6 +25,6 @@ without losing speed, and this release's biggest speedups.
 > **Note:** cross-version numbers are not strictly apples-to-apples — commands gain features
 > over time. Treat the historical trend as a broad trajectory, not an exact speedup.
 
-_Last generated for qsv 28.0.0 (aarch64-apple-darwin). Regenerate with
+_Last generated for qsv 29.0.0 (aarch64-apple-darwin). Regenerate with
 `python3 scripts/gen_benchmark_viz.py` and copy this page's link — the Data Schematic itself
 redeploys to GitHub Pages automatically on push to `master`._

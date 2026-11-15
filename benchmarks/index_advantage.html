@@ -7,7 +7,8 @@
 
 <head>
     <meta charset="utf-8" />
-    <script src="https://cdn.plot.ly/plotly-3.7.0.min.js" integrity="sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs" crossorigin="anonymous"></script>
+    <script>(function(){if(window.origin!=="null"||location.protocol==="file:"||typeof Worker!=="function")return;function qsvStampOrigin(d){if(d&&typeof d==="object"&&typeof d.origin==="string")d.origin="file://"}var W=window.Worker;window.Worker=class extends W{constructor(u,o){super(u,o);this.addEventListener("message",function(e){qsvStampOrigin(e.data)})}postMessage(m,t){qsvStampOrigin(m);return super.postMessage(m,t)}}})();</script>
+<script src="https://cdn.plot.ly/plotly-3.7.0.min.js" integrity="sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -16,7 +17,7 @@
 
         <script type="module">
             const graph_div = document.getElementById("plotly-html-element");
-            await Plotly.newPlot(graph_div, {"data":[{"type":"bar","x":["frequency","search","searchset","stats","tojsonl"],"y":[690131.0,1739130.0,760456.0,964320.0,156764.0],"name":"no index"},{"type":"bar","x":["frequency","search","searchset","stats","tojsonl"],"y":[3278689.0,4716981.0,2000000.0,5235602.0,386250.0],"name":"with index"}],"layout":{"title":{"text":"The index advantage"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"command"}},"yaxis":{"title":{"text":"records/sec"}}},"config":{"responsive":true},"frames":null});
+            await Plotly.newPlot(graph_div, {"data":[{"type":"bar","x":["frequency","search","searchset","stats","tojsonl"],"y":[721501.0,1779359.0,864304.0,923361.0,160953.0],"name":"no index"},{"type":"bar","x":["frequency","search","searchset","stats","tojsonl"],"y":[3236246.0,4854369.0,2141328.0,5649718.0,391543.0],"name":"with index"}],"layout":{"title":{"text":"The index advantage"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"command"}},"yaxis":{"title":{"text":"records/sec"}}},"config":{"responsive":true},"frames":null});
         </script>
     </div>
 <style>
@@ -378,25 +379,6 @@
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
-  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
-  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
-  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
-  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
-  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
-  function sandboxNotice(gd) {
-    if (window.origin !== "null" || location.protocol === "file:") return;
-    var lay = (gd && gd.layout) || {};
-    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
-    var host = gd.parentNode;
-    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
-    var note = document.createElement("div");
-    note.className = "qsv-sandbox-map-note";
-    note.setAttribute("role", "note");
-    note.textContent = "This map can't load inside a sandboxed frame. Open this Data Schematic in its own browser tab to see it.";
-    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
-      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
-    host.insertBefore(note, gd);
-  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -435,8 +417,6 @@
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
-      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
-      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);

@@ -7,7 +7,8 @@
 
 <head>
     <meta charset="utf-8" />
-    <script src="https://cdn.plot.ly/plotly-3.7.0.min.js" integrity="sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs" crossorigin="anonymous"></script>
+    <script>(function(){if(window.origin!=="null"||location.protocol==="file:"||typeof Worker!=="function")return;function qsvStampOrigin(d){if(d&&typeof d==="object"&&typeof d.origin==="string")d.origin="file://"}var W=window.Worker;window.Worker=class extends W{constructor(u,o){super(u,o);this.addEventListener("message",function(e){qsvStampOrigin(e.data)})}postMessage(m,t){qsvStampOrigin(m);return super.postMessage(m,t)}}})();</script>
+<script src="https://cdn.plot.ly/plotly-3.7.0.min.js" integrity="sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -16,7 +17,7 @@
 
         <script type="module">
             const graph_div = document.getElementById("plotly-html-element");
-            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","mode":"markers","x":["frequency_sketch","frequency_sorted","stats_cardinality_approx","frequency_limit20","frequency_notrim","frequency_selregex_ignorecase","frequency_j1_ignorecase","datefmt_multi_batchall","datefmt_multi","frequency_weighted","frequency_ignorecase","excel","geocode_suggest","excel_j1","frequency_other_sorted"],"y":[16.81,15.63,14.97,13.91,13.83,13.01,12.86,12.81,9.15,8.82,7.79,7.42,6.97,6.87,6.68],"hovertext":["name: frequency_sketch\u003cbr\u003edelta (%): 16.81\u003cbr\u003edelta (%): 16.81\u003cbr\u003edelta (%): 16.81","name: frequency_sorted\u003cbr\u003edelta (%): 15.63\u003cbr\u003edelta (%): 15.63\u003cbr\u003edelta (%): 15.63","name: stats_cardinality_approx\u003cbr\u003edelta (%): 14.97\u003cbr\u003edelta (%): 14.97\u003cbr\u003edelta (%): 14.97","name: frequency_limit20\u003cbr\u003edelta (%): 13.91\u003cbr\u003edelta (%): 13.91\u003cbr\u003edelta (%): 13.91","name: frequency_notrim\u003cbr\u003edelta (%): 13.83\u003cbr\u003edelta (%): 13.83\u003cbr\u003edelta (%): 13.83","name: frequency_selregex_ignorecase\u003cbr\u003edelta (%): 13.01\u003cbr\u003edelta (%): 13.01\u003cbr\u003edelta (%): 13.01","name: frequency_j1_ignorecase\u003cbr\u003edelta (%): 12.86\u003cbr\u003edelta (%): 12.86\u003cbr\u003edelta (%): 12.86","name: datefmt_multi_batchall\u003cbr\u003edelta (%): 12.81\u003cbr\u003edelta (%): 12.81\u003cbr\u003edelta (%): 12.81","name: datefmt_multi\u003cbr\u003edelta (%): 9.15\u003cbr\u003edelta (%): 9.15\u003cbr\u003edelta (%): 9.15","name: frequency_weighted\u003cbr\u003edelta (%): 8.82\u003cbr\u003edelta (%): 8.82\u003cbr\u003edelta (%): 8.82","name: frequency_ignorecase\u003cbr\u003edelta (%): 7.79\u003cbr\u003edelta (%): 7.79\u003cbr\u003edelta (%): 7.79","name: excel\u003cbr\u003edelta (%): 7.42\u003cbr\u003edelta (%): 7.42\u003cbr\u003edelta (%): 7.42","name: geocode_suggest\u003cbr\u003edelta (%): 6.97\u003cbr\u003edelta (%): 6.97\u003cbr\u003edelta (%): 6.97","name: excel_j1\u003cbr\u003edelta (%): 6.87\u003cbr\u003edelta (%): 6.87\u003cbr\u003edelta (%): 6.87","name: frequency_other_sorted\u003cbr\u003edelta (%): 6.68\u003cbr\u003edelta (%): 6.68\u003cbr\u003edelta (%): 6.68"],"hoverinfo":"text","marker":{"size":[40,36,34,30,30,27,27,27,14,13,10,8,7,7,6],"color":[16.81,15.63,14.97,13.91,13.83,13.01,12.86,12.81,9.15,8.82,7.79,7.42,6.97,6.87,6.68],"colorscale":"Viridis","showscale":true,"colorbar":{"title":{"text":"delta (%)"}}}}],"layout":{"title":{"text":"Biggest speedups this release"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"% faster vs previous version"}}},"config":{"responsive":true},"frames":null});
+            await Plotly.newPlot(graph_div, {"data":[{"type":"scatter","mode":"markers","x":["to_ods","writestat_dta","writestat_xpt","snappy_compress","stats_everything_index","stats_everything_approx_index","stats_everything_infer_dates_index","sortcheck_unsorted","extdedup","stats_everything_create_cache","stats_everything_sorted","stats_everything","stats_everything_j1","stats_everything_index_j1","stats_cardinality"],"y":[41.2,38.99,32.16,30.9,28.21,26.29,23.07,22.85,17.56,17.42,16.77,16.43,16.2,15.98,15.3],"hovertext":["name: to_ods\u003cbr\u003edelta (%): 41.2\u003cbr\u003edelta (%): 41.2\u003cbr\u003edelta (%): 41.2","name: writestat_dta\u003cbr\u003edelta (%): 38.99\u003cbr\u003edelta (%): 38.99\u003cbr\u003edelta (%): 38.99","name: writestat_xpt\u003cbr\u003edelta (%): 32.16\u003cbr\u003edelta (%): 32.16\u003cbr\u003edelta (%): 32.16","name: snappy_compress\u003cbr\u003edelta (%): 30.9\u003cbr\u003edelta (%): 30.9\u003cbr\u003edelta (%): 30.9","name: stats_everything_index\u003cbr\u003edelta (%): 28.21\u003cbr\u003edelta (%): 28.21\u003cbr\u003edelta (%): 28.21","name: stats_everything_approx_index\u003cbr\u003edelta (%): 26.29\u003cbr\u003edelta (%): 26.29\u003cbr\u003edelta (%): 26.29","name: stats_everything_infer_dates_index\u003cbr\u003edelta (%): 23.07\u003cbr\u003edelta (%): 23.07\u003cbr\u003edelta (%): 23.07","name: sortcheck_unsorted\u003cbr\u003edelta (%): 22.85\u003cbr\u003edelta (%): 22.85\u003cbr\u003edelta (%): 22.85","name: extdedup\u003cbr\u003edelta (%): 17.56\u003cbr\u003edelta (%): 17.56\u003cbr\u003edelta (%): 17.56","name: stats_everything_create_cache\u003cbr\u003edelta (%): 17.42\u003cbr\u003edelta (%): 17.42\u003cbr\u003edelta (%): 17.42","name: stats_everything_sorted\u003cbr\u003edelta (%): 16.77\u003cbr\u003edelta (%): 16.77\u003cbr\u003edelta (%): 16.77","name: stats_everything\u003cbr\u003edelta (%): 16.43\u003cbr\u003edelta (%): 16.43\u003cbr\u003edelta (%): 16.43","name: stats_everything_j1\u003cbr\u003edelta (%): 16.2\u003cbr\u003edelta (%): 16.2\u003cbr\u003edelta (%): 16.2","name: stats_everything_index_j1\u003cbr\u003edelta (%): 15.98\u003cbr\u003edelta (%): 15.98\u003cbr\u003edelta (%): 15.98","name: stats_cardinality\u003cbr\u003edelta (%): 15.3\u003cbr\u003edelta (%): 15.3\u003cbr\u003edelta (%): 15.3"],"hoverinfo":"text","marker":{"size":[40,37,28,26,23,20,16,16,9,9,8,7,7,7,6],"color":[41.2,38.99,32.16,30.9,28.21,26.29,23.07,22.85,17.56,17.42,16.77,16.43,16.2,15.98,15.3],"colorscale":"Viridis","showscale":true,"colorbar":{"title":{"text":"delta (%)"}}}}],"layout":{"title":{"text":"Biggest speedups this release"},"uirevision":"qsv-viz","xaxis":{"title":{"text":"name"}},"yaxis":{"title":{"text":"% faster vs previous version"}}},"config":{"responsive":true},"frames":null});
         </script>
     </div>
 <style>
@@ -378,25 +379,6 @@
     var fl = gd._fullLayout || {};
     return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
   }
-  // A sandboxed frame without allow-same-origin gives the page an opaque origin but leaves
-  // location.origin as the URL's; MapLibre's worker (a blob:null URL) reports "null", and the
-  // MapLibre bundled with plotly.js 3.x drops every message whose origin differs from its own, so
-  // the map's tiles never finish loading and the panel stays blank with no error. file:// pages are
-  // exempt from that check. Say so above each map rather than leave an empty panel unexplained.
-  function sandboxNotice(gd) {
-    if (window.origin !== "null" || location.protocol === "file:") return;
-    var lay = (gd && gd.layout) || {};
-    if (!Object.keys(lay).some(function (k) { return /^map\d*$/.test(k); })) return;
-    var host = gd.parentNode;
-    if (!host || host.querySelector(":scope > .qsv-sandbox-map-note")) return;
-    var note = document.createElement("div");
-    note.className = "qsv-sandbox-map-note";
-    note.setAttribute("role", "note");
-    note.textContent = "This map can't load inside a sandboxed frame. Open this Data Schematic in its own browser tab to see it.";
-    note.style.cssText = "margin:4px 0;padding:6px 10px;border:1px solid #d97706;border-radius:6px;" +
-      "background:#fffbeb;color:#78350f;font:13px/1.4 system-ui,sans-serif";
-    host.insertBefore(note, gd);
-  }
   function installGl3dScrollFix(gd) {
     if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
     gd.__qsvGl3dFix = true;
@@ -435,8 +417,6 @@
       // cluster bubbles: repaint plotly's black-by-default count labels and add hover/click-to-zoom
       // (see installClusterUi). No-op for non-map panels and for maps that never cluster.
       applyClusterUi(gd);
-      // map panels in a sandboxed (opaque-origin) frame can't load tiles: explain the blank panel
-      sandboxNotice(gd);
       // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
       // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
       installGl3dScrollFix(gd);

@@ -32,6 +32,16 @@ Also in this release:
 
 This is a major release because some `sqlp`, `validate`, `profile --strict`, `luau` and `stats` results and exit codes change. See [Breaking Changes](#v29-breaking-changes). The MSRV is now Rust 1.100.
 
+### ⚡ Performance
+
+Measured with qsv's benchmark suite, using the same machine, dataset and build type as 28.0.0: a Mac mini (M2 Pro, 12 cores, 32 GiB), 1M rows × 41 columns of NYC 311 data (520 MB), and the prebuilt PGO binary. Across 305 benchmarks, the median one is 1.2% faster, 69 are more than 5% faster, and 6 are more than 5% slower. Full results are in the [Benchmarks Data Schematic](https://dathere.github.io/qsv/benchmarks/).
+
+- **`stats --everything` is 12–28% faster and uses 13–24% less memory** ([#5011](https://github.com/dathere/qsv/pull/5011), [#5013](https://github.com/dathere/qsv/pull/5013)). A full pass over the dataset drops from 2.41 s to 2.02 s, and from 0.55 s to 0.39 s with an index. `stats --cardinality` is 15% faster and uses 20% less memory. Commands that run `stats` internally gain as well: `schema` is 11% faster and `synthesize` 13% faster. Plain `stats` (without `--everything` or `--cardinality`) is about 4% slower: 1.04 s → 1.08 s.
+- **`searchset` is 11–12% faster, uses half the CPU time, and peaks at 22 MiB instead of ~990 MiB** ([#5012](https://github.com/dathere/qsv/pull/5012)). It no longer counts every row up front unless the progress bar is on.
+- **`luau` scripts are 9–11% faster** with Luau 0.745 ([#5026](https://github.com/dathere/qsv/pull/5026)). `luau filter` is unchanged.
+- **`joinp` is 5–12% faster** with the newer Polars ([#5055](https://github.com/dathere/qsv/pull/5055) and earlier bumps).
+- **`to ods` is 41% faster**, taking 16.2 s instead of 27.6 s.
+
 ### 🙏 Contributors
 
 Thanks to everyone who made 29.0.0 possible:

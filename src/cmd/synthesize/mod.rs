@@ -63,7 +63,8 @@ only once:
     all-unique can be reproduced from its real values.
   * With a Data Dictionary, enumerated name, email, address and other
     structured-faker columns still emit their real values unless you set
-    the --consistent-fakes option.
+    the --consistent-fakes option. That option only covers columns with up
+    to 100,000 distinct values; larger enumerated columns stay real.
   * A `joint` relationship emits whole real value-tuples (e.g. a rare
     city/zip/age combination), up to the --joint-cardinality-cap.
   * Numeric and date ranges span the real min and max, so a lone outlier

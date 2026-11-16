@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- `synthesize`: the help now warns that synthetic output is not anonymized. It can copy real values and value combinations from the source, rare ones included: fully enumerated columns, enumerated structured-faker columns without `--consistent-fakes`, `joint` relationship tuples, and outliers at the edge of numeric/date ranges.
+- `synthesize`: the help now warns that synthetic output is not anonymized. It can copy real values and value combinations from the source, rare ones included: fully enumerated columns, enumerated structured-faker columns without `--consistent-fakes`, `joint` relationship tuples, and outliers at the edge of numeric/date ranges. ([#5064](https://github.com/dathere/qsv/pull/5064))
 - `sqlp`: the `--try-parsedates` help now warns that Polars reads slash, dash and dot dates as day-first, so `01/05/2024` becomes `2024-05-01`, and that `CAST(col AS DATE)` does the same. For month-first (US) dates, leave `--try-parsedates` off and use `STRPTIME(col, '%m/%d/%Y')` ([#5062](https://github.com/dathere/qsv/pull/5062)).
 
 ## [29.0.0] - 2026-11-15 🛡️ The "Trust the numbers" Release ✅

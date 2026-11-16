@@ -1,6 +1,6 @@
 # synthesize
 
-> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`.
+> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`. Output is not anonymized: it can contain real source values, rare ones included.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/synthesize/mod.rs](https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/mod.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🎲](TableOfContents.md#legend "randomly generated or randomized output with a --seed option for reproducibility.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")
 
@@ -64,6 +64,26 @@ Relationships are read from the dictionary's `relationships` array — inferred
 by `describegpt` or hand-authored. Columns not named by any relationship are
 still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
+
+Privacy note: synthetic output is not anonymized. It can contain real values
+and real value combinations copied from <input>, including values that occur
+only once:  
+
+* A column fully enumerated by `frequency` (cardinality within
+the --freq-limit) is sampled from its real values, so any of them, rare
+ones included, can be emitted verbatim. Setting the --freq-limit to 0
+removes that cap, so any column that is not all-unique can be reproduced
+from its real values.
+* With a Data Dictionary, enumerated name, email, address and other
+structured-faker columns still emit their real values unless you set
+the --consistent-fakes option. That option only covers columns with up
+to 100,000 distinct values; larger enumerated columns stay real.
+* A `joint` relationship emits whole real value-tuples (e.g. a rare
+city/zip/age combination), up to the --joint-cardinality-cap.
+* Numeric and date ranges span the real min and max, so a lone outlier
+can reappear at or near its real value. Dates can land on it exactly.
+
+Review the output before sharing it, or training on it, as de-identified data.
 
 With --seed, output is fully reproducible.
 

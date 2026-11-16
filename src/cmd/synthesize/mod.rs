@@ -53,6 +53,24 @@ by `describegpt` or hand-authored. Columns not named by any relationship are
 still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
+Privacy note: synthetic output is not anonymized. It can contain real values
+and real value combinations copied from <input>, including values that occur
+only once:
+
+  * Every value of a column fully enumerated by `frequency` (cardinality within
+    the --freq-limit) is emitted verbatim, rare values included. Setting
+    the --freq-limit to 0 removes that cap, so any column that is not
+    all-unique can be reproduced from its real values.
+  * With a Data Dictionary, enumerated name, email, address and other
+    structured-faker columns still emit their real values unless you set
+    the --consistent-fakes option.
+  * A `joint` relationship emits whole real value-tuples (e.g. a rare
+    city/zip/age combination), up to the --joint-cardinality-cap.
+  * Numeric and date ranges span the real min and max, so a lone outlier
+    reappears at or near its real value. Dates can land on it exactly.
+
+Review the output before sharing it, or training on it, as de-identified data.
+
 With --seed, output is fully reproducible.
 
 Examples:

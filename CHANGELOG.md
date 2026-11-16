@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `sqlp`: the `--try-parsedates` help now warns that Polars reads slash, dash and dot dates as day-first, so `01/05/2024` becomes `2024-05-01`, and that `CAST(col AS DATE)` does the same. For month-first (US) dates, leave `--try-parsedates` off and use `STRPTIME(col, '%m/%d/%Y')` ([#5062](https://github.com/dathere/qsv/pull/5062)).
+
 ## [29.0.0] - 2026-11-15 🛡️ The "Trust the numbers" Release ✅
 
 ### Highlights

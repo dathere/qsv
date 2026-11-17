@@ -2140,7 +2140,14 @@ fn synthesize_min_count_range_trim_works_without_headers() {
 fn synthesize_rejects_column_selection_in_stats_options() {
     let wrk = Workdir::new("synthesize_stats_options_select");
     wrk.create("data.csv", fixture());
-    for opts in ["--select city", "--select=city", "-s city", "--weight age"] {
+    for opts in [
+        "--select city",
+        "--select=city",
+        "-s city",
+        "--weight age",
+        "-Es 2,1",
+        "-Es2,1",
+    ] {
         let mut cmd = wrk.command("synthesize");
         cmd.args(["--stats-options", opts]).arg("data.csv");
         let err = wrk.stderr_on_error(&mut cmd);
@@ -2278,5 +2285,75 @@ fn synthesize_min_count_range_trim_respects_prefer_dmy() {
     assert!(
         got[1..].iter().any(|r| r[0].starts_with("2024-06")),
         "expected dates spread across the DMY range"
+    );
+}
+
+/// Regression: with differing null patterns the predecessor can exceed a
+/// follower's trimmed max; the order floor then pushed the follower past its
+/// range, reproducing a suppressed value (end = 100 here, seen once).
+#[test]
+fn synthesize_ordered_follower_cap_holds_against_order_floor() {
+    let wrk = Workdir::new("synthesize_ordered_cap");
+    let mut rows = vec![svec!["start", "end"]];
+    rows.extend(std::iter::repeat_n(svec!["1", "11"], 9));
+    rows.extend(std::iter::repeat_n(svec!["100", ""], 9));
+    rows.push(svec!["100", "100"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "12", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // end trims to [11, 11]; start is capped by it, so the chain stays in range.
+    for r in &got[1..] {
+        assert_eq!(r[1], "11", "end escaped its trimmed range: {r:?}");
+        let start: i64 = r[0].parse().unwrap();
+        assert!(start <= 11, "start {start} exceeds the follower cap: {r:?}");
+    }
+}
+
+/// An ordered pair with zero co-present rows aborts under --strict-relationships
+/// like any other undersized gap sample.
+#[test]
+fn synthesize_ordered_no_copresent_rows_strict_aborts() {
+    let wrk = Workdir::new("synthesize_ordered_no_copresent");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..9 {
+        rows.push(vec![format!("{}", 100 + i), String::new()]);
+    }
+    for i in 0..9 {
+        rows.push(vec![String::new(), format!("{}", 200 + i)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("no rows have both 'start' and 'end'"),
+        "expected a strict abort, got: {err}"
     );
 }

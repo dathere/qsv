@@ -456,7 +456,27 @@ fn resolve_ordered(
         log::warn!("synthesize: {msg}; columns will be generated independently");
         return Ok(None);
     }
-    let member_ranges: Vec<(f64, f64)> = ranges.into_iter().flatten().collect();
+    let mut member_ranges: Vec<(f64, f64)> = ranges.into_iter().flatten().collect();
+    // Members are non-decreasing, so no member may exceed any later member's
+    // upper bound. Cap each upper bound by the ones after it; otherwise the
+    // order floor (`max(prev)`) would push a follower past its trimmed range.
+    for i in (0..member_ranges.len().saturating_sub(1)).rev() {
+        member_ranges[i].1 = member_ranges[i].1.min(member_ranges[i + 1].1);
+    }
+    if let Some(i) = member_ranges.iter().position(|&(lo, hi)| hi < lo) {
+        let msg = format!(
+            "ordered relationship {names:?}: '{}' can't stay within its trimmed range while \
+             keeping the declared order",
+            names[i]
+        );
+        if params.strict {
+            return Err(CliError::Other(format!(
+                "synthesize: {msg}. Lower --min-count or drop the relationship."
+            )));
+        }
+        log::warn!("synthesize: {msg}; columns will be generated independently");
+        return Ok(None);
+    }
 
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
@@ -497,12 +517,19 @@ fn resolve_ordered(
     let mut gap_buckets = Vec::with_capacity(gap_samples.len());
     for (i, samples) in gap_samples.into_iter().enumerate() {
         if samples.is_empty() {
-            log::warn!(
-                "synthesize: ordered relationship {names:?} dropped — no rows with both '{}' and \
-                 '{}' present",
+            // Zero co-present rows is the extreme of too few samples; treat it
+            // the same way, including the strict abort.
+            let msg = format!(
+                "ordered relationship {names:?}: no rows have both '{}' and '{}'",
                 names[i],
                 names[i + 1]
             );
+            if params.strict {
+                return Err(CliError::Other(format!(
+                    "synthesize: {msg}. Drop the relationship."
+                )));
+            }
+            log::warn!("synthesize: {msg}; columns will be generated independently");
             return Ok(None);
         }
         // Negative gaps mean the source itself violates the declared order.

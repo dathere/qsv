@@ -259,19 +259,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Column selection and --weight change which columns stats reports and in
     // what order, which synthesize can't see; every pass that reads source
     // cells relies on stats covering every column in order. Select first.
-    if let Some(opts) = args.flag_stats_options.as_deref()
-        && let Some(bad) = opts.split_whitespace().find(|t| {
-            *t == "--select"
-                || t.starts_with("--select=")
-                || *t == "--weight"
-                || t.starts_with("--weight=")
-                || (t.starts_with("-s") && !t.starts_with("--"))
-        })
-    {
-        return fail_incorrectusage_clierror!(
-            "--stats-options may not include '{bad}': synthesize needs stats for every column. To \
-             synthesize a subset of columns, run `qsv select` on the input first."
-        );
+    if let Some(opts) = args.flag_stats_options.as_deref() {
+        // `stats_options_select` also catches `s` ending a short-flag cluster
+        // (`-Es 2,1`); the token scan covers `--weight` and a bare `--select`.
+        let bad = opts
+            .split_whitespace()
+            .find(|t| {
+                *t == "--select"
+                    || t.starts_with("--select=")
+                    || *t == "--weight"
+                    || t.starts_with("--weight=")
+                    || (t.starts_with("-s") && !t.starts_with("--"))
+            })
+            .map(|t| format!("'{t}'"))
+            .or_else(|| util::stats_options_select(opts).map(|sel| format!("a selection ({sel})")));
+        if let Some(bad) = bad {
+            return fail_incorrectusage_clierror!(
+                "--stats-options may not include {bad}: synthesize needs stats for every column. \
+                 To synthesize a subset of columns, run `qsv select` on the input first."
+            );
+        }
     }
     if args.flag_min_count == 0 {
         return fail_incorrectusage_clierror!(

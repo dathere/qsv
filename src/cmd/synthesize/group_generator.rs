@@ -61,10 +61,11 @@ pub(crate) enum GroupGenerator {
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
         gap_buckets:    Vec<Vec<(f64, f64)>>,
-        /// Per-member `[lo, hi]` in the same domain as the buckets. Each
-        /// follower is clamped into its own range (then kept >= its
-        /// predecessor), so anchor + gap can't reach a follower's real
-        /// extremes once `--min-count` has trimmed them.
+        /// Per-member `[lo, hi]` in the same domain as the buckets, with each
+        /// `hi` capped by every later member's. Each follower is clamped into
+        /// its range (then kept >= its predecessor, which the cap keeps in
+        /// range), so anchor + gap can't reach a follower's real extremes once
+        /// `--min-count` has trimmed them.
         member_ranges:  Vec<(f64, f64)>,
         /// Null ratio of the anchor column — when the anchor draws null, the
         /// whole chain is emitted null.
@@ -138,7 +139,9 @@ impl GroupGenerator {
                 if draw_null(*null_ratio, rng) {
                     return member_cols.iter().map(|&c| (c, String::new())).collect();
                 }
-                let mut value = sample_bucket(anchor_buckets, rng);
+                // The anchor's upper bound is capped by every follower's (see
+                // `resolve_ordered`), so the chain can always stay in range.
+                let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],

@@ -25,7 +25,8 @@ fn synthesize_no_dictionary_basic() {
     wrk.create("data.csv", fixture());
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "50", "--seed", "42"]).arg("data.csv");
+    cmd.args(["--min-count", "1", "-n", "50", "--seed", "42"])
+        .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -71,11 +72,15 @@ fn synthesize_seed_is_reproducible() {
     wrk.create("data.csv", fixture());
 
     let mut first_cmd = wrk.command("synthesize");
-    first_cmd.args(["-n", "20", "--seed", "7"]).arg("data.csv");
+    first_cmd
+        .args(["--min-count", "1", "-n", "20", "--seed", "7"])
+        .arg("data.csv");
     let run1: String = wrk.stdout(&mut first_cmd);
 
     let mut second_cmd = wrk.command("synthesize");
-    second_cmd.args(["-n", "20", "--seed", "7"]).arg("data.csv");
+    second_cmd
+        .args(["--min-count", "1", "-n", "20", "--seed", "7"])
+        .arg("data.csv");
     let run2: String = wrk.stdout(&mut second_cmd);
 
     assert_eq!(run1, run2, "same seed should produce identical output");
@@ -123,9 +128,17 @@ fn synthesize_with_dictionary_uses_faker_for_email_column() {
     wrk.create_from_string("dict.json", dict_json);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "30", "--seed", "13", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "30",
+        "--seed",
+        "13",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -291,6 +304,8 @@ fn synthesize_accepts_fr_fr_locale() {
 
     let mut cmd = wrk.command("synthesize");
     cmd.args([
+        "--min-count",
+        "1",
         "-n",
         "10",
         "--seed",
@@ -712,9 +727,17 @@ fn synthesize_consistent_fakes_off_preserves_default() {
     wrk.create_from_string("dict.json", dict_json);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "100", "--seed", "7", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "100",
+        "--seed",
+        "7",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got.len(), 101);
 
@@ -928,9 +951,17 @@ fn synthesize_joint_categorical_only_real_tuples() {
     wrk.create_from_string("dict.json", GEO_JOINT_DICT);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "200",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 201);
@@ -954,14 +985,30 @@ fn synthesize_relationships_seed_reproducible() {
 
     let mut first = wrk.command("synthesize");
     first
-        .args(["-n", "60", "--seed", "42", "--dictionary"])
+        .args([
+            "--min-count",
+            "1",
+            "-n",
+            "60",
+            "--seed",
+            "42",
+            "--dictionary",
+        ])
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
     let run1: String = wrk.stdout(&mut first);
 
     let mut second = wrk.command("synthesize");
     second
-        .args(["-n", "60", "--seed", "42", "--dictionary"])
+        .args([
+            "--min-count",
+            "1",
+            "-n",
+            "60",
+            "--seed",
+            "42",
+            "--dictionary",
+        ])
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
     let run2: String = wrk.stdout(&mut second);
@@ -979,6 +1026,8 @@ fn synthesize_joint_cardinality_cap_degrades() {
 
     let mut cmd = wrk.command("synthesize");
     cmd.args([
+        "--min-count",
+        "1",
         "-n",
         "25",
         "--seed",
@@ -1004,6 +1053,8 @@ fn synthesize_joint_cardinality_cap_strict_aborts() {
 
     let mut cmd = wrk.command("synthesize");
     cmd.args([
+        "--min-count",
+        "1",
         "-n",
         "25",
         "--seed",
@@ -1040,6 +1091,8 @@ fn synthesize_no_relationships_flag_disables_joint() {
     let mut joint_off = wrk.command("synthesize");
     joint_off
         .args([
+            "--min-count",
+            "1",
             "-n",
             "40",
             "--seed",
@@ -1053,7 +1106,15 @@ fn synthesize_no_relationships_flag_disables_joint() {
 
     let mut plain = wrk.command("synthesize");
     plain
-        .args(["-n", "40", "--seed", "9", "--dictionary"])
+        .args([
+            "--min-count",
+            "1",
+            "-n",
+            "40",
+            "--seed",
+            "9",
+            "--dictionary",
+        ])
         .arg(wrk.path("dict_plain.json"))
         .arg("data.csv");
     let plain_out: String = wrk.stdout(&mut plain);
@@ -1085,9 +1146,17 @@ fn synthesize_relationship_invalid_member_dropped() {
     );
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "15", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "15",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 16);
@@ -1475,4 +1544,219 @@ fn synthesize_correlated_seed_reproducible() {
     let run2: String = wrk.stdout(&mut second);
 
     assert_eq!(run1, run2, "copula synthesis must be seed-reproducible");
+}
+
+// --- --min-count privacy threshold ----------------------------------------
+
+/// One enumerated column: "A" x20, "B" x10, and a singleton "RARE".
+fn min_count_fixture() -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["cat"]];
+    rows.extend(std::iter::repeat_n(svec!["A"], 20));
+    rows.extend(std::iter::repeat_n(svec!["B"], 10));
+    rows.push(svec!["RARE"]);
+    rows
+}
+
+fn count_cat(got: &[Vec<String>], value: &str) -> usize {
+    got[1..].iter().filter(|r| r[0] == value).count()
+}
+
+#[test]
+fn synthesize_min_count_default_suppresses_rare_values() {
+    let wrk = Workdir::new("synthesize_min_count_default");
+    wrk.create("data.csv", min_count_fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "42"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 2001);
+
+    assert_eq!(
+        count_cat(&got, "RARE"),
+        0,
+        "singleton leaked at default --min-count"
+    );
+    let a = count_cat(&got, "A");
+    let b = count_cat(&got, "B");
+    assert_eq!(a + b, 2000, "only kept values should be emitted");
+    // The suppressed share is redistributed over the kept values: 20:10 → 2/3.
+    #[allow(clippy::cast_precision_loss)]
+    let ratio = a as f64 / 2000.0;
+    assert!(
+        (ratio - 2.0 / 3.0).abs() < 0.04,
+        "A ratio {ratio} not near 2/3"
+    );
+}
+
+#[test]
+fn synthesize_min_count_one_keeps_rare_values() {
+    let wrk = Workdir::new("synthesize_min_count_one");
+    wrk.create("data.csv", min_count_fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--min-count", "1", "-n", "2000", "--seed", "42"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // 1/31 of 2000 rows ≈ 64 expected.
+    assert!(
+        count_cat(&got, "RARE") > 0,
+        "--min-count 1 should keep the singleton"
+    );
+}
+
+/// A joint (city, zip) group: two common tuples, one tuple seen exactly 5 times
+/// (the default --min-count, so kept) and one seen 4 times (suppressed).
+fn min_count_joint_fixture() -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["city", "zip"]];
+    rows.extend(std::iter::repeat_n(svec!["Springfield", "10001"], 10));
+    rows.extend(std::iter::repeat_n(svec!["Shelbyville", "20002"], 10));
+    rows.extend(std::iter::repeat_n(svec!["Ogdenville", "55555"], 5));
+    rows.extend(std::iter::repeat_n(svec!["Smallville", "99999"], 4));
+    rows
+}
+
+const MIN_COUNT_JOINT_DICT: &str = r#"{
+    "fields": [
+        {"name": "city", "type": "String"},
+        {"name": "zip", "type": "String"}
+    ],
+    "relationships": [
+        {"kind": "joint", "members": ["city", "zip"]}
+    ]
+}"#;
+
+fn has_smallville_tuple(got: &[Vec<String>]) -> bool {
+    got[1..]
+        .iter()
+        .any(|r| r[0] == "Smallville" && r[1] == "99999")
+}
+
+#[test]
+fn synthesize_min_count_suppresses_rare_joint_tuples() {
+    let wrk = Workdir::new("synthesize_min_count_joint");
+    wrk.create("data.csv", min_count_joint_fixture());
+    wrk.create_from_string("dict.json", MIN_COUNT_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 1001);
+    for row in &got[1..] {
+        let pair = (row[0].as_str(), row[1].as_str());
+        assert!(
+            matches!(
+                pair,
+                ("Springfield", "10001") | ("Shelbyville", "20002") | ("Ogdenville", "55555")
+            ),
+            "unexpected tuple {pair:?}: rare tuple leaked or joint group fell apart"
+        );
+    }
+    assert!(
+        got[1..].iter().any(|r| r[0] == "Ogdenville"),
+        "a tuple seen exactly --min-count times must be kept"
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "1000",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        has_smallville_tuple(&got),
+        "--min-count 1 should keep the singleton tuple"
+    );
+}
+
+#[test]
+fn synthesize_min_count_all_joint_tuples_suppressed_falls_back() {
+    let wrk = Workdir::new("synthesize_min_count_joint_all");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["city", "zip"],
+            svec!["Springfield", "10001"],
+            svec!["Springfield", "10001"],
+            svec!["Shelbyville", "20002"],
+            svec!["Smallville", "99999"],
+        ],
+    );
+    wrk.create_from_string("dict.json", MIN_COUNT_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert_eq!(got.len(), 201);
+    // Full suppression must be visible on the terminal, not just in the log.
+    assert!(
+        err.contains("all 3 distinct tuple(s) occur fewer than --min-count (5)"),
+        "missing joint suppression warning: {err}"
+    );
+    assert!(
+        err.contains("every value of column 'city' occurs fewer than --min-count (5)"),
+        "missing column suppression warning: {err}"
+    );
+    // Every tuple and every city value is below the default --min-count, so the
+    // group falls back to independent columns and no real city is emitted. (zip
+    // is inferred as Integer and falls back to its min/max range, which can still
+    // produce real zips; that is the documented range caveat, not asserted here.)
+    let cities = ["Springfield", "Shelbyville", "Smallville"];
+    for row in &got[1..] {
+        assert_eq!(row.len(), 2);
+        assert!(
+            !cities.contains(&row[0].as_str()),
+            "real city '{}' leaked after full suppression",
+            row[0]
+        );
+    }
+}
+
+#[test]
+fn synthesize_rejects_zero_min_count() {
+    let wrk = Workdir::new("synthesize_min_count_zero");
+    wrk.create("data.csv", fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--min-count", "0"]).arg("data.csv");
+    let err = wrk.output_stderr(&mut cmd);
+    assert!(
+        err.contains("--min-count must be at least 1"),
+        "expected a --min-count error, got: {err}"
+    );
+}
+
+#[test]
+fn synthesize_min_count_all_joint_tuples_suppressed_strict_aborts() {
+    let wrk = Workdir::new("synthesize_min_count_joint_strict");
+    wrk.create("data.csv", min_count_joint_fixture());
+    wrk.create_from_string("dict.json", MIN_COUNT_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "100",
+        "--strict-relationships",
+        "-n",
+        "10",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("fewer than --min-count (100) times. Lower --min-count"),
+        "expected a strict --min-count abort, got: {err}"
+    );
 }

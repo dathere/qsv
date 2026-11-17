@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`qsv-synthesize --min-count`**: privacy threshold (default 5). Values and `joint` tuples seen fewer than k times in the source are dropped from the real values it samples. Skill regenerated from the USAGE text.
+
 ### Changed
-- **`qsv-synthesize` warns that its output is not anonymized** ([#5064](https://github.com/dathere/qsv/pull/5064)): synthetic output can contain real source values, rare ones included. The skill description was regenerated from the README command table.
+- **`qsv-synthesize` warns that its output is not anonymized** ([#5064](https://github.com/dathere/qsv/pull/5064)): synthetic output can contain real source values. The skill description was regenerated from the README command table.
 
 ## [29.0.0] - 2026-11-15
 Companion release to qsv 29.0.0, "The Trust the numbers Release". The MCP server tracks the qsv binary version per the policy adopted in 20.0.0, and `minimum_qsv_version` is raised to 29.0.0 because the regenerated skills describe options and behavior that only the new binary has: `qsv-validate --sarif`, and `qsv-sqlp --format avro` converting the types Avro can't write. The skill count stays at **57**. Update your qsv binary first.

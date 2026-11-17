@@ -195,6 +195,7 @@ impl ColumnGenerator {
         requested_rows: u64,
         locale: Locale,
         consistent_fakes: bool,
+        min_count: u64,
         rng: &mut StdRng,
     ) -> ColumnGenerator {
         let null_ratio = compute_null_ratio(stats.nullcount, total_rows);
@@ -236,8 +237,8 @@ impl ColumnGenerator {
         }
 
         // 2. Fully-enumerated frequency pool — reproduces the real value set, weights, cardinality
-        //    and repetition structure exactly.
-        if let Some(generator) = try_frequency_weighted(freqs, null_ratio) {
+        //    and repetition structure, minus values seen fewer than `min_count` times.
+        if let Some(generator) = try_frequency_weighted(freqs, null_ratio, min_count) {
             return generator;
         }
 
@@ -462,7 +463,15 @@ pub(crate) fn draw_null(null_ratio: f64, rng: &mut StdRng) -> bool {
 /// the frequency records: a non-empty set of real values, no rank-0 catch-all
 /// "Other" bucket, and not the all-unique sentinel. Returns `None` otherwise so
 /// the caller falls through to a faker or type-based generator.
-fn try_frequency_weighted(freqs: &[&FrequencyRecord], null_ratio: f64) -> Option<ColumnGenerator> {
+///
+/// Values seen fewer than `min_count` times are dropped so rare real values
+/// never reach the output; their weight is redistributed over the kept values.
+/// If every value is dropped, returns `None`.
+fn try_frequency_weighted(
+    freqs: &[&FrequencyRecord],
+    null_ratio: f64,
+    min_count: u64,
+) -> Option<ColumnGenerator> {
     if freqs.is_empty() {
         return None;
     }
@@ -475,16 +484,36 @@ fn try_frequency_weighted(freqs: &[&FrequencyRecord], null_ratio: f64) -> Option
 
     let mut values = Vec::new();
     let mut weights = Vec::new();
+    let mut suppressed = 0_usize;
     for f in freqs {
         // Nulls are reproduced via `null_ratio`, not the value pool.
         if f.value == NULL_TEXT || f.value.contains(ALL_UNIQUE_SENTINEL) || f.count == 0 {
+            continue;
+        }
+        if f.count < min_count {
+            suppressed += 1;
             continue;
         }
         values.push(f.value.clone());
         #[allow(clippy::cast_precision_loss)]
         weights.push(f.count as f64);
     }
+    if suppressed > 0 {
+        log::info!(
+            "synthesize: column '{}' — suppressed {suppressed} value(s) seen fewer than \
+             --min-count ({min_count}) times",
+            freqs[0].field
+        );
+    }
     if values.is_empty() {
+        if suppressed > 0 {
+            wwarn!(
+                "synthesize: every value of column '{}' occurs fewer than --min-count \
+                 ({min_count}) times; it will be generated from its faker or type-based generator \
+                 instead of its real values",
+                freqs[0].field
+            );
+        }
         return None;
     }
 
@@ -943,7 +972,7 @@ mod tests {
     fn frequency_weighted_only_emits_pool_values_at_the_right_ratio() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "B", 300, 2.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        let generator = try_frequency_weighted(&refs, 0.0).unwrap();
+        let generator = try_frequency_weighted(&refs, 0.0, 1).unwrap();
 
         let mut rng = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -964,7 +993,42 @@ mod tests {
     fn frequency_weighted_rejects_other_bucket() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "Other (5)", 300, 0.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        assert!(try_frequency_weighted(&refs, 0.0).is_none());
+        assert!(try_frequency_weighted(&refs, 0.0, 1).is_none());
+    }
+
+    #[test]
+    fn frequency_weighted_drops_values_below_min_count() {
+        let freqs = [
+            freq("c", "A", 70, 1.0),
+            freq("c", "B", 30, 2.0),
+            freq("c", "RARE", 4, 3.0),
+        ];
+        let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
+        let generator = try_frequency_weighted(&refs, 0.0, 5).unwrap();
+
+        let mut rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
+        let n = 20_000;
+        let mut a = 0;
+        for _ in 0..n {
+            match generator.next(&mut rng).as_str() {
+                "A" => a += 1,
+                "B" => {},
+                other => panic!("value below --min-count emitted: {other:?}"),
+            }
+        }
+        // RARE's weight is redistributed: A is 70 / (70 + 30), not 70 / 104.
+        #[allow(clippy::cast_precision_loss)]
+        let ratio = f64::from(a) / f64::from(n);
+        assert!((ratio - 0.7).abs() < 0.02, "A ratio {ratio} not near 0.7");
+    }
+
+    #[test]
+    fn frequency_weighted_returns_none_when_all_values_below_min_count() {
+        let freqs = [freq("c", "A", 4, 1.0), freq("c", "B", 1, 2.0)];
+        let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
+        assert!(try_frequency_weighted(&refs, 0.0, 5).is_none());
+        // The threshold is inclusive: count == min_count is kept.
+        assert!(try_frequency_weighted(&refs, 0.0, 4).is_some());
     }
 
     #[test]
@@ -987,6 +1051,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut rng,
         );
 
@@ -1016,6 +1081,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut rng,
         );
 
@@ -1038,6 +1104,7 @@ mod tests {
             1000,
             Locale::EN,
             false,
+            1,
             &mut rng,
         );
 
@@ -1071,6 +1138,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut build_rng,
         );
 
@@ -1229,6 +1297,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut build_rng,
         );
 
@@ -1289,6 +1358,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut build_rng,
         );
 
@@ -1345,6 +1415,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut build_rng,
         );
 
@@ -1407,6 +1478,7 @@ mod tests {
             5000,
             Locale::EN,
             false,
+            1,
             &mut build_rng,
         );
 

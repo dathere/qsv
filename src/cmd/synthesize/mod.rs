@@ -134,13 +134,14 @@ synthesize options:
                            [default: 100]
     --min-count <k>        Privacy threshold. A real value of an enumerated
                            column, or a real `joint` value-tuple, that occurs
-                           fewer than <k> times in <input> is never emitted;
-                           its share is redistributed over the kept values.
-                           A column whose values are all below <k> falls back
-                           to its faker or type-based generator (numeric and
-                           date columns to their real min/max range), and a
-                           joint group to independent columns, or aborts
-                           under --strict-relationships. A warning is printed
+                           fewer than <k> times in <input> is dropped from the
+                           values it samples; its share is redistributed over
+                           the kept values. An enumerated column whose values
+                           are all below <k> falls back to its faker or
+                           type-based generator (numeric and date columns to
+                           their real min/max range), and a joint group to
+                           independent columns, or aborts under
+                           the --strict-relationships option. A warning is printed
                            when either happens. 1 disables suppression.
                            Counts are of rows, not people: where one person
                            has many rows (transactions, visits, logs), one

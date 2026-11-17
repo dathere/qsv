@@ -1760,3 +1760,63 @@ fn synthesize_min_count_all_joint_tuples_suppressed_strict_aborts() {
         "expected a strict --min-count abort, got: {err}"
     );
 }
+
+/// Nulls are exempt from --min-count on purpose: they are reproduced through
+/// the column's null ratio, not sampled as values, so a single blank in the
+/// source discloses no value and suppressing it would only distort the rate.
+#[test]
+fn synthesize_min_count_does_not_suppress_nulls() {
+    let wrk = Workdir::new("synthesize_min_count_nulls");
+    let mut rows = min_count_fixture();
+    rows.push(svec![""]);
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "42"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // 1 null in 32 rows ≈ 62 expected blanks out of 2000.
+    let blanks = count_cat(&got, "");
+    assert!(
+        blanks > 0,
+        "the single source null should still be reproduced"
+    );
+    assert_eq!(count_cat(&got, "RARE"), 0, "RARE must still be suppressed");
+}
+
+/// With --consistent-fakes, an enumerated structured column is mapped to fakes,
+/// so no real value (rare or common) reaches the output and --min-count has
+/// nothing to filter on that path.
+#[test]
+fn synthesize_min_count_with_consistent_fakes_emits_no_real_values() {
+    let wrk = Workdir::new("synthesize_min_count_consistent_fakes");
+    let mut rows = vec![svec!["first_name"]];
+    rows.extend(std::iter::repeat_n(svec!["SRC_Michael"], 20));
+    rows.extend(std::iter::repeat_n(svec!["SRC_Sarah"], 10));
+    rows.push(svec!["SRC_Rare"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}]}"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "500",
+        "--seed",
+        "7",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 501);
+    for row in &got[1..] {
+        assert!(
+            !row[0].starts_with("SRC_"),
+            "real value '{}' leaked through --consistent-fakes",
+            row[0]
+        );
+    }
+}

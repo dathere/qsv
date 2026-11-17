@@ -478,7 +478,10 @@ fn try_frequency_weighted(
     // `qsv frequency` gives rank 0 to both the "Other" catch-all bucket and the
     // `<ALL_UNIQUE>` sentinel. Either one means the column is NOT fully
     // enumerated for our purposes.
-    if freqs.iter().any(|f| f.rank == 0.0) {
+    // The `(NULL)` row also parses to rank 0 (frequency leaves its rank blank),
+    // but nulls are reproduced via `null_ratio`, so it must not disqualify
+    // the column.
+    if freqs.iter().any(|f| f.rank == 0.0 && f.value != NULL_TEXT) {
         return None;
     }
 
@@ -567,7 +570,10 @@ fn try_faker_mapped(
     // Same enumeration gate as `try_frequency_weighted`: rank 0 marks either
     // the "Other" catch-all or the `<ALL_UNIQUE>` sentinel — both mean the
     // column is NOT fully enumerated.
-    if freqs.iter().any(|f| f.rank == 0.0) {
+    // The `(NULL)` row also parses to rank 0 (frequency leaves its rank blank),
+    // but nulls are reproduced via `null_ratio`, so it must not disqualify
+    // the column.
+    if freqs.iter().any(|f| f.rank == 0.0 && f.value != NULL_TEXT) {
         return None;
     }
 

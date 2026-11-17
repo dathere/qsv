@@ -1765,6 +1765,7 @@ fn synthesize_min_count_all_joint_tuples_suppressed_strict_aborts() {
 /// the column's null ratio, not sampled as values, so a single blank in the
 /// source discloses no value and suppressing it would only distort the rate.
 #[test]
+
 fn synthesize_min_count_does_not_suppress_nulls() {
     let wrk = Workdir::new("synthesize_min_count_nulls");
     let mut rows = min_count_fixture();
@@ -1781,6 +1782,45 @@ fn synthesize_min_count_does_not_suppress_nulls() {
         "the single source null should still be reproduced"
     );
     assert_eq!(count_cat(&got, "RARE"), 0, "RARE must still be suppressed");
+    // The null must not knock the column out of enumeration: every non-blank
+    // value is a kept real value, not fallback filler.
+    let a = count_cat(&got, "A");
+    let b = count_cat(&got, "B");
+    assert!(a > 0 && b > 0, "kept values missing: A={a} B={b}");
+    assert_eq!(
+        a + b + blanks,
+        2000,
+        "non-real values emitted for a nullable column"
+    );
+}
+
+/// Regression: a single null in an enumerated numeric column must not push it
+/// to the min/max range fallback, which would emit the suppressed singleton.
+#[test]
+fn synthesize_min_count_nullable_numeric_column_stays_enumerated() {
+    let wrk = Workdir::new("synthesize_min_count_nullable_numeric");
+    let mut rows = vec![svec!["n", "x"]];
+    rows.extend(std::iter::repeat_n(svec!["10", "a"], 20));
+    rows.push(svec!["11", "a"]);
+    rows.push(svec!["", "a"]);
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "1"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut nulls = 0;
+    for row in &got[1..] {
+        if row[0].is_empty() {
+            nulls += 1;
+            continue;
+        }
+        assert_eq!(
+            row[0], "10",
+            "expected only the kept value 10 or a null, got '{}'",
+            row[0]
+        );
+    }
+    assert!(nulls > 0, "the source null should still be reproduced");
 }
 
 /// With --consistent-fakes, an enumerated structured column is mapped to fakes,

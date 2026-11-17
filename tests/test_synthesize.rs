@@ -2357,3 +2357,71 @@ fn synthesize_ordered_no_copresent_rows_strict_aborts() {
         "expected a strict abort, got: {err}"
     );
 }
+
+/// Regression: in a mixed Integer/Float ordered group the Integer member is
+/// printed rounded, so chaining from the unrounded value (or a fractional cap)
+/// could print start = 12 above end = 11.6.
+#[test]
+fn synthesize_ordered_mixed_int_float_keeps_order_after_rounding() {
+    let wrk = Workdir::new("synthesize_ordered_mixed_rounding");
+    let mut rows = vec![svec!["start", "end"]];
+    rows.extend(std::iter::repeat_n(svec!["1", "11.6"], 9));
+    rows.extend(std::iter::repeat_n(svec!["100", ""], 9));
+    rows.push(svec!["100", "100.6"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Float"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "13", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
+        assert!(end <= 11.6, "end escaped its trimmed range: {r:?}");
+    }
+}
+
+/// Small gaps (< 0.5) in a mixed Integer/Float ordered group: without chaining
+/// from the rounded Integer value, start = 12.6 prints as 13 while end = 12.8.
+#[test]
+fn synthesize_ordered_mixed_int_float_small_gap_keeps_order() {
+    let wrk = Workdir::new("synthesize_ordered_mixed_small_gap");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 10..50 {
+        rows.push(vec![format!("{i}"), format!("{i}.2")]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Float"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "14", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
+    }
+}

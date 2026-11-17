@@ -142,6 +142,17 @@ impl GroupGenerator {
                 // The anchor's upper bound is capped by every follower's (see
                 // `resolve_ordered`), so the chain can always stay in range.
                 let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
+                // Chain from the value actually emitted: an Integer member is
+                // printed rounded, so the next member must build on the
+                // rounded value or a Float follower can print below it.
+                let quantize = |v: f64, i: usize| {
+                    if *kind == OrderedKind::Numeric && is_int[i] {
+                        v.round()
+                    } else {
+                        v
+                    }
+                };
+                value = quantize(value, 0);
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],
@@ -153,7 +164,10 @@ impl GroupGenerator {
                     // `value` stays non-decreasing along the chain.
                     let prev = value;
                     let (lo, hi) = member_ranges[i + 1];
-                    value = (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev);
+                    value = quantize(
+                        (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev),
+                        i + 1,
+                    );
                     out.push((
                         member_cols[i + 1],
                         format_ordered(value, *kind, is_int[i + 1], date_format.as_ref()),

@@ -460,8 +460,20 @@ fn resolve_ordered(
     // Members are non-decreasing, so no member may exceed any later member's
     // upper bound. Cap each upper bound by the ones after it; otherwise the
     // order floor (`max(prev)`) would push a follower past its trimmed range.
+    // Integer members are emitted rounded, so their caps are floored (in the
+    // Numeric domain) to keep the rounded value within range and in order.
+    let floor_int = |i: usize, v: f64| {
+        if kind == OrderedKind::Numeric && is_int[i] {
+            v.floor()
+        } else {
+            v
+        }
+    };
+    if let Some(last) = member_ranges.len().checked_sub(1) {
+        member_ranges[last].1 = floor_int(last, member_ranges[last].1);
+    }
     for i in (0..member_ranges.len().saturating_sub(1)).rev() {
-        member_ranges[i].1 = member_ranges[i].1.min(member_ranges[i + 1].1);
+        member_ranges[i].1 = floor_int(i, member_ranges[i].1.min(member_ranges[i + 1].1));
     }
     if let Some(i) = member_ranges.iter().position(|&(lo, hi)| hi < lo) {
         let msg = format!(

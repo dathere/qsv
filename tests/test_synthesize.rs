@@ -2456,3 +2456,216 @@ fn synthesize_ordered_float_then_int_small_gap_keeps_order() {
         assert!(start <= end, "order broken after rounding: {r:?}");
     }
 }
+
+// --- --report ---------------------------------------------------------------
+
+fn read_report(wrk: &Workdir) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(wrk.path("report.json")).unwrap()).unwrap()
+}
+
+/// Dates are emitted in ISO form while the source uses MM/DD/YYYY, so a
+/// text-only comparison would find no matches. Every emitted date is one of
+/// the ten source dates, so every row is an exact copy by value.
+#[test]
+fn synthesize_report_matches_dates_by_value() {
+    let wrk = Workdir::new("synthesize_report_dates_by_value");
+    let mut rows = vec![svec!["created_date"]];
+    for d in 1..=10 {
+        rows.push(vec![format!("01/{d:02}/2020")]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "50",
+        "--seed",
+        "1",
+        "--min-count",
+        "1",
+        "--freq-limit",
+        "2",
+        "--stats-options",
+        "--dates-whitelist all",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0].starts_with("2020-01-")),
+        "expected ISO dates from the range generator: {got:?}"
+    );
+
+    let report = read_report(&wrk);
+    assert_eq!(report["source_rows"], 10);
+    assert_eq!(report["synthetic_rows"], 50);
+    assert_eq!(report["min_count"], 1);
+    assert_eq!(report["privacy"]["exact_matches"], 50);
+    assert_eq!(report["privacy"]["exact_match_rate"], 1.0);
+    assert_eq!(report["privacy"]["distinct_source_rows"], 10);
+    assert_eq!(
+        report["privacy"]["compared_columns"],
+        serde_json::json!(["created_date"])
+    );
+}
+
+#[test]
+fn synthesize_report_unique_ids_never_match() {
+    let wrk = Workdir::new("synthesize_report_unique_ids");
+    let mut rows = vec![svec!["id"]];
+    for i in 0..30 {
+        rows.push(vec![format!("ID-{i:04}")]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let report = read_report(&wrk);
+    assert_eq!(report["privacy"]["exact_matches"], 0);
+    assert_eq!(report["privacy"]["exact_match_rate"], 0.0);
+    assert_eq!(report["privacy"]["distinct_source_rows"], 30);
+}
+
+#[test]
+fn synthesize_report_lists_suppressed_values_and_tuples() {
+    let wrk = Workdir::new("synthesize_report_suppressed");
+    let mut rows = vec![svec!["color"]];
+    rows.extend(std::iter::repeat_n(svec!["red"], 5));
+    rows.extend(std::iter::repeat_n(svec!["blue"], 5));
+    rows.extend(std::iter::repeat_n(svec!["teal"], 2));
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([{"columns": ["color"], "distinct": 1, "rows": 2}])
+    );
+
+    wrk.create("joint.csv", min_count_joint_fixture());
+    wrk.create_from_string("dict.json", MIN_COUNT_JOINT_DICT);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "1", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("--report")
+        .arg(wrk.path("report.json"))
+        .arg("joint.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([{"columns": ["city", "zip"], "distinct": 1, "rows": 4}])
+    );
+}
+
+/// Fully suppressed columns and groups are the cases the report matters most
+/// for: their real values are gone from the output entirely.
+#[test]
+fn synthesize_report_lists_fully_suppressed_columns_and_groups() {
+    let wrk = Workdir::new("synthesize_report_fully_suppressed");
+    let mut rows = vec![svec!["color"]];
+    rows.extend(std::iter::repeat_n(svec!["red"], 3));
+    rows.extend(std::iter::repeat_n(svec!["teal"], 2));
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([{"columns": ["color"], "distinct": 2, "rows": 5}])
+    );
+
+    // The joint group is dropped, then each column is suppressed on its own,
+    // so the same 29 rows appear under the group and under each column.
+    wrk.create("joint.csv", min_count_joint_fixture());
+    wrk.create_from_string("dict.json", MIN_COUNT_JOINT_DICT);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "20",
+        "--seed",
+        "1",
+        "--min-count",
+        "11",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("--report")
+    .arg(wrk.path("report.json"))
+    .arg("joint.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([
+            {"columns": ["city", "zip"], "distinct": 4, "rows": 29},
+            {"columns": ["city"], "distinct": 4, "rows": 29},
+            {"columns": ["zip"], "distinct": 4, "rows": 29}
+        ])
+    );
+}
+
+/// `--consistent-fakes` emits fakes for every value, so nothing is dropped by
+/// `--min-count` and the report must not claim otherwise.
+#[test]
+fn synthesize_report_consistent_fakes_reports_no_suppression() {
+    let wrk = Workdir::new("synthesize_report_consistent_fakes");
+    let mut rows = vec![svec!["first_name"]];
+    rows.extend(std::iter::repeat_n(svec!["SRC_Michael"], 20));
+    rows.push(svec!["SRC_Rare"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}]}"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "20",
+        "--seed",
+        "7",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("--report")
+    .arg(wrk.path("report.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([])
+    );
+}
+
+#[test]
+fn synthesize_report_does_not_change_output() {
+    let wrk = Workdir::new("synthesize_report_same_output");
+    wrk.create("data.csv", fixture());
+
+    let mut plain = wrk.command("synthesize");
+    plain
+        .args(["-n", "200", "--seed", "42", "--min-count", "1"])
+        .arg("data.csv");
+    let without: String = wrk.stdout(&mut plain);
+
+    let mut reported = wrk.command("synthesize");
+    reported
+        .args(["-n", "200", "--seed", "42", "--min-count", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    let with: String = wrk.stdout(&mut reported);
+
+    assert_eq!(without, with);
+    assert_eq!(read_report(&wrk)["synthetic_rows"], 200);
+}

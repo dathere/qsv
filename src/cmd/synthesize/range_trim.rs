@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-enum RangeKind {
+pub(crate) enum RangeKind {
     Integer,
     Float,
     Date,
@@ -25,7 +25,7 @@ enum RangeKind {
 }
 
 impl RangeKind {
-    fn from_type(t: &str) -> Option<Self> {
+    pub(crate) fn from_type(t: &str) -> Option<Self> {
         match t {
             "Integer" => Some(Self::Integer),
             "Float" => Some(Self::Float),
@@ -38,7 +38,7 @@ impl RangeKind {
     /// Parse a raw cell to a sortable key: the number itself, or seconds since
     /// the UNIX epoch for dates (parsed with the same parser and DMY preference
     /// `stats` used to type the column).
-    fn key(self, raw: &str, prefer_dmy: bool) -> Option<f64> {
+    pub(crate) fn key(self, raw: &str, prefer_dmy: bool) -> Option<f64> {
         let s = raw.trim();
         if s.is_empty() {
             return None;

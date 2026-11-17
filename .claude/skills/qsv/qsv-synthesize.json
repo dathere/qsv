@@ -75,6 +75,11 @@
         "description": "Write output to <file> instead of stdout."
       },
       {
+        "flag": "--report",
+        "type": "string",
+        "description": "Write a JSON report of what the run reproduced from <input>: source and synthetic row counts, how many synthetic rows exactly match a source row (numbers and dates compared by value, other columns as text), and the values and joint tuples dropped by the --min-count option. Takes one extra pass over <input> and holds a hash per distinct source row in memory. A row with a float, free-text or faker column rarely matches exactly, so a low match rate does not by itself show that the output is private. A joint group that falls back to independent columns is listed along with each of its columns, so suppressed rows can be counted more than once."
+      },
+      {
         "flag": "--rows",
         "type": "number",
         "description": "Number of synthetic rows to generate.",

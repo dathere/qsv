@@ -195,6 +195,21 @@ fn resolve_relationship(
         return Ok(None);
     }
 
+    // Every member needs a resolved source column; guessing would learn from
+    // the wrong one.
+    if let Some(&i) = indices
+        .iter()
+        .find(|&&i| params.source_cols.get(i).copied().flatten().is_none())
+    {
+        log::warn!(
+            "synthesize: ignoring '{}' relationship — column '{}' can't be matched to a unique \
+             source column",
+            rel.kind,
+            params.stats_records[i].field
+        );
+        return Ok(None);
+    }
+
     // A column may belong to only one group — the first relationship wins.
     if let Some(conflict) = indices.iter().copied().find(|i| claimed.contains(i)) {
         log::warn!(

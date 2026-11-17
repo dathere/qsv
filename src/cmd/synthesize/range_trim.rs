@@ -137,25 +137,49 @@ impl Extremes {
     }
 }
 
-/// Map each stats record to its column in the source CSV by header name.
-/// Stats records are not positional: `--stats-options` can `--select` a subset
-/// or reorder columns. Duplicate names are matched by occurrence. `None` means
-/// the record has no source column.
+/// Map each stats record to its column in the source CSV. Stats records are not
+/// positional: `--stats-options` can `--select` a subset or reorder columns.
+///
+/// - Headerless input: `stats` names columns by 0-based index, so the field is parsed as the index.
+/// - Same columns in the same order as the header: positional (this also resolves duplicate names
+///   when nothing was selected).
+/// - Otherwise by name, only when the name is unique in the header. A duplicated name under a
+///   selection can't be resolved from the stats output, so it maps to `None`, and callers fail
+///   closed rather than guess.
 pub(crate) fn source_column_indices(
     stats_records: &[StatsRecord],
     headers: &csv::StringRecord,
+    no_headers: bool,
 ) -> Vec<Option<usize>> {
-    let mut used = vec![false; headers.len()];
+    if no_headers {
+        return stats_records
+            .iter()
+            .map(|sr| {
+                sr.field
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|&i| i < headers.len())
+            })
+            .collect();
+    }
+    if stats_records.len() == headers.len()
+        && stats_records
+            .iter()
+            .zip(headers.iter())
+            .all(|(sr, h)| sr.field == h)
+    {
+        return (0..headers.len()).map(Some).collect();
+    }
     stats_records
         .iter()
         .map(|sr| {
-            let idx = headers
+            let mut matches = headers
                 .iter()
                 .enumerate()
-                .find(|(i, h)| !used[*i] && *h == sr.field)
-                .map(|(i, _)| i)?;
-            used[idx] = true;
-            Some(idx)
+                .filter(|(_, h)| *h == sr.field)
+                .map(|(i, _)| i);
+            let first = matches.next()?;
+            matches.next().is_none().then_some(first)
         })
         .collect()
 }
@@ -185,15 +209,25 @@ pub(crate) fn trim_range_bounds(
     let config = Config::new(Some(&input_path.to_string())).delimiter(delimiter);
     let mut rdr = config.reader()?;
 
-    let targets: Vec<(usize, usize, RangeKind)> = stats_records
-        .iter()
-        .enumerate()
-        .filter_map(|(stats_idx, sr)| {
-            let kind = RangeKind::from_type(&sr.r#type)?;
-            let src_idx = source_cols.get(stats_idx).copied().flatten()?;
-            Some((stats_idx, src_idx, kind))
-        })
-        .collect();
+    let mut targets: Vec<(usize, usize, RangeKind)> = Vec::new();
+    for (stats_idx, sr) in stats_records.iter_mut().enumerate() {
+        let Some(kind) = RangeKind::from_type(&sr.r#type) else {
+            continue;
+        };
+        if let Some(src_idx) = source_cols.get(stats_idx).copied().flatten() {
+            targets.push((stats_idx, src_idx, kind));
+        } else {
+            // Fail closed: an untrimmed range would let outliers through.
+            wwarn!(
+                "synthesize: column '{}' can't be matched to a unique source column (duplicate \
+                 header name under a --stats-options selection); its range can't be trimmed, so \
+                 it will be left empty unless its real values are sampled",
+                sr.field
+            );
+            sr.min = String::new();
+            sr.max = String::new();
+        }
+    }
 
     let k = usize::try_from(min_count).unwrap_or(usize::MAX);
     let mut extremes: Vec<Extremes> = targets.iter().map(|_| Extremes::new(k)).collect();
@@ -291,6 +325,41 @@ mod tests {
     fn exactly_2k_minus_1_values_collapses_to_the_median() {
         let values: Vec<f64> = (1..=9).map(f64::from).collect();
         assert_eq!(bounds_of(&values, 5), Some((5.0, 5.0)));
+    }
+
+    fn rec(field: &str) -> StatsRecord {
+        StatsRecord {
+            field:       field.to_string(),
+            r#type:      "Integer".to_string(),
+            cardinality: 0,
+            nullcount:   0,
+            min:         String::new(),
+            max:         String::new(),
+            addl_cols:   indexmap::IndexMap::new(),
+        }
+    }
+
+    #[test]
+    fn source_columns_map_by_position_name_or_index() {
+        let headers = csv::StringRecord::from(vec!["id", "value", "value", "salary"]);
+        // Every column, in order: positional, duplicates included.
+        let all: Vec<StatsRecord> = ["id", "value", "value", "salary"].map(rec).into();
+        assert_eq!(
+            source_column_indices(&all, &headers, false),
+            vec![Some(0), Some(1), Some(2), Some(3)]
+        );
+        // A selection: unique names map by name; a duplicated name is ambiguous.
+        let sel: Vec<StatsRecord> = ["salary", "value"].map(rec).into();
+        assert_eq!(
+            source_column_indices(&sel, &headers, false),
+            vec![Some(3), None]
+        );
+        // Headerless: stats names columns by 0-based index.
+        let nh: Vec<StatsRecord> = ["0", "3", "9"].map(rec).into();
+        assert_eq!(
+            source_column_indices(&nh, &headers, true),
+            vec![Some(0), Some(3), None]
+        );
     }
 
     #[test]

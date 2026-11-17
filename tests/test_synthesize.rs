@@ -2255,3 +2255,54 @@ fn synthesize_ordered_maps_columns_by_name_under_stats_select() {
         );
     }
 }
+
+/// Regression: under `QSV_NO_HEADERS`, stats names columns "0", "1", …, which
+/// match no header, so name-only mapping silently skipped range trimming.
+#[test]
+fn synthesize_min_count_range_trim_works_without_headers() {
+    let wrk = Workdir::new("synthesize_range_trim_no_headers");
+    wrk.create(
+        "data.csv",
+        vec![svec!["100", "a"], svec!["101", "a"], svec!["1000000", "a"]],
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args(["-n", "50", "--seed", "1"])
+        .arg("data.csv");
+    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert!(
+        got.iter().skip(1).all(|r| r[0].is_empty()),
+        "3 values can't be trimmed at --min-count 5; the column must be empty: {got:?}"
+    );
+    assert!(
+        err.contains("column '0' has only 3 non-null value(s)"),
+        "missing too-small warning: {err}"
+    );
+}
+
+/// A duplicated header name under a --stats-options selection can't be traced
+/// back to one source column, so range trimming fails closed: the column is
+/// left empty, with a warning, rather than trimmed from the wrong column.
+#[test]
+fn synthesize_min_count_ambiguous_duplicate_column_fails_closed() {
+    let wrk = Workdir::new("synthesize_range_trim_dup_header");
+    let mut rows = vec![svec!["value", "value"]];
+    for i in 0..30 {
+        rows.push(vec![format!("{}", i + 1), format!("{}", 100 + i)]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1", "--stats-options", "--select 2"])
+        .arg("data.csv");
+    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0].is_empty()),
+        "ambiguous column must be left empty, not trimmed from the wrong column"
+    );
+    assert!(
+        err.contains("can't be matched to a unique source column"),
+        "missing ambiguity warning: {err}"
+    );
+}

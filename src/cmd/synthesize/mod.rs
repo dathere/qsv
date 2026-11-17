@@ -9,6 +9,7 @@ fake data that reproduce the source's per-column attributes:
     structure are preserved, minus values rarer than the --min-count.
   * Numeric and date/datetime columns are reproduced with quartile buckets, so
     the shape of the distribution (not just its [min,max] range) is preserved.
+    The range ends are trimmed by the --min-count (see below).
   * Null ratios are reproduced per column.
 
 When a Data Dictionary is supplied (via --dictionary, or generated on the fly
@@ -73,11 +74,13 @@ not stop it:
     to 100,000 distinct values; larger enumerated columns stay real.
   * A `joint` relationship emits whole real value-tuples (e.g. a
     city/zip/age combination) seen at least --min-count times.
-  * Numeric and date ranges span the real min and max, so a lone outlier
-    can reappear at or near its real value. Dates can land on it exactly.
-    An enumerated numeric or date column whose values were all dropped by
-    the --min-count falls back to this range, which for a narrow integer or
-    date column covers its real values.
+  * Numeric and date ranges are trimmed so that at least --min-count rows
+    lie at or beyond each end (the k-th smallest and k-th largest values),
+    so a lone outlier no longer sets the range. The ends are themselves real
+    values, and values inside the range are drawn uniformly per quartile, so
+    integers and dates can still land exactly on real values. With
+    the --min-count at 1 the range is the real min and max, and an outlier
+    can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
 
@@ -139,7 +142,7 @@ synthesize options:
                            the kept values. An enumerated column whose values
                            are all below <k> falls back to its faker or
                            type-based generator (numeric and date columns to
-                           their real min/max range), and a joint group to
+                           their trimmed range), and a joint group to
                            independent columns, or aborts under
                            the --strict-relationships option. A warning is printed
                            when either happens. 1 disables suppression.
@@ -147,6 +150,12 @@ synthesize options:
                            has many rows (transactions, visits, logs), one
                            person's value can pass <k> alone. Raise <k>, or
                            dedupe to one row per person first.
+                           Numeric and date ranges, and the gaps of `ordered`
+                           relationships, are also trimmed to their k-th
+                           smallest and k-th largest values (one extra pass
+                           over <input>). A numeric or date column with fewer
+                           than 2k-1 non-null values is left empty unless its
+                           real values are sampled.
                            [default: 5]
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
@@ -203,6 +212,7 @@ mod dictionary;
 mod faker_map;
 mod generator;
 mod group_generator;
+mod range_trim;
 mod relationships;
 
 use faker_map::Locale;
@@ -335,12 +345,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     })?;
 
     // --- 2. Parse analysis -------------------------------------------------
-    let (stats_records, _addl_cols) = parse_stats_csv(&stats_csv)?;
+    let (mut stats_records, _addl_cols) = parse_stats_csv(&stats_csv)?;
     let frequency_records = parse_frequency_csv(&freq_csv)?;
 
     if stats_records.is_empty() {
         return fail_clierror!("No columns found in '{input_path}'.");
     }
+
+    // Trim numeric/date ranges so outliers seen fewer than --min-count times
+    // can't reappear at their real values. Dates are parsed with the same DMY
+    // preference `stats` used to type the column.
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY")
+        || args
+            .flag_stats_options
+            .as_deref()
+            .is_some_and(|o| o.split_whitespace().any(|t| t == "--prefer-dmy"));
+    range_trim::trim_range_bounds(
+        &mut stats_records,
+        input_path,
+        args.flag_delimiter,
+        args.flag_min_count,
+        prefer_dmy,
+    )?;
 
     // --- 3. Dictionary (optional) → content types + relationships ----------
     let (content_types, relationships) = if let Some(ref dict_path) = args.flag_dictionary {

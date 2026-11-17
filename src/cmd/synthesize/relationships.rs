@@ -470,7 +470,7 @@ fn resolve_ordered(
                 "synthesize: {msg}; such gaps are clamped to keep the synthetic output ordered"
             );
         }
-        gap_buckets.push(gap_buckets_from_samples(samples));
+        gap_buckets.push(gap_buckets_from_samples(samples, params.min_count));
     }
 
     let null_ratio = compute_null_ratio(anchor_stats.nullcount, params.total_rows);
@@ -566,16 +566,29 @@ fn learn_ordered_gaps(
 
 /// Build clamped quartile gap buckets from a non-empty set of gap samples.
 /// Every bound is clamped to >= 0 so the synthetic chain is always ordered.
-fn gap_buckets_from_samples(mut samples: Vec<f64>) -> Vec<(f64, f64)> {
+///
+/// Like `range_trim`, the outer bounds are the k-th smallest and k-th largest
+/// gaps (k = `--min-count`), so a lone extreme gap (a decades-long tenure) can't
+/// reappear. With fewer than 2k-1 samples no such range exists, and the gap
+/// collapses to the mean, which keeps the chain ordered without copying a
+/// single pair's gap.
+fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Vec<(f64, f64)> {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
+    let k = usize::try_from(min_count.max(1)).unwrap_or(usize::MAX);
+    if n < k.saturating_mul(2).saturating_sub(1) {
+        #[allow(clippy::cast_precision_loss)]
+        let mean = (samples.iter().sum::<f64>() / n as f64).max(0.0);
+        return vec![(mean, mean)];
+    }
+    let (lo, hi) = (samples[k - 1], samples[n - k]);
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)];
-    let mut bounds = [samples[0], at(0.25), at(0.5), at(0.75), samples[n - 1]];
+    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)].clamp(lo, hi);
+    let mut bounds = [lo, at(0.25), at(0.5), at(0.75), hi];
     // Clamping a sorted sequence to >= 0 keeps it sorted.
     for b in &mut bounds {
         *b = b.max(0.0);
@@ -856,4 +869,33 @@ fn identity_matrix(k: usize) -> Vec<Vec<f64>> {
         row[i] = 1.0;
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gap_buckets_from_samples;
+
+    #[test]
+    fn gap_buckets_trim_extreme_gaps() {
+        // Gaps 1..=20 plus one 10,000 outlier; k = 5 trims to [5, 17].
+        let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
+        let buckets = gap_buckets_from_samples(samples, 5);
+        assert_eq!(buckets.first().unwrap().0, 5.0);
+        assert_eq!(buckets.last().unwrap().1, 17.0);
+    }
+
+    #[test]
+    fn gap_buckets_k_one_keeps_full_range() {
+        let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
+        let buckets = gap_buckets_from_samples(samples, 1);
+        assert_eq!(buckets.first().unwrap().0, 1.0);
+        assert_eq!(buckets.last().unwrap().1, 10_000.0);
+    }
+
+    #[test]
+    fn gap_buckets_too_few_samples_collapse_to_mean() {
+        // 4 samples < 2k-1 = 9: a single gap at the mean, not any real gap.
+        let buckets = gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5);
+        assert_eq!(buckets, vec![(26.5, 26.5)]);
+    }
 }

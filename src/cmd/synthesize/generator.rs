@@ -718,9 +718,24 @@ pub(crate) fn numeric_quartile_buckets(stats: &StatsRecord) -> Option<Vec<(f64, 
     if hi < lo {
         return None;
     }
-    let q1 = stats.addl_cols.get("q1").and_then(|s| parse_f64(s));
-    let q2 = stats.addl_cols.get("q2_median").and_then(|s| parse_f64(s));
-    let q3 = stats.addl_cols.get("q3").and_then(|s| parse_f64(s));
+    // Quartiles are clamped into [lo, hi]: `--min-count` range trimming can
+    // move the ends inside the source quartiles on small columns.
+    let clamp = |v: f64| v.clamp(lo, hi);
+    let q1 = stats
+        .addl_cols
+        .get("q1")
+        .and_then(|s| parse_f64(s))
+        .map(clamp);
+    let q2 = stats
+        .addl_cols
+        .get("q2_median")
+        .and_then(|s| parse_f64(s))
+        .map(clamp);
+    let q3 = stats
+        .addl_cols
+        .get("q3")
+        .and_then(|s| parse_f64(s))
+        .map(clamp);
     Some(match (q1, q2, q3) {
         (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
             vec![(lo, a), (a, b), (b, c), (c, hi)]
@@ -766,18 +781,23 @@ pub(crate) fn date_quartile_buckets(
     if hi < lo {
         return None;
     }
+    // Clamped into [lo, hi] for the same reason as `numeric_quartile_buckets`.
+    let clamp = |v: i64| v.clamp(lo, hi);
     let q1 = stats
         .addl_cols
         .get("q1")
-        .and_then(|s| parse_epoch(s, is_datetime));
+        .and_then(|s| parse_epoch(s, is_datetime))
+        .map(clamp);
     let q2 = stats
         .addl_cols
         .get("q2_median")
-        .and_then(|s| parse_epoch(s, is_datetime));
+        .and_then(|s| parse_epoch(s, is_datetime))
+        .map(clamp);
     let q3 = stats
         .addl_cols
         .get("q3")
-        .and_then(|s| parse_epoch(s, is_datetime));
+        .and_then(|s| parse_epoch(s, is_datetime))
+        .map(clamp);
     Some(match (q1, q2, q3) {
         (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
             vec![(lo, a), (a, b), (b, c), (c, hi)]

@@ -2660,6 +2660,30 @@ fn synthesize_report_rejects_input_or_output_path() {
     assert!(!wrk.path("out.csv").exists());
 }
 
+/// Without headers stats names columns from 0 and frequency from 1. Unaligned,
+/// column 1 took column 0's values and column 0 fell back to filler text.
+#[test]
+fn synthesize_no_headers_pairs_frequency_with_its_column() {
+    let wrk = Workdir::new("synthesize_no_headers_frequency");
+    let mut rows = vec![svec!["a", "k"]; 20];
+    rows.push(svec!["rare", "k"]);
+    wrk.create("data.csv", rows);
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args(["-n", "8", "--seed", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0] == "a" && r[1] == "k"),
+        "each column must sample its own values: {got:?}"
+    );
+    assert_eq!(
+        read_report(&wrk)["privacy"]["suppressed"],
+        serde_json::json!([{"columns": ["0"], "distinct": 1, "rows": 1}])
+    );
+}
+
 #[test]
 fn synthesize_report_unique_ids_never_match() {
     let wrk = Workdir::new("synthesize_report_unique_ids");

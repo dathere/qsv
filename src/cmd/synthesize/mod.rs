@@ -402,7 +402,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 2. Parse analysis -------------------------------------------------
     let (mut stats_records, _addl_cols) = parse_stats_csv(&stats_csv)?;
-    let frequency_records = parse_frequency_csv(&freq_csv)?;
+    let mut frequency_records = parse_frequency_csv(&freq_csv)?;
+    // Without headers stats names columns "0", "1", … but frequency names them
+    // "1", "2", …; renumber frequency's so both point at the same column.
+    if crate::config::resolved_no_headers(false) {
+        for fr in &mut frequency_records {
+            if let Some(n) = fr
+                .field
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+            {
+                fr.field = n.to_string();
+            }
+        }
+    }
 
     if stats_records.is_empty() {
         return fail_clierror!("No columns found in '{input_path}'.");

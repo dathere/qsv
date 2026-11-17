@@ -137,12 +137,36 @@ impl Extremes {
     }
 }
 
+/// Map each stats record to its column in the source CSV by header name.
+/// Stats records are not positional: `--stats-options` can `--select` a subset
+/// or reorder columns. Duplicate names are matched by occurrence. `None` means
+/// the record has no source column.
+pub(crate) fn source_column_indices(
+    stats_records: &[StatsRecord],
+    headers: &csv::StringRecord,
+) -> Vec<Option<usize>> {
+    let mut used = vec![false; headers.len()];
+    stats_records
+        .iter()
+        .map(|sr| {
+            let idx = headers
+                .iter()
+                .enumerate()
+                .find(|(i, h)| !used[*i] && *h == sr.field)
+                .map(|(i, _)| i)?;
+            used[idx] = true;
+            Some(idx)
+        })
+        .collect()
+}
+
 /// Trim every numeric/date column's `[min, max]` to its k-th smallest and
 /// k-th largest values (k = `min_count`) with one streaming pass over `input`.
 /// A column with fewer than 2k-1 non-null values gets an empty range, so its
 /// type-based generator emits nothing (with a warning).
 pub(crate) fn trim_range_bounds(
     stats_records: &mut [StatsRecord],
+    source_cols: &[Option<usize>],
     input_path: &str,
     delimiter: Option<Delimiter>,
     min_count: u64,
@@ -161,26 +185,15 @@ pub(crate) fn trim_range_bounds(
     let config = Config::new(Some(&input_path.to_string())).delimiter(delimiter);
     let mut rdr = config.reader()?;
 
-    // Locate each stats record's source column by header name, not by its
-    // position in the stats output: `--stats-options` can `--select` a subset
-    // or reorder columns. Duplicate names are matched by occurrence.
-    let headers = rdr.headers()?.clone();
-    let mut used = vec![false; headers.len()];
-    let mut targets: Vec<(usize, usize, RangeKind)> = Vec::new();
-    for (stats_idx, sr) in stats_records.iter().enumerate() {
-        let src_idx = headers
-            .iter()
-            .enumerate()
-            .find(|(i, h)| !used[*i] && *h == sr.field)
-            .map(|(i, _)| i);
-        let Some(src_idx) = src_idx else {
-            continue;
-        };
-        used[src_idx] = true;
-        if let Some(kind) = RangeKind::from_type(&sr.r#type) {
-            targets.push((stats_idx, src_idx, kind));
-        }
-    }
+    let targets: Vec<(usize, usize, RangeKind)> = stats_records
+        .iter()
+        .enumerate()
+        .filter_map(|(stats_idx, sr)| {
+            let kind = RangeKind::from_type(&sr.r#type)?;
+            let src_idx = source_cols.get(stats_idx).copied().flatten()?;
+            Some((stats_idx, src_idx, kind))
+        })
+        .collect();
 
     let k = usize::try_from(min_count).unwrap_or(usize::MAX);
     let mut extremes: Vec<Extremes> = targets.iter().map(|_| Extremes::new(k)).collect();

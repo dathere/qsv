@@ -2144,3 +2144,114 @@ fn synthesize_min_count_ordered_member_without_range_stays_empty() {
         "the anchor 'a' should still be generated"
     );
 }
+
+/// Regression: relationship learning must read source columns by header name.
+/// With `--stats-options "--select city,zip"` the stats records are city (0)
+/// and zip (1), but the source has `id` at column 0; joint learning used to
+/// pair IDs with cities.
+#[test]
+fn synthesize_joint_maps_columns_by_name_under_stats_select() {
+    let wrk = Workdir::new("synthesize_joint_select");
+    let mut rows = vec![svec!["id", "city", "zip"]];
+    for i in 0..20 {
+        let (city, zip) = if i % 2 == 0 {
+            ("Springfield", "10001")
+        } else {
+            ("Shelbyville", "20002")
+        };
+        rows.push(vec![
+            format!("{}", i + 1),
+            city.to_string(),
+            zip.to_string(),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "city", "type": "String"},
+                {"name": "zip", "type": "String"}
+            ],
+            "relationships": [{"kind": "joint", "members": ["city", "zip"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "200",
+        "--seed",
+        "5",
+        "--stats-options",
+        "--select city,zip",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["city", "zip"]);
+    for r in &got[1..] {
+        assert!(
+            matches!(
+                (r[0].as_str(), r[1].as_str()),
+                ("Springfield", "10001") | ("Shelbyville", "20002")
+            ),
+            "joint tuple read from the wrong columns: {r:?}"
+        );
+    }
+}
+
+/// Same mapping for `ordered`: with `id` selected out, the gap between `start`
+/// and `end` must be learned from those columns, not from `id` and `start`.
+#[test]
+fn synthesize_ordered_maps_columns_by_name_under_stats_select() {
+    let wrk = Workdir::new("synthesize_ordered_select");
+    let mut rows = vec![svec!["id", "start", "end"]];
+    for i in 0..30 {
+        // start in 1000..1029, end = start + 5..9; id is far below start.
+        rows.push(vec![
+            format!("{}", i + 1),
+            format!("{}", 1000 + i),
+            format!("{}", 1005 + i + i % 5),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "300",
+        "--seed",
+        "6",
+        "--stats-options",
+        "--select start,end",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["start", "end"]);
+    for r in &got[1..] {
+        let start: i64 = r[0].parse().unwrap();
+        let end: i64 = r[1].parse().unwrap();
+        let gap = end - start;
+        // Positional reads learned gaps of start - id (~1000), not 5..9.
+        assert!(
+            (5..=9).contains(&gap),
+            "gap {gap} not learned from start/end: {r:?}"
+        );
+    }
+}

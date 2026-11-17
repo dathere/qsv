@@ -67,6 +67,8 @@ pub(crate) struct ScheduleParams<'a> {
     pub consistent_fakes:      bool,
     pub joint_cardinality_cap: u64,
     pub min_count:             u64,
+    /// Source CSV column of each stats record (see `source_column_indices`).
+    pub source_cols:           &'a [Option<usize>],
     pub correlation_threshold: f64,
     pub strict:                bool,
     pub input_path:            &'a str,
@@ -295,6 +297,18 @@ enum JointLearn {
     AllSuppressed(usize),
 }
 
+/// The source cell for stats record `col`, mapped by header name rather than
+/// stats-record position. Empty when the record has no source column.
+fn source_cell<'r>(record: &'r csv::StringRecord, params: &ScheduleParams, col: usize) -> &'r str {
+    params
+        .source_cols
+        .get(col)
+        .copied()
+        .flatten()
+        .and_then(|src| record.get(src))
+        .unwrap_or_default()
+}
+
 /// Stream the source CSV once, counting the distinct value-tuples formed by the
 /// group's member columns. Bails out early as `OverCap` once the distinct count
 /// exceeds `--joint-cardinality-cap` (0 = unlimited), so memory stays bounded.
@@ -309,7 +323,7 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
     while rdr.read_record(&mut record)? {
         let tuple: Vec<String> = col_indices
             .iter()
-            .map(|&i| record.get(i).unwrap_or_default().to_string())
+            .map(|&i| source_cell(&record, params, i).to_string())
             .collect();
         *counts.entry(tuple).or_insert(0) += 1;
         if cap > 0 && counts.len() as u64 > cap {
@@ -570,7 +584,7 @@ fn learn_ordered_gaps(
     let mut values: Vec<Option<f64>> = vec![None; member_cols.len()];
     while rdr.read_record(&mut record)? {
         for (slot, &col) in values.iter_mut().zip(member_cols) {
-            let cell = record.get(col).unwrap_or_default();
+            let cell = source_cell(&record, params, col);
             *slot = if is_date {
                 #[allow(clippy::cast_precision_loss)]
                 parse_epoch(cell, is_datetime).map(|e| e as f64)
@@ -748,7 +762,7 @@ fn learn_correlated_columns(
     while rdr.read_record(&mut record)? {
         rowvals.clear();
         for &col in member_cols {
-            match parse_f64(record.get(col).unwrap_or_default()) {
+            match parse_f64(source_cell(&record, params, col)) {
                 Some(v) => rowvals.push(v),
                 None => break,
             }

@@ -360,8 +360,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .flag_stats_options
             .as_deref()
             .is_some_and(|o| o.split_whitespace().any(|t| t == "--prefer-dmy"));
+    // Stats records are not positional (`--stats-options` can `--select` or
+    // reorder), so every pass that reads source cells maps by header name.
+    let source_headers = Config::new(Some(&args.arg_input))
+        .delimiter(args.flag_delimiter)
+        .reader()?
+        .headers()?
+        .clone();
+    let source_cols = range_trim::source_column_indices(&stats_records, &source_headers);
     range_trim::trim_range_bounds(
         &mut stats_records,
+        &source_cols,
         input_path,
         args.flag_delimiter,
         args.flag_min_count,
@@ -397,6 +406,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         consistent_fakes: args.flag_consistent_fakes,
         joint_cardinality_cap: args.flag_joint_cardinality_cap,
         min_count: args.flag_min_count,
+        source_cols: &source_cols,
         correlation_threshold: args.flag_correlation_threshold,
         strict: args.flag_strict_relationships,
         input_path,

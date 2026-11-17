@@ -2510,6 +2510,156 @@ fn synthesize_report_matches_dates_by_value() {
     );
 }
 
+/// Under `date:%d/%m/%Y` a generated `03/02/2020` is February 3. Reading it
+/// with the source's month-first preference would make it March 2 and miss
+/// the copy.
+#[test]
+fn synthesize_report_reads_dates_in_output_format() {
+    let wrk = Workdir::new("synthesize_report_dates_output_format");
+    let mut rows = vec![svec!["d"]];
+    for d in 1..=10 {
+        rows.push(vec![format!("2020-02-{d:02}")]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "d", "type": "Date", "content_type": "date:%d/%m/%Y"}]}"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "50",
+        "--seed",
+        "1",
+        "--min-count",
+        "1",
+        "--freq-limit",
+        "2",
+        "--stats-options",
+        "--dates-whitelist all",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("--report")
+    .arg(wrk.path("report.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0].ends_with("/02/2020")),
+        "expected DD/MM/YYYY dates: {got:?}"
+    );
+    assert_eq!(read_report(&wrk)["privacy"]["exact_matches"], 50);
+}
+
+/// Integers above 2^53 and fractional seconds would collapse if keyed through
+/// f64 or whole seconds.
+#[test]
+fn synthesize_report_keeps_large_ints_and_subseconds_distinct() {
+    let wrk = Workdir::new("synthesize_report_precision");
+    for (name, header, a, b) in [
+        ("ints", "id", "9007199254740992", "9007199254740993"),
+        (
+            "times",
+            "event_ts",
+            "2020-01-01T00:00:00.100Z",
+            "2020-01-01T00:00:00.200Z",
+        ),
+    ] {
+        wrk.create(
+            &format!("{name}.csv"),
+            vec![svec![header], vec![a.to_string()], vec![b.to_string()]],
+        );
+        let mut cmd = wrk.command("synthesize");
+        cmd.args([
+            "-n",
+            "1",
+            "--seed",
+            "1",
+            "--min-count",
+            "1",
+            "--stats-options",
+            "--dates-whitelist all",
+            "--report",
+        ])
+        .arg(wrk.path("report.json"))
+        .arg(format!("{name}.csv"));
+        wrk.assert_success(&mut cmd);
+        assert_eq!(
+            read_report(&wrk)["privacy"]["distinct_source_rows"],
+            2,
+            "{name}"
+        );
+    }
+}
+
+/// A cell that is not UTF-8 is hashed as bytes instead of failing the run.
+#[test]
+fn synthesize_report_accepts_non_utf8_source() {
+    let wrk = Workdir::new("synthesize_report_non_utf8");
+    std::fs::write(wrk.path("data.csv"), b"city\nParis\nParis\nZ\xfcrich\n").unwrap();
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "5", "--seed", "1", "--freq-limit", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(read_report(&wrk)["privacy"]["distinct_source_rows"], 2);
+}
+
+/// With no column compared every row hashes alike, so the row metrics are
+/// null rather than a 100% match rate.
+#[test]
+fn synthesize_report_nulls_row_metrics_when_nothing_compared() {
+    let wrk = Workdir::new("synthesize_report_nothing_compared");
+    wrk.create(
+        "data.csv",
+        vec![svec!["city"], svec!["Paris"], svec!["Rome"], svec!["Oslo"]],
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "5",
+        "--seed",
+        "1",
+        "--stats-options=--no-headers",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let report = read_report(&wrk);
+    assert_eq!(report["privacy"]["compared_columns"], serde_json::json!([]));
+    assert!(report["privacy"]["exact_matches"].is_null(), "{report}");
+    assert!(report["privacy"]["exact_match_rate"].is_null(), "{report}");
+}
+
+/// `--report` naming the input or the output is refused before anything is
+/// written, so neither file is replaced by the JSON.
+#[test]
+fn synthesize_report_rejects_input_or_output_path() {
+    let wrk = Workdir::new("synthesize_report_path_clash");
+    wrk.create("data.csv", vec![svec!["n"], svec!["1"], svec!["2"]]);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1", "--report"])
+        .arg(wrk.path("data.csv"))
+        .arg("data.csv");
+    wrk.assert_err(&mut cmd);
+    assert_eq!(
+        std::fs::read_to_string(wrk.path("data.csv")).unwrap(),
+        "n\n1\n2\n"
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1", "--output"])
+        .arg(wrk.path("out.csv"))
+        .arg("--report")
+        .arg(wrk.path("./out.csv"))
+        .arg("data.csv");
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("out.csv").exists());
+}
+
 #[test]
 fn synthesize_report_unique_ids_never_match() {
     let wrk = Workdir::new("synthesize_report_unique_ids");

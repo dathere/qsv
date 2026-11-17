@@ -168,9 +168,11 @@ synthesize options:
                            float, free-text or faker column rarely matches
                            exactly, so a low match rate does not by itself
                            show that the output is private. A joint group
-                           that falls back to independent columns is listed
-                           along with each of its columns, so suppressed
-                           rows can be counted more than once.
+                           that falls back to independent columns is listed,
+                           and so is each of its columns that also drops
+                           values, so suppressed rows can be counted more
+                           than once. Must not be the input, dictionary or
+                           output file.
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
                            always enabled — do not re-specify them here.
@@ -305,6 +307,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let input_path = args.arg_input.as_str();
     if !Path::new(input_path).is_file() {
         return fail_clierror!("Input file '{input_path}' does not exist or is not a file.");
+    }
+    if let Some(report_path) = &args.flag_report {
+        let report = report::resolve_path(report_path);
+        let clashes = std::iter::once(Some(input_path))
+            .chain([args.flag_dictionary.as_deref(), args.flag_output.as_deref()])
+            .flatten()
+            .any(|other| report::resolve_path(other) == report);
+        if clashes {
+            return fail_incorrectusage_clierror!(
+                "--report must not be the input, --dictionary or --output file."
+            );
+        }
     }
 
     // Single master RNG, threaded through both the sampling/selection logic and
@@ -463,7 +477,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // for exact copies. Uses no RNG, so output is the same with or without it.
     let report_keys = match args.flag_report {
         Some(_) => {
-            let keyer = report::RowKeyer::new(&stats_records, &source_cols, prefer_dmy);
+            let keyer = report::RowKeyer::new(&stats_records, &source_cols, &schedule, prefer_dmy);
             let keys = report::source_row_keys(&keyer, input_path, args.flag_delimiter)?;
             Some((keyer, keys))
         },
@@ -521,6 +535,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map(|(_, sr)| sr.field.as_str())
                 .collect()
         };
+        // With no column compared every row hashes the same, so a match count
+        // would be meaningless: report the row metrics as null instead.
+        let any_compared = !compared.is_empty();
         #[allow(clippy::cast_precision_loss)]
         let rate = exact_matches as f64 / args.flag_rows as f64;
         let report = serde_json::json!({
@@ -529,9 +546,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "seed": args.flag_seed,
             "min_count": args.flag_min_count,
             "privacy": {
-                "exact_matches": exact_matches,
-                "exact_match_rate": rate,
-                "distinct_source_rows": keys.len(),
+                "exact_matches": any_compared.then_some(exact_matches),
+                "exact_match_rate": any_compared.then_some(rate),
+                "distinct_source_rows": any_compared.then_some(keys.len()),
                 "compared_columns": names(&|i| compared.contains(&i)),
                 "excluded_columns": names(&|i| !compared.contains(&i)),
                 "suppressed": &*suppressions.borrow(),

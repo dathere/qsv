@@ -38,7 +38,7 @@ impl RangeKind {
     /// Parse a raw cell to a sortable key: the number itself, or seconds since
     /// the UNIX epoch for dates (parsed with the same parser and DMY preference
     /// `stats` used to type the column).
-    pub(crate) fn key(self, raw: &str, prefer_dmy: bool) -> Option<f64> {
+    fn key(self, raw: &str, prefer_dmy: bool) -> Option<f64> {
         let s = raw.trim();
         if s.is_empty() {
             return None;

@@ -66,6 +66,7 @@ pub(crate) struct ScheduleParams<'a> {
     pub locale:                Locale,
     pub consistent_fakes:      bool,
     pub joint_cardinality_cap: u64,
+    pub min_count:             u64,
     pub correlation_threshold: f64,
     pub strict:                bool,
     pub input_path:            &'a str,
@@ -133,6 +134,7 @@ pub(crate) fn build_emit_schedule(
             params.requested_rows,
             params.locale,
             params.consistent_fakes,
+            params.min_count,
             rng,
         );
         schedule.push(EmitUnit::Independent {
@@ -261,6 +263,20 @@ fn resolve_joint(indices: &[usize], params: &ScheduleParams) -> CliResult<Option
             );
             Ok(None)
         },
+        JointLearn::AllSuppressed(distinct) => {
+            let msg = format!(
+                "joint relationship on {names:?}: all {distinct} distinct tuple(s) occur fewer \
+                 than --min-count ({}) times",
+                params.min_count
+            );
+            if params.strict {
+                return Err(CliError::Other(format!(
+                    "synthesize: {msg}. Lower --min-count or drop the relationship."
+                )));
+            }
+            wwarn!("synthesize: {msg}; columns will be generated independently");
+            Ok(None)
+        },
     }
 }
 
@@ -275,6 +291,8 @@ enum JointLearn {
     OverCap(usize),
     /// The source has no data rows.
     Empty,
+    /// Every distinct tuple occurred fewer than `--min-count` times.
+    AllSuppressed(usize),
 }
 
 /// Stream the source CSV once, counting the distinct value-tuples formed by the
@@ -300,6 +318,23 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
     }
     if counts.is_empty() {
         return Ok(JointLearn::Empty);
+    }
+
+    // Drop tuples seen fewer than --min-count times: a rare combination of
+    // otherwise-common values can identify a single source row. Their weight is
+    // redistributed over the kept tuples by the normalization below.
+    let distinct = counts.len();
+    let min_count = params.min_count;
+    counts.retain(|_, c| *c >= min_count);
+    if counts.is_empty() {
+        return Ok(JointLearn::AllSuppressed(distinct));
+    }
+    let suppressed = distinct - counts.len();
+    if suppressed > 0 {
+        log::info!(
+            "synthesize: joint relationship — suppressed {suppressed} of {distinct} distinct \
+             tuple(s) seen fewer than --min-count ({min_count}) times"
+        );
     }
 
     // Sort tuples lexicographically for a stable, reproducible order

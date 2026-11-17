@@ -1,6 +1,6 @@
 # synthesize
 
-> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`. Output is not anonymized: it can contain real source values, rare ones included.
+> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`. Output is not anonymized: it can contain real source values, though by default values and `joint` tuples seen fewer than 5 times are dropped from the real values it samples (`--min-count`).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/synthesize/mod.rs](https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/mod.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🎲](TableOfContents.md#legend "randomly generated or randomized output with a --seed option for reproducibility.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")
 
@@ -18,7 +18,7 @@ fake data that reproduce the source's per-column attributes:
 
 * Categorical / low-cardinality columns are reproduced by frequency-weighted
 sampling of their *real* value set — cardinality, weights and repetition
-structure are preserved exactly.
+structure are preserved, minus values rarer than the --min-count.
 * Numeric and date/datetime columns are reproduced with quartile buckets, so
 the shape of the distribution (not just its [min,max] range) is preserved.
 * Null ratios are reproduced per column.
@@ -66,22 +66,30 @@ still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
 Privacy note: synthetic output is not anonymized. It can contain real values
-and real value combinations copied from <input>, including values that occur
-only once:  
+and real value combinations copied from <input>. By default, values and
+`joint` tuples seen fewer than 5 times in <input> are dropped from the real
+values that columns and joint groups sample from (see the --min-count
+option). The count is of rows, not people, so in data with many rows per
+person one person's value can still pass it. That limits copying but does
+not stop it:  
 
 * A column fully enumerated by `frequency` (cardinality within
-the --freq-limit) is sampled from its real values, so any of them, rare
-ones included, can be emitted verbatim. Setting the --freq-limit to 0
-removes that cap, so any column that is not all-unique can be reproduced
-from its real values.
+the --freq-limit) is sampled from its real values, so any value at or
+above the --min-count can be emitted verbatim. Setting the --freq-limit
+to 0 removes that cap, so any column that is not all-unique can be
+reproduced from its real values. Setting the --min-count to 1 lets
+values that occur only once through as well.
 * With a Data Dictionary, enumerated name, email, address and other
 structured-faker columns still emit their real values unless you set
 the --consistent-fakes option. That option only covers columns with up
 to 100,000 distinct values; larger enumerated columns stay real.
-* A `joint` relationship emits whole real value-tuples (e.g. a rare
-city/zip/age combination), up to the --joint-cardinality-cap.
+* A `joint` relationship emits whole real value-tuples (e.g. a
+city/zip/age combination) seen at least --min-count times.
 * Numeric and date ranges span the real min and max, so a lone outlier
 can reappear at or near its real value. Dates can land on it exactly.
+An enumerated numeric or date column whose values were all dropped by
+the --min-count falls back to this range, which for a narrow integer or
+date column covers its real values.
 
 Review the output before sharing it, or training on it, as de-identified data.
 
@@ -148,6 +156,7 @@ qsv synthesize --help
 | &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data. | `en` |
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
+| &nbsp;`‑‑min‑count`&nbsp; | integer | Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is dropped from the values it samples; its share is redistributed over the kept values. An enumerated column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their real min/max range), and a joint group to independent columns, or aborts under the --strict-relationships option. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first. | `5` |
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. |  |
 | &nbsp;`‑‑consistent‑fakes`&nbsp; | flag | For structured-faker columns with bounded cardinality (cardinality fully captured by `frequency`), build a stable source-value -> fake-value mapping so the same source value always produces the same fake in the output. Preserves the source frequency distribution and overrides the default "emit real values when frequency-enumerated" behavior for structured fakers (names, emails, addresses, etc.). Has no effect on unstructured columns (lorem_*, free_text, unknown), all-unique columns, or non-faker columns. Useful for deidentified synthesis where you want stable joins on the faked columns. |  |
 | &nbsp;`‑‑no‑relationships`&nbsp; | flag | Disable inter-column relationship modeling. Every column is generated independently even when the dictionary declares a `relationships` array. |  |

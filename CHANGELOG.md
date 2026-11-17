@@ -6,8 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `synthesize`: new `--min-count <k>` privacy threshold (default 5). Real values of enumerated columns, and real `joint` relationship tuples, seen fewer than k times in the source are dropped from the values it samples; their share is redistributed over the kept values. A column whose values are all below k falls back to its faker or type-based generator (numeric and date columns to their real min/max range, which can still produce real values), and a joint group to independent columns, or aborts under `--strict-relationships`. A warning is printed when a column or joint group is fully suppressed. **Behavior change:** existing runs no longer sample values or tuples seen 1–4 times, and small or highly varied sources can see whole categorical columns replaced by filler; pass `--min-count 1` for the previous output. ([#5066](https://github.com/dathere/qsv/pull/5066))
+
+### Fixed
+- `synthesize`: a column with any null was never treated as fully enumerated, because frequency's `(NULL)` row parses to rank 0, the same as an "Other" bucket. Such columns fell back to fakers, filler or the min/max range instead of sampling their real values by frequency, which also let them bypass `--min-count`. Nulls are still reproduced through the null ratio. **Behavior change:** columns with blank cells now emit their real values (those seen at least `--min-count` times), like every other enumerated column. With a Data Dictionary but without `--consistent-fakes`, a name, email or address column that has blanks goes from generated fakes to real values; pass `--consistent-fakes` to keep fakes. ([#5066](https://github.com/dathere/qsv/pull/5066))
+
 ### Changed
-- `synthesize`: the help now warns that synthetic output is not anonymized. It can copy real values and value combinations from the source, rare ones included: fully enumerated columns, enumerated structured-faker columns without `--consistent-fakes`, `joint` relationship tuples, and outliers at the edge of numeric/date ranges. ([#5064](https://github.com/dathere/qsv/pull/5064))
+- `synthesize`: the help now warns that synthetic output is not anonymized. It can copy real values and value combinations from the source: fully enumerated columns, enumerated structured-faker columns without `--consistent-fakes`, `joint` relationship tuples, and outliers at the edge of numeric/date ranges. ([#5064](https://github.com/dathere/qsv/pull/5064))
 - `sqlp`: the `--try-parsedates` help now warns that Polars reads slash, dash and dot dates as day-first, so `01/05/2024` becomes `2024-05-01`, and that `CAST(col AS DATE)` does the same. For month-first (US) dates, leave `--try-parsedates` off and use `STRPTIME(col, '%m/%d/%Y')` ([#5062](https://github.com/dathere/qsv/pull/5062)).
 
 ## [29.0.0] - 2026-11-15 🛡️ The "Trust the numbers" Release ✅

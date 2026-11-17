@@ -6,7 +6,7 @@ fake data that reproduce the source's per-column attributes:
 
   * Categorical / low-cardinality columns are reproduced by frequency-weighted
     sampling of their *real* value set — cardinality, weights and repetition
-    structure are preserved exactly.
+    structure are preserved, minus values rarer than the --min-count.
   * Numeric and date/datetime columns are reproduced with quartile buckets, so
     the shape of the distribution (not just its [min,max] range) is preserved.
   * Null ratios are reproduced per column.
@@ -54,22 +54,30 @@ still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
 Privacy note: synthetic output is not anonymized. It can contain real values
-and real value combinations copied from <input>, including values that occur
-only once:
+and real value combinations copied from <input>. By default, values and
+`joint` tuples seen fewer than 5 times in <input> are dropped from the real
+values that columns and joint groups sample from (see the --min-count
+option). The count is of rows, not people, so in data with many rows per
+person one person's value can still pass it. That limits copying but does
+not stop it:
 
   * A column fully enumerated by `frequency` (cardinality within
-    the --freq-limit) is sampled from its real values, so any of them, rare
-    ones included, can be emitted verbatim. Setting the --freq-limit to 0
-    removes that cap, so any column that is not all-unique can be reproduced
-    from its real values.
+    the --freq-limit) is sampled from its real values, so any value at or
+    above the --min-count can be emitted verbatim. Setting the --freq-limit
+    to 0 removes that cap, so any column that is not all-unique can be
+    reproduced from its real values. Setting the --min-count to 1 lets
+    values that occur only once through as well.
   * With a Data Dictionary, enumerated name, email, address and other
     structured-faker columns still emit their real values unless you set
     the --consistent-fakes option. That option only covers columns with up
     to 100,000 distinct values; larger enumerated columns stay real.
-  * A `joint` relationship emits whole real value-tuples (e.g. a rare
-    city/zip/age combination), up to the --joint-cardinality-cap.
+  * A `joint` relationship emits whole real value-tuples (e.g. a
+    city/zip/age combination) seen at least --min-count times.
   * Numeric and date ranges span the real min and max, so a lone outlier
     can reappear at or near its real value. Dates can land on it exactly.
+    An enumerated numeric or date column whose values were all dropped by
+    the --min-count falls back to this range, which for a narrow integer or
+    date column covers its real values.
 
 Review the output before sharing it, or training on it, as de-identified data.
 
@@ -124,6 +132,22 @@ synthesize options:
                            is fully captured within this limit; higher values
                            reproduce more columns verbatim. 0 means unlimited.
                            [default: 100]
+    --min-count <k>        Privacy threshold. A real value of an enumerated
+                           column, or a real `joint` value-tuple, that occurs
+                           fewer than <k> times in <input> is dropped from the
+                           values it samples; its share is redistributed over
+                           the kept values. An enumerated column whose values
+                           are all below <k> falls back to its faker or
+                           type-based generator (numeric and date columns to
+                           their real min/max range), and a joint group to
+                           independent columns, or aborts under
+                           the --strict-relationships option. A warning is printed
+                           when either happens. 1 disables suppression.
+                           Counts are of rows, not people: where one person
+                           has many rows (transactions, visits, logs), one
+                           person's value can pass <k> alone. Raise <k>, or
+                           dedupe to one row per person first.
+                           [default: 5]
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
                            always enabled — do not re-specify them here.
@@ -197,6 +221,7 @@ struct Args {
     flag_consistent_fakes:      bool,
     flag_no_relationships:      bool,
     flag_joint_cardinality_cap: u64,
+    flag_min_count:             u64,
     flag_correlation_threshold: f64,
     flag_strict_relationships:  bool,
     flag_jobs:                  Option<usize>,
@@ -218,6 +243,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
+    }
+    if args.flag_min_count == 0 {
+        return fail_incorrectusage_clierror!(
+            "--min-count must be at least 1 (1 disables suppression)."
+        );
     }
 
     let input_path = args.arg_input.as_str();
@@ -340,6 +370,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         locale,
         consistent_fakes: args.flag_consistent_fakes,
         joint_cardinality_cap: args.flag_joint_cardinality_cap,
+        min_count: args.flag_min_count,
         correlation_threshold: args.flag_correlation_threshold,
         strict: args.flag_strict_relationships,
         input_path,

@@ -144,15 +144,19 @@ impl GroupGenerator {
                 let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
                 // Chain from the value actually emitted: an Integer member is
                 // printed rounded, so the next member must build on the
-                // rounded value or a Float follower can print below it.
-                let quantize = |v: f64, i: usize| {
+                // rounded value or a Float follower can print below it. An
+                // Integer follower rounds no lower than ceil(floor), or it can
+                // print below a Float predecessor. ceil(floor) stays within
+                // range: the predecessor's cap is at most this member's
+                // integer-floored cap.
+                let quantize = |v: f64, i: usize, floor: f64| {
                     if *kind == OrderedKind::Numeric && is_int[i] {
-                        v.round()
+                        v.round().max(floor.ceil())
                     } else {
                         v
                     }
                 };
-                value = quantize(value, 0);
+                value = quantize(value, 0, f64::NEG_INFINITY);
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],
@@ -167,6 +171,7 @@ impl GroupGenerator {
                     value = quantize(
                         (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev),
                         i + 1,
+                        prev,
                     );
                     out.push((
                         member_cols[i + 1],

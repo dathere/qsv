@@ -2425,3 +2425,34 @@ fn synthesize_ordered_mixed_int_float_small_gap_keeps_order() {
         assert!(start <= end, "order broken after rounding: {r:?}");
     }
 }
+
+#[test]
+fn synthesize_ordered_float_then_int_small_gap_keeps_order() {
+    let wrk = Workdir::new("synthesize_ordered_float_int_small_gap");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 10..50 {
+        rows.push(vec![format!("{i}.8"), format!("{}", i + 1)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Float"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "14", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
+    }
+}

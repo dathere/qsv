@@ -61,7 +61,7 @@
       {
         "flag": "--min-count",
         "type": "number",
-        "description": "Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is never emitted; its share is redistributed over the kept values. A column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their real min/max range), and a joint group to independent columns, or aborts under --strict-relationships. A warning is printed when either happens. 1 disables suppression.",
+        "description": "Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is never emitted; its share is redistributed over the kept values. A column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their real min/max range), and a joint group to independent columns, or aborts under --strict-relationships. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first.",
         "default": 5
       },
       {

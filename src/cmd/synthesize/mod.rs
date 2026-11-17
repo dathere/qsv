@@ -57,7 +57,9 @@ Privacy note: synthetic output is not anonymized. It can contain real values
 and real value combinations copied from <input>. By default, values and
 `joint` tuples seen fewer than 5 times in <input> are dropped from the real
 values that columns and joint groups sample from (see the --min-count
-option). That limits copying but does not stop it:
+option). The count is of rows, not people, so in data with many rows per
+person one person's value can still pass it. That limits copying but does
+not stop it:
 
   * A column fully enumerated by `frequency` (cardinality within
     the --freq-limit) is sampled from its real values, so any value at or
@@ -140,6 +142,10 @@ synthesize options:
                            joint group to independent columns, or aborts
                            under --strict-relationships. A warning is printed
                            when either happens. 1 disables suppression.
+                           Counts are of rows, not people: where one person
+                           has many rows (transactions, visits, logs), one
+                           person's value can pass <k> alone. Raise <k>, or
+                           dedupe to one row per person first.
                            [default: 5]
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are

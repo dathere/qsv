@@ -404,6 +404,29 @@ fn resolve_ordered(
     // even in a mixed Integer/Float ordered group.
     let is_int: Vec<bool> = types.iter().map(|t| *t == "Integer").collect();
 
+    // Every member, not just the anchor, needs a usable range. A member whose
+    // range `--min-count` emptied must stay empty, which only independent
+    // generation does; the anchor + gap chain would fill it.
+    let is_datetime = kind == OrderedKind::DateTime;
+    if let Some(i) = member_cols.iter().position(|&c| match kind {
+        OrderedKind::Numeric => numeric_quartile_buckets(&stats[c]).is_none(),
+        OrderedKind::Date | OrderedKind::DateTime => {
+            date_quartile_buckets(&stats[c], is_datetime).is_none()
+        },
+    }) {
+        let msg = format!(
+            "ordered relationship {names:?}: '{}' has no usable range",
+            names[i]
+        );
+        if params.strict {
+            return Err(CliError::Other(format!(
+                "synthesize: {msg}. Lower --min-count or drop the relationship."
+            )));
+        }
+        log::warn!("synthesize: {msg}; columns will be generated independently");
+        return Ok(None);
+    }
+
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
     let anchor_buckets: Vec<(f64, f64)> = match kind {

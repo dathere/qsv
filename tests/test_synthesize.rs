@@ -2067,3 +2067,80 @@ fn synthesize_min_count_crossed_bounds_do_not_restore_full_range() {
         "a 5-value column can't be trimmed at --min-count 5 and must be left empty"
     );
 }
+
+/// Regression: range trimming must find each column by header name. With
+/// `--stats-options "--select salary"` the salary stats record is at index 0,
+/// and reading source column 0 (the IDs) used to overwrite salary's bounds.
+#[test]
+fn synthesize_min_count_range_trim_maps_columns_by_name() {
+    let wrk = Workdir::new("synthesize_range_trim_select");
+    let mut rows = vec![svec!["id", "salary"]];
+    for i in 0..30 {
+        rows.push(vec![format!("{}", i + 1), format!("{}", 100 + i)]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "500",
+        "--seed",
+        "2",
+        "--stats-options",
+        "--select salary",
+    ])
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["salary"]);
+    for r in &got[1..] {
+        let v: i64 = r[0].parse().unwrap();
+        // k = 5 on salaries 100..=129 → [104, 125].
+        assert!(
+            (104..=125).contains(&v),
+            "salary {v} outside its own trimmed range"
+        );
+    }
+}
+
+/// Regression: an `ordered` member whose range --min-count emptied must stay
+/// empty. The anchor + mean-gap chain used to fill it on every row.
+#[test]
+fn synthesize_min_count_ordered_member_without_range_stays_empty() {
+    let wrk = Workdir::new("synthesize_range_trim_ordered_member");
+    let mut rows = vec![svec!["a", "b"]];
+    for i in 0..30 {
+        let b = if i < 3 {
+            format!("{}", 11 + i)
+        } else {
+            String::new()
+        };
+        rows.push(vec![format!("{}", i + 1), b]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "a", "type": "Integer"},
+                {"name": "b", "type": "Integer"}
+            ],
+            "relationships": [
+                {"kind": "ordered", "members": ["a", "b"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "4", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[1].is_empty()),
+        "ordered member 'b' has no usable range and must stay empty"
+    );
+    assert!(
+        got[1..].iter().all(|r| !r[0].is_empty()),
+        "the anchor 'a' should still be generated"
+    );
+}

@@ -125,12 +125,15 @@ impl Extremes {
     /// values; with fewer the two cross and no interval satisfies the rule, so
     /// this returns `None`.
     fn bounds(&self) -> Option<(f64, f64)> {
-        if self.smallest.len() < self.k {
+        // Enforced on the count, not on whether the ends cross: with ties the
+        // k-th smallest and k-th largest can meet on fewer than 2k-1 values.
+        let needed = (self.k as u64).saturating_mul(2).saturating_sub(1);
+        if self.count < needed {
             return None;
         }
         let lo = self.smallest.peek()?.0;
         let hi = self.largest.peek()?.0.0;
-        (lo <= hi).then_some((lo, hi))
+        Some((lo, hi))
     }
 }
 
@@ -148,31 +151,54 @@ pub(crate) fn trim_range_bounds(
     if min_count <= 1 {
         return Ok(());
     }
-    let targets: Vec<(usize, RangeKind)> = stats_records
+    if !stats_records
         .iter()
-        .enumerate()
-        .filter_map(|(i, sr)| RangeKind::from_type(&sr.r#type).map(|kind| (i, kind)))
-        .collect();
-    if targets.is_empty() {
+        .any(|sr| RangeKind::from_type(&sr.r#type).is_some())
+    {
         return Ok(());
+    }
+
+    let config = Config::new(Some(&input_path.to_string())).delimiter(delimiter);
+    let mut rdr = config.reader()?;
+
+    // Locate each stats record's source column by header name, not by its
+    // position in the stats output: `--stats-options` can `--select` a subset
+    // or reorder columns. Duplicate names are matched by occurrence.
+    let headers = rdr.headers()?.clone();
+    let mut used = vec![false; headers.len()];
+    let mut targets: Vec<(usize, usize, RangeKind)> = Vec::new();
+    for (stats_idx, sr) in stats_records.iter().enumerate() {
+        let src_idx = headers
+            .iter()
+            .enumerate()
+            .find(|(i, h)| !used[*i] && *h == sr.field)
+            .map(|(i, _)| i);
+        let Some(src_idx) = src_idx else {
+            continue;
+        };
+        used[src_idx] = true;
+        if let Some(kind) = RangeKind::from_type(&sr.r#type) {
+            targets.push((stats_idx, src_idx, kind));
+        }
     }
 
     let k = usize::try_from(min_count).unwrap_or(usize::MAX);
     let mut extremes: Vec<Extremes> = targets.iter().map(|_| Extremes::new(k)).collect();
 
-    let config = Config::new(Some(&input_path.to_string())).delimiter(delimiter);
-    let mut rdr = config.reader()?;
     let mut record = csv::StringRecord::new();
     while rdr.read_record(&mut record)? {
-        for ((col, kind), ext) in targets.iter().zip(extremes.iter_mut()) {
-            if let Some(v) = record.get(*col).and_then(|raw| kind.key(raw, prefer_dmy)) {
+        for ((_, src_idx, kind), ext) in targets.iter().zip(extremes.iter_mut()) {
+            if let Some(v) = record
+                .get(*src_idx)
+                .and_then(|raw| kind.key(raw, prefer_dmy))
+            {
                 ext.add(v);
             }
         }
     }
 
-    for ((col, kind), ext) in targets.iter().zip(&extremes) {
-        let sr = &mut stats_records[*col];
+    for ((stats_idx, _, kind), ext) in targets.iter().zip(&extremes) {
+        let sr = &mut stats_records[*stats_idx];
         if ext.count == 0 {
             continue;
         }
@@ -236,6 +262,16 @@ mod tests {
             let values: Vec<f64> = (1..=n).map(f64::from).collect();
             assert_eq!(bounds_of(&values, 5), None, "n = {n}");
         }
+    }
+
+    #[test]
+    fn ties_do_not_bypass_the_2k_minus_1_minimum() {
+        // 8 values with a tie at 4: the 5th smallest and 5th largest both land
+        // on 4, so the ends don't cross, but 8 < 9 values must still fail.
+        assert_eq!(
+            bounds_of(&[1.0, 2.0, 3.0, 4.0, 4.0, 5.0, 6.0, 7.0], 5),
+            None
+        );
     }
 
     #[test]

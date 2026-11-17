@@ -61,6 +61,11 @@ pub(crate) enum GroupGenerator {
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
         gap_buckets:    Vec<Vec<(f64, f64)>>,
+        /// Per-member `[lo, hi]` in the same domain as the buckets. Each
+        /// follower is clamped into its own range (then kept >= its
+        /// predecessor), so anchor + gap can't reach a follower's real
+        /// extremes once `--min-count` has trimmed them.
+        member_ranges:  Vec<(f64, f64)>,
         /// Null ratio of the anchor column — when the anchor draws null, the
         /// whole chain is emitted null.
         null_ratio:     f64,
@@ -124,6 +129,7 @@ impl GroupGenerator {
                 date_format,
                 anchor_buckets,
                 gap_buckets,
+                member_ranges,
                 null_ratio,
             } => {
                 // A null anchor nulls the whole chain — a monotonic chain
@@ -139,9 +145,12 @@ impl GroupGenerator {
                     format_ordered(value, *kind, is_int[0], date_format.as_ref()),
                 ));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
-                    // Gap buckets are clamped to >= 0, so `value` is
-                    // non-decreasing along the chain.
-                    value += sample_bucket(gaps, rng);
+                    // Gap buckets are clamped to >= 0, and the clamp into the
+                    // follower's range is floored at the predecessor, so
+                    // `value` stays non-decreasing along the chain.
+                    let prev = value;
+                    let (lo, hi) = member_ranges[i + 1];
+                    value = (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev);
                     out.push((
                         member_cols[i + 1],
                         format_ordered(value, *kind, is_int[i + 1], date_format.as_ref()),

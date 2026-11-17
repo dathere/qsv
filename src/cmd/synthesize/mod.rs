@@ -160,6 +160,8 @@ synthesize options:
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
                            always enabled — do not re-specify them here.
+                           Column selection (--select/-s) and --weight are
+                           rejected; run `qsv select` on <input> first.
     --consistent-fakes     For structured-faker columns with bounded cardinality
                            (cardinality fully captured by `frequency`), build a
                            stable source-value -> fake-value mapping so the same
@@ -253,6 +255,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
+    }
+    // Column selection and --weight change which columns stats reports and in
+    // what order, which synthesize can't see; every pass that reads source
+    // cells relies on stats covering every column in order. Select first.
+    if let Some(opts) = args.flag_stats_options.as_deref()
+        && let Some(bad) = opts.split_whitespace().find(|t| {
+            *t == "--select"
+                || t.starts_with("--select=")
+                || *t == "--weight"
+                || t.starts_with("--weight=")
+                || (t.starts_with("-s") && !t.starts_with("--"))
+        })
+    {
+        return fail_incorrectusage_clierror!(
+            "--stats-options may not include '{bad}': synthesize needs stats for every column. To \
+             synthesize a subset of columns, run `qsv select` on the input first."
+        );
     }
     if args.flag_min_count == 0 {
         return fail_incorrectusage_clierror!(

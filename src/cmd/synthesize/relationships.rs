@@ -435,14 +435,15 @@ fn resolve_ordered(
 
     // Every member, not just the anchor, needs a usable range. A member whose
     // range `--min-count` emptied must stay empty, which only independent
-    // generation does; the anchor + gap chain would fill it.
+    // generation does; the anchor + gap chain would fill it. Followers are also
+    // clamped into their own (trimmed) range, so anchor + gap can't reach a
+    // follower's real extremes.
     let is_datetime = kind == OrderedKind::DateTime;
-    if let Some(i) = member_cols.iter().position(|&c| match kind {
-        OrderedKind::Numeric => numeric_quartile_buckets(&stats[c]).is_none(),
-        OrderedKind::Date | OrderedKind::DateTime => {
-            date_quartile_buckets(&stats[c], is_datetime).is_none()
-        },
-    }) {
+    let ranges: Vec<Option<(f64, f64)>> = member_cols
+        .iter()
+        .map(|&c| member_range(&stats[c], kind, is_datetime))
+        .collect();
+    if let Some(i) = ranges.iter().position(Option::is_none) {
         let msg = format!(
             "ordered relationship {names:?}: '{}' has no usable range",
             names[i]
@@ -455,6 +456,7 @@ fn resolve_ordered(
         log::warn!("synthesize: {msg}; columns will be generated independently");
         return Ok(None);
     }
+    let member_ranges: Vec<(f64, f64)> = ranges.into_iter().flatten().collect();
 
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
@@ -522,7 +524,25 @@ fn resolve_ordered(
                 "synthesize: {msg}; such gaps are clamped to keep the synthetic output ordered"
             );
         }
-        gap_buckets.push(gap_buckets_from_samples(samples, params.min_count));
+        let n_samples = samples.len();
+        let Some(buckets) = gap_buckets_from_samples(samples, params.min_count) else {
+            let msg = format!(
+                "ordered relationship {names:?}: only {n_samples} row(s) have both '{}' and '{}'; \
+                 trimming their gap by --min-count ({}) needs at least {}",
+                names[i],
+                names[i + 1],
+                params.min_count,
+                params.min_count.saturating_mul(2).saturating_sub(1)
+            );
+            if params.strict {
+                return Err(CliError::Other(format!(
+                    "synthesize: {msg}. Lower --min-count or drop the relationship."
+                )));
+            }
+            log::warn!("synthesize: {msg}; columns will be generated independently");
+            return Ok(None);
+        };
+        gap_buckets.push(buckets);
     }
 
     let null_ratio = compute_null_ratio(anchor_stats.nullcount, params.total_rows);
@@ -539,6 +559,7 @@ fn resolve_ordered(
         date_format,
         anchor_buckets,
         gap_buckets,
+        member_ranges,
         null_ratio,
     }))
 }
@@ -621,17 +642,15 @@ fn learn_ordered_gaps(
 ///
 /// Like `range_trim`, the outer bounds are the k-th smallest and k-th largest
 /// gaps (k = `--min-count`), so a lone extreme gap (a decades-long tenure) can't
-/// reappear. With fewer than 2k-1 samples no such range exists, and the gap
-/// collapses to the mean, which keeps the chain ordered without copying a
-/// single pair's gap.
-fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Vec<(f64, f64)> {
+/// reappear. With fewer than 2k-1 samples no such range exists; returns `None`
+/// and the caller drops the relationship (any single gap, or a mean of a few,
+/// would reproduce source pairs' gaps).
+fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Option<Vec<(f64, f64)>> {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
     let k = usize::try_from(min_count.max(1)).unwrap_or(usize::MAX);
-    if n < k.saturating_mul(2).saturating_sub(1) {
-        #[allow(clippy::cast_precision_loss)]
-        let mean = (samples.iter().sum::<f64>() / n as f64).max(0.0);
-        return vec![(mean, mean)];
+    if n == 0 || n < k.saturating_mul(2).saturating_sub(1) {
+        return None;
     }
     let (lo, hi) = (samples[k - 1], samples[n - k]);
     #[allow(
@@ -646,10 +665,26 @@ fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Vec<(f64, 
         *b = b.max(0.0);
     }
     let [min, q1, q2, q3, max] = bounds;
-    if min < max {
+    Some(if min < max {
         vec![(min, q1), (q1, q2), (q2, q3), (q3, max)]
     } else {
         vec![(min, min)]
+    })
+}
+
+/// A member's `[lo, hi]` range in the ordered group's numeric domain (days for
+/// `Date`, seconds for `DateTime`), from its (possibly trimmed) stats.
+fn member_range(sr: &StatsRecord, kind: OrderedKind, is_datetime: bool) -> Option<(f64, f64)> {
+    #[allow(clippy::cast_precision_loss)]
+    match kind {
+        OrderedKind::Numeric => {
+            let b = numeric_quartile_buckets(sr)?;
+            Some((b.first()?.0, b.last()?.1))
+        },
+        OrderedKind::Date | OrderedKind::DateTime => {
+            let b = date_quartile_buckets(sr, is_datetime)?;
+            Some((b.first()?.0 as f64, b.last()?.1 as f64))
+        },
     }
 }
 
@@ -931,7 +966,7 @@ mod tests {
     fn gap_buckets_trim_extreme_gaps() {
         // Gaps 1..=20 plus one 10,000 outlier; k = 5 trims to [5, 17].
         let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
-        let buckets = gap_buckets_from_samples(samples, 5);
+        let buckets = gap_buckets_from_samples(samples, 5).unwrap();
         assert_eq!(buckets.first().unwrap().0, 5.0);
         assert_eq!(buckets.last().unwrap().1, 17.0);
     }
@@ -939,15 +974,20 @@ mod tests {
     #[test]
     fn gap_buckets_k_one_keeps_full_range() {
         let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
-        let buckets = gap_buckets_from_samples(samples, 1);
+        let buckets = gap_buckets_from_samples(samples, 1).unwrap();
         assert_eq!(buckets.first().unwrap().0, 1.0);
         assert_eq!(buckets.last().unwrap().1, 10_000.0);
     }
 
     #[test]
-    fn gap_buckets_too_few_samples_collapse_to_mean() {
-        // 4 samples < 2k-1 = 9: a single gap at the mean, not any real gap.
-        let buckets = gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5);
-        assert_eq!(buckets, vec![(26.5, 26.5)]);
+    fn gap_buckets_too_few_samples_drop_the_relationship() {
+        // 4 samples < 2k-1 = 9: no trimmed range exists; a mean of a few gaps
+        // (or the one gap, with a single pair) would reproduce source gaps.
+        assert_eq!(
+            gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5),
+            None
+        );
+        assert_eq!(gap_buckets_from_samples(vec![40.0], 5), None);
+        assert!(gap_buckets_from_samples(vec![40.0], 1).is_some());
     }
 }

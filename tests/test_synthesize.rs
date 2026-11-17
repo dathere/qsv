@@ -2068,40 +2068,6 @@ fn synthesize_min_count_crossed_bounds_do_not_restore_full_range() {
     );
 }
 
-/// Regression: range trimming must find each column by header name. With
-/// `--stats-options "--select salary"` the salary stats record is at index 0,
-/// and reading source column 0 (the IDs) used to overwrite salary's bounds.
-#[test]
-fn synthesize_min_count_range_trim_maps_columns_by_name() {
-    let wrk = Workdir::new("synthesize_range_trim_select");
-    let mut rows = vec![svec!["id", "salary"]];
-    for i in 0..30 {
-        rows.push(vec![format!("{}", i + 1), format!("{}", 100 + i)]);
-    }
-    wrk.create("data.csv", rows);
-
-    let mut cmd = wrk.command("synthesize");
-    cmd.args([
-        "-n",
-        "500",
-        "--seed",
-        "2",
-        "--stats-options",
-        "--select salary",
-    ])
-    .arg("data.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert_eq!(got[0], svec!["salary"]);
-    for r in &got[1..] {
-        let v: i64 = r[0].parse().unwrap();
-        // k = 5 on salaries 100..=129 → [104, 125].
-        assert!(
-            (104..=125).contains(&v),
-            "salary {v} outside its own trimmed range"
-        );
-    }
-}
-
 /// Regression: an `ordered` member whose range --min-count emptied must stay
 /// empty. The anchor + mean-gap chain used to fill it on every row.
 #[test]
@@ -2145,117 +2111,6 @@ fn synthesize_min_count_ordered_member_without_range_stays_empty() {
     );
 }
 
-/// Regression: relationship learning must read source columns by header name.
-/// With `--stats-options "--select city,zip"` the stats records are city (0)
-/// and zip (1), but the source has `id` at column 0; joint learning used to
-/// pair IDs with cities.
-#[test]
-fn synthesize_joint_maps_columns_by_name_under_stats_select() {
-    let wrk = Workdir::new("synthesize_joint_select");
-    let mut rows = vec![svec!["id", "city", "zip"]];
-    for i in 0..20 {
-        let (city, zip) = if i % 2 == 0 {
-            ("Springfield", "10001")
-        } else {
-            ("Shelbyville", "20002")
-        };
-        rows.push(vec![
-            format!("{}", i + 1),
-            city.to_string(),
-            zip.to_string(),
-        ]);
-    }
-    wrk.create("data.csv", rows);
-    wrk.create_from_string(
-        "dict.json",
-        r#"{
-            "fields": [
-                {"name": "city", "type": "String"},
-                {"name": "zip", "type": "String"}
-            ],
-            "relationships": [{"kind": "joint", "members": ["city", "zip"]}]
-        }"#,
-    );
-
-    let mut cmd = wrk.command("synthesize");
-    cmd.args([
-        "-n",
-        "200",
-        "--seed",
-        "5",
-        "--stats-options",
-        "--select city,zip",
-        "--dictionary",
-    ])
-    .arg(wrk.path("dict.json"))
-    .arg("data.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-    assert_eq!(got[0], svec!["city", "zip"]);
-    for r in &got[1..] {
-        assert!(
-            matches!(
-                (r[0].as_str(), r[1].as_str()),
-                ("Springfield", "10001") | ("Shelbyville", "20002")
-            ),
-            "joint tuple read from the wrong columns: {r:?}"
-        );
-    }
-}
-
-/// Same mapping for `ordered`: with `id` selected out, the gap between `start`
-/// and `end` must be learned from those columns, not from `id` and `start`.
-#[test]
-fn synthesize_ordered_maps_columns_by_name_under_stats_select() {
-    let wrk = Workdir::new("synthesize_ordered_select");
-    let mut rows = vec![svec!["id", "start", "end"]];
-    for i in 0..30 {
-        // start in 1000..1029, end = start + 5..9; id is far below start.
-        rows.push(vec![
-            format!("{}", i + 1),
-            format!("{}", 1000 + i),
-            format!("{}", 1005 + i + i % 5),
-        ]);
-    }
-    wrk.create("data.csv", rows);
-    wrk.create_from_string(
-        "dict.json",
-        r#"{
-            "fields": [
-                {"name": "start", "type": "Integer"},
-                {"name": "end", "type": "Integer"}
-            ],
-            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
-        }"#,
-    );
-
-    let mut cmd = wrk.command("synthesize");
-    cmd.args([
-        "--min-count",
-        "1",
-        "-n",
-        "300",
-        "--seed",
-        "6",
-        "--stats-options",
-        "--select start,end",
-        "--dictionary",
-    ])
-    .arg(wrk.path("dict.json"))
-    .arg("data.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-    assert_eq!(got[0], svec!["start", "end"]);
-    for r in &got[1..] {
-        let start: i64 = r[0].parse().unwrap();
-        let end: i64 = r[1].parse().unwrap();
-        let gap = end - start;
-        // Positional reads learned gaps of start - id (~1000), not 5..9.
-        assert!(
-            (5..=9).contains(&gap),
-            "gap {gap} not learned from start/end: {r:?}"
-        );
-    }
-}
-
 /// Regression: under `QSV_NO_HEADERS`, stats names columns "0", "1", …, which
 /// match no header, so name-only mapping silently skipped range trimming.
 #[test]
@@ -2281,28 +2136,147 @@ fn synthesize_min_count_range_trim_works_without_headers() {
     );
 }
 
-/// A duplicated header name under a --stats-options selection can't be traced
-/// back to one source column, so range trimming fails closed: the column is
-/// left empty, with a warning, rather than trimmed from the wrong column.
 #[test]
-fn synthesize_min_count_ambiguous_duplicate_column_fails_closed() {
-    let wrk = Workdir::new("synthesize_range_trim_dup_header");
-    let mut rows = vec![svec!["value", "value"]];
-    for i in 0..30 {
-        rows.push(vec![format!("{}", i + 1), format!("{}", 100 + i)]);
+fn synthesize_rejects_column_selection_in_stats_options() {
+    let wrk = Workdir::new("synthesize_stats_options_select");
+    wrk.create("data.csv", fixture());
+    for opts in ["--select city", "--select=city", "-s city", "--weight age"] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--stats-options", opts]).arg("data.csv");
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            err.contains("--stats-options may not include"),
+            "'{opts}' should be rejected, got: {err}"
+        );
+    }
+}
+
+/// `ordered` followers are clamped into their own trimmed range: a follower
+/// outlier (end = 5000 on one row) must not come back as anchor + gap.
+#[test]
+fn synthesize_ordered_follower_stays_in_its_trimmed_range() {
+    let wrk = Workdir::new("synthesize_ordered_follower_clamp");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..40 {
+        let start = 100 + i;
+        let end = if i == 39 { 5000 } else { start + 10 + i % 7 };
+        rows.push(vec![format!("{start}"), format!("{end}")]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "8", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // end's 5th largest source value is 148 (5000 and 149..=151 sit above it).
+    for r in &got[1..] {
+        let start: i64 = r[0].parse().unwrap();
+        let end: i64 = r[1].parse().unwrap();
+        assert!(end >= start, "order broken: {r:?}");
+        assert!(end <= 148, "end {end} escaped its trimmed range: {r:?}");
+    }
+}
+
+/// An `ordered` pair with too few co-present rows to trim its gap is dropped,
+/// not collapsed to the mean (with one pair, the mean is that pair's gap).
+#[test]
+
+fn synthesize_ordered_sparse_gap_drops_relationship() {
+    let wrk = Workdir::new("synthesize_ordered_sparse_gap");
+    // `start` and `end` each have enough values to trim, but only one row has
+    // both, so there is a single gap sample (37).
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..40 {
+        let end = if i == 0 {
+            "137".to_string()
+        } else {
+            String::new()
+        };
+        rows.push(vec![format!("{}", 100 + i), end]);
+    }
+    for j in 0..21 {
+        rows.push(vec![String::new(), format!("{}", 110 + j)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "9", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // Dropped → independent columns, so order is not enforced. A kept chain
+    // (e.g. the old mean-gap fallback) would make end >= start on every row.
+    let unordered = got[1..]
+        .iter()
+        .any(|r| match (r[0].parse::<i64>(), r[1].parse::<i64>()) {
+            (Ok(s), Ok(e)) => e < s,
+            _ => false,
+        });
+    assert!(
+        unordered,
+        "sparse ordered relationship should be dropped, not chained"
+    );
+
+    let mut strict = wrk.command("synthesize");
+    strict
+        .args(["-n", "10", "--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let err = wrk.stderr_on_error(&mut strict);
+    assert!(
+        err.contains("only 1 row(s) have both 'start' and 'end'"),
+        "expected a strict sparse-gap abort, got: {err}"
+    );
+}
+
+/// Range trimming parses dates with the same DMY preference as `stats`.
+/// "01/MM/2024" is the 1st of month MM under DMY, but Jan MM under MDY.
+#[test]
+fn synthesize_min_count_range_trim_respects_prefer_dmy() {
+    let wrk = Workdir::new("synthesize_range_trim_dmy");
+    let mut rows = vec![svec!["d", "x"]];
+    for m in 1..=12 {
+        rows.push(vec![format!("01/{m:02}/2024"), "a".to_string()]);
     }
     wrk.create("data.csv", rows);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "50", "--seed", "1", "--stats-options", "--select 2"])
+    cmd.env("QSV_PREFER_DMY", "1")
+        .args(["-n", "500", "--seed", "10"])
         .arg("data.csv");
-    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // DMY, k = 5 on 12 monthly dates → [2024-05-01, 2024-08-01]. Under MDY the
+    // range would be [2024-01-05, 2024-01-08].
+    for r in &got[1..] {
+        assert!(
+            r[0].as_str() >= "2024-05-01" && r[0].as_str() <= "2024-08-01",
+            "date {} outside the DMY-trimmed range",
+            r[0]
+        );
+    }
     assert!(
-        got[1..].iter().all(|r| r[0].is_empty()),
-        "ambiguous column must be left empty, not trimmed from the wrong column"
-    );
-    assert!(
-        err.contains("can't be matched to a unique source column"),
-        "missing ambiguity warning: {err}"
+        got[1..].iter().any(|r| r[0].starts_with("2024-06")),
+        "expected dates spread across the DMY range"
     );
 }

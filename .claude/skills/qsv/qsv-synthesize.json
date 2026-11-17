@@ -88,7 +88,7 @@
       {
         "flag": "--stats-options",
         "type": "string",
-        "description": "Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here."
+        "description": "Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. Column selection (--select/-s) and --weight are rejected; run `qsv select` on <input> first."
       },
       {
         "flag": "--strict-relationships",

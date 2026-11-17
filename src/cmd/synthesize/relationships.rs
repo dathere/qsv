@@ -67,6 +67,8 @@ pub(crate) struct ScheduleParams<'a> {
     pub consistent_fakes:      bool,
     pub joint_cardinality_cap: u64,
     pub min_count:             u64,
+    /// Source CSV column of each stats record (see `source_column_indices`).
+    pub source_cols:           &'a [Option<usize>],
     pub correlation_threshold: f64,
     pub strict:                bool,
     pub input_path:            &'a str,
@@ -193,6 +195,21 @@ fn resolve_relationship(
         return Ok(None);
     }
 
+    // Every member needs a resolved source column; guessing would learn from
+    // the wrong one.
+    if let Some(&i) = indices
+        .iter()
+        .find(|&&i| params.source_cols.get(i).copied().flatten().is_none())
+    {
+        log::warn!(
+            "synthesize: ignoring '{}' relationship — column '{}' can't be matched to a unique \
+             source column",
+            rel.kind,
+            params.stats_records[i].field
+        );
+        return Ok(None);
+    }
+
     // A column may belong to only one group — the first relationship wins.
     if let Some(conflict) = indices.iter().copied().find(|i| claimed.contains(i)) {
         log::warn!(
@@ -295,6 +312,18 @@ enum JointLearn {
     AllSuppressed(usize),
 }
 
+/// The source cell for stats record `col`, mapped by header name rather than
+/// stats-record position. Empty when the record has no source column.
+fn source_cell<'r>(record: &'r csv::StringRecord, params: &ScheduleParams, col: usize) -> &'r str {
+    params
+        .source_cols
+        .get(col)
+        .copied()
+        .flatten()
+        .and_then(|src| record.get(src))
+        .unwrap_or_default()
+}
+
 /// Stream the source CSV once, counting the distinct value-tuples formed by the
 /// group's member columns. Bails out early as `OverCap` once the distinct count
 /// exceeds `--joint-cardinality-cap` (0 = unlimited), so memory stays bounded.
@@ -309,7 +338,7 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
     while rdr.read_record(&mut record)? {
         let tuple: Vec<String> = col_indices
             .iter()
-            .map(|&i| record.get(i).unwrap_or_default().to_string())
+            .map(|&i| source_cell(&record, params, i).to_string())
             .collect();
         *counts.entry(tuple).or_insert(0) += 1;
         if cap > 0 && counts.len() as u64 > cap {
@@ -404,6 +433,63 @@ fn resolve_ordered(
     // even in a mixed Integer/Float ordered group.
     let is_int: Vec<bool> = types.iter().map(|t| *t == "Integer").collect();
 
+    // Every member, not just the anchor, needs a usable range. A member whose
+    // range `--min-count` emptied must stay empty, which only independent
+    // generation does; the anchor + gap chain would fill it. Followers are also
+    // clamped into their own (trimmed) range, so anchor + gap can't reach a
+    // follower's real extremes.
+    let is_datetime = kind == OrderedKind::DateTime;
+    let ranges: Vec<Option<(f64, f64)>> = member_cols
+        .iter()
+        .map(|&c| member_range(&stats[c], kind, is_datetime))
+        .collect();
+    if let Some(i) = ranges.iter().position(Option::is_none) {
+        let msg = format!(
+            "ordered relationship {names:?}: '{}' has no usable range",
+            names[i]
+        );
+        if params.strict {
+            return Err(CliError::Other(format!(
+                "synthesize: {msg}. Lower --min-count or drop the relationship."
+            )));
+        }
+        log::warn!("synthesize: {msg}; columns will be generated independently");
+        return Ok(None);
+    }
+    let mut member_ranges: Vec<(f64, f64)> = ranges.into_iter().flatten().collect();
+    // Members are non-decreasing, so no member may exceed any later member's
+    // upper bound. Cap each upper bound by the ones after it; otherwise the
+    // order floor (`max(prev)`) would push a follower past its trimmed range.
+    // Integer members are emitted rounded, so their caps are floored (in the
+    // Numeric domain) to keep the rounded value within range and in order.
+    let floor_int = |i: usize, v: f64| {
+        if kind == OrderedKind::Numeric && is_int[i] {
+            v.floor()
+        } else {
+            v
+        }
+    };
+    if let Some(last) = member_ranges.len().checked_sub(1) {
+        member_ranges[last].1 = floor_int(last, member_ranges[last].1);
+    }
+    for i in (0..member_ranges.len().saturating_sub(1)).rev() {
+        member_ranges[i].1 = floor_int(i, member_ranges[i].1.min(member_ranges[i + 1].1));
+    }
+    if let Some(i) = member_ranges.iter().position(|&(lo, hi)| hi < lo) {
+        let msg = format!(
+            "ordered relationship {names:?}: '{}' can't stay within its trimmed range while \
+             keeping the declared order",
+            names[i]
+        );
+        if params.strict {
+            return Err(CliError::Other(format!(
+                "synthesize: {msg}. Lower --min-count or drop the relationship."
+            )));
+        }
+        log::warn!("synthesize: {msg}; columns will be generated independently");
+        return Ok(None);
+    }
+
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
     let anchor_buckets: Vec<(f64, f64)> = match kind {
@@ -443,12 +529,19 @@ fn resolve_ordered(
     let mut gap_buckets = Vec::with_capacity(gap_samples.len());
     for (i, samples) in gap_samples.into_iter().enumerate() {
         if samples.is_empty() {
-            log::warn!(
-                "synthesize: ordered relationship {names:?} dropped — no rows with both '{}' and \
-                 '{}' present",
+            // Zero co-present rows is the extreme of too few samples; treat it
+            // the same way, including the strict abort.
+            let msg = format!(
+                "ordered relationship {names:?}: no rows have both '{}' and '{}'",
                 names[i],
                 names[i + 1]
             );
+            if params.strict {
+                return Err(CliError::Other(format!(
+                    "synthesize: {msg}. Drop the relationship."
+                )));
+            }
+            log::warn!("synthesize: {msg}; columns will be generated independently");
             return Ok(None);
         }
         // Negative gaps mean the source itself violates the declared order.
@@ -470,7 +563,25 @@ fn resolve_ordered(
                 "synthesize: {msg}; such gaps are clamped to keep the synthetic output ordered"
             );
         }
-        gap_buckets.push(gap_buckets_from_samples(samples));
+        let n_samples = samples.len();
+        let Some(buckets) = gap_buckets_from_samples(samples, params.min_count) else {
+            let msg = format!(
+                "ordered relationship {names:?}: only {n_samples} row(s) have both '{}' and '{}'; \
+                 trimming their gap by --min-count ({}) needs at least {}",
+                names[i],
+                names[i + 1],
+                params.min_count,
+                params.min_count.saturating_mul(2).saturating_sub(1)
+            );
+            if params.strict {
+                return Err(CliError::Other(format!(
+                    "synthesize: {msg}. Lower --min-count or drop the relationship."
+                )));
+            }
+            log::warn!("synthesize: {msg}; columns will be generated independently");
+            return Ok(None);
+        };
+        gap_buckets.push(buckets);
     }
 
     let null_ratio = compute_null_ratio(anchor_stats.nullcount, params.total_rows);
@@ -487,6 +598,7 @@ fn resolve_ordered(
         date_format,
         anchor_buckets,
         gap_buckets,
+        member_ranges,
         null_ratio,
     }))
 }
@@ -547,7 +659,7 @@ fn learn_ordered_gaps(
     let mut values: Vec<Option<f64>> = vec![None; member_cols.len()];
     while rdr.read_record(&mut record)? {
         for (slot, &col) in values.iter_mut().zip(member_cols) {
-            let cell = record.get(col).unwrap_or_default();
+            let cell = source_cell(&record, params, col);
             *slot = if is_date {
                 #[allow(clippy::cast_precision_loss)]
                 parse_epoch(cell, is_datetime).map(|e| e as f64)
@@ -566,25 +678,52 @@ fn learn_ordered_gaps(
 
 /// Build clamped quartile gap buckets from a non-empty set of gap samples.
 /// Every bound is clamped to >= 0 so the synthetic chain is always ordered.
-fn gap_buckets_from_samples(mut samples: Vec<f64>) -> Vec<(f64, f64)> {
+///
+/// Like `range_trim`, the outer bounds are the k-th smallest and k-th largest
+/// gaps (k = `--min-count`), so a lone extreme gap (a decades-long tenure) can't
+/// reappear. With fewer than 2k-1 samples no such range exists; returns `None`
+/// and the caller drops the relationship (any single gap, or a mean of a few,
+/// would reproduce source pairs' gaps).
+fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Option<Vec<(f64, f64)>> {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
+    let k = usize::try_from(min_count.max(1)).unwrap_or(usize::MAX);
+    if n == 0 || n < k.saturating_mul(2).saturating_sub(1) {
+        return None;
+    }
+    let (lo, hi) = (samples[k - 1], samples[n - k]);
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)];
-    let mut bounds = [samples[0], at(0.25), at(0.5), at(0.75), samples[n - 1]];
+    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)].clamp(lo, hi);
+    let mut bounds = [lo, at(0.25), at(0.5), at(0.75), hi];
     // Clamping a sorted sequence to >= 0 keeps it sorted.
     for b in &mut bounds {
         *b = b.max(0.0);
     }
     let [min, q1, q2, q3, max] = bounds;
-    if min < max {
+    Some(if min < max {
         vec![(min, q1), (q1, q2), (q2, q3), (q3, max)]
     } else {
         vec![(min, min)]
+    })
+}
+
+/// A member's `[lo, hi]` range in the ordered group's numeric domain (days for
+/// `Date`, seconds for `DateTime`), from its (possibly trimmed) stats.
+fn member_range(sr: &StatsRecord, kind: OrderedKind, is_datetime: bool) -> Option<(f64, f64)> {
+    #[allow(clippy::cast_precision_loss)]
+    match kind {
+        OrderedKind::Numeric => {
+            let b = numeric_quartile_buckets(sr)?;
+            Some((b.first()?.0, b.last()?.1))
+        },
+        OrderedKind::Date | OrderedKind::DateTime => {
+            let b = date_quartile_buckets(sr, is_datetime)?;
+            Some((b.first()?.0 as f64, b.last()?.1 as f64))
+        },
     }
 }
 
@@ -712,7 +851,7 @@ fn learn_correlated_columns(
     while rdr.read_record(&mut record)? {
         rowvals.clear();
         for &col in member_cols {
-            match parse_f64(record.get(col).unwrap_or_default()) {
+            match parse_f64(source_cell(&record, params, col)) {
                 Some(v) => rowvals.push(v),
                 None => break,
             }
@@ -856,4 +995,38 @@ fn identity_matrix(k: usize) -> Vec<Vec<f64>> {
         row[i] = 1.0;
     }
     m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gap_buckets_from_samples;
+
+    #[test]
+    fn gap_buckets_trim_extreme_gaps() {
+        // Gaps 1..=20 plus one 10,000 outlier; k = 5 trims to [5, 17].
+        let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
+        let buckets = gap_buckets_from_samples(samples, 5).unwrap();
+        assert_eq!(buckets.first().unwrap().0, 5.0);
+        assert_eq!(buckets.last().unwrap().1, 17.0);
+    }
+
+    #[test]
+    fn gap_buckets_k_one_keeps_full_range() {
+        let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
+        let buckets = gap_buckets_from_samples(samples, 1).unwrap();
+        assert_eq!(buckets.first().unwrap().0, 1.0);
+        assert_eq!(buckets.last().unwrap().1, 10_000.0);
+    }
+
+    #[test]
+    fn gap_buckets_too_few_samples_drop_the_relationship() {
+        // 4 samples < 2k-1 = 9: no trimmed range exists; a mean of a few gaps
+        // (or the one gap, with a single pair) would reproduce source gaps.
+        assert_eq!(
+            gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5),
+            None
+        );
+        assert_eq!(gap_buckets_from_samples(vec![40.0], 5), None);
+        assert!(gap_buckets_from_samples(vec![40.0], 1).is_some());
+    }
 }

@@ -188,9 +188,17 @@ fn synthesize_with_dictionary_applies_inferred_date_format() {
     wrk.create_from_string("dict.json", dict_json);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "25", "--seed", "13", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "25",
+        "--seed",
+        "13",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 26);
@@ -224,7 +232,8 @@ fn synthesize_null_ratio_is_approximately_reproduced() {
     wrk.create("data.csv", rows);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "5000", "--seed", "31"]).arg("data.csv");
+    cmd.args(["--min-count", "1", "-n", "5000", "--seed", "31"])
+        .arg("data.csv");
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     let empty = got[1..].iter().filter(|r| r[1].is_empty()).count();
@@ -857,9 +866,17 @@ fn synthesize_date_column_ignores_time_content_type() {
     wrk.create_from_string("dict.json", dict_json);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "20", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "20",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got.len(), 21);
@@ -1200,9 +1217,17 @@ fn synthesize_ordered_dates_preserves_order() {
     wrk.create_from_string("dict.json", TICKET_ORDERED_DICT);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "300", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "300",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 301);
@@ -1259,9 +1284,17 @@ fn synthesize_ordered_numeric_offset() {
     );
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "300", "--seed", "7", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "300",
+        "--seed",
+        "7",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 301);
@@ -1309,9 +1342,17 @@ fn synthesize_ordered_mixed_int_float_keeps_per_member_type() {
     );
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "200",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 201);
@@ -1355,6 +1396,8 @@ fn synthesize_ordered_strict_aborts_on_violation() {
 
     let mut cmd = wrk.command("synthesize");
     cmd.args([
+        "--min-count",
+        "1",
         "-n",
         "20",
         "--seed",
@@ -1377,9 +1420,17 @@ fn synthesize_ordered_clamps_source_violations() {
     wrk.create_from_string("dict.json", TICKET_ORDERED_DICT);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "100", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "100",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 101);
@@ -1469,9 +1520,17 @@ fn synthesize_correlated_numeric_preserves_correlation() {
     wrk.create_from_string("dict.json", CORRELATED_DICT);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "600", "--seed", "42", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "600",
+        "--seed",
+        "42",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 601);
@@ -1494,9 +1553,17 @@ fn synthesize_correlated_marginals_unchanged() {
     wrk.create_from_string("dict.json", CORRELATED_DICT);
 
     let mut cmd = wrk.command("synthesize");
-    cmd.args(["-n", "500", "--seed", "7", "--dictionary"])
-        .arg(wrk.path("dict.json"))
-        .arg("data.csv");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "500",
+        "--seed",
+        "7",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let xs: Vec<f64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
@@ -1531,14 +1598,30 @@ fn synthesize_correlated_seed_reproducible() {
 
     let mut first = wrk.command("synthesize");
     first
-        .args(["-n", "80", "--seed", "42", "--dictionary"])
+        .args([
+            "--min-count",
+            "1",
+            "-n",
+            "80",
+            "--seed",
+            "42",
+            "--dictionary",
+        ])
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
     let run1: String = wrk.stdout(&mut first);
 
     let mut second = wrk.command("synthesize");
     second
-        .args(["-n", "80", "--seed", "42", "--dictionary"])
+        .args([
+            "--min-count",
+            "1",
+            "-n",
+            "80",
+            "--seed",
+            "42",
+            "--dictionary",
+        ])
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
     let run2: String = wrk.stdout(&mut second);
@@ -1858,5 +1941,518 @@ fn synthesize_min_count_with_consistent_fakes_emits_no_real_values() {
             "real value '{}' leaked through --consistent-fakes",
             row[0]
         );
+    }
+}
+
+// --- --min-count range trimming -------------------------------------------
+
+/// 30 ages from 20 to 49 plus a lone 999 outlier, and 30 dates in January 2024
+/// plus a lone 1901 date. Every value is distinct, so neither column is
+/// enumerated: both go to the type-based range generator.
+fn range_trim_fixture() -> Vec<Vec<String>> {
+    let mut rows = vec![svec!["age", "d"]];
+    for i in 0..30 {
+        rows.push(vec![format!("{}", 20 + i), format!("2024-01-{:02}", i + 1)]);
+    }
+    rows.push(svec!["999", "1901-06-15"]);
+    rows
+}
+
+#[test]
+fn synthesize_min_count_trims_numeric_and_date_ranges() {
+    let wrk = Workdir::new("synthesize_range_trim");
+    wrk.create("data.csv", range_trim_fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "3000", "--seed", "3"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3001);
+
+    // k = 5: ages trim to [24, 46] (5th smallest 24; 5th largest 46, since
+    // 999 is one of the five largest), and dates to [2024-01-04, 2024-01-26]
+    // (the 1901 date is one of the five smallest).
+    let ages: Vec<i64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
+    let (lo, hi) = (*ages.iter().min().unwrap(), *ages.iter().max().unwrap());
+    assert!(lo >= 24 && hi <= 46, "ages not trimmed: [{lo}, {hi}]");
+    assert!(
+        lo <= 26 && hi >= 44,
+        "trimmed age range collapsed: [{lo}, {hi}]"
+    );
+
+    for r in &got[1..] {
+        assert!(
+            r[1].as_str() >= "2024-01-04" && r[1].as_str() <= "2024-01-26",
+            "date {} outside trimmed range",
+            r[1]
+        );
+    }
+}
+
+#[test]
+fn synthesize_min_count_one_keeps_full_range() {
+    let wrk = Workdir::new("synthesize_range_trim_off");
+    wrk.create("data.csv", range_trim_fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--min-count", "1", "-n", "3000", "--seed", "3"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let max_age = got[1..]
+        .iter()
+        .map(|r| r[0].parse::<i64>().unwrap())
+        .max()
+        .unwrap();
+    assert!(
+        max_age > 100,
+        "--min-count 1 should keep the outlier's range"
+    );
+    assert!(
+        got[1..].iter().any(|r| r[1].as_str() < "2000-01-01"),
+        "--min-count 1 should keep the 1901 date in range"
+    );
+}
+
+#[test]
+fn synthesize_min_count_column_too_small_to_trim_is_empty() {
+    let wrk = Workdir::new("synthesize_range_trim_small");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n", "x"],
+            svec!["1", "a"],
+            svec!["2", "a"],
+            svec!["3", "a"],
+        ],
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1"]).arg("data.csv");
+    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0].is_empty()),
+        "a column with fewer than --min-count values must not emit its values"
+    );
+    assert!(
+        err.contains(
+            "column 'n' has only 3 non-null value(s); trimming its range by --min-count (5) needs \
+             at least 9"
+        ),
+        "missing too-small warning: {err}"
+    );
+}
+
+/// Regression: with k <= n < 2k-1 values the k-th smallest and k-th largest
+/// cross, and swapping them used to restore the full real range (n = k gave
+/// [min, max]), so a lone outlier came back. Such a column is now left empty.
+#[test]
+fn synthesize_min_count_crossed_bounds_do_not_restore_full_range() {
+    let wrk = Workdir::new("synthesize_range_trim_crossed");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["n", "x"],
+            svec!["10", "a"],
+            svec!["11", "a"],
+            svec!["12", "a"],
+            svec!["13", "a"],
+            svec!["99999", "a"],
+        ],
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "1"]).arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[0].is_empty()),
+        "a 5-value column can't be trimmed at --min-count 5 and must be left empty"
+    );
+}
+
+/// Regression: an `ordered` member whose range --min-count emptied must stay
+/// empty. The anchor + mean-gap chain used to fill it on every row.
+#[test]
+fn synthesize_min_count_ordered_member_without_range_stays_empty() {
+    let wrk = Workdir::new("synthesize_range_trim_ordered_member");
+    let mut rows = vec![svec!["a", "b"]];
+    for i in 0..30 {
+        let b = if i < 3 {
+            format!("{}", 11 + i)
+        } else {
+            String::new()
+        };
+        rows.push(vec![format!("{}", i + 1), b]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "a", "type": "Integer"},
+                {"name": "b", "type": "Integer"}
+            ],
+            "relationships": [
+                {"kind": "ordered", "members": ["a", "b"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "4", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[1].is_empty()),
+        "ordered member 'b' has no usable range and must stay empty"
+    );
+    assert!(
+        got[1..].iter().all(|r| !r[0].is_empty()),
+        "the anchor 'a' should still be generated"
+    );
+}
+
+/// Regression: under `QSV_NO_HEADERS`, stats names columns "0", "1", …, which
+/// match no header, so name-only mapping silently skipped range trimming.
+#[test]
+fn synthesize_min_count_range_trim_works_without_headers() {
+    let wrk = Workdir::new("synthesize_range_trim_no_headers");
+    wrk.create(
+        "data.csv",
+        vec![svec!["100", "a"], svec!["101", "a"], svec!["1000000", "a"]],
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args(["-n", "50", "--seed", "1"])
+        .arg("data.csv");
+    let (got, err): (Vec<Vec<String>>, String) = wrk.read_stdout_and_stderr_on_success(&mut cmd);
+    assert!(
+        got.iter().skip(1).all(|r| r[0].is_empty()),
+        "3 values can't be trimmed at --min-count 5; the column must be empty: {got:?}"
+    );
+    assert!(
+        err.contains("column '0' has only 3 non-null value(s)"),
+        "missing too-small warning: {err}"
+    );
+}
+
+#[test]
+fn synthesize_rejects_column_selection_in_stats_options() {
+    let wrk = Workdir::new("synthesize_stats_options_select");
+    wrk.create("data.csv", fixture());
+    for opts in [
+        "--select city",
+        "--select=city",
+        "-s city",
+        "--weight age",
+        "-Es 2,1",
+        "-Es2,1",
+    ] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--stats-options", opts]).arg("data.csv");
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            err.contains("--stats-options may not include"),
+            "'{opts}' should be rejected, got: {err}"
+        );
+    }
+}
+
+/// `ordered` followers are clamped into their own trimmed range: a follower
+/// outlier (end = 5000 on one row) must not come back as anchor + gap.
+#[test]
+fn synthesize_ordered_follower_stays_in_its_trimmed_range() {
+    let wrk = Workdir::new("synthesize_ordered_follower_clamp");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..40 {
+        let start = 100 + i;
+        let end = if i == 39 { 5000 } else { start + 10 + i % 7 };
+        rows.push(vec![format!("{start}"), format!("{end}")]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "8", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // end's 5th largest source value is 148 (5000 and 149..=151 sit above it).
+    for r in &got[1..] {
+        let start: i64 = r[0].parse().unwrap();
+        let end: i64 = r[1].parse().unwrap();
+        assert!(end >= start, "order broken: {r:?}");
+        assert!(end <= 148, "end {end} escaped its trimmed range: {r:?}");
+    }
+}
+
+/// An `ordered` pair with too few co-present rows to trim its gap is dropped,
+/// not collapsed to the mean (with one pair, the mean is that pair's gap).
+#[test]
+
+fn synthesize_ordered_sparse_gap_drops_relationship() {
+    let wrk = Workdir::new("synthesize_ordered_sparse_gap");
+    // `start` and `end` each have enough values to trim, but only one row has
+    // both, so there is a single gap sample (37).
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..40 {
+        let end = if i == 0 {
+            "137".to_string()
+        } else {
+            String::new()
+        };
+        rows.push(vec![format!("{}", 100 + i), end]);
+    }
+    for j in 0..21 {
+        rows.push(vec![String::new(), format!("{}", 110 + j)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "9", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // Dropped → independent columns, so order is not enforced. A kept chain
+    // (e.g. the old mean-gap fallback) would make end >= start on every row.
+    let unordered = got[1..]
+        .iter()
+        .any(|r| match (r[0].parse::<i64>(), r[1].parse::<i64>()) {
+            (Ok(s), Ok(e)) => e < s,
+            _ => false,
+        });
+    assert!(
+        unordered,
+        "sparse ordered relationship should be dropped, not chained"
+    );
+
+    let mut strict = wrk.command("synthesize");
+    strict
+        .args(["-n", "10", "--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let err = wrk.stderr_on_error(&mut strict);
+    assert!(
+        err.contains("only 1 row(s) have both 'start' and 'end'"),
+        "expected a strict sparse-gap abort, got: {err}"
+    );
+}
+
+/// Range trimming parses dates with the same DMY preference as `stats`.
+/// "01/MM/2024" is the 1st of month MM under DMY, but Jan MM under MDY.
+#[test]
+fn synthesize_min_count_range_trim_respects_prefer_dmy() {
+    let wrk = Workdir::new("synthesize_range_trim_dmy");
+    let mut rows = vec![svec!["d", "x"]];
+    for m in 1..=12 {
+        rows.push(vec![format!("01/{m:02}/2024"), "a".to_string()]);
+    }
+    wrk.create("data.csv", rows);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_PREFER_DMY", "1")
+        .args(["-n", "500", "--seed", "10"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // DMY, k = 5 on 12 monthly dates → [2024-05-01, 2024-08-01]. Under MDY the
+    // range would be [2024-01-05, 2024-01-08].
+    for r in &got[1..] {
+        assert!(
+            r[0].as_str() >= "2024-05-01" && r[0].as_str() <= "2024-08-01",
+            "date {} outside the DMY-trimmed range",
+            r[0]
+        );
+    }
+    assert!(
+        got[1..].iter().any(|r| r[0].starts_with("2024-06")),
+        "expected dates spread across the DMY range"
+    );
+}
+
+/// Regression: with differing null patterns the predecessor can exceed a
+/// follower's trimmed max; the order floor then pushed the follower past its
+/// range, reproducing a suppressed value (end = 100 here, seen once).
+#[test]
+fn synthesize_ordered_follower_cap_holds_against_order_floor() {
+    let wrk = Workdir::new("synthesize_ordered_cap");
+    let mut rows = vec![svec!["start", "end"]];
+    rows.extend(std::iter::repeat_n(svec!["1", "11"], 9));
+    rows.extend(std::iter::repeat_n(svec!["100", ""], 9));
+    rows.push(svec!["100", "100"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "12", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // end trims to [11, 11]; start is capped by it, so the chain stays in range.
+    for r in &got[1..] {
+        assert_eq!(r[1], "11", "end escaped its trimmed range: {r:?}");
+        let start: i64 = r[0].parse().unwrap();
+        assert!(start <= 11, "start {start} exceeds the follower cap: {r:?}");
+    }
+}
+
+/// An ordered pair with zero co-present rows aborts under --strict-relationships
+/// like any other undersized gap sample.
+#[test]
+fn synthesize_ordered_no_copresent_rows_strict_aborts() {
+    let wrk = Workdir::new("synthesize_ordered_no_copresent");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 0..9 {
+        rows.push(vec![format!("{}", 100 + i), String::new()]);
+    }
+    for i in 0..9 {
+        rows.push(vec![String::new(), format!("{}", 200 + i)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let err = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        err.contains("no rows have both 'start' and 'end'"),
+        "expected a strict abort, got: {err}"
+    );
+}
+
+/// Regression: in a mixed Integer/Float ordered group the Integer member is
+/// printed rounded, so chaining from the unrounded value (or a fractional cap)
+/// could print start = 12 above end = 11.6.
+#[test]
+fn synthesize_ordered_mixed_int_float_keeps_order_after_rounding() {
+    let wrk = Workdir::new("synthesize_ordered_mixed_rounding");
+    let mut rows = vec![svec!["start", "end"]];
+    rows.extend(std::iter::repeat_n(svec!["1", "11.6"], 9));
+    rows.extend(std::iter::repeat_n(svec!["100", ""], 9));
+    rows.push(svec!["100", "100.6"]);
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Float"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "13", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
+        assert!(end <= 11.6, "end escaped its trimmed range: {r:?}");
+    }
+}
+
+/// Small gaps (< 0.5) in a mixed Integer/Float ordered group: without chaining
+/// from the rounded Integer value, start = 12.6 prints as 13 while end = 12.8.
+#[test]
+fn synthesize_ordered_mixed_int_float_small_gap_keeps_order() {
+    let wrk = Workdir::new("synthesize_ordered_mixed_small_gap");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 10..50 {
+        rows.push(vec![format!("{i}"), format!("{i}.2")]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Integer"},
+                {"name": "end", "type": "Float"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "14", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
+    }
+}
+
+#[test]
+fn synthesize_ordered_float_then_int_small_gap_keeps_order() {
+    let wrk = Workdir::new("synthesize_ordered_float_int_small_gap");
+    let mut rows = vec![svec!["start", "end"]];
+    for i in 10..50 {
+        rows.push(vec![format!("{i}.8"), format!("{}", i + 1)]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "start", "type": "Float"},
+                {"name": "end", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["start", "end"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "14", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let start: f64 = r[0].parse().unwrap();
+        let end: f64 = r[1].parse().unwrap();
+        assert!(start <= end, "order broken after rounding: {r:?}");
     }
 }

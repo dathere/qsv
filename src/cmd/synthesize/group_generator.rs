@@ -61,6 +61,12 @@ pub(crate) enum GroupGenerator {
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
         gap_buckets:    Vec<Vec<(f64, f64)>>,
+        /// Per-member `[lo, hi]` in the same domain as the buckets, with each
+        /// `hi` capped by every later member's. Each follower is clamped into
+        /// its range (then kept >= its predecessor, which the cap keeps in
+        /// range), so anchor + gap can't reach a follower's real extremes once
+        /// `--min-count` has trimmed them.
+        member_ranges:  Vec<(f64, f64)>,
         /// Null ratio of the anchor column — when the anchor draws null, the
         /// whole chain is emitted null.
         null_ratio:     f64,
@@ -124,6 +130,7 @@ impl GroupGenerator {
                 date_format,
                 anchor_buckets,
                 gap_buckets,
+                member_ranges,
                 null_ratio,
             } => {
                 // A null anchor nulls the whole chain — a monotonic chain
@@ -132,16 +139,40 @@ impl GroupGenerator {
                 if draw_null(*null_ratio, rng) {
                     return member_cols.iter().map(|&c| (c, String::new())).collect();
                 }
-                let mut value = sample_bucket(anchor_buckets, rng);
+                // The anchor's upper bound is capped by every follower's (see
+                // `resolve_ordered`), so the chain can always stay in range.
+                let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
+                // Chain from the value actually emitted: an Integer member is
+                // printed rounded, so the next member must build on the
+                // rounded value or a Float follower can print below it. An
+                // Integer follower rounds no lower than ceil(floor), or it can
+                // print below a Float predecessor. ceil(floor) stays within
+                // range: the predecessor's cap is at most this member's
+                // integer-floored cap.
+                let quantize = |v: f64, i: usize, floor: f64| {
+                    if *kind == OrderedKind::Numeric && is_int[i] {
+                        v.round().max(floor.ceil())
+                    } else {
+                        v
+                    }
+                };
+                value = quantize(value, 0, f64::NEG_INFINITY);
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],
                     format_ordered(value, *kind, is_int[0], date_format.as_ref()),
                 ));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
-                    // Gap buckets are clamped to >= 0, so `value` is
-                    // non-decreasing along the chain.
-                    value += sample_bucket(gaps, rng);
+                    // Gap buckets are clamped to >= 0, and the clamp into the
+                    // follower's range is floored at the predecessor, so
+                    // `value` stays non-decreasing along the chain.
+                    let prev = value;
+                    let (lo, hi) = member_ranges[i + 1];
+                    value = quantize(
+                        (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev),
+                        i + 1,
+                        prev,
+                    );
                     out.push((
                         member_cols[i + 1],
                         format_ordered(value, *kind, is_int[i + 1], date_format.as_ref()),

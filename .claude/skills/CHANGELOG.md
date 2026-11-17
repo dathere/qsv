@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`qsv-synthesize --min-count` trims numeric/date ranges**: range ends become the k-th smallest / largest values, so a lone outlier can't reappear. Skill regenerated from the USAGE text. ([#5067](https://github.com/dathere/qsv/pull/5067))
 - **`qsv-synthesize --min-count`**: privacy threshold (default 5). Values and `joint` tuples seen fewer than k times in the source are dropped from the real values it samples. Skill regenerated from the USAGE text. ([#5066](https://github.com/dathere/qsv/pull/5066))
 
 ### Changed

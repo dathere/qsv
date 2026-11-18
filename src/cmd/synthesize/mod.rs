@@ -85,7 +85,8 @@ not stop it:
 Review the output before sharing it, or training on it, as de-identified data.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
-Rows are generated in parallel, in fixed blocks of 8192 rows.
+Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
+and --shard, several machines can each generate one slice of a dataset.
 
 Examples:
 
@@ -103,6 +104,13 @@ Examples:
   # Preserve inter-column relationships declared in the dictionary
   # (e.g. city/state/zip, created_date <= closed_date)
   $ qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
+
+  # Generate 1B rows as 4 slices, e.g. one per machine, then join them
+  # into the same file a single run would write
+  $ qsv synthesize data.csv -n 1000000000 --seed 42 --shard 1/4 -o part1.csv
+  $ qsv synthesize data.csv -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
+  ...
+  $ qsv cat rows part1.csv part2.csv part3.csv part4.csv -o synthetic.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs.
 See also https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize
@@ -127,6 +135,22 @@ synthesize options:
                            for via --stats-options (e.g. `--quantile-method
                            approx`), or switched on by stats itself (with a warning)
                            when the input won't fit in memory.
+    --shard <k/N>          Generate only slice k of N (k from 1 to N) of the
+                           rows --rows asks for. Requires --seed. Each slice
+                           is a run of whole 8192-row blocks, and slices 1 to
+                           N joined in order (with `qsv cat rows`) are the
+                           same as one unsharded run. Every slice must use the
+                           same <input>, options, qsv version and
+                           dictionary file, if any (--infer-content-type
+                           without --dictionary is refused). Each slice still
+                           profiles all of <input> itself, so if stats or
+                           frequency warns on one machine that it switched to
+                           approximate estimators for lack of memory, that
+                           slice comes from a different fit and the joined
+                           rows won't match one run. Each slice gets a header
+                           row even when it has no rows (when N exceeds the
+                           number of blocks). With --report, the counts are
+                           for this slice only.
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
@@ -256,6 +280,7 @@ struct Args {
     flag_infer_content_type:    bool,
     flag_rows:                  u64,
     flag_seed:                  Option<u64>,
+    flag_shard:                 Option<String>,
     flag_locale:                String,
     flag_freq_limit:            usize,
     flag_stats_options:         Option<String>,
@@ -286,6 +311,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
     }
+    let shard = match args.flag_shard.as_deref() {
+        Some(_) if args.flag_seed.is_none() => {
+            return fail_incorrectusage_clierror!(
+                "--shard requires --seed, so every slice comes from the same dataset."
+            );
+        },
+        // Each slice would make its own, unseeded LLM call, which can type a
+        // column differently on each machine.
+        Some(_) if args.flag_infer_content_type && args.flag_dictionary.is_none() => {
+            return fail_incorrectusage_clierror!(
+                "--shard needs a shared --dictionary instead of --infer-content-type, so every \
+                 slice uses the same column types."
+            );
+        },
+        Some(spec) => Some(parse_shard(spec)?),
+        None => None,
+    };
     // Column selection and --weight change which columns stats reports and in
     // what order, which synthesize can't see; every pass that reads source
     // cells relies on stats covering every column in order. Select first.
@@ -383,23 +425,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         stats_args.extend(opts.split_whitespace().map(ToString::to_string));
     }
     let stats_args_ref: Vec<&str> = stats_args.iter().map(String::as_str).collect();
-    let (stats_csv, _) = util::run_qsv_cmd(
+    // stats and frequency are silent unless they warn (e.g. that they switched
+    // to approximate estimators for lack of memory), so pass that on.
+    let (stats_csv, stats_err) = util::run_qsv_cmd(
         "stats",
         &stats_args_ref,
         input_path,
         "  Computed summary statistics",
     )?;
+    eprint!("{stats_err}");
 
     // frequency
     let mut freq_args: Vec<String> = vec!["--limit".to_string(), args.flag_freq_limit.to_string()];
     freq_args.extend(analysis_common_args.iter().cloned());
     let freq_args_ref: Vec<&str> = freq_args.iter().map(String::as_str).collect();
-    let (freq_csv, _) = util::run_qsv_cmd(
+    let (freq_csv, freq_err) = util::run_qsv_cmd(
         "frequency",
         &freq_args_ref,
         input_path,
         "  Computed frequency distribution",
     )?;
+    eprint!("{freq_err}");
 
     // count — exact source row count, needed for null-ratio math. `count`
     // does NOT accept `--jobs`, so use the delimiter-only args here.
@@ -532,12 +578,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // window only affects memory and speed, never the output.
     let ncols = stats_records.len();
     let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
+    let (mut first_chunk, end_chunk) =
+        shard.map_or((0, total_chunks), |(k, n)| shard_chunks(total_chunks, k, n));
+    let synthetic_rows = end_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows)
+        - first_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows);
     let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
     let mut window = 1_u64;
     let mut largest_chunk = 0_u64;
-    let mut first_chunk = 0_u64;
-    while first_chunk < total_chunks {
-        let last_chunk = (first_chunk + window).min(total_chunks);
+    while first_chunk < end_chunk {
+        let last_chunk = (first_chunk + window).min(end_chunk);
         let chunks: Vec<CliResult<(Vec<u8>, u64)>> = (first_chunk..last_chunk)
             .into_par_iter()
             .map(|chunk| {
@@ -579,15 +628,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // would be meaningless: report the row metrics as null instead.
         let any_compared = !compared.is_empty();
         #[allow(clippy::cast_precision_loss)]
-        let rate = exact_matches as f64 / args.flag_rows as f64;
+        let rate = (any_compared && synthetic_rows > 0)
+            .then(|| exact_matches as f64 / synthetic_rows as f64);
         let report = serde_json::json!({
             "source_rows": total_rows,
-            "synthetic_rows": args.flag_rows,
+            "synthetic_rows": synthetic_rows,
+            "shard": args.flag_shard,
             "seed": args.flag_seed,
             "min_count": args.flag_min_count,
             "privacy": {
                 "exact_matches": any_compared.then_some(exact_matches),
-                "exact_match_rate": any_compared.then_some(rate),
+                "exact_match_rate": rate,
                 "distinct_source_rows": any_compared.then_some(keys.len()),
                 "compared_columns": names(&|i| compared.contains(&i)),
                 "excluded_columns": names(&|i| !compared.contains(&i)),
@@ -602,6 +653,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// Rows per output chunk. Each chunk has its own RNG, so this value is part of
 /// what a --seed reproduces: changing it changes every seeded output.
 const CHUNK_ROWS: u64 = 8192;
+
+/// Parses a --shard spec `k/N` (1 <= k <= N) into `(k, N)`.
+fn parse_shard(spec: &str) -> CliResult<(u64, u64)> {
+    let parsed = spec
+        .split_once('/')
+        .and_then(|(k, n)| Some((k.trim().parse::<u64>().ok()?, n.trim().parse::<u64>().ok()?)));
+    match parsed {
+        Some((k, n)) if k >= 1 && k <= n => Ok((k, n)),
+        _ => fail_incorrectusage_clierror!(
+            "--shard must be k/N with 1 <= k <= N (e.g. 2/4), got '{spec}'."
+        ),
+    }
+}
+
+/// The chunk range `[start, end)` of shard `k` of `n`. Shards are contiguous
+/// and in order, so shards 1..=n together cover `0..total_chunks` exactly once.
+fn shard_chunks(total_chunks: u64, k: u64, n: u64) -> (u64, u64) {
+    let bound = |i: u64| (u128::from(total_chunks) * u128::from(i) / u128::from(n)) as u64;
+    (bound(k - 1), bound(k))
+}
 
 /// Target for the encoded output held in memory at once across a window of chunks.
 const WINDOW_BYTES: u64 = 256 * 1024 * 1024;
@@ -663,4 +734,34 @@ fn generate_chunk(
     }
     let bytes = wtr.into_inner().map_err(|e| e.into_error())?;
     Ok((bytes, matches))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shards_cover_every_chunk_once_in_order() {
+        for total in 0..40 {
+            for n in 1..12 {
+                let mut next = 0;
+                for k in 1..=n {
+                    let (start, end) = shard_chunks(total, k, n);
+                    assert_eq!(start, next, "total {total}, shard {k}/{n}");
+                    assert!(end >= start);
+                    next = end;
+                }
+                assert_eq!(next, total, "total {total}, n {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_shard_accepts_only_k_of_n() {
+        assert_eq!(parse_shard("1/1").unwrap(), (1, 1));
+        assert_eq!(parse_shard(" 3 / 4 ").unwrap(), (3, 4));
+        for bad in ["0/4", "5/4", "1/0", "4", "/4", "1/", "-1/4", "a/4"] {
+            assert!(parse_shard(bad).is_err(), "{bad}");
+        }
+    }
 }

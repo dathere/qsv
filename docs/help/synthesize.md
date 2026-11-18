@@ -97,7 +97,8 @@ can reappear at or near its real value.
 Review the output before sharing it, or training on it, as de-identified data.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
-Rows are generated in parallel, in fixed blocks of 8192 rows.
+Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
+and --shard, several machines can each generate one slice of a dataset.
 
 
 <a name="examples"></a>
@@ -135,6 +136,22 @@ qsv synthesize data.csv --infer-content-type -n 1000 > synthetic.csv
 qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
 ```
 
+> Generate 1B rows as 4 slices, e.g. one per machine, then join them
+> into the same file a single run would write
+
+```console
+qsv synthesize data.csv -n 1000000000 --seed 42 --shard 1/4 -o part1.csv
+```
+
+```console
+qsv synthesize data.csv -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
+```
+
+...
+```console
+qsv cat rows part1.csv part2.csv part3.csv part4.csv -o synthetic.csv
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs).
 
 See also <https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize>
@@ -158,6 +175,7 @@ qsv synthesize --help
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given. |  |
 | &nbsp;`‑n,`<br>`‑‑rows`&nbsp; | integer | Number of synthetic rows to generate. | `100` |
 | &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless stats uses approximate estimators: either asked for via --stats-options (e.g. `--quantile-method approx`), or switched on by stats itself (with a warning) when the input won't fit in memory. |  |
+| &nbsp;`‑‑shard`&nbsp; | string | Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only. |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data. | `en` |
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
 | &nbsp;`‑‑min‑count`&nbsp; | integer | Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is dropped from the values it samples; its share is redistributed over the kept values. An enumerated column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their trimmed range), and a joint group to independent columns, or aborts under the --strict-relationships option. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first. Numeric and date ranges, and the gaps of `ordered` relationships, are also trimmed to their k-th smallest and k-th largest values (one extra pass over <input>). A numeric or date column with fewer than 2k-1 non-null values is left empty unless its real values are sampled. | `5` |

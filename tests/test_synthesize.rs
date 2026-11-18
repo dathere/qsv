@@ -3010,3 +3010,220 @@ fn synthesize_report_counts_matches_in_every_chunk() {
 
     assert_eq!(read_report(&wrk)["privacy"]["exact_matches"], 20000);
 }
+
+#[test]
+fn synthesize_shards_join_to_the_unsharded_output() {
+    let wrk = Workdir::new("synthesize_shard_join");
+    chunked_fixture(&wrk);
+
+    // 20000 rows = 3 chunks, so shard 1/2 gets chunk 0 and shard 2/2 chunks 1-2.
+    let run = |shard: Option<&str>| -> String {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "7", "--dictionary"])
+            .arg(wrk.path("dict.json"))
+            .arg("data.csv");
+        if let Some(shard) = shard {
+            cmd.args(["--shard", shard]);
+        }
+        wrk.stdout(&mut cmd)
+    };
+    let full = run(None);
+    let first = run(Some("1/2"));
+    let second = run(Some("2/2"));
+
+    assert_eq!(first.lines().count(), 8193);
+    // Each shard has its own header; drop the second's before joining.
+    let joined: Vec<&str> = first.lines().chain(second.lines().skip(1)).collect();
+    let full: Vec<&str> = full.lines().collect();
+    assert_eq!(full.len(), 20001);
+    assert!(
+        joined == full,
+        "shards 1..N joined in order must equal the unsharded output"
+    );
+}
+
+#[test]
+fn synthesize_shard_past_the_last_chunk_is_header_only() {
+    let wrk = Workdir::new("synthesize_shard_empty");
+    chunked_fixture(&wrk);
+
+    // 10 rows = 1 chunk, which goes to the last shard.
+    let run = |shard: &str| -> String {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "10", "--seed", "7", "--shard", shard])
+            .arg("data.csv");
+        wrk.stdout(&mut cmd)
+    };
+    assert_eq!(run("1/2").lines().count(), 1);
+    assert_eq!(run("2/2").lines().count(), 11);
+}
+
+#[test]
+fn synthesize_shard_requires_seed_and_a_valid_spec() {
+    let wrk = Workdir::new("synthesize_shard_usage");
+    chunked_fixture(&wrk);
+
+    let mut no_seed = wrk.command("synthesize");
+    no_seed.args(["--shard", "1/2", "data.csv"]);
+    assert!(
+        wrk.output_stderr(&mut no_seed)
+            .contains("--shard requires --seed")
+    );
+
+    for bad in ["0/2", "3/2", "2", "a/b", "1/0"] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--seed", "1", "--shard", bad, "data.csv"]);
+        assert!(
+            wrk.output_stderr(&mut cmd).contains("--shard must be k/N"),
+            "--shard {bad} must be rejected"
+        );
+    }
+}
+
+#[test]
+fn synthesize_report_counts_only_the_shard() {
+    let wrk = Workdir::new("synthesize_shard_report");
+    // Only real (city, state, zip) tuples can be emitted, so every row matches.
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "20000",
+        "--seed",
+        "7",
+        "--shard",
+        "2/2",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    // Shard 2/2 is chunks 1-2: 20000 - 8192 rows.
+    let report = read_report(&wrk);
+    assert_eq!(report["synthetic_rows"], 11808);
+    assert_eq!(report["shard"], "2/2");
+    assert_eq!(report["privacy"]["exact_matches"], 11808);
+    assert_eq!(report["privacy"]["exact_match_rate"], 1.0);
+}
+
+#[test]
+fn synthesize_report_for_an_empty_shard_has_a_null_rate() {
+    let wrk = Workdir::new("synthesize_shard_empty_report");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    // 10 rows = 1 chunk, which goes to shard 2/2, so 1/2 is header-only.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "10",
+        "--seed",
+        "7",
+        "--shard",
+        "1/2",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let report = read_report(&wrk);
+    assert_eq!(report["synthetic_rows"], 0);
+    assert_eq!(report["privacy"]["exact_matches"], 0);
+    assert_eq!(
+        report.pointer("/privacy/exact_match_rate"),
+        Some(&serde_json::Value::Null)
+    );
+}
+
+// stats rejects --quantile-method approx on big-endian targets.
+#[cfg(target_endian = "little")]
+#[test]
+fn synthesize_passes_on_stats_warnings() {
+    let wrk = Workdir::new("synthesize_stats_warnings");
+    chunked_fixture(&wrk);
+
+    // Under approx quantiles stats warns that it drops MAD; synthesize must
+    // not swallow stats' warnings, or a memory fallback would go unseen.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "5",
+        "--seed",
+        "1",
+        "--stats-options",
+        "--mad --quantile-method approx",
+        "data.csv",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("disabling MAD"), "got: {stderr}");
+}
+
+#[test]
+fn synthesize_passes_on_frequency_warnings() {
+    let wrk = Workdir::new("synthesize_frequency_warnings");
+    chunked_fixture(&wrk);
+    // An empty frequency cache makes frequency warn and recompute. It is only
+    // read when strictly newer than data.csv, so don't rely on mtime ticks.
+    wrk.create_from_string("data.freq.csv.data.jsonl", "");
+    std::fs::File::options()
+        .write(true)
+        .open(wrk.path("data.freq.csv.data.jsonl"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "5", "--seed", "1", "data.csv"]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("Frequency cache is empty"), "got: {stderr}");
+}
+
+#[test]
+fn synthesize_shard_refuses_infer_content_type() {
+    let wrk = Workdir::new("synthesize_shard_infer");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--seed",
+        "1",
+        "--shard",
+        "1/2",
+        "--infer-content-type",
+        "data.csv",
+    ]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("--shard needs a shared --dictionary"),
+        "--shard with --infer-content-type must be refused before any LLM call"
+    );
+}
+
+#[test]
+fn synthesize_last_shard_of_max_rows_does_not_overflow() {
+    let wrk = Workdir::new("synthesize_shard_max_rows");
+    chunked_fixture(&wrk);
+
+    // u64::MAX rows = 2^51 chunks; the last holds the final 8191 rows.
+    let n = u64::MAX.to_string();
+    let last = format!("{0}/{0}", 1_u64 << 51);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", &n, "--seed", "1", "--shard", &last, "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    let out = wrk.stdout::<String>(&mut cmd);
+    assert_eq!(out.lines().count(), 8192);
+    assert_eq!(read_report(&wrk)["synthetic_rows"], 8191);
+}

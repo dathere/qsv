@@ -140,12 +140,13 @@ synthesize options:
                            is a run of whole 8192-row blocks, and slices 1 to
                            N joined in order (with `qsv cat rows`) are the
                            same as one unsharded run. Every slice must use the
-                           same <input>, options and qsv version. Each slice
-                           still profiles all of <input> itself, so if stats
-                           warns on one machine that it switched to
-                           approximate estimators for lack of memory, that
-                           slice comes from a different fit and the joined
-                           rows won't match one run. Each slice gets a header
+                           same <input>, options, qsv version and
+                           dictionary file, if any (--infer-content-type is
+                           refused). Each slice still profiles all of <input>
+                           itself, so if stats warns on one machine that it
+                           switched to approximate estimators for lack of
+                           memory, that slice comes from a different fit and
+                           the joined rows won't match one run. Each slice gets a header
                            row even when it has no rows (when N exceeds the
                            number of blocks). With --report, the counts are
                            for this slice only.
@@ -315,6 +316,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--shard requires --seed, so every slice comes from the same dataset."
             );
         },
+        // Each slice would make its own, unseeded LLM call, which can type a
+        // column differently on each machine.
+        Some(_) if args.flag_infer_content_type && args.flag_dictionary.is_none() => {
+            return fail_incorrectusage_clierror!(
+                "--shard needs a shared --dictionary instead of --infer-content-type, so every \
+                 slice uses the same column types."
+            );
+        },
         Some(spec) => Some(parse_shard(spec)?),
         None => None,
     };
@@ -415,23 +424,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         stats_args.extend(opts.split_whitespace().map(ToString::to_string));
     }
     let stats_args_ref: Vec<&str> = stats_args.iter().map(String::as_str).collect();
-    let (stats_csv, _) = util::run_qsv_cmd(
+    // stats and frequency are silent unless they warn (e.g. that they switched
+    // to approximate estimators for lack of memory), so pass that on.
+    let (stats_csv, stats_err) = util::run_qsv_cmd(
         "stats",
         &stats_args_ref,
         input_path,
         "  Computed summary statistics",
     )?;
+    eprint!("{stats_err}");
 
     // frequency
     let mut freq_args: Vec<String> = vec!["--limit".to_string(), args.flag_freq_limit.to_string()];
     freq_args.extend(analysis_common_args.iter().cloned());
     let freq_args_ref: Vec<&str> = freq_args.iter().map(String::as_str).collect();
-    let (freq_csv, _) = util::run_qsv_cmd(
+    let (freq_csv, freq_err) = util::run_qsv_cmd(
         "frequency",
         &freq_args_ref,
         input_path,
         "  Computed frequency distribution",
     )?;
+    eprint!("{freq_err}");
 
     // count — exact source row count, needed for null-ratio math. `count`
     // does NOT accept `--jobs`, so use the delimiter-only args here.
@@ -566,8 +579,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
     let (mut first_chunk, end_chunk) =
         shard.map_or((0, total_chunks), |(k, n)| shard_chunks(total_chunks, k, n));
-    let synthetic_rows = (end_chunk * CHUNK_ROWS).min(args.flag_rows)
-        - (first_chunk * CHUNK_ROWS).min(args.flag_rows);
+    let synthetic_rows = end_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows)
+        - first_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows);
     let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
     let mut window = 1_u64;
     let mut largest_chunk = 0_u64;

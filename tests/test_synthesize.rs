@@ -3112,3 +3112,62 @@ fn synthesize_report_counts_only_the_shard() {
     assert_eq!(report["privacy"]["exact_matches"], 11808);
     assert_eq!(report["privacy"]["exact_match_rate"], 1.0);
 }
+
+#[test]
+fn synthesize_passes_on_stats_warnings() {
+    let wrk = Workdir::new("synthesize_stats_warnings");
+    chunked_fixture(&wrk);
+
+    // Under approx quantiles stats warns that it drops MAD; synthesize must
+    // not swallow stats' warnings, or a memory fallback would go unseen.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "5",
+        "--seed",
+        "1",
+        "--stats-options",
+        "--mad --quantile-method approx",
+        "data.csv",
+    ]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("disabling MAD"), "got: {stderr}");
+}
+
+#[test]
+fn synthesize_shard_refuses_infer_content_type() {
+    let wrk = Workdir::new("synthesize_shard_infer");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--seed",
+        "1",
+        "--shard",
+        "1/2",
+        "--infer-content-type",
+        "data.csv",
+    ]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("--shard needs a shared --dictionary"),
+        "--shard with --infer-content-type must be refused before any LLM call"
+    );
+}
+
+#[test]
+fn synthesize_last_shard_of_max_rows_does_not_overflow() {
+    let wrk = Workdir::new("synthesize_shard_max_rows");
+    chunked_fixture(&wrk);
+
+    // u64::MAX rows = 2^51 chunks; the last holds the final 8191 rows.
+    let n = u64::MAX.to_string();
+    let last = format!("{0}/{0}", 1_u64 << 51);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", &n, "--seed", "1", "--shard", &last, "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    let out = wrk.stdout::<String>(&mut cmd);
+    assert_eq!(out.lines().count(), 8192);
+    assert_eq!(read_report(&wrk)["synthetic_rows"], 8191);
+}

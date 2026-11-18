@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **`qsv-synthesize --save-model <file>` / `--model <file>`**: save the fitted model once, then generate from it without the source (`<input>` is now optional, and omitted with `--model`). Same `--rows` and `--seed` give the same rows as the fitting run, including across `--shard` slices. Skill regenerated from the USAGE text.
+- **`qsv-synthesize --save-model <file>` / `--model <file>`**: save the fitted model once, then generate from it without the source (`<input>` is now optional, and omitted with `--model`). Same `--rows` and `--seed` give the same rows as the fitting run, including across `--shard` slices. Skill regenerated from the USAGE text. ([#5074](https://github.com/dathere/qsv/pull/5074))
 - **`qsv-synthesize --shard <k/N>`**: generate slice k of N of a seeded dataset (needs `--seed`; refuses `--infer-content-type` without a shared `--dictionary`); slices joined in order with `qsv-cat rows` equal one unsharded run, unless `stats` or `frequency` on some slice warns that it switched to approximate estimators for lack of memory. Skill regenerated from the USAGE text. ([#5073](https://github.com/dathere/qsv/pull/5073))
 - **`qsv-synthesize --report <file>`**: JSON report with the exact-match rate of synthetic rows against the source and what `--min-count` suppressed. Skill regenerated from the USAGE text. ([#5068](https://github.com/dathere/qsv/pull/5068))
 - **`qsv-synthesize --min-count` trims numeric/date ranges**: range ends become the k-th smallest / largest values, so a lone outlier can't reappear. Skill regenerated from the USAGE text. ([#5067](https://github.com/dathere/qsv/pull/5067))

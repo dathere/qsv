@@ -174,8 +174,10 @@ synthesize options:
                            same --rows and --seed writes the same rows as
                            this run (pools of fake values are sized for
                            this run's --rows). The model holds the real
-                           values that passed the --min-count, so share it
-                           only as you would the output. Its format is
+                           values the output can contain (see the privacy
+                           note above), including the trimmed ends of
+                           numeric and date ranges, so share it only as you
+                           would the output. Its format is
                            internal to qsv and versioned: a qsv that reads
                            another model version refuses it, and it must be
                            fitted again.
@@ -184,10 +186,10 @@ synthesize options:
                            omitted. The model fixes everything fitted from
                            the input, so options that shape the fit or read
                            the input are refused when they have no default
-                           (for example the --dictionary, --stats-options
-                           and --report options) and ignored when they do
-                           (for example the --locale, --min-count and the
-                           frequency limit).
+                           (for example the --dictionary, --stats-options,
+                           the --report and --delimiter options) and ignored
+                           when they do (for example the --locale,
+                           the --min-count and the frequency limit).
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
@@ -339,15 +341,6 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Parse --locale into the typed dispatch enum. Case-insensitive; unknown
-    // tokens surface the user's exact spelling alongside the supported list.
-    let locale = Locale::from_token(&args.flag_locale).map_err(|bad| {
-        CliError::IncorrectUsage(format!(
-            "Unsupported --locale '{bad}'. Supported: {}.",
-            Locale::ALL.join(", "),
-        ))
-    })?;
-
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
     }
@@ -382,6 +375,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             (args.flag_strict_relationships, "--strict-relationships"),
             (args.flag_save_model.is_some(), "--save-model"),
             (args.flag_report.is_some(), "--report"),
+            (args.flag_delimiter.is_some(), "--delimiter"),
         ];
         if let Some((_, name)) = fit_only.iter().find(|(set, _)| *set) {
             return fail_incorrectusage_clierror!(
@@ -389,11 +383,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                  source."
             );
         }
-    }
-    if args.flag_min_count == 0 {
-        return fail_incorrectusage_clierror!(
-            "--min-count must be at least 1 (1 disables suppression)."
-        );
     }
     let clashes_with_inputs = |path: &str| {
         let path = report::resolve_path(path);
@@ -436,7 +425,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let (model, fitted) = match args.flag_model.as_deref() {
         Some(model_path) => (model::Model::load(model_path)?, None),
         None => {
-            let (model, fitted) = fit(&args, locale, base_seed)?;
+            let (model, fitted) = fit(&args, base_seed)?;
             (model, Some(fitted))
         },
     };
@@ -565,7 +554,20 @@ struct Fitted {
 
 /// Profiles <input> (stats, frequency, count, optional dictionary) and builds
 /// the emit schedule from it.
-fn fit(args: &Args, locale: Locale, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
+fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
+    // Parse --locale into the typed dispatch enum. Case-insensitive; unknown
+    // tokens surface the user's exact spelling alongside the supported list.
+    let locale = Locale::from_token(&args.flag_locale).map_err(|bad| {
+        CliError::IncorrectUsage(format!(
+            "Unsupported --locale '{bad}'. Supported: {}.",
+            Locale::ALL.join(", "),
+        ))
+    })?;
+    if args.flag_min_count == 0 {
+        return fail_incorrectusage_clierror!(
+            "--min-count must be at least 1 (1 disables suppression)."
+        );
+    }
     let mut rng = StdRng::seed_from_u64(base_seed); // DevSkim: ignore DS148264
 
     // Column selection and --weight change which columns stats reports and in

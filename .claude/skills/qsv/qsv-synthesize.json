@@ -67,7 +67,7 @@
       {
         "flag": "--model",
         "type": "string",
-        "description": "Generate from a model saved with --save-model instead of profiling an input, which must then be omitted. The model fixes everything fitted from the input, so options that shape the fit or read the input are refused when they have no default (for example the --dictionary, --stats-options and --report options) and ignored when they do (for example the --locale, --min-count and the frequency limit)."
+        "description": "Generate from a model saved with --save-model instead of profiling an input, which must then be omitted. The model fixes everything fitted from the input, so options that shape the fit or read the input are refused when they have no default (for example the --dictionary, --stats-options, the --report and --delimiter options) and ignored when they do (for example the --locale, the --min-count and the frequency limit)."
       },
       {
         "flag": "--no-relationships",
@@ -93,7 +93,7 @@
       {
         "flag": "--save-model",
         "type": "string",
-        "description": "Also save the fitted model to <file>, so later runs can generate from it with --model without reading <input> again. A --model run with the same --rows and --seed writes the same rows as this run (pools of fake values are sized for this run's --rows). The model holds the real values that passed the --min-count, so share it only as you would the output. Its format is internal to qsv and versioned: a qsv that reads another model version refuses it, and it must be fitted again."
+        "description": "Also save the fitted model to <file>, so later runs can generate from it with --model without reading <input> again. A --model run with the same --rows and --seed writes the same rows as this run (pools of fake values are sized for this run's --rows). The model holds the real values the output can contain (see the privacy note above), including the trimmed ends of numeric and date ranges, so share it only as you would the output. Its format is internal to qsv and versioned: a qsv that reads another model version refuses it, and it must be fitted again."
       },
       {
         "flag": "--seed",

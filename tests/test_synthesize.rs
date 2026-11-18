@@ -3314,15 +3314,18 @@ fn synthesize_model_reproduces_the_fitting_run() {
     let wrk = Workdir::new("synthesize_model_same_output");
     model_fixture(&wrk);
 
-    let direct = wrk.stdout::<String>(&mut model_fit_cmd(&wrk, "20000", &[]));
-    let saving = wrk.stdout::<String>(&mut model_fit_cmd(
-        &wrk,
-        "20000",
-        &["--save-model", "m.json"],
-    ));
+    // Raw stdout bytes: the promise is byte-identical output, line endings included.
+    let direct = wrk.output(&mut model_fit_cmd(&wrk, "20000", &[])).stdout;
+    let saving = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &["--save-model", "m.json"],
+        ))
+        .stdout;
     let mut from_model = wrk.command("synthesize");
     from_model.args(["--model", "m.json", "-n", "20000", "--seed", "11"]);
-    let from_model = wrk.stdout::<String>(&mut from_model);
+    let from_model = wrk.output(&mut from_model).stdout;
 
     let model = wrk.read_to_string("m.json").unwrap();
     for variant in [
@@ -3339,11 +3342,11 @@ fn synthesize_model_reproduces_the_fitting_run() {
     ] {
         assert!(model.contains(variant), "model has no {variant} generator");
     }
-    assert_eq!(direct.lines().count(), 20001);
+    assert_eq!(direct.iter().filter(|&&b| b == b'\n').count(), 20001);
     assert!(saving == direct, "--save-model must not change the output");
     assert!(
         from_model == direct,
-        "a --model run must write the rows of the run that saved the model"
+        "a --model run must write the bytes of the run that saved the model"
     );
 }
 
@@ -3352,29 +3355,27 @@ fn synthesize_model_shards_join_to_the_fitting_run() {
     let wrk = Workdir::new("synthesize_model_shards");
     model_fixture(&wrk);
 
-    let direct = wrk.stdout::<String>(&mut model_fit_cmd(&wrk, "20000", &[]));
-    let first = wrk.stdout::<String>(&mut model_fit_cmd(
-        &wrk,
-        "20000",
-        &["--shard", "1/3", "--save-model", "m.json"],
-    ));
-    let mut joined: Vec<String> = first.lines().map(String::from).collect();
+    let direct = wrk.output(&mut model_fit_cmd(&wrk, "20000", &[])).stdout;
+    let mut joined = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &["--shard", "1/3", "--save-model", "m.json"],
+        ))
+        .stdout;
     for shard in ["2/3", "3/3"] {
         let mut cmd = wrk.command("synthesize");
         cmd.args([
             "--model", "m.json", "-n", "20000", "--seed", "11", "--shard", shard,
         ]);
-        joined.extend(
-            wrk.stdout::<String>(&mut cmd)
-                .lines()
-                .skip(1)
-                .map(String::from),
-        );
+        let slice = wrk.output(&mut cmd).stdout;
+        // Drop only the repeated header line, keeping every byte after it.
+        let body = slice.iter().position(|&b| b == b'\n').unwrap() + 1;
+        joined.extend_from_slice(&slice[body..]);
     }
-    let direct: Vec<String> = direct.lines().map(String::from).collect();
     assert!(
         joined == direct,
-        "model slices joined in order must equal the fitting run's output"
+        "model slices joined in order must equal the fitting run's bytes"
     );
 }
 
@@ -3389,6 +3390,7 @@ fn synthesize_model_refuses_fit_options() {
         &["--dictionary", "dict.json"],
         &["--report", "r.json"],
         &["--save-model", "m2.json"],
+        &["--delimiter", ";"],
     ] {
         let mut cmd = wrk.command("synthesize");
         cmd.args(["--model", "m.json"]).args(extra);
@@ -3398,6 +3400,26 @@ fn synthesize_model_refuses_fit_options() {
             "{extra:?}: {err}"
         );
     }
+
+    // Defaulted fit options are ignored with --model, even values a fit refuses.
+    let mut ignored = wrk.command("synthesize");
+    ignored.args([
+        "--model",
+        "m.json",
+        "-n",
+        "3",
+        "--locale",
+        "xx",
+        "--min-count",
+        "0",
+    ]);
+    assert_eq!(
+        wrk.output(&mut ignored)
+            .stdout
+            .split(|&b| b == b'\n')
+            .count(),
+        5
+    );
 
     let mut clash = model_fit_cmd(&wrk, "10", &["--save-model", "data.csv"]);
     assert!(

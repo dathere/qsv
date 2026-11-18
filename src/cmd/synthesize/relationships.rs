@@ -20,6 +20,7 @@ use std::{
 
 use indexmap::IndexMap;
 use rand::rngs::StdRng;
+use serde::{Deserialize, Serialize};
 
 use super::{
     dictionary::SynthRelationship,
@@ -38,6 +39,7 @@ use crate::{
 };
 
 /// One unit of work in the row-emission schedule.
+#[derive(Serialize, Deserialize)]
 pub(crate) enum EmitUnit {
     /// A single column generated independently.
     Independent {

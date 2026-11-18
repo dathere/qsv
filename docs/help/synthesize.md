@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/synthesize/mod.rs](https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/mod.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🎲](TableOfContents.md#legend "randomly generated or randomized output with a --seed option for reproducibility.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Synthesize Options](#synthesize-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Synthesize Options](#synthesize-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -95,10 +95,14 @@ the --min-count at 1 the range is the real min and max, and an outlier
 can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
+A model saved with --save-model holds the same real values, so treat it as
+you would the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
 Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
 and --shard, several machines can each generate one slice of a dataset.
+To profile <input> only once, save the fitted model with --save-model and
+generate the other slices from it with --model.
 
 
 <a name="examples"></a>
@@ -152,6 +156,18 @@ qsv synthesize data.csv -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
 qsv cat rows part1.csv part2.csv part3.csv part4.csv -o synthetic.csv
 ```
 
+> The same, profiling data.csv only once: the first slice saves the
+> fitted model, and the other slices generate from it without data.csv
+
+```console
+qsv synthesize data.csv -n 1000000000 --seed 42 --shard 1/4 --save-model model.json -o part1.csv
+```
+
+```console
+qsv synthesize --model model.json -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
+```
+
+...
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs).
 
 See also <https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize>
@@ -162,8 +178,17 @@ See also <https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize>
 
 ```console
 qsv synthesize [options] <input>
+qsv synthesize [options] --model <file>
 qsv synthesize --help
 ```
+
+<a name="arguments"></a>
+
+## Arguments [↩](#nav)
+
+| Argument&nbsp; | Description |
+|----------|-------------|
+| &nbsp;`<input>`&nbsp; | The source CSV to profile. Omitted with --model, which generates from a saved model instead. |
 
 <a name="synthesize-options"></a>
 
@@ -175,7 +200,9 @@ qsv synthesize --help
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given. |  |
 | &nbsp;`‑n,`<br>`‑‑rows`&nbsp; | integer | Number of synthetic rows to generate. | `100` |
 | &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless stats uses approximate estimators: either asked for via --stats-options (e.g. `--quantile-method approx`), or switched on by stats itself (with a warning) when the input won't fit in memory. |  |
-| &nbsp;`‑‑shard`&nbsp; | string | Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only. |  |
+| &nbsp;`‑‑shard`&nbsp; | string | Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Generating the slices from one model saved with --save-model avoids this. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only. |  |
+| &nbsp;`‑‑save‑model`&nbsp; | string | Also save the fitted model to <file>, so later runs can generate from it with --model without reading <input> again. A --model run with the same --rows and --seed writes the same rows as this run (pools of fake values are sized for this run's --rows). The model holds the real values that passed the --min-count, so share it only as you would the output. Its format is internal to qsv and versioned: a qsv that reads another model version refuses it, and it must be fitted again. |  |
+| &nbsp;`‑‑model`&nbsp; | string | Generate from a model saved with --save-model instead of profiling an input, which must then be omitted. The model fixes everything fitted from the input, so options that shape the fit or read the input are refused when they have no default (for example the --dictionary, --stats-options and --report options) and ignored when they do (for example the --locale, --min-count and the frequency limit). |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data. | `en` |
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
 | &nbsp;`‑‑min‑count`&nbsp; | integer | Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is dropped from the values it samples; its share is redistributed over the kept values. An enumerated column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their trimmed range), and a joint group to independent columns, or aborts under the --strict-relationships option. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first. Numeric and date ranges, and the gaps of `ordered` relationships, are also trimmed to their k-th smallest and k-th largest values (one extra pass over <input>). A numeric or date column with fewer than 2k-1 non-null values is left empty unless its real values are sampled. | `5` |

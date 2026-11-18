@@ -122,7 +122,9 @@ synthesize options:
                            Ignored if --dictionary is given.
     -n, --rows <n>         Number of synthetic rows to generate. [default: 100]
     --seed <n>             RNG seed for fully reproducible output. The same
-                           seed gives the same rows at any --jobs.
+                           seed gives the same rows at any --jobs, unless
+                           approximate stats (e.g. `--quantile-method approx`)
+                           are requested via --stats-options.
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
@@ -522,10 +524,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut out = wtr.into_inner().map_err(|e| e.into_error())?;
 
     // Chunks are generated in parallel, a window at a time, and written in
-    // chunk order, so peak memory is bounded by the window, not by -n.
+    // chunk order. The window starts at one chunk and is then sized from the
+    // largest chunk seen so far, so the bytes held at once stay near
+    // WINDOW_BYTES (but never below one chunk) however wide the rows are. The
+    // window only affects memory and speed, never the output.
     let ncols = stats_records.len();
     let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
-    let window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
+    let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
+    let mut window = 1_u64;
+    let mut largest_chunk = 0_u64;
     let mut first_chunk = 0_u64;
     while first_chunk < total_chunks {
         let last_chunk = (first_chunk + window).min(total_chunks);
@@ -540,6 +547,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     base_seed,
                     chunk,
                     rows,
+                    largest_chunk,
                     report_keys.as_ref(),
                 )
             })
@@ -547,9 +555,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         for chunk in chunks {
             let (bytes, matches) = chunk?;
             exact_matches += matches;
+            largest_chunk = largest_chunk.max(bytes.len() as u64);
             out.write_all(&bytes)?;
         }
         first_chunk = last_chunk;
+        window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
     }
     out.flush()?;
 
@@ -591,6 +601,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// what a --seed reproduces: changing it changes every seeded output.
 const CHUNK_ROWS: u64 = 8192;
 
+/// Target for the encoded output held in memory at once across a window of chunks.
+const WINDOW_BYTES: u64 = 256 * 1024 * 1024;
+
 /// RNG for one output chunk, keyed on the base seed and the chunk index only
 /// (never on fit-time RNG state), with fixed little-endian bytes so every
 /// platform derives the same stream.
@@ -611,10 +624,12 @@ fn generate_chunk(
     base_seed: u64,
     chunk: u64,
     rows: u64,
+    size_hint: u64,
     report_keys: Option<&(report::RowKeyer, HashSet<u128>)>,
 ) -> CliResult<(Vec<u8>, u64)> {
     let mut rng = chunk_rng(base_seed, chunk);
-    let mut wtr = builder.from_writer(Vec::new());
+    // Sized from the largest chunk so far, so the buffer doesn't double past it.
+    let mut wtr = builder.from_writer(Vec::with_capacity(size_hint as usize));
     // One reusable row buffer: each EmitUnit writes into its own column slot(s)
     // by index, so the schedule can be walked in any fixed order per row.
     let mut row: Vec<String> = vec![String::new(); ncols];

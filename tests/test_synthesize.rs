@@ -2982,3 +2982,31 @@ fn synthesize_chunks_write_one_bom() {
     assert!(out.starts_with('\u{FEFF}'));
     assert_eq!(out.matches('\u{FEFF}').count(), 1);
 }
+
+#[test]
+fn synthesize_report_counts_matches_in_every_chunk() {
+    let wrk = Workdir::new("synthesize_chunked_report_count");
+    // Only real (city, state, zip) tuples can be emitted, so every row matches.
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "20000",
+        "--seed",
+        "7",
+        "--jobs",
+        "2",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(read_report(&wrk)["privacy"]["exact_matches"], 20000);
+}

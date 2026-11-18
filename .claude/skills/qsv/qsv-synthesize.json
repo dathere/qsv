@@ -88,7 +88,7 @@
       {
         "flag": "--seed",
         "type": "number",
-        "description": "RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs."
+        "description": "RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless approximate stats (e.g. `--quantile-method approx`) are requested via --stats-options."
       },
       {
         "flag": "--stats-options",

@@ -83,8 +83,10 @@ not stop it:
     can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
-A model saved with --save-model holds the same real values, so treat it as
-you would the output.
+A model saved with --save-model holds real values from <input>: the
+enumerated values and joint tuples that passed the --min-count, and the
+trimmed ends of numeric, date and `ordered` ranges. It can hold a value the
+output never shows, so review and share it at least as carefully.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
 Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
@@ -173,12 +175,11 @@ synthesize options:
                            reading <input> again. A --model run with the
                            same --rows and --seed writes the same rows as
                            this run (pools of fake values are sized for
-                           this run's --rows). The model holds the real
-                           values the output can contain (see the privacy
-                           note above), including the trimmed ends of
-                           numeric and date ranges, so share it only as you
-                           would the output. Its format is
-                           internal to qsv and versioned: a qsv that reads
+                           this run's --rows). The model holds real values
+                           from <input>, some of which the output may never
+                           show (see the privacy note above), so share it
+                           at least as carefully as the output. Its format
+                           is internal to qsv and versioned: a qsv that reads
                            another model version refuses it, and it must be
                            fitted again.
     --model <file>         Generate from a model saved with --save-model

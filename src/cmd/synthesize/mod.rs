@@ -123,8 +123,10 @@ synthesize options:
     -n, --rows <n>         Number of synthetic rows to generate. [default: 100]
     --seed <n>             RNG seed for fully reproducible output. The same
                            seed gives the same rows at any --jobs, unless
-                           approximate stats (e.g. `--quantile-method approx`)
-                           are requested via --stats-options.
+                           stats uses approximate estimators: either asked
+                           for via --stats-options (e.g. `--quantile-method
+                           approx`), or switched on by stats itself (with a warning)
+                           when the input won't fit in memory.
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,

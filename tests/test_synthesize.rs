@@ -3168,6 +3168,19 @@ fn synthesize_passes_on_stats_warnings() {
 }
 
 #[test]
+fn synthesize_passes_on_frequency_warnings() {
+    let wrk = Workdir::new("synthesize_frequency_warnings");
+    chunked_fixture(&wrk);
+    // An empty frequency cache makes frequency warn and recompute.
+    wrk.create_from_string("data.freq.csv.data.jsonl", "");
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "5", "--seed", "1", "data.csv"]);
+    let stderr = wrk.stderr_on_success(&mut cmd);
+    assert!(stderr.contains("Frequency cache is empty"), "got: {stderr}");
+}
+
+#[test]
 fn synthesize_shard_refuses_infer_content_type() {
     let wrk = Workdir::new("synthesize_shard_infer");
     chunked_fixture(&wrk);

@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-enum RangeKind {
+pub(crate) enum RangeKind {
     Integer,
     Float,
     Date,
@@ -25,7 +25,7 @@ enum RangeKind {
 }
 
 impl RangeKind {
-    fn from_type(t: &str) -> Option<Self> {
+    pub(crate) fn from_type(t: &str) -> Option<Self> {
         match t {
             "Integer" => Some(Self::Integer),
             "Float" => Some(Self::Float),

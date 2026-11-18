@@ -187,6 +187,7 @@ pub(crate) enum ColumnGenerator {
 }
 
 impl ColumnGenerator {
+    #[cfg(test)]
     pub(crate) fn build(
         stats: &StatsRecord,
         freqs: &[&FrequencyRecord],
@@ -196,6 +197,35 @@ impl ColumnGenerator {
         locale: Locale,
         consistent_fakes: bool,
         min_count: u64,
+        rng: &mut StdRng,
+    ) -> ColumnGenerator {
+        Self::build_tracked(
+            stats,
+            freqs,
+            content_type,
+            total_rows,
+            requested_rows,
+            locale,
+            consistent_fakes,
+            min_count,
+            &mut None,
+            rng,
+        )
+    }
+
+    /// `suppressed_out` receives the (distinct values, rows) that `min_count`
+    /// dropped, when the column's real values were sampled from (or would
+    /// have been, before every value was dropped).
+    pub(crate) fn build_tracked(
+        stats: &StatsRecord,
+        freqs: &[&FrequencyRecord],
+        content_type: &str,
+        total_rows: u64,
+        requested_rows: u64,
+        locale: Locale,
+        consistent_fakes: bool,
+        min_count: u64,
+        suppressed_out: &mut Option<(usize, u64)>,
         rng: &mut StdRng,
     ) -> ColumnGenerator {
         let null_ratio = compute_null_ratio(stats.nullcount, total_rows);
@@ -238,7 +268,9 @@ impl ColumnGenerator {
 
         // 2. Fully-enumerated frequency pool — reproduces the real value set, weights, cardinality
         //    and repetition structure, minus values seen fewer than `min_count` times.
-        if let Some(generator) = try_frequency_weighted(freqs, null_ratio, min_count) {
+        if let Some(generator) =
+            try_frequency_weighted(freqs, null_ratio, min_count, suppressed_out)
+        {
             return generator;
         }
 
@@ -471,6 +503,7 @@ fn try_frequency_weighted(
     freqs: &[&FrequencyRecord],
     null_ratio: f64,
     min_count: u64,
+    suppressed_out: &mut Option<(usize, u64)>,
 ) -> Option<ColumnGenerator> {
     if freqs.is_empty() {
         return None;
@@ -488,6 +521,7 @@ fn try_frequency_weighted(
     let mut values = Vec::new();
     let mut weights = Vec::new();
     let mut suppressed = 0_usize;
+    let mut suppressed_rows = 0_u64;
     for f in freqs {
         // Nulls are reproduced via `null_ratio`, not the value pool.
         if f.value == NULL_TEXT || f.value.contains(ALL_UNIQUE_SENTINEL) || f.count == 0 {
@@ -495,6 +529,7 @@ fn try_frequency_weighted(
         }
         if f.count < min_count {
             suppressed += 1;
+            suppressed_rows += f.count;
             continue;
         }
         values.push(f.value.clone());
@@ -502,6 +537,7 @@ fn try_frequency_weighted(
         weights.push(f.count as f64);
     }
     if suppressed > 0 {
+        *suppressed_out = Some((suppressed, suppressed_rows));
         log::info!(
             "synthesize: column '{}' — suppressed {suppressed} value(s) seen fewer than \
              --min-count ({min_count}) times",
@@ -998,7 +1034,7 @@ mod tests {
     fn frequency_weighted_only_emits_pool_values_at_the_right_ratio() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "B", 300, 2.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        let generator = try_frequency_weighted(&refs, 0.0, 1).unwrap();
+        let generator = try_frequency_weighted(&refs, 0.0, 1, &mut None).unwrap();
 
         let mut rng = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -1019,7 +1055,7 @@ mod tests {
     fn frequency_weighted_rejects_other_bucket() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "Other (5)", 300, 0.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        assert!(try_frequency_weighted(&refs, 0.0, 1).is_none());
+        assert!(try_frequency_weighted(&refs, 0.0, 1, &mut None).is_none());
     }
 
     #[test]
@@ -1030,7 +1066,7 @@ mod tests {
             freq("c", "RARE", 4, 3.0),
         ];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        let generator = try_frequency_weighted(&refs, 0.0, 5).unwrap();
+        let generator = try_frequency_weighted(&refs, 0.0, 5, &mut None).unwrap();
 
         let mut rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -1052,9 +1088,9 @@ mod tests {
     fn frequency_weighted_returns_none_when_all_values_below_min_count() {
         let freqs = [freq("c", "A", 4, 1.0), freq("c", "B", 1, 2.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        assert!(try_frequency_weighted(&refs, 0.0, 5).is_none());
+        assert!(try_frequency_weighted(&refs, 0.0, 5, &mut None).is_none());
         // The threshold is inclusive: count == min_count is kept.
-        assert!(try_frequency_weighted(&refs, 0.0, 4).is_some());
+        assert!(try_frequency_weighted(&refs, 0.0, 4, &mut None).is_some());
     }
 
     #[test]

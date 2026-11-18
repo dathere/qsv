@@ -13,7 +13,10 @@
 //! group; any relationship that fails resolution or validation is dropped, and
 //! its columns fall back to independent generation.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+};
 
 use indexmap::IndexMap;
 use rand::rngs::StdRng;
@@ -26,6 +29,7 @@ use super::{
         parse_epoch, parse_f64,
     },
     group_generator::{GroupGenerator, OrderedKind},
+    report::Suppression,
 };
 use crate::{
     CliError, CliResult,
@@ -73,6 +77,8 @@ pub(crate) struct ScheduleParams<'a> {
     pub strict:                bool,
     pub input_path:            &'a str,
     pub delimiter:             Option<Delimiter>,
+    /// What `min_count` dropped, per column or joint group, for `--report`.
+    pub suppressions:          &'a RefCell<Vec<Suppression>>,
 }
 
 /// Resolve the declared relationships and build the ordered `EmitUnit`
@@ -128,7 +134,8 @@ pub(crate) fn build_emit_schedule(
             .content_types
             .get(&sr.field)
             .map_or("unknown", String::as_str);
-        let generator = ColumnGenerator::build(
+        let mut suppressed = None;
+        let generator = ColumnGenerator::build_tracked(
             sr,
             freqs,
             content_type,
@@ -137,8 +144,16 @@ pub(crate) fn build_emit_schedule(
             params.locale,
             params.consistent_fakes,
             params.min_count,
+            &mut suppressed,
             rng,
         );
+        if let Some((distinct, rows)) = suppressed {
+            params.suppressions.borrow_mut().push(Suppression {
+                columns: vec![sr.field.clone()],
+                distinct,
+                rows,
+            });
+        }
         schedule.push(EmitUnit::Independent {
             col_idx: i,
             generator,
@@ -248,7 +263,18 @@ fn resolve_joint(indices: &[usize], params: &ScheduleParams) -> CliResult<Option
         .collect();
 
     match learn_joint_tuples(&col_indices, params)? {
-        JointLearn::Ok { tuples, cumulative } => {
+        JointLearn::Ok {
+            tuples,
+            cumulative,
+            suppressed,
+        } => {
+            if suppressed.0 > 0 {
+                params.suppressions.borrow_mut().push(Suppression {
+                    columns:  names.iter().map(|n| (*n).to_string()).collect(),
+                    distinct: suppressed.0,
+                    rows:     suppressed.1,
+                });
+            }
             log::info!(
                 "synthesize: joint relationship on {names:?} — {} distinct tuple(s)",
                 tuples.len()
@@ -280,7 +306,12 @@ fn resolve_joint(indices: &[usize], params: &ScheduleParams) -> CliResult<Option
             );
             Ok(None)
         },
-        JointLearn::AllSuppressed(distinct) => {
+        JointLearn::AllSuppressed(distinct, rows) => {
+            params.suppressions.borrow_mut().push(Suppression {
+                columns: names.iter().map(|n| (*n).to_string()).collect(),
+                distinct,
+                rows,
+            });
             let msg = format!(
                 "joint relationship on {names:?}: all {distinct} distinct tuple(s) occur fewer \
                  than --min-count ({}) times",
@@ -303,13 +334,16 @@ enum JointLearn {
     Ok {
         tuples:     Vec<Vec<String>>,
         cumulative: Vec<f64>,
+        /// (distinct tuples, rows) dropped by `--min-count`.
+        suppressed: (usize, u64),
     },
     /// Distinct-tuple count exceeded `--joint-cardinality-cap`.
     OverCap(usize),
     /// The source has no data rows.
     Empty,
     /// Every distinct tuple occurred fewer than `--min-count` times.
-    AllSuppressed(usize),
+    /// (distinct tuples, rows).
+    AllSuppressed(usize, u64),
 }
 
 /// The source cell for stats record `col`, mapped by header name rather than
@@ -354,9 +388,16 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
     // redistributed over the kept tuples by the normalization below.
     let distinct = counts.len();
     let min_count = params.min_count;
-    counts.retain(|_, c| *c >= min_count);
+    let mut dropped_rows = 0_u64;
+    counts.retain(|_, c| {
+        let keep = *c >= min_count;
+        if !keep {
+            dropped_rows += *c;
+        }
+        keep
+    });
     if counts.is_empty() {
-        return Ok(JointLearn::AllSuppressed(distinct));
+        return Ok(JointLearn::AllSuppressed(distinct, dropped_rows));
     }
     let suppressed = distinct - counts.len();
     if suppressed > 0 {
@@ -388,7 +429,11 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
     if let Some(last) = cumulative.last_mut() {
         *last = 1.0;
     }
-    Ok(JointLearn::Ok { tuples, cumulative })
+    Ok(JointLearn::Ok {
+        tuples,
+        cumulative,
+        suppressed: (suppressed, dropped_rows),
+    })
 }
 
 /// Build a `GroupGenerator::Ordered` (anchor + learned gap) from a monotonic

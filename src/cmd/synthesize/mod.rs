@@ -157,6 +157,22 @@ synthesize options:
                            than 2k-1 non-null values is left empty unless its
                            real values are sampled.
                            [default: 5]
+    --report <file>        Write a JSON report of what the run reproduced
+                           from <input>: source and synthetic row counts,
+                           how many synthetic rows exactly match a source
+                           row (numbers and dates compared by value, other
+                           columns as text), and the values and joint tuples
+                           dropped by the --min-count option. Takes one
+                           extra pass over <input> and holds a hash per
+                           distinct source row in memory. A row with a
+                           float, free-text or faker column rarely matches
+                           exactly, so a low match rate does not by itself
+                           show that the output is private. A joint group
+                           that falls back to independent columns is listed,
+                           and so is each of its columns that also drops
+                           values, so suppressed rows can be counted more
+                           than once. Must not be the input, dictionary or
+                           output file.
     --stats-options <arg>  Extra options appended to the internal `stats` run.
                            Note: cardinality, quartiles and date inference are
                            always enabled — do not re-specify them here.
@@ -198,7 +214,7 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::{collections::HashMap, path::Path};
+use std::{cell::RefCell, collections::HashMap, path::Path};
 
 use rand::{SeedableRng, rngs::StdRng};
 use serde::Deserialize;
@@ -216,6 +232,7 @@ mod generator;
 mod group_generator;
 mod range_trim;
 mod relationships;
+mod report;
 
 use faker_map::Locale;
 use relationships::{EmitUnit, ScheduleParams, build_emit_schedule};
@@ -234,6 +251,7 @@ struct Args {
     flag_no_relationships:      bool,
     flag_joint_cardinality_cap: u64,
     flag_min_count:             u64,
+    flag_report:                Option<String>,
     flag_correlation_threshold: f64,
     flag_strict_relationships:  bool,
     flag_jobs:                  Option<usize>,
@@ -289,6 +307,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let input_path = args.arg_input.as_str();
     if !Path::new(input_path).is_file() {
         return fail_clierror!("Input file '{input_path}' does not exist or is not a file.");
+    }
+    if let Some(report_path) = &args.flag_report {
+        let report = report::resolve_path(report_path);
+        let clashes = std::iter::once(Some(input_path))
+            .chain([args.flag_dictionary.as_deref(), args.flag_output.as_deref()])
+            .flatten()
+            .any(|other| report::resolve_path(other) == report);
+        if clashes {
+            return fail_incorrectusage_clierror!(
+                "--report must not be the input, --dictionary or --output file."
+            );
+        }
     }
 
     // Single master RNG, threaded through both the sampling/selection logic and
@@ -372,7 +402,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 2. Parse analysis -------------------------------------------------
     let (mut stats_records, _addl_cols) = parse_stats_csv(&stats_csv)?;
-    let frequency_records = parse_frequency_csv(&freq_csv)?;
+    let mut frequency_records = parse_frequency_csv(&freq_csv)?;
+    // Without headers stats names columns "0", "1", … but frequency names them
+    // "1", "2", …; renumber frequency's so both point at the same column.
+    if crate::config::resolved_no_headers(false) {
+        for fr in &mut frequency_records {
+            if let Some(n) = fr
+                .field
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+            {
+                fr.field = n.to_string();
+            }
+        }
+    }
 
     if stats_records.is_empty() {
         return fail_clierror!("No columns found in '{input_path}'.");
@@ -422,6 +466,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // --- 4. Build the row-emission schedule --------------------------------
     // Ungrouped columns get one ColumnGenerator each; columns named by a valid
     // `relationship` are grouped under a GroupGenerator that emits them jointly.
+    let suppressions = RefCell::new(Vec::new());
     let schedule_params = ScheduleParams {
         stats_records: &stats_records,
         frequency_records: &frequency_records,
@@ -438,8 +483,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         strict: args.flag_strict_relationships,
         input_path,
         delimiter: args.flag_delimiter,
+        suppressions: &suppressions,
     };
     let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
+
+    // Only with --report: hash every source row so emitted rows can be checked
+    // for exact copies. Uses no RNG, so output is the same with or without it.
+    let report_keys = match args.flag_report {
+        Some(_) => {
+            let keyer = report::RowKeyer::new(&stats_records, &source_cols, &schedule, prefer_dmy);
+            let keys = report::source_row_keys(&keyer, input_path, args.flag_delimiter)?;
+            Some((keyer, keys))
+        },
+        None => None,
+    };
+    let mut exact_matches = 0_u64;
 
     // --- 5. Emit -----------------------------------------------------------
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
@@ -468,12 +526,49 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 },
             }
         }
+        if let Some((keyer, keys)) = &report_keys
+            && keys.contains(&keyer.synthetic_key(&row))
+        {
+            exact_matches += 1;
+        }
         record.clear();
         for value in &row {
             record.push_field(value);
         }
         wtr.write_record(&record)?;
     }
+    wtr.flush()?;
 
-    Ok(wtr.flush()?)
+    if let (Some(report_path), Some((keyer, keys))) = (&args.flag_report, &report_keys) {
+        let compared: Vec<usize> = keyer.compared().collect();
+        let names = |pred: &dyn Fn(usize) -> bool| -> Vec<&str> {
+            stats_records
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| pred(*i))
+                .map(|(_, sr)| sr.field.as_str())
+                .collect()
+        };
+        // With no column compared every row hashes the same, so a match count
+        // would be meaningless: report the row metrics as null instead.
+        let any_compared = !compared.is_empty();
+        #[allow(clippy::cast_precision_loss)]
+        let rate = exact_matches as f64 / args.flag_rows as f64;
+        let report = serde_json::json!({
+            "source_rows": total_rows,
+            "synthetic_rows": args.flag_rows,
+            "seed": args.flag_seed,
+            "min_count": args.flag_min_count,
+            "privacy": {
+                "exact_matches": any_compared.then_some(exact_matches),
+                "exact_match_rate": any_compared.then_some(rate),
+                "distinct_source_rows": any_compared.then_some(keys.len()),
+                "compared_columns": names(&|i| compared.contains(&i)),
+                "excluded_columns": names(&|i| !compared.contains(&i)),
+                "suppressed": &*suppressions.borrow(),
+            },
+        });
+        std::fs::write(report_path, serde_json::to_string_pretty(&report)? + "\n")?;
+    }
+    Ok(())
 }

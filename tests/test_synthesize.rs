@@ -3114,6 +3114,39 @@ fn synthesize_report_counts_only_the_shard() {
 }
 
 #[test]
+fn synthesize_report_for_an_empty_shard_has_a_null_rate() {
+    let wrk = Workdir::new("synthesize_shard_empty_report");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    // 10 rows = 1 chunk, which goes to shard 2/2, so 1/2 is header-only.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "10",
+        "--seed",
+        "7",
+        "--shard",
+        "1/2",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let report = read_report(&wrk);
+    assert_eq!(report["synthetic_rows"], 0);
+    assert_eq!(report["privacy"]["exact_matches"], 0);
+    assert!(report["privacy"]["exact_match_rate"].is_null());
+}
+
+// stats rejects --quantile-method approx on big-endian targets.
+#[cfg(target_endian = "little")]
+#[test]
 fn synthesize_passes_on_stats_warnings() {
     let wrk = Workdir::new("synthesize_stats_warnings");
     chunked_fixture(&wrk);

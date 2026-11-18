@@ -141,12 +141,13 @@ synthesize options:
                            N joined in order (with `qsv cat rows`) are the
                            same as one unsharded run. Every slice must use the
                            same <input>, options, qsv version and
-                           dictionary file, if any (--infer-content-type is
-                           refused). Each slice still profiles all of <input>
-                           itself, so if stats warns on one machine that it
-                           switched to approximate estimators for lack of
-                           memory, that slice comes from a different fit and
-                           the joined rows won't match one run. Each slice gets a header
+                           dictionary file, if any (--infer-content-type
+                           without --dictionary is refused). Each slice still
+                           profiles all of <input> itself, so if stats or
+                           frequency warns on one machine that it switched to
+                           approximate estimators for lack of memory, that
+                           slice comes from a different fit and the joined
+                           rows won't match one run. Each slice gets a header
                            row even when it has no rows (when N exceeds the
                            number of blocks). With --report, the counts are
                            for this slice only.
@@ -627,7 +628,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // would be meaningless: report the row metrics as null instead.
         let any_compared = !compared.is_empty();
         #[allow(clippy::cast_precision_loss)]
-        let rate = exact_matches as f64 / synthetic_rows as f64;
+        let rate = (any_compared && synthetic_rows > 0)
+            .then(|| exact_matches as f64 / synthetic_rows as f64);
         let report = serde_json::json!({
             "source_rows": total_rows,
             "synthetic_rows": synthetic_rows,
@@ -636,7 +638,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "min_count": args.flag_min_count,
             "privacy": {
                 "exact_matches": any_compared.then_some(exact_matches),
-                "exact_match_rate": (any_compared && synthetic_rows > 0).then_some(rate),
+                "exact_match_rate": rate,
                 "distinct_source_rows": any_compared.then_some(keys.len()),
                 "compared_columns": names(&|i| compared.contains(&i)),
                 "excluded_columns": names(&|i| !compared.contains(&i)),

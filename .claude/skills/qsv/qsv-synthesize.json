@@ -93,7 +93,7 @@
       {
         "flag": "--shard",
         "type": "string",
-        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type is refused). Each slice still profiles all of <input> itself, so if stats warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only."
+        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only."
       },
       {
         "flag": "--stats-options",

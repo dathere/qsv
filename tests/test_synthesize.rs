@@ -3141,7 +3141,10 @@ fn synthesize_report_for_an_empty_shard_has_a_null_rate() {
     let report = read_report(&wrk);
     assert_eq!(report["synthetic_rows"], 0);
     assert_eq!(report["privacy"]["exact_matches"], 0);
-    assert!(report["privacy"]["exact_match_rate"].is_null());
+    assert_eq!(
+        report.pointer("/privacy/exact_match_rate"),
+        Some(&serde_json::Value::Null)
+    );
 }
 
 // stats rejects --quantile-method approx on big-endian targets.
@@ -3171,8 +3174,15 @@ fn synthesize_passes_on_stats_warnings() {
 fn synthesize_passes_on_frequency_warnings() {
     let wrk = Workdir::new("synthesize_frequency_warnings");
     chunked_fixture(&wrk);
-    // An empty frequency cache makes frequency warn and recompute.
+    // An empty frequency cache makes frequency warn and recompute. It is only
+    // read when strictly newer than data.csv, so don't rely on mtime ticks.
     wrk.create_from_string("data.freq.csv.data.jsonl", "");
+    std::fs::File::options()
+        .write(true)
+        .open(wrk.path("data.freq.csv.data.jsonl"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(60))
+        .unwrap();
 
     let mut cmd = wrk.command("synthesize");
     cmd.args(["-n", "5", "--seed", "1", "data.csv"]);

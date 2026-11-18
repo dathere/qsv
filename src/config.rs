@@ -1354,7 +1354,14 @@ impl Config {
             warn!("failed to write UTF-8 BOM: {e}");
         }
 
-        csv::WriterBuilder::new()
+        self.writer_builder().from_writer(wtr)
+    }
+
+    /// The CSV settings `from_writer` uses, without the BOM, for encoding output
+    /// in pieces (e.g. per worker) that are then appended to one stream.
+    pub fn writer_builder(&self) -> csv::WriterBuilder {
+        let mut builder = csv::WriterBuilder::new();
+        builder
             .flexible(self.flexible)
             .delimiter(self.write_delimiter)
             .terminator(self.terminator)
@@ -1362,8 +1369,8 @@ impl Config {
             .quote_style(self.quote_style)
             .double_quote(self.double_quote)
             .escape(self.escape.unwrap_or(b'\\'))
-            .buffer_capacity(self.write_buffer as usize)
-            .from_writer(wtr)
+            .buffer_capacity(self.write_buffer as usize);
+        builder
     }
 }
 

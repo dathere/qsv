@@ -96,7 +96,8 @@ can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
 
-With --seed, output is fully reproducible.
+With --seed, output is fully reproducible, whatever the --jobs setting.
+Rows are generated in parallel, in fixed blocks of 8192 rows.
 
 
 <a name="examples"></a>
@@ -156,7 +157,7 @@ qsv synthesize --help
 | &nbsp;`‑‑dictionary`&nbsp; | string | Data Dictionary JSON file produced by `describegpt --dictionary --infer-content-type --format JSON`. Layers semantic Content Types onto generation. If omitted, generation is purely type/frequency-based. |  |
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given. |  |
 | &nbsp;`‑n,`<br>`‑‑rows`&nbsp; | integer | Number of synthetic rows to generate. | `100` |
-| &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. |  |
+| &nbsp;`‑‑seed`&nbsp; | integer | RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless stats uses approximate estimators: either asked for via --stats-options (e.g. `--quantile-method approx`), or switched on by stats itself (with a warning) when the input won't fit in memory. |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data. | `en` |
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
 | &nbsp;`‑‑min‑count`&nbsp; | integer | Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is dropped from the values it samples; its share is redistributed over the kept values. An enumerated column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their trimmed range), and a joint group to independent columns, or aborts under the --strict-relationships option. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first. Numeric and date ranges, and the gaps of `ordered` relationships, are also trimmed to their k-th smallest and k-th largest values (one extra pass over <input>). A numeric or date column with fewer than 2k-1 non-null values is left empty unless its real values are sampled. | `5` |
@@ -167,7 +168,7 @@ qsv synthesize --help
 | &nbsp;`‑‑joint‑cardinality‑cap`&nbsp; | integer | Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited. | `100000` |
 | &nbsp;`‑‑correlation‑threshold`&nbsp; | float | Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped. | `0.3` |
 | &nbsp;`‑‑strict‑relationships`&nbsp; | flag | Abort instead of warning-and-degrading when a declared relationship fails validation. |  |
-| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of jobs to use for the internal `stats` and `frequency` runs. |  |
+| &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of jobs to use for the internal `stats` and `frequency` runs and for generating rows. |  |
 
 <a name="common-options"></a>
 

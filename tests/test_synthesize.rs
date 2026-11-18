@@ -2843,3 +2843,170 @@ fn synthesize_report_does_not_change_output() {
     assert_eq!(without, with);
     assert_eq!(read_report(&wrk)["synthetic_rows"], 200);
 }
+
+/// city/state/zip in a `joint` group, a faker-backed email column and a numeric
+/// column, so every generator kind draws from the per-chunk RNG.
+fn chunked_fixture(wrk: &Workdir) {
+    let mut rows = vec![svec!["city", "state", "zip", "email", "amount"]];
+    let geo = [
+        ("Springfield", "IL", "62701"),
+        ("Chicago", "IL", "60601"),
+        ("Boston", "MA", "02101"),
+        ("Portland", "OR", "97201"),
+    ];
+    for i in 0..40 {
+        let (city, state, zip) = geo[i % geo.len()];
+        rows.push(vec![
+            city.to_string(),
+            state.to_string(),
+            zip.to_string(),
+            format!("user{i}@example.com"),
+            format!("{}.{}", 100 + i * 37 % 900, i % 100),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+    "fields": [
+        {"name": "city", "type": "String"},
+        {"name": "state", "type": "String"},
+        {"name": "zip", "type": "String"},
+        {"name": "email", "type": "String", "content_type": "email"},
+        {"name": "amount", "type": "Float"}
+    ],
+    "relationships": [
+        {"kind": "joint", "members": ["city", "state", "zip"]}
+    ]
+}"#,
+    );
+}
+
+#[test]
+fn synthesize_seeded_output_is_identical_at_any_jobs() {
+    let wrk = Workdir::new("synthesize_chunked_jobs");
+    chunked_fixture(&wrk);
+
+    // 20000 rows = two full 8192-row chunks plus a partial third.
+    let run = |jobs: &str, report: &str| -> String {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "7", "--jobs", jobs, "--report"])
+            .arg(wrk.path(report))
+            .arg("--dictionary")
+            .arg(wrk.path("dict.json"))
+            .arg("data.csv");
+        wrk.stdout(&mut cmd)
+    };
+    let serial = run("1", "r1.json");
+    let parallel = run("2", "r2.json");
+
+    assert_eq!(serial.lines().count(), 20001);
+    assert!(
+        serial == parallel,
+        "seeded output must not depend on --jobs"
+    );
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(wrk.path(name)).unwrap()).unwrap()
+    };
+    assert_eq!(
+        read("r1.json")["privacy"]["exact_matches"],
+        read("r2.json")["privacy"]["exact_matches"]
+    );
+}
+
+#[test]
+fn synthesize_chunks_draw_from_distinct_streams() {
+    let wrk = Workdir::new("synthesize_chunked_streams");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "16384", "--seed", "7", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let out: String = wrk.stdout(&mut cmd);
+    let rows: Vec<&str> = out.lines().skip(1).collect();
+
+    assert_eq!(rows.len(), 16384);
+    assert_ne!(
+        rows[..8192],
+        rows[8192..],
+        "each chunk must have its own random stream"
+    );
+}
+
+#[test]
+fn synthesize_row_count_spans_chunk_boundary() {
+    let wrk = Workdir::new("synthesize_chunked_boundary");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "8193", "--seed", "7"]).arg("data.csv");
+    let out: String = wrk.stdout(&mut cmd);
+
+    assert_eq!(out.lines().count(), 8194);
+}
+
+#[test]
+fn synthesize_chunks_use_the_output_delimiter() {
+    let wrk = Workdir::new("synthesize_chunked_tsv");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "9000", "--seed", "7", "-o"])
+        .arg(wrk.path("out.tsv"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let out = std::fs::read_to_string(wrk.path("out.tsv")).unwrap();
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 9001);
+    // the last line is in the second chunk
+    for line in [lines[0], lines[1], lines[9000]] {
+        assert_eq!(line.split('\t').count(), 5, "not tab-delimited: {line}");
+    }
+}
+
+#[test]
+fn synthesize_chunks_write_one_bom() {
+    let wrk = Workdir::new("synthesize_chunked_bom");
+    chunked_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_OUTPUT_BOM", "1")
+        .args(["-n", "9000", "--seed", "7", "-o"])
+        .arg(wrk.path("out.csv"))
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let out = std::fs::read_to_string(wrk.path("out.csv")).unwrap();
+    assert!(out.starts_with('\u{FEFF}'));
+    assert_eq!(out.matches('\u{FEFF}').count(), 1);
+}
+
+#[test]
+fn synthesize_report_counts_matches_in_every_chunk() {
+    let wrk = Workdir::new("synthesize_chunked_report_count");
+    // Only real (city, state, zip) tuples can be emitted, so every row matches.
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--min-count",
+        "1",
+        "-n",
+        "20000",
+        "--seed",
+        "7",
+        "--jobs",
+        "2",
+        "--report",
+    ])
+    .arg(wrk.path("report.json"))
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    assert_eq!(read_report(&wrk)["privacy"]["exact_matches"], 20000);
+}

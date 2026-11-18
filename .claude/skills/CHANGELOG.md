@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`qsv-synthesize --min-count`**: privacy threshold (default 5). Values and `joint` tuples seen fewer than k times in the source are dropped from the real values it samples. Skill regenerated from the USAGE text. ([#5066](https://github.com/dathere/qsv/pull/5066))
 
 ### Changed
+- **`qsv-synthesize --seed` is the same at any `--jobs`**: rows are now generated in parallel, in fixed 8,192-row blocks, so a seed gives the same rows whatever `--jobs` is (unless `stats` uses approximate estimators, whether requested via `--stats-options` or switched on automatically when the input won't fit in memory), though different rows than qsv 29.0.0. Skill regenerated from the USAGE text. ([#5069](https://github.com/dathere/qsv/pull/5069))
 - **`qsv-synthesize` warns that its output is not anonymized** ([#5064](https://github.com/dathere/qsv/pull/5064)): synthetic output can contain real source values. The skill description was regenerated from the README command table.
 
 ## [29.0.0] - 2026-11-15

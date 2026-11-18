@@ -88,7 +88,7 @@
       {
         "flag": "--seed",
         "type": "number",
-        "description": "RNG seed for fully reproducible output."
+        "description": "RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless stats uses approximate estimators: either asked for via --stats-options (e.g. `--quantile-method approx`), or switched on by stats itself (with a warning) when the input won't fit in memory."
       },
       {
         "flag": "--stats-options",

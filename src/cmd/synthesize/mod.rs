@@ -84,7 +84,8 @@ not stop it:
 
 Review the output before sharing it, or training on it, as de-identified data.
 
-With --seed, output is fully reproducible.
+With --seed, output is fully reproducible, whatever the --jobs setting.
+Rows are generated in parallel, in fixed blocks of 8192 rows.
 
 Examples:
 
@@ -120,7 +121,12 @@ synthesize options:
                            <input>. Requires an LLM API key (QSV_LLM_APIKEY).
                            Ignored if --dictionary is given.
     -n, --rows <n>         Number of synthetic rows to generate. [default: 100]
-    --seed <n>             RNG seed for fully reproducible output.
+    --seed <n>             RNG seed for fully reproducible output. The same
+                           seed gives the same rows at any --jobs, unless
+                           stats uses approximate estimators: either asked
+                           for via --stats-options (e.g. `--quantile-method
+                           approx`), or switched on by stats itself (with a warning)
+                           when the input won't fit in memory.
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
@@ -205,7 +211,7 @@ synthesize options:
     --strict-relationships  Abort instead of warning-and-degrading when a
                            declared relationship fails validation.
     -j, --jobs <arg>       Number of jobs to use for the internal `stats` and
-                           `frequency` runs.
+                           `frequency` runs and for generating rows.
 
 Common options:
     -h, --help             Display this message
@@ -214,9 +220,15 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::{cell::RefCell, collections::HashMap, path::Path};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    io::Write,
+    path::Path,
+};
 
 use rand::{SeedableRng, rngs::StdRng};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde::Deserialize;
 
 use crate::{
@@ -321,12 +333,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Single master RNG, threaded through both the sampling/selection logic and
-    // every faker call, so a given --seed produces fully reproducible output.
-    let mut rng = match args.flag_seed {
-        Some(seed) => StdRng::seed_from_u64(seed), // DevSkim: ignore DS148264
-        _ => rand::make_rng::<StdRng>(),
-    };
+    // The fit (pools, fake values, relationship validation) draws from an RNG
+    // seeded with the base seed; each output chunk gets its own RNG keyed on
+    // (base seed, chunk index), so a given --seed gives the same output at any
+    // --jobs.
+    let base_seed = args.flag_seed.unwrap_or_else(rand::random::<u64>);
+    let mut rng = StdRng::seed_from_u64(base_seed); // DevSkim: ignore DS148264
 
     // --- 1. Analysis (stats + frequency + count) ---------------------------
     // Index the input first (best-effort) to speed up stats/frequency.
@@ -500,44 +512,58 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut exact_matches = 0_u64;
 
     // --- 5. Emit -----------------------------------------------------------
-    let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
+    let out_conf = Config::new(args.flag_output.as_ref());
+    let mut wtr = out_conf.writer()?;
+    let chunk_builder = out_conf.writer_builder();
 
     let header: csv::StringRecord = stats_records
         .iter()
         .map(|stats_record| stats_record.field.clone())
         .collect();
     wtr.write_record(&header)?;
+    // Chunks arrive already encoded, so append them to the raw writer; taking
+    // it out of the csv writer flushes the header first.
+    let mut out = wtr.into_inner().map_err(|e| e.into_error())?;
 
-    // One reusable row buffer: each EmitUnit writes into its own column slot(s)
-    // by index, so the schedule can be walked in any fixed order per row.
+    // Chunks are generated in parallel, a window at a time, and written in
+    // chunk order. The window starts at one chunk and is then sized from the
+    // largest chunk seen so far, so the bytes held at once stay near
+    // WINDOW_BYTES (but never below one chunk) however wide the rows are. The
+    // window only affects memory and speed, never the output.
     let ncols = stats_records.len();
-    let mut row: Vec<String> = vec![String::new(); ncols];
-    let mut record = csv::StringRecord::new();
-    for _ in 0..args.flag_rows {
-        for unit in &schedule {
-            match unit {
-                EmitUnit::Independent { col_idx, generator } => {
-                    row[*col_idx] = generator.next(&mut rng);
-                },
-                EmitUnit::Group(group) => {
-                    for (col_idx, value) in group.next(&mut rng) {
-                        row[col_idx] = value;
-                    }
-                },
-            }
+    let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
+    let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
+    let mut window = 1_u64;
+    let mut largest_chunk = 0_u64;
+    let mut first_chunk = 0_u64;
+    while first_chunk < total_chunks {
+        let last_chunk = (first_chunk + window).min(total_chunks);
+        let chunks: Vec<CliResult<(Vec<u8>, u64)>> = (first_chunk..last_chunk)
+            .into_par_iter()
+            .map(|chunk| {
+                let rows = CHUNK_ROWS.min(args.flag_rows - chunk * CHUNK_ROWS);
+                generate_chunk(
+                    &chunk_builder,
+                    &schedule,
+                    ncols,
+                    base_seed,
+                    chunk,
+                    rows,
+                    largest_chunk,
+                    report_keys.as_ref(),
+                )
+            })
+            .collect();
+        for chunk in chunks {
+            let (bytes, matches) = chunk?;
+            exact_matches += matches;
+            largest_chunk = largest_chunk.max(bytes.len() as u64);
+            out.write_all(&bytes)?;
         }
-        if let Some((keyer, keys)) = &report_keys
-            && keys.contains(&keyer.synthetic_key(&row))
-        {
-            exact_matches += 1;
-        }
-        record.clear();
-        for value in &row {
-            record.push_field(value);
-        }
-        wtr.write_record(&record)?;
+        first_chunk = last_chunk;
+        window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
     }
-    wtr.flush()?;
+    out.flush()?;
 
     if let (Some(report_path), Some((keyer, keys))) = (&args.flag_report, &report_keys) {
         let compared: Vec<usize> = keyer.compared().collect();
@@ -571,4 +597,70 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         std::fs::write(report_path, serde_json::to_string_pretty(&report)? + "\n")?;
     }
     Ok(())
+}
+
+/// Rows per output chunk. Each chunk has its own RNG, so this value is part of
+/// what a --seed reproduces: changing it changes every seeded output.
+const CHUNK_ROWS: u64 = 8192;
+
+/// Target for the encoded output held in memory at once across a window of chunks.
+const WINDOW_BYTES: u64 = 256 * 1024 * 1024;
+
+/// RNG for one output chunk, keyed on the base seed and the chunk index only
+/// (never on fit-time RNG state), with fixed little-endian bytes so every
+/// platform derives the same stream.
+fn chunk_rng(base_seed: u64, chunk: u64) -> StdRng {
+    let mut key = [0_u8; 32];
+    key[..8].copy_from_slice(&base_seed.to_le_bytes());
+    key[8..16].copy_from_slice(&chunk.to_le_bytes());
+    key[16..24].copy_from_slice(b"qsvsynth");
+    StdRng::from_seed(key)
+}
+
+/// Generates one chunk's rows as encoded CSV, plus how many of them exactly
+/// match a source row when `--report` keys are given.
+fn generate_chunk(
+    builder: &csv::WriterBuilder,
+    schedule: &[EmitUnit],
+    ncols: usize,
+    base_seed: u64,
+    chunk: u64,
+    rows: u64,
+    size_hint: u64,
+    report_keys: Option<&(report::RowKeyer, HashSet<u128>)>,
+) -> CliResult<(Vec<u8>, u64)> {
+    let mut rng = chunk_rng(base_seed, chunk);
+    // Sized from the largest chunk so far, so the buffer doesn't double past it.
+    let mut wtr = builder.from_writer(Vec::with_capacity(size_hint as usize));
+    // One reusable row buffer: each EmitUnit writes into its own column slot(s)
+    // by index, so the schedule can be walked in any fixed order per row.
+    let mut row: Vec<String> = vec![String::new(); ncols];
+    let mut record = csv::StringRecord::new();
+    let mut matches = 0_u64;
+    for _ in 0..rows {
+        for unit in schedule {
+            match unit {
+                EmitUnit::Independent { col_idx, generator } => {
+                    row[*col_idx] = generator.next(&mut rng);
+                },
+                EmitUnit::Group(group) => {
+                    for (col_idx, value) in group.next(&mut rng) {
+                        row[col_idx] = value;
+                    }
+                },
+            }
+        }
+        if let Some((keyer, keys)) = report_keys
+            && keys.contains(&keyer.synthetic_key(&row))
+        {
+            matches += 1;
+        }
+        record.clear();
+        for value in &row {
+            record.push_field(value);
+        }
+        wtr.write_record(&record)?;
+    }
+    let bytes = wtr.into_inner().map_err(|e| e.into_error())?;
+    Ok((bytes, matches))
 }

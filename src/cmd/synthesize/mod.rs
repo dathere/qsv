@@ -155,10 +155,13 @@ synthesize options:
                            approx`), or switched on by stats itself (with a warning)
                            when the input won't fit in memory.
     --format <fmt>         Output format: csv, jsonl or parquet. JSONL
-                           and Parquet keep each column's type: integers,
-                           floats and booleans as such, dates as Parquet
-                           dates (JSONL writes them as strings), empty
-                           values as null. A column sampled from real values
+                           and Parquet keep each column's type: integers
+                           and floats as such, dates as Parquet dates (JSONL
+                           writes them as strings), empty values as null.
+                           A true/false column is written as booleans only
+                           if stats types it Boolean (pass it the option
+                           `--infer-boolean` via --stats-options); else it
+                           is text. A column sampled from real values
                            keeps the type stats gave it only if every value
                            converts unchanged, so a zero-padded code stays
                            text. Parquet needs --output and a qsv built with

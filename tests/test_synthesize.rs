@@ -3476,8 +3476,22 @@ fn synthesize_model_rejects_other_versions_and_broken_models() {
     *units.last_mut().unwrap() = first;
     expect_error("twice.json", &twice, "is generated twice");
 
+    // A version 1 model has no column types, so --format couldn't use it.
+    let mut v1 = model.clone();
+    v1["qsv_synthesize_model"] = 1.into();
+    expect_error("v1.json", &v1, "model format version 1");
+
+    let mut untyped = model.clone();
+    untyped["types"].as_array_mut().unwrap().pop();
+    expect_error(
+        "untyped.json",
+        &untyped,
+        "a type list that doesn't match its columns",
+    );
+
     let mut short = model.clone();
     short["columns"].as_array_mut().unwrap().pop();
+    short["types"].as_array_mut().unwrap().pop();
     expect_error("short.json", &short, "out of range");
 
     // tier is enumerated: an empty value list would panic when sampled.
@@ -3510,4 +3524,287 @@ fn synthesize_model_leaves_out_values_below_min_count() {
         !model.contains("RARE"),
         "a value below --min-count must not reach the model"
     );
+}
+
+/// The header of a CSV file whose column names hold no commas.
+fn csv_header(wrk: &Workdir, name: &str) -> Vec<String> {
+    let raw = wrk.read_to_string(name).unwrap();
+    raw.lines()
+        .next()
+        .unwrap()
+        .split(',')
+        .map(String::from)
+        .collect()
+}
+
+/// Parses JSONL output into one JSON object per row.
+fn jsonl_rows(raw: &str) -> Vec<serde_json::Map<String, serde_json::Value>> {
+    raw.lines()
+        .map(|line| match serde_json::from_str(line).unwrap() {
+            serde_json::Value::Object(map) => map,
+            other => panic!("not a JSON object: {other}"),
+        })
+        .collect()
+}
+
+#[test]
+fn synthesize_format_jsonl_holds_the_csv_values_typed() {
+    let wrk = Workdir::new("synthesize_format_jsonl_values");
+    model_fixture(&wrk);
+    let mut csv_cmd = model_fit_cmd(&wrk, "300", &["-o", "out.csv"]);
+    wrk.assert_success(&mut csv_cmd);
+    let mut jsonl_cmd = model_fit_cmd(&wrk, "300", &["--format", "jsonl", "-o", "out.jsonl"]);
+    wrk.assert_success(&mut jsonl_cmd);
+
+    let csv_rows = wrk.read_csv("out.csv");
+    let header = csv_header(&wrk, "out.csv");
+    let rows = jsonl_rows(&wrk.read_to_string("out.jsonl").unwrap());
+    assert_eq!((rows.len(), csv_rows.len()), (300, 300));
+    for (row, csv_row) in rows.iter().zip(&csv_rows) {
+        assert_eq!(
+            row.keys().collect::<Vec<_>>(),
+            header.iter().collect::<Vec<_>>()
+        );
+        for (name, cell) in header.iter().zip(csv_row) {
+            let value = &row[name];
+            match name.as_str() {
+                _ if cell.is_empty() => assert!(value.is_null(), "{name}: {value}"),
+                "x" => assert_eq!(value.as_i64(), cell.parse().ok(), "{name}"),
+                "score" | "y" => assert_eq!(value.as_f64(), cell.parse().ok(), "{name}"),
+                _ => assert_eq!(value.as_str(), Some(cell.as_str()), "{name}"),
+            }
+        }
+    }
+    assert!(rows.iter().all(|r| r["blank"].is_null()));
+}
+
+#[test]
+fn synthesize_format_jsonl_keeps_zero_padded_codes_as_text() {
+    let wrk = Workdir::new("synthesize_format_jsonl_codes");
+    let mut rows = vec![svec!["zip", "n"]];
+    for i in 0..40 {
+        rows.push(vec![
+            ["00501", "02134", "10001", "90210"][i % 4].to_string(),
+            (i % 5).to_string(),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "50",
+        "--seed",
+        "3",
+        "--min-count",
+        "1",
+        "--format",
+        "jsonl",
+    ])
+    .arg("data.csv");
+    let rows = jsonl_rows(&wrk.stdout::<String>(&mut cmd));
+    assert_eq!(rows.len(), 50);
+    for row in &rows {
+        let zip = row["zip"].as_str().expect("zip is text");
+        assert!(["00501", "02134", "10001", "90210"].contains(&zip), "{zip}");
+        assert!((0..5).contains(&row["n"].as_i64().expect("n is an integer")));
+    }
+    assert!(rows.iter().any(|r| r["zip"] == "00501"));
+}
+
+#[test]
+fn synthesize_format_is_the_same_at_any_jobs_and_from_a_model() {
+    let wrk = Workdir::new("synthesize_format_reproducible");
+    model_fixture(&wrk);
+    let mut formats = vec![("jsonl", "jsonl")];
+    if cfg!(feature = "polars") {
+        formats.push(("parquet", "parquet"));
+    }
+    // 70,000 rows span more than one Parquet row group.
+    for (format, ext) in formats {
+        let fitted = format!("fit.{ext}");
+        let mut fit = model_fit_cmd(
+            &wrk,
+            "70000",
+            &[
+                "--format",
+                format,
+                "-j",
+                "1",
+                "--save-model",
+                "m.json",
+                "-o",
+                &fitted,
+            ],
+        );
+        wrk.assert_success(&mut fit);
+        let threaded = format!("threaded.{ext}");
+        let mut more_jobs = model_fit_cmd(
+            &wrk,
+            "70000",
+            &["--format", format, "-j", "4", "-o", &threaded],
+        );
+        wrk.assert_success(&mut more_jobs);
+        let from_model = format!("model.{ext}");
+        let mut model_run = wrk.command("synthesize");
+        model_run.args([
+            "--model",
+            "m.json",
+            "-n",
+            "70000",
+            "--seed",
+            "11",
+            "--format",
+            format,
+            "-j",
+            "3",
+            "-o",
+            &from_model,
+        ]);
+        wrk.assert_success(&mut model_run);
+
+        let bytes = |name: &str| std::fs::read(wrk.path(name)).unwrap();
+        assert!(
+            bytes(&fitted) == bytes(&threaded),
+            "{format}: --jobs changed the output"
+        );
+        assert!(
+            bytes(&fitted) == bytes(&from_model),
+            "{format}: --model changed the output"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_format_parquet_keeps_types_and_nulls() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("synthesize_format_parquet");
+    model_fixture(&wrk);
+    let mut cmd = model_fit_cmd(&wrk, "500", &["--format", "parquet", "-o", "out.parquet"]);
+    wrk.assert_success(&mut cmd);
+    let mut csv_cmd = model_fit_cmd(&wrk, "500", &["-o", "out.csv"]);
+    wrk.assert_success(&mut csv_cmd);
+
+    let df = polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(wrk.path("out.parquet").to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap();
+    assert_eq!(df.height(), 500);
+    for (name, dtype) in [
+        ("tier", DataType::String),
+        ("email", DataType::String),
+        ("score", DataType::Float64),
+        ("blank", DataType::String),
+        ("joined", DataType::Date),
+        ("city", DataType::String),
+        ("created", DataType::Date),
+        ("closed", DataType::Date),
+        ("x", DataType::Int64),
+        ("y", DataType::Float64),
+    ] {
+        assert_eq!(df.column(name).unwrap().dtype(), &dtype, "{name}");
+    }
+    assert_eq!(df.column("blank").unwrap().null_count(), 500);
+
+    // Same values as the CSV run, typed.
+    let csv_rows = wrk.read_csv("out.csv");
+    let header = csv_header(&wrk, "out.csv");
+    let col = |name: &str| header.iter().position(|h| h == name).unwrap();
+    let x = df.column("x").unwrap().i64().unwrap();
+    let joined = df
+        .column("joined")
+        .unwrap()
+        .cast(&DataType::String)
+        .unwrap();
+    let joined = joined.str().unwrap();
+    assert_eq!(csv_rows.len(), 500);
+    for (i, row) in csv_rows.iter().enumerate() {
+        assert_eq!(x.get(i), row[col("x")].parse().ok(), "x row {i}");
+        let cell = &row[col("joined")];
+        assert_eq!(
+            joined.get(i),
+            (!cell.is_empty()).then_some(cell.as_str()),
+            "joined row {i}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_format_refusals() {
+    let wrk = Workdir::new("synthesize_format_refusals");
+    wrk.create("data.csv", vec![svec!["a", "a"], svec!["1", "2"]]);
+
+    let mut bad = wrk.command("synthesize");
+    bad.args(["--format", "xml", "data.csv"]);
+    assert!(
+        wrk.stderr_on_error(&mut bad)
+            .contains("--format must be csv, jsonl or parquet")
+    );
+
+    let mut stdout = wrk.command("synthesize");
+    stdout.args(["--format", "parquet", "data.csv"]);
+    assert!(
+        wrk.stderr_on_error(&mut stdout)
+            .contains(if cfg!(feature = "polars") {
+                "Parquet can't be written to stdout"
+            } else {
+                "needs a qsv built with the polars feature"
+            })
+    );
+
+    let mut dup = wrk.command("synthesize");
+    dup.args(["--format", "jsonl", "data.csv"]);
+    assert!(
+        wrk.stderr_on_error(&mut dup)
+            .contains("needs unique column names, but 'a' appears more than once")
+    );
+}
+
+#[test]
+fn synthesize_format_refuses_parquet_to_stdout_dash() {
+    let wrk = Workdir::new("synthesize_format_parquet_dash");
+    wrk.create("data.csv", vec![svec!["a"], svec!["1"]]);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--format", "parquet", "-o", "-", "data.csv"]);
+    assert!(
+        wrk.stderr_on_error(&mut cmd)
+            .contains(if cfg!(feature = "polars") {
+                "Parquet can't be written to stdout"
+            } else {
+                "needs a qsv built with the polars feature"
+            })
+    );
+    assert!(!wrk.path("-").exists(), "no file named '-' is created");
+}
+
+#[test]
+fn synthesize_format_jsonl_writes_inferred_booleans_as_booleans() {
+    let wrk = Workdir::new("synthesize_format_jsonl_booleans");
+    let mut rows = vec![svec!["flag"]];
+    for i in 0..40 {
+        rows.push(vec![if i % 3 == 0 { "true" } else { "false" }.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "30",
+        "--seed",
+        "5",
+        "--min-count",
+        "1",
+        "--format",
+        "jsonl",
+        "--stats-options",
+        "--infer-boolean",
+        "data.csv",
+    ]);
+    let rows = jsonl_rows(&wrk.stdout::<String>(&mut cmd));
+    assert_eq!(rows.len(), 30);
+    assert!(rows.iter().all(|r| r["flag"].is_boolean()), "{rows:?}");
+    assert!(rows.iter().any(|r| r["flag"] == true) && rows.iter().any(|r| r["flag"] == false));
 }

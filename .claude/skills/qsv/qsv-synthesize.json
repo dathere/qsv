@@ -36,6 +36,12 @@
         "description": "Data Dictionary JSON file produced by `describegpt --dictionary --infer-content-type --format JSON`. Layers semantic Content Types onto generation. If omitted, generation is purely type/frequency-based."
       },
       {
+        "flag": "--format",
+        "type": "string",
+        "description": "Output format: csv, jsonl or parquet. JSONL and Parquet keep each column's type: integers and floats as such, dates as Parquet dates (JSONL writes them as strings), empty values as null. A true/false column is written as booleans only if stats types it Boolean (pass it the option `--infer-boolean` via --stats-options); else it is text. A column sampled from real values keeps the type stats gave it only if every value converts unchanged, so a zero-padded code stays text. Parquet needs --output and a qsv built with the polars feature.",
+        "default": "csv"
+      },
+      {
         "flag": "--freq-limit",
         "type": "number",
         "description": "Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited.",
@@ -103,7 +109,7 @@
       {
         "flag": "--shard",
         "type": "string",
-        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Generating the slices from one model saved with --save-model avoids this. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only."
+        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order are the same as one unsharded run: CSV slices with `qsv cat rows`, JSONL slices by plain concatenation, while Parquet slices are separate files to read together as one dataset. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Generating the slices from one model saved with --save-model avoids this. Each CSV slice gets a header row (and each Parquet slice its schema) even when it has no rows (when N exceeds the number of blocks). The counts of --report are for this slice only."
       },
       {
         "flag": "--stats-options",
@@ -161,6 +167,10 @@
     {
       "description": "The same, profiling data.csv only once: the first slice saves the fitted model, and the other slices generate from it without data.csv",
       "command": "qsv synthesize --model model.json -n 1000000000 --seed 42 --shard 2/4 -o part2.csv"
+    },
+    {
+      "description": "Typed training data: Parquet keeps integers, floats, dates and nulls",
+      "command": "qsv synthesize data.csv -n 1000000 --seed 42 --format parquet -o synthetic.parquet"
     }
   ]
 }

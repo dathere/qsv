@@ -123,6 +123,9 @@ Examples:
   $ qsv synthesize --model model.json -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
   ...
 
+  # Typed training data: Parquet keeps integers, floats, dates and nulls
+  $ qsv synthesize data.csv -n 1000000 --seed 42 --format parquet -o synthetic.parquet
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs.
 See also https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize
 
@@ -151,11 +154,26 @@ synthesize options:
                            for via --stats-options (e.g. `--quantile-method
                            approx`), or switched on by stats itself (with a warning)
                            when the input won't fit in memory.
+    --format <fmt>         Output format: csv, jsonl or parquet. JSONL
+                           and Parquet keep each column's type: integers
+                           and floats as such, dates as Parquet dates (JSONL
+                           writes them as strings), empty values as null.
+                           A true/false column is written as booleans only
+                           if stats types it Boolean (pass it the option
+                           `--infer-boolean` via --stats-options); else it
+                           is text. A column sampled from real values
+                           keeps the type stats gave it only if every value
+                           converts unchanged, so a zero-padded code stays
+                           text. Parquet needs --output and a qsv built with
+                           the polars feature. [default: csv]
     --shard <k/N>          Generate only slice k of N (k from 1 to N) of the
                            rows --rows asks for. Requires --seed. Each slice
                            is a run of whole 8192-row blocks, and slices 1 to
-                           N joined in order (with `qsv cat rows`) are the
-                           same as one unsharded run. Every slice must use the
+                           N joined in order are the same as one unsharded
+                           run: CSV slices with `qsv cat rows`, JSONL slices
+                           by plain concatenation, while Parquet slices are
+                           separate files to read together as one dataset.
+                           Every slice must use the
                            same <input>, options, qsv version and
                            dictionary file, if any (--infer-content-type
                            without --dictionary is refused). Each slice still
@@ -165,10 +183,10 @@ synthesize options:
                            slice comes from a different fit and the joined
                            rows won't match one run. Generating the slices
                            from one model saved with --save-model avoids
-                           this. Each slice gets a header
-                           row even when it has no rows (when N exceeds the
-                           number of blocks). With --report, the counts are
-                           for this slice only.
+                           this. Each CSV slice gets a header row (and each
+                           Parquet slice its schema) even when it has no rows
+                           (when N exceeds the number of blocks). The counts
+                           of --report are for this slice only.
     --save-model <file>    Also save the fitted model to <file>, so later
                            runs can generate from it with --model without
                            reading <input> again. A --model run with the
@@ -286,7 +304,6 @@ Common options:
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    io::Write,
     path::Path,
 };
 
@@ -306,6 +323,7 @@ mod faker_map;
 mod generator;
 mod group_generator;
 mod model;
+mod output;
 mod range_trim;
 mod relationships;
 mod report;
@@ -323,6 +341,7 @@ struct Args {
     flag_rows:                  u64,
     flag_seed:                  Option<u64>,
     flag_shard:                 Option<String>,
+    flag_format:                String,
     flag_locale:                String,
     flag_freq_limit:            usize,
     flag_stats_options:         Option<String>,
@@ -361,6 +380,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Some(spec) => Some(parse_shard(spec)?),
         None => None,
     };
+    let format = output::Format::parse(&args.flag_format)?;
+    // Config treats `-o -` as stdout too.
+    if format == output::Format::Parquet && args.flag_output.as_deref().is_none_or(|o| o == "-") {
+        return fail_incorrectusage_clierror!(
+            "--format parquet needs --output: Parquet can't be written to stdout."
+        );
+    }
     if args.flag_model.is_some() {
         // These only shape the fit, which the model already fixed. Options with
         // a default (--locale, --min-count, …) can't be told apart from unset,
@@ -451,14 +477,55 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut exact_matches = 0_u64;
 
     // --- 5. Emit -----------------------------------------------------------
+    output::check_unique_columns(&model.columns, format)?;
     let out_conf = Config::new(args.flag_output.as_ref());
-    let mut wtr = out_conf.writer()?;
     let chunk_builder = out_conf.writer_builder();
-
-    wtr.write_record(&model.columns)?;
-    // Chunks arrive already encoded, so append them to the raw writer; taking
-    // it out of the csv writer flushes the header first.
-    let mut out = wtr.into_inner().map_err(|e| e.into_error())?;
+    let jsonl_keys = if format == output::Format::Jsonl {
+        Some(output::jsonl_keys(&model.columns)?)
+    } else {
+        None
+    };
+    #[cfg(feature = "polars")]
+    let names: std::sync::Arc<[String]> = model.columns.clone().into();
+    let mut out = match format {
+        output::Format::Csv => {
+            let mut wtr = out_conf.writer()?;
+            wtr.write_record(&model.columns)?;
+            // Chunks arrive already encoded, so append them to the raw writer;
+            // taking it out of the csv writer flushes the header first.
+            output::Output::Bytes(Box::new(wtr.into_inner().map_err(|e| e.into_error())?))
+        },
+        output::Format::Jsonl => output::Output::Bytes(out_conf.io_writer()?),
+        #[cfg(feature = "polars")]
+        output::Format::Parquet => {
+            output::Output::Parquet(Box::new(output::parquet::Writer::create(
+                args.flag_output.as_deref().unwrap_or_default(),
+                &output::parquet::schema(&model.columns, &model.types),
+            )?))
+        },
+        #[cfg(not(feature = "polars"))]
+        output::Format::Parquet => unreachable!("Format::parse refuses parquet"),
+    };
+    let new_sink = |rows: u64, size_hint: u64| -> output::Sink {
+        match format {
+            output::Format::Csv => output::Sink::csv(&chunk_builder, size_hint as usize),
+            output::Format::Jsonl => {
+                output::Sink::jsonl(jsonl_keys.clone().unwrap_or_default(), size_hint as usize)
+            },
+            #[cfg(feature = "polars")]
+            output::Format::Parquet => output::Sink::Parquet(output::parquet::Columns::new(
+                names.clone(),
+                &model.types,
+                rows as usize,
+                model.prefer_dmy,
+            )),
+            #[cfg(not(feature = "polars"))]
+            output::Format::Parquet => {
+                let _ = rows;
+                unreachable!("Format::parse refuses parquet")
+            },
+        }
+    };
 
     // Chunks are generated in parallel, a window at a time, and written in
     // chunk order. The window starts at one chunk and is then sized from the
@@ -476,32 +543,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut largest_chunk = 0_u64;
     while first_chunk < end_chunk {
         let last_chunk = (first_chunk + window).min(end_chunk);
-        let chunks: Vec<CliResult<(Vec<u8>, u64)>> = (first_chunk..last_chunk)
+        let chunks: Vec<CliResult<(output::Encoded, u64)>> = (first_chunk..last_chunk)
             .into_par_iter()
             .map(|chunk| {
                 let rows = CHUNK_ROWS.min(args.flag_rows - chunk * CHUNK_ROWS);
+                // Sized from the largest chunk so far, so the buffer doesn't
+                // double past it.
                 generate_chunk(
-                    &chunk_builder,
+                    new_sink(rows, largest_chunk),
                     &model.schedule,
+                    &model.types,
                     ncols,
                     base_seed,
                     chunk,
                     rows,
-                    largest_chunk,
                     report_keys.as_ref(),
                 )
             })
             .collect();
-        for chunk in chunks {
-            let (bytes, matches) = chunk?;
+        for (chunk, encoded) in (first_chunk..).zip(chunks) {
+            let (encoded, matches) = encoded?;
             exact_matches += matches;
-            largest_chunk = largest_chunk.max(bytes.len() as u64);
-            out.write_all(&bytes)?;
+            largest_chunk = largest_chunk.max(encoded.size());
+            out.write(chunk, end_chunk, encoded)?;
         }
         first_chunk = last_chunk;
         window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
     }
-    out.flush()?;
+    out.finish()?;
 
     if let (Some(report_path), Some((keyer, keys)), Some(fitted)) =
         (&args.flag_report, &report_keys, &fitted)
@@ -765,6 +834,8 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
 
     let columns = stats_records.iter().map(|sr| sr.field.clone()).collect();
+    let stats_types: Vec<&str> = stats_records.iter().map(|sr| sr.r#type.as_str()).collect();
+    let types = output::resolve_types(&schedule, &stats_types, prefer_dmy);
     let fit_info = model::FitInfo {
         seed:        args.flag_seed,
         rows:        args.flag_rows,
@@ -779,7 +850,10 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         total_rows,
         suppressions: suppressions.into_inner(),
     };
-    Ok((model::Model::new(columns, schedule, fit_info), fitted))
+    Ok((
+        model::Model::new(columns, types, prefer_dmy, schedule, fit_info),
+        fitted,
+    ))
 }
 
 /// Rows per output chunk. Each chunk has its own RNG, so this value is part of
@@ -820,25 +894,23 @@ fn chunk_rng(base_seed: u64, chunk: u64) -> StdRng {
     StdRng::from_seed(key)
 }
 
-/// Generates one chunk's rows as encoded CSV, plus how many of them exactly
+/// Generates one chunk's rows into `sink`, plus how many of them exactly
 /// match a source row when `--report` keys are given.
+#[allow(clippy::too_many_arguments)]
 fn generate_chunk(
-    builder: &csv::WriterBuilder,
+    mut sink: output::Sink,
     schedule: &[EmitUnit],
+    types: &[output::OutType],
     ncols: usize,
     base_seed: u64,
     chunk: u64,
     rows: u64,
-    size_hint: u64,
     report_keys: Option<&(report::RowKeyer, HashSet<u128>)>,
-) -> CliResult<(Vec<u8>, u64)> {
+) -> CliResult<(output::Encoded, u64)> {
     let mut rng = chunk_rng(base_seed, chunk);
-    // Sized from the largest chunk so far, so the buffer doesn't double past it.
-    let mut wtr = builder.from_writer(Vec::with_capacity(size_hint as usize));
     // One reusable row buffer: each EmitUnit writes into its own column slot(s)
     // by index, so the schedule can be walked in any fixed order per row.
     let mut row: Vec<String> = vec![String::new(); ncols];
-    let mut record = csv::StringRecord::new();
     let mut matches = 0_u64;
     for _ in 0..rows {
         for unit in schedule {
@@ -858,14 +930,9 @@ fn generate_chunk(
         {
             matches += 1;
         }
-        record.clear();
-        for value in &row {
-            record.push_field(value);
-        }
-        wtr.write_record(&record)?;
+        sink.push(&mut row, types)?;
     }
-    let bytes = wtr.into_inner().map_err(|e| e.into_error())?;
-    Ok((bytes, matches))
+    Ok((sink.finish()?, matches))
 }
 
 #[cfg(test)]

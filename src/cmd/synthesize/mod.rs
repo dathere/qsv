@@ -610,7 +610,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && i > 0
                 {
                     file_start += n;
-                    std::mem::replace(&mut out, open(Some(&names.name(file_start)))?).finish()?;
+                    // Finish this file before opening the next, so a failure
+                    // to open it leaves this one complete.
+                    let done = std::mem::replace(
+                        &mut out,
+                        output::Output::Bytes(Box::new(std::io::sink())),
+                    );
+                    done.finish()?;
+                    out = open(Some(&names.name(file_start)))?;
                 }
                 out.write(chunk, end_chunk, piece)?;
             }

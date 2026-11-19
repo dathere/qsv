@@ -3987,6 +3987,31 @@ fn synthesize_rows_per_file_refusals() {
 }
 
 #[test]
+#[cfg(feature = "polars")]
+fn synthesize_rows_per_file_finishes_a_parquet_file_before_opening_the_next() {
+    let wrk = Workdir::new("synthesize_rows_per_file_open_fails");
+    wrk.create("data.csv", vec![svec!["a"], svec!["1"], svec!["2"]]);
+    // The second file's name is taken by a directory, so opening it fails.
+    std::fs::create_dir(wrk.path("q_100.parquet")).unwrap();
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "data.csv",
+        "-n",
+        "300",
+        "--seed",
+        "1",
+        "--format",
+        "parquet",
+        "--rows-per-file",
+        "100",
+        "-o",
+        "q_{}.parquet",
+    ]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(read_parquet(&wrk, "q_000.parquet").height(), 100);
+}
+
+#[test]
 fn synthesize_format_refuses_parquet_to_stdout_dash() {
     let wrk = Workdir::new("synthesize_format_parquet_dash");
     wrk.create("data.csv", vec![svec!["a"], svec!["1"]]);

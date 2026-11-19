@@ -169,7 +169,9 @@ fn date_type(is_datetime: bool, date_format: Option<&String>) -> OutType {
 
 /// A pooled column's type: its `stats` type when every value in the pool
 /// converts to it unchanged, else text. An integer must print back as itself,
-/// so a zero-padded code stays text.
+/// so a zero-padded code stays text; a float must keep its decimal value
+/// through f64; a date must be a whole day and a datetime must fit in
+/// microseconds, as Parquet stores them.
 fn pooled_type<'a>(
     stats_type: &str,
     mut values: impl Iterator<Item = &'a str>,
@@ -180,13 +182,16 @@ fn pooled_type<'a>(
             s.parse::<i64>().is_ok_and(|i| i.to_string() == s)
         }),
         "Float" => (OutType::Float, &|s| {
-            s.parse::<f64>().is_ok_and(f64::is_finite)
+            s.parse::<f64>()
+                .is_ok_and(|f| f.is_finite() && decimal_digits(s) == decimal_digits(&f.to_string()))
         }),
+        "Boolean" => (OutType::Boolean, &|s| matches!(s, "true" | "false")),
         "Date" => (OutType::Date { format: None }, &|s| {
-            parse_date(s, None, prefer_dmy).is_some()
+            parse_date(s, None, prefer_dmy).is_some_and(|dt| dt.time() == chrono::NaiveTime::MIN)
         }),
         "DateTime" => (OutType::DateTime { format: None }, &|s| {
-            parse_date(s, None, prefer_dmy).is_some()
+            parse_date(s, None, prefer_dmy)
+                .is_some_and(|dt| dt.timestamp_subsec_nanos() % 1_000 == 0)
         }),
         _ => return OutType::String,
     };
@@ -195,6 +200,32 @@ fn pooled_type<'a>(
     } else {
         OutType::String
     }
+}
+
+/// A decimal number as (negative, significant digits, power of ten of the
+/// last digit), so `1.50`, `1.5` and `15e-1` compare equal. `None` if `s` is
+/// not a plain decimal.
+fn decimal_digits(s: &str) -> Option<(bool, String, i64)> {
+    let (negative, s) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    let (mantissa, exp) = match s.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.parse::<i64>().ok()?),
+        None => (s, 0),
+    };
+    let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if !(int.bytes().chain(frac.bytes())).all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits = format!("{int}{frac}");
+    let trimmed_end = digits.trim_end_matches('0');
+    let power = exp - frac.len() as i64 + (digits.len() - trimmed_end.len()) as i64;
+    let digits = trimmed_end.trim_start_matches('0');
+    if digits.is_empty() {
+        return Some((false, String::new(), 0));
+    }
+    Some((negative, digits.to_string(), power))
 }
 
 /// Refuses duplicate column names, which JSONL objects and Parquet schemas
@@ -391,9 +422,13 @@ pub(crate) mod parquet {
     use crate::{CliError, CliResult, cmd::synthesize::CHUNK_ROWS};
 
     /// Chunks per Parquet row group. Groups end at fixed multiples of this
-    /// chunk index, never at a window boundary, so the file is the same at any
-    /// --jobs.
+    /// chunk index, or earlier once the buffered rows reach `GROUP_BYTES`, never
+    /// at a window boundary. Both depend only on the rows, so the file is the
+    /// same at any --jobs.
     const GROUP_CHUNKS: u64 = 8;
+    /// Buffered bytes that end a row group early, so wide rows can't hold
+    /// eight chunks in memory beside the generation window.
+    const GROUP_BYTES: usize = 128 * 1024 * 1024;
 
     enum Col {
         Int(Vec<Option<i64>>),
@@ -552,7 +587,8 @@ pub(crate) mod parquet {
         }
 
         /// Buffers chunk `chunk`'s frame, writing a row group at each fixed
-        /// group boundary and at the last chunk.
+        /// group boundary, once the buffer reaches `GROUP_BYTES`, and at the
+        /// last chunk.
         pub(super) fn push(&mut self, chunk: u64, end_chunk: u64, df: DataFrame) -> CliResult<()> {
             let polars_err = |e: PolarsError| CliError::Other(e.to_string());
             match &mut self.pending {
@@ -561,7 +597,11 @@ pub(crate) mod parquet {
                 },
                 None => self.pending = Some(df),
             }
-            if (chunk + 1).is_multiple_of(GROUP_CHUNKS) || chunk + 1 == end_chunk {
+            let full = self
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.estimated_size(true) >= GROUP_BYTES);
+            if full || (chunk + 1).is_multiple_of(GROUP_CHUNKS) || chunk + 1 == end_chunk {
                 let mut group = self.pending.take().unwrap_or_default();
                 group.rechunk_mut_par();
                 self.inner.write_batch(&group).map_err(polars_err)?;
@@ -628,6 +668,25 @@ mod tests {
         );
         assert_eq!(pool("Date", &["2024-01-05", "soon"]), OutType::String);
         assert_eq!(pool("String", &["1", "2"]), OutType::String);
+        // 2^53 + 1 rounds to 2^53 through f64.
+        assert_eq!(pool("Float", &["9007199254740993", "0.5"]), OutType::String);
+        assert_eq!(pool("Float", &["0.1", "1e3", "-2.50"]), OutType::Float);
+        assert_eq!(pool("Boolean", &["true", "false", ""]), OutType::Boolean);
+        assert_eq!(pool("Boolean", &["yes", "no"]), OutType::String);
+        // A Parquet Date can't hold a time of day.
+        assert_eq!(
+            pool("Date", &["2024-01-02T00:00:00.000456Z"]),
+            OutType::String
+        );
+        // A Parquet datetime holds microseconds, not nanoseconds.
+        assert_eq!(
+            pool("DateTime", &["2024-01-02T03:04:05.123456789Z"]),
+            OutType::String
+        );
+        assert_eq!(
+            pool("DateTime", &["2024-01-02T03:04:05.123456Z"]),
+            OutType::DateTime { format: None }
+        );
     }
 
     #[test]

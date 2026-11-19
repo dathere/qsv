@@ -3763,3 +3763,48 @@ fn synthesize_format_refusals() {
             .contains("needs unique column names, but 'a' appears more than once")
     );
 }
+
+#[test]
+fn synthesize_format_refuses_parquet_to_stdout_dash() {
+    let wrk = Workdir::new("synthesize_format_parquet_dash");
+    wrk.create("data.csv", vec![svec!["a"], svec!["1"]]);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--format", "parquet", "-o", "-", "data.csv"]);
+    assert!(
+        wrk.stderr_on_error(&mut cmd)
+            .contains(if cfg!(feature = "polars") {
+                "Parquet can't be written to stdout"
+            } else {
+                "needs a qsv built with the polars feature"
+            })
+    );
+    assert!(!wrk.path("-").exists(), "no file named '-' is created");
+}
+
+#[test]
+fn synthesize_format_jsonl_writes_inferred_booleans_as_booleans() {
+    let wrk = Workdir::new("synthesize_format_jsonl_booleans");
+    let mut rows = vec![svec!["flag"]];
+    for i in 0..40 {
+        rows.push(vec![if i % 3 == 0 { "true" } else { "false" }.to_string()]);
+    }
+    wrk.create("data.csv", rows);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "30",
+        "--seed",
+        "5",
+        "--min-count",
+        "1",
+        "--format",
+        "jsonl",
+        "--stats-options",
+        "--infer-boolean",
+        "data.csv",
+    ]);
+    let rows = jsonl_rows(&wrk.stdout::<String>(&mut cmd));
+    assert_eq!(rows.len(), 30);
+    assert!(rows.iter().all(|r| r["flag"].is_boolean()), "{rows:?}");
+    assert!(rows.iter().any(|r| r["flag"] == true) && rows.iter().any(|r| r["flag"] == false));
+}

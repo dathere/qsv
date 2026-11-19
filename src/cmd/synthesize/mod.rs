@@ -166,8 +166,11 @@ synthesize options:
     --shard <k/N>          Generate only slice k of N (k from 1 to N) of the
                            rows --rows asks for. Requires --seed. Each slice
                            is a run of whole 8192-row blocks, and slices 1 to
-                           N joined in order (with `qsv cat rows`) are the
-                           same as one unsharded run. Every slice must use the
+                           N joined in order are the same as one unsharded
+                           run: CSV slices with `qsv cat rows`, JSONL slices
+                           by plain concatenation, while Parquet slices are
+                           separate files to read together as one dataset.
+                           Every slice must use the
                            same <input>, options, qsv version and
                            dictionary file, if any (--infer-content-type
                            without --dictionary is refused). Each slice still
@@ -177,13 +180,10 @@ synthesize options:
                            slice comes from a different fit and the joined
                            rows won't match one run. Generating the slices
                            from one model saved with --save-model avoids
-                           this. Each slice gets a header
-                           row even when it has no rows (when N exceeds the
-                           number of blocks). With --report, the counts are
-                           for this slice only. JSONL slices join by plain
-                           concatenation, as they have no header. Parquet
-                           slices are separate files, each with its own
-                           schema, to be read together as one dataset.
+                           this. Each CSV slice gets a header row (and each
+                           Parquet slice its schema) even when it has no rows
+                           (when N exceeds the number of blocks). The counts
+                           of --report are for this slice only.
     --save-model <file>    Also save the fitted model to <file>, so later
                            runs can generate from it with --model without
                            reading <input> again. A --model run with the
@@ -378,7 +378,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => None,
     };
     let format = output::Format::parse(&args.flag_format)?;
-    if format == output::Format::Parquet && args.flag_output.is_none() {
+    // Config treats `-o -` as stdout too.
+    if format == output::Format::Parquet && args.flag_output.as_deref().is_none_or(|o| o == "-") {
         return fail_incorrectusage_clierror!(
             "--format parquet needs --output: Parquet can't be written to stdout."
         );

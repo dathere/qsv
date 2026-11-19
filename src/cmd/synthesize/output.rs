@@ -182,8 +182,13 @@ fn pooled_type<'a>(
             s.parse::<i64>().is_ok_and(|i| i.to_string() == s)
         }),
         "Float" => (OutType::Float, &|s| {
-            s.parse::<f64>()
-                .is_ok_and(|f| f.is_finite() && decimal_digits(s) == decimal_digits(&f.to_string()))
+            s.parse::<f64>().is_ok_and(|f| {
+                f.is_finite()
+                    && decimal_digits(s)
+                        == serde_json::to_string(&f)
+                            .ok()
+                            .and_then(|j| decimal_digits(&j))
+            })
         }),
         "Boolean" => (OutType::Boolean, &|s| matches!(s, "true" | "false")),
         "Date" => (OutType::Date { format: None }, &|s| {
@@ -220,7 +225,9 @@ fn decimal_digits(s: &str) -> Option<(bool, String, i64)> {
     }
     let digits = format!("{int}{frac}");
     let trimmed_end = digits.trim_end_matches('0');
-    let power = exp - frac.len() as i64 + (digits.len() - trimmed_end.len()) as i64;
+    let power = exp
+        .checked_sub(frac.len() as i64)?
+        .checked_add((digits.len() - trimmed_end.len()) as i64)?;
     let digits = trimmed_end.trim_start_matches('0');
     if digits.is_empty() {
         return Some((false, String::new(), 0));
@@ -671,6 +678,13 @@ mod tests {
         // 2^53 + 1 rounds to 2^53 through f64.
         assert_eq!(pool("Float", &["9007199254740993", "0.5"]), OutType::String);
         assert_eq!(pool("Float", &["0.1", "1e3", "-2.50"]), OutType::Float);
+        // Same f64 as 1000000000000000.2, which is how the JSONL writer prints it.
+        assert_eq!(pool("Float", &["1000000000000000.3"]), OutType::String);
+        // Underflows to 0.0; its exponent must not overflow.
+        assert_eq!(
+            pool("Float", &["1.0e-9223372036854775808"]),
+            OutType::String
+        );
         assert_eq!(pool("Boolean", &["true", "false", ""]), OutType::Boolean);
         assert_eq!(pool("Boolean", &["yes", "no"]), OutType::String);
         // A Parquet Date can't hold a time of day.

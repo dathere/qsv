@@ -97,6 +97,11 @@
         "default": 100
       },
       {
+        "flag": "--rows-per-file",
+        "type": "number",
+        "description": "Split the output into files of <n> rows each (the last file may hold fewer). The --output name must contain {}, which is replaced by the zero-based row number of the file's first row, as in `qsv split`, zero-padded so the names sort in order. For example, 1000 rows at 250 per file with `-o synthetic_{}.csv` write synthetic_000.csv, synthetic_250.csv, synthetic_500.csv and synthetic_750.csv. The files hold the same rows a single-file run writes, in order, and are joined the same way as --shard slices. Each CSV file gets a header row and each Parquet file its schema. Can't be combined with --shard."
+      },
+      {
         "flag": "--save-model",
         "type": "string",
         "description": "Also save the fitted model to <file>, so later runs can generate from it with --model without reading <input> again. A --model run with the same --rows and --seed writes the same rows as this run (pools of fake values are sized for this run's --rows). The model holds real values from <input>, some of which the output may never show (see the privacy note above), so share it at least as carefully as the output. Its format is internal to qsv and versioned: a qsv that reads another model version refuses it, and it must be fitted again."
@@ -171,6 +176,10 @@
     {
       "description": "Typed training data: Parquet keeps integers, floats, dates and nulls",
       "command": "qsv synthesize data.csv -n 1000000 --seed 42 --format parquet -o synthetic.parquet"
+    },
+    {
+      "description": "The same rows as 10 Parquet files of 100,000 rows each, synthetic_000000.parquet to synthetic_900000.parquet",
+      "command": "qsv synthesize data.csv -n 1000000 --seed 42 --format parquet --rows-per-file 100000 -o synthetic_{}.parquet"
     }
   ]
 }

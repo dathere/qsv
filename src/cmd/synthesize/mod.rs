@@ -126,6 +126,10 @@ Examples:
   # Typed training data: Parquet keeps integers, floats, dates and nulls
   $ qsv synthesize data.csv -n 1000000 --seed 42 --format parquet -o synthetic.parquet
 
+  # The same rows as 10 Parquet files of 100,000 rows each,
+  # synthetic_000000.parquet to synthetic_900000.parquet
+  $ qsv synthesize data.csv -n 1000000 --seed 42 --format parquet --rows-per-file 100000 -o synthetic_{}.parquet
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs.
 See also https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize
 
@@ -187,6 +191,19 @@ synthesize options:
                            Parquet slice its schema) even when it has no rows
                            (when N exceeds the number of blocks). The counts
                            of --report are for this slice only.
+    --rows-per-file <n>    Split the output into files of <n> rows each (the
+                           last file may hold fewer). The --output name must
+                           contain {}, which is replaced by the zero-based
+                           row number of the file's first row, as in `qsv
+                           split`, zero-padded so the names sort in order.
+                           For example, 1000 rows at 250 per file with
+                           `-o synthetic_{}.csv` write synthetic_000.csv,
+                           synthetic_250.csv, synthetic_500.csv and
+                           synthetic_750.csv. The files hold the
+                           same rows a single-file run writes, in order, and
+                           are joined the same way as --shard slices. Each
+                           CSV file gets a header row and each Parquet file
+                           its schema. Can't be combined with --shard.
     --save-model <file>    Also save the fitted model to <file>, so later
                            runs can generate from it with --model without
                            reading <input> again. A --model run with the
@@ -341,6 +358,7 @@ struct Args {
     flag_rows:                  u64,
     flag_seed:                  Option<u64>,
     flag_shard:                 Option<String>,
+    flag_rows_per_file:         Option<u64>,
     flag_format:                String,
     flag_locale:                String,
     flag_freq_limit:            usize,
@@ -386,6 +404,40 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!(
             "--format parquet needs --output: Parquet can't be written to stdout."
         );
+    }
+    let file_names = match (args.flag_rows_per_file, args.flag_output.as_deref()) {
+        (None, _) => None,
+        (Some(0), _) => {
+            return fail_incorrectusage_clierror!("--rows-per-file must be greater than 0.");
+        },
+        (Some(_), _) if args.flag_shard.is_some() => {
+            return fail_incorrectusage_clierror!(
+                "--rows-per-file can't be combined with --shard."
+            );
+        },
+        (Some(_), None | Some("-")) => {
+            return fail_incorrectusage_clierror!(
+                "--rows-per-file needs --output, a file name with {{}} in it."
+            );
+        },
+        (Some(n), Some(template)) => Some((
+            n,
+            output::FileNames::new(template, (args.flag_rows - 1) / n * n)?,
+        )),
+    };
+    if let Some((n, names)) = &file_names
+        && let Some(path) = [
+            args.arg_input.as_deref(),
+            args.flag_dictionary.as_deref(),
+            args.flag_model.as_deref(),
+            args.flag_save_model.as_deref(),
+            args.flag_report.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .find(|p| names.writes(p, *n, args.flag_rows))
+    {
+        return fail_incorrectusage_clierror!("--rows-per-file would write over '{path}'.");
     }
     if args.flag_model.is_some() {
         // These only shape the fit, which the model already fixed. Options with
@@ -478,7 +530,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 5. Emit -----------------------------------------------------------
     output::check_unique_columns(&model.columns, format)?;
-    let out_conf = Config::new(args.flag_output.as_ref());
+    let first_file = file_names.as_ref().map(|(_, names)| names.name(0));
+    let out_path = first_file.as_deref().or(args.flag_output.as_deref());
+    let out_conf = Config::new(out_path.map(str::to_string).as_ref());
     let chunk_builder = out_conf.writer_builder();
     let jsonl_keys = if format == output::Format::Jsonl {
         Some(output::jsonl_keys(&model.columns)?)
@@ -487,25 +541,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     #[cfg(feature = "polars")]
     let names: std::sync::Arc<[String]> = model.columns.clone().into();
-    let mut out = match format {
-        output::Format::Csv => {
-            let mut wtr = out_conf.writer()?;
-            wtr.write_record(&model.columns)?;
-            // Chunks arrive already encoded, so append them to the raw writer;
-            // taking it out of the csv writer flushes the header first.
-            output::Output::Bytes(Box::new(wtr.into_inner().map_err(|e| e.into_error())?))
-        },
-        output::Format::Jsonl => output::Output::Bytes(out_conf.io_writer()?),
-        #[cfg(feature = "polars")]
-        output::Format::Parquet => {
-            output::Output::Parquet(Box::new(output::parquet::Writer::create(
-                args.flag_output.as_deref().unwrap_or_default(),
-                &output::parquet::schema(&model.columns, &model.types),
-            )?))
-        },
-        #[cfg(not(feature = "polars"))]
-        output::Format::Parquet => unreachable!("Format::parse refuses parquet"),
-    };
+    let open =
+        |path: Option<&str>| output::Output::open(format, path, &model.columns, &model.types);
+    let mut out = open(out_path)?;
+    let mut file_start = 0_u64;
     let new_sink = |rows: u64, size_hint: u64| -> output::Sink {
         match format {
             output::Format::Csv => output::Sink::csv(&chunk_builder, size_hint as usize),
@@ -543,29 +582,38 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut largest_chunk = 0_u64;
     while first_chunk < end_chunk {
         let last_chunk = (first_chunk + window).min(end_chunk);
-        let chunks: Vec<CliResult<(output::Encoded, u64)>> = (first_chunk..last_chunk)
+        let chunks: Vec<CliResult<(Vec<output::Encoded>, u64)>> = (first_chunk..last_chunk)
             .into_par_iter()
             .map(|chunk| {
                 let rows = CHUNK_ROWS.min(args.flag_rows - chunk * CHUNK_ROWS);
                 // Sized from the largest chunk so far, so the buffer doesn't
                 // double past it.
                 generate_chunk(
-                    new_sink(rows, largest_chunk),
+                    &|piece_rows| new_sink(piece_rows, largest_chunk * piece_rows / rows),
                     &model.schedule,
                     &model.types,
                     ncols,
                     base_seed,
                     chunk,
                     rows,
+                    args.flag_rows_per_file,
                     report_keys.as_ref(),
                 )
             })
             .collect();
         for (chunk, encoded) in (first_chunk..).zip(chunks) {
-            let (encoded, matches) = encoded?;
+            let (pieces, matches) = encoded?;
             exact_matches += matches;
-            largest_chunk = largest_chunk.max(encoded.size());
-            out.write(chunk, end_chunk, encoded)?;
+            largest_chunk = largest_chunk.max(pieces.iter().map(output::Encoded::size).sum());
+            for (i, piece) in pieces.into_iter().enumerate() {
+                if let Some((n, names)) = &file_names
+                    && i > 0
+                {
+                    file_start += n;
+                    std::mem::replace(&mut out, open(Some(&names.name(file_start)))?).finish()?;
+                }
+                out.write(chunk, end_chunk, piece)?;
+            }
         }
         first_chunk = last_chunk;
         window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
@@ -894,25 +942,45 @@ fn chunk_rng(base_seed: u64, chunk: u64) -> StdRng {
     StdRng::from_seed(key)
 }
 
-/// Generates one chunk's rows into `sink`, plus how many of them exactly
-/// match a source row when `--report` keys are given.
+/// Generates one chunk's rows, plus how many of them exactly match a source
+/// row when `--report` keys are given. The rows are encoded as one piece per
+/// output file they fall in: with `--rows-per-file`, a new piece starts at each
+/// row that starts a file, so a chunk that begins a file has an empty first
+/// piece. `new_sink` takes the piece's row count.
 #[allow(clippy::too_many_arguments)]
 fn generate_chunk(
-    mut sink: output::Sink,
+    new_sink: &(dyn Fn(u64) -> output::Sink + Sync),
     schedule: &[EmitUnit],
     types: &[output::OutType],
     ncols: usize,
     base_seed: u64,
     chunk: u64,
     rows: u64,
+    rows_per_file: Option<u64>,
     report_keys: Option<&(report::RowKeyer, HashSet<u128>)>,
-) -> CliResult<(output::Encoded, u64)> {
+) -> CliResult<(Vec<output::Encoded>, u64)> {
+    let first_row = chunk * CHUNK_ROWS;
+    let starts_file = |i: u64| {
+        let row = first_row + i;
+        rows_per_file.is_some_and(|n| row > 0 && row.is_multiple_of(n))
+    };
+    let piece_rows = |from: u64| {
+        rows_per_file.map_or(rows - from, |n| {
+            (n - (first_row + from) % n).min(rows - from)
+        })
+    };
     let mut rng = chunk_rng(base_seed, chunk);
     // One reusable row buffer: each EmitUnit writes into its own column slot(s)
     // by index, so the schedule can be walked in any fixed order per row.
     let mut row: Vec<String> = vec![String::new(); ncols];
     let mut matches = 0_u64;
-    for _ in 0..rows {
+    let mut pieces = Vec::with_capacity(1);
+    let mut sink = new_sink(if starts_file(0) { 0 } else { piece_rows(0) });
+    for i in 0..rows {
+        if starts_file(i) {
+            let done = std::mem::replace(&mut sink, new_sink(piece_rows(i)));
+            pieces.push(done.finish()?);
+        }
         for unit in schedule {
             match unit {
                 EmitUnit::Independent { col_idx, generator } => {
@@ -932,7 +1000,8 @@ fn generate_chunk(
         }
         sink.push(&mut row, types)?;
     }
-    Ok((sink.finish()?, matches))
+    pieces.push(sink.finish()?);
+    Ok((pieces, matches))
 }
 
 #[cfg(test)]

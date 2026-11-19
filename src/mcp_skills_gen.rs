@@ -203,7 +203,11 @@ impl UsageParser {
         let examples = if skip_examples.contains(&self.command_name.as_str()) {
             Vec::new()
         } else {
+            let skipped = mcp_skip_options(&self.command_name);
             self.extract_examples()
+                .into_iter()
+                .filter(|e| !e.command.split_whitespace().any(|t| skipped.contains(&t)))
+                .collect()
         };
 
         Ok(SkillDefinition {
@@ -379,35 +383,6 @@ impl UsageParser {
         // file to `string`, undoing the fix rather than failing loudly
         let mut unresolved: Vec<String> = Vec::new();
 
-        // Per-command option skip list for MCP
-        // These options are not relevant when using the command through MCP
-        let command_skip_options: HashMap<&str, &[&str]> = HashMap::from_iter([
-            (
-                "describegpt",
-                [
-                    "--prompt",
-                    "--sql-results",
-                    "--session",
-                    "--session-len",
-                    "--fewshot-examples",
-                    "--sample-size",
-                    "--base-url",
-                    "--model",
-                    "--max-tokens",
-                    "--timeout",
-                    "--addl-props",
-                    "--export-prompt",
-                    "--prepare-context",
-                    "--process-response",
-                    "--prompt-file",
-                    "--ckan-api",
-                    "--cache-dir",
-                ]
-                .as_slice(),
-            ),
-            ("index", ["--output"].as_slice()),
-        ]);
-
         // Iterate over parsed atoms from docopt
         for (atom, opts) in parser.descs.iter() {
             match atom {
@@ -471,10 +446,7 @@ impl UsageParser {
                     }
 
                     // Skip per-command options not relevant for MCP
-                    if command_skip_options
-                        .get(self.command_name.as_str())
-                        .is_some_and(|skips| skips.contains(&primary_flag.as_str()))
-                    {
+                    if mcp_skip_options(&self.command_name).contains(&primary_flag.as_str()) {
                         continue;
                     }
 
@@ -573,10 +545,7 @@ impl UsageParser {
                     }
 
                     // Skip per-command options not relevant for MCP
-                    if command_skip_options
-                        .get(self.command_name.as_str())
-                        .is_some_and(|skips| skips.contains(&flag_str.as_str()))
-                    {
+                    if mcp_skip_options(&self.command_name).contains(&flag_str.as_str()) {
                         continue;
                     }
 
@@ -1750,6 +1719,37 @@ fn struct_body<'a>(src: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
+/// Per-command options left out of the MCP skill, because they don't apply
+/// through MCP. Examples that use one are left out too.
+fn mcp_skip_options(command: &str) -> &'static [&'static str] {
+    match command {
+        "describegpt" => &[
+            "--prompt",
+            "--sql-results",
+            "--session",
+            "--session-len",
+            "--fewshot-examples",
+            "--sample-size",
+            "--base-url",
+            "--model",
+            "--max-tokens",
+            "--timeout",
+            "--addl-props",
+            "--export-prompt",
+            "--prepare-context",
+            "--process-response",
+            "--prompt-file",
+            "--ckan-api",
+            "--cache-dir",
+        ],
+        "index" => &["--output"],
+        // The MCP server checks only the literal `{}` template against its
+        // allowed directories, and would report it as the written file.
+        "synthesize" => &["--rows-per-file"],
+        _ => &[],
+    }
+}
+
 /// Build one command's skill definition. `cmd_src` and `util_src` only need to hold the
 /// command's `util::get_args` line and its args struct (see `extract_arg_field_types`), so the
 /// full source files and the fragments `build.rs` embeds give the same result.
@@ -2707,5 +2707,38 @@ mod tests {
         // unlisted pairs fall through to the generic description
         assert!(UsageParser::command_positional_description("stats", "input").is_none());
         assert!(UsageParser::command_positional_description("readstat", "output").is_none());
+    }
+
+    /// A skipped option is left out of the skill, and so is any example using
+    /// it: the MCP server drops undeclared options, so an agent copying the
+    /// example would run it without the option.
+    #[test]
+    fn skipped_options_and_their_examples_are_left_out() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cmd_file = root.join("src/cmd/synthesize/mod.rs");
+        let usage = extract_usage_from_file(&cmd_file).unwrap();
+        assert!(usage.contains("--rows-per-file"));
+        let skill = build_skill(
+            "synthesize",
+            &usage,
+            "",
+            &std::fs::read_to_string(&cmd_file).unwrap(),
+            &std::fs::read_to_string(root.join("src/util.rs")).unwrap_or_default(),
+        )
+        .unwrap();
+        assert!(
+            skill
+                .command
+                .options
+                .iter()
+                .all(|o| o.flag != "--rows-per-file")
+        );
+        assert!(!skill.examples.is_empty());
+        assert!(
+            skill
+                .examples
+                .iter()
+                .all(|e| !e.command.contains("--rows-per-file"))
+        );
     }
 }

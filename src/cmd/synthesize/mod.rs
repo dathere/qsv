@@ -83,10 +83,9 @@ not stop it:
     can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
-A model saved with --save-model holds real values from <input>: the
-enumerated values and joint tuples that passed the --min-count, and the
-trimmed ends of numeric, date and `ordered` ranges. It can hold a value the
-output never shows, so review and share it at least as carefully.
+A model saved with --save-model holds real values from <input>, such as
+enumerated values, quartile boundaries and range ends, including some the
+output never shows. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
 Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed

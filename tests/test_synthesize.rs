@@ -3421,16 +3421,16 @@ fn synthesize_model_refuses_fit_options() {
         5
     );
 
+    let before = wrk.read_to_string("m.json").unwrap();
     let mut overwrite = wrk.command("synthesize");
     overwrite.args(["--model", "m.json", "-o", "m.json"]);
     assert!(
-        wrk.output_stderr(&mut overwrite)
+        wrk.stderr_on_error(&mut overwrite)
             .contains("is the same file as an input")
     );
-    assert!(
-        wrk.read_to_string("m.json")
-            .unwrap()
-            .starts_with("{\"qsv_synthesize_model\""),
+    assert_eq!(
+        wrk.read_to_string("m.json").unwrap(),
+        before,
         "a refused run must leave the model intact"
     );
 

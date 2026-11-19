@@ -206,7 +206,11 @@ impl UsageParser {
             let skipped = mcp_skip_options(&self.command_name);
             self.extract_examples()
                 .into_iter()
-                .filter(|e| !e.command.split_whitespace().any(|t| skipped.contains(&t)))
+                .filter(|e| {
+                    !e.command
+                        .split_whitespace()
+                        .any(|t| skipped.contains(&t.split_once('=').map_or(t, |(flag, _)| flag)))
+                })
                 .collect()
         };
 
@@ -2713,6 +2717,7 @@ mod tests {
     /// it: the MCP server drops undeclared options, so an agent copying the
     /// example would run it without the option.
     #[test]
+    #[cfg(feature = "mcp")]
     fn skipped_options_and_their_examples_are_left_out() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let cmd_file = root.join("src/cmd/synthesize/mod.rs");

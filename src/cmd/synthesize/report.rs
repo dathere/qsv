@@ -156,21 +156,31 @@ fn value_key(
             Some((1, (v + 0.0).to_bits().cast_signed(), 0))
         },
         RangeKind::Date | RangeKind::DateTime => {
-            let formatted = date_format.and_then(|fmt| {
-                chrono::NaiveDateTime::parse_from_str(s, fmt)
-                    .or_else(|_| {
-                        chrono::NaiveDate::parse_from_str(s, fmt)
-                            .map(|d| d.and_time(NaiveTime::MIN))
-                    })
-                    .ok()
-                    .map(|dt| dt.and_utc())
-            });
-            let dt = match formatted {
-                Some(dt) => dt,
-                None => qsv_dateparser::parse_with_preference(s, prefer_dmy).ok()?,
-            };
+            let dt = parse_date(s, date_format, prefer_dmy)?;
             Some((3, dt.timestamp(), i64::from(dt.timestamp_subsec_nanos())))
         },
+    }
+}
+
+/// Reads a date with the column's output format first, falling back to the
+/// date parser `stats` uses, so a generated `03/02/2020` under
+/// `date:%d/%m/%Y` is February 3 whatever the source's DMY preference.
+pub(crate) fn parse_date(
+    s: &str,
+    date_format: Option<&str>,
+    prefer_dmy: bool,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let formatted = date_format.and_then(|fmt| {
+        chrono::NaiveDateTime::parse_from_str(s, fmt)
+            .or_else(|_| {
+                chrono::NaiveDate::parse_from_str(s, fmt).map(|d| d.and_time(NaiveTime::MIN))
+            })
+            .ok()
+            .map(|dt| dt.and_utc())
+    });
+    match formatted {
+        Some(dt) => Some(dt),
+        None => qsv_dateparser::parse_with_preference(s, prefer_dmy).ok(),
     }
 }
 

@@ -7,18 +7,25 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{generator::ColumnGenerator, group_generator::GroupGenerator, relationships::EmitUnit};
+use super::{
+    generator::ColumnGenerator, group_generator::GroupGenerator, output::OutType,
+    relationships::EmitUnit,
+};
 use crate::{CliError, CliResult, cmd::describegpt::dictionary::is_valid_strftime};
 
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Model {
-    qsv_synthesize_model: u32,
-    qsv_version:          String,
-    fit:                  FitInfo,
-    pub(crate) columns:   Vec<String>,
-    pub(crate) schedule:  Vec<EmitUnit>,
+    qsv_synthesize_model:  u32,
+    qsv_version:           String,
+    fit:                   FitInfo,
+    pub(crate) columns:    Vec<String>,
+    /// Each column's output type, for `--format jsonl|parquet`.
+    pub(crate) types:      Vec<OutType>,
+    /// The source's day-first preference, for reading sampled real dates.
+    pub(crate) prefer_dmy: bool,
+    pub(crate) schedule:   Vec<EmitUnit>,
 }
 
 /// How the model was fitted. Informational only: generation never reads it.
@@ -31,12 +38,20 @@ pub(crate) struct FitInfo {
 }
 
 impl Model {
-    pub(crate) fn new(columns: Vec<String>, schedule: Vec<EmitUnit>, fit: FitInfo) -> Self {
+    pub(crate) fn new(
+        columns: Vec<String>,
+        types: Vec<OutType>,
+        prefer_dmy: bool,
+        schedule: Vec<EmitUnit>,
+        fit: FitInfo,
+    ) -> Self {
         Self {
             qsv_synthesize_model: FORMAT_VERSION,
             qsv_version: env!("CARGO_PKG_VERSION").to_string(),
             fit,
             columns,
+            types,
+            prefer_dmy,
             schedule,
         }
     }
@@ -87,6 +102,12 @@ impl Model {
         let ncols = self.columns.len();
         if ncols == 0 {
             return Err("it has no columns.".to_string());
+        }
+        if self.types.len() != ncols {
+            return bad("a type list that doesn't match its columns");
+        }
+        for ty in &self.types {
+            check_date_format(ty.date_format())?;
         }
         let mut filled = vec![false; ncols];
         for unit in &self.schedule {

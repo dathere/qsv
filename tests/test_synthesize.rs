@@ -3227,3 +3227,287 @@ fn synthesize_last_shard_of_max_rows_does_not_overflow() {
     assert_eq!(out.lines().count(), 8192);
     assert_eq!(read_report(&wrk)["synthetic_rows"], 8191);
 }
+
+/// A source and dictionary that reach every generator a model can hold:
+/// enumerated (`tier`), faker pool (`email`), consistent fakes (`first_name`),
+/// float range (`score`), free text (`note`), empty (`blank`), date range
+/// (`joined`), and joint, ordered and correlated groups.
+fn model_fixture(wrk: &Workdir) {
+    let cities = [
+        ("Springfield", "IL"),
+        ("Chicago", "IL"),
+        ("Boston", "MA"),
+        ("Portland", "OR"),
+    ];
+    let mut rows = vec![svec![
+        "tier",
+        "email",
+        "first_name",
+        "score",
+        "note",
+        "blank",
+        "joined",
+        "city",
+        "state",
+        "created",
+        "closed",
+        "x",
+        "y"
+    ]];
+    for i in 0..40_u32 {
+        let (city, state) = cities[i as usize % 4];
+        let (month, day) = (i % 12 + 1, i / 12 + 1);
+        rows.push(vec![
+            ["gold", "silver", "bronze"][i as usize % 3].to_string(),
+            format!("user{i}@example.com"),
+            ["SRC_Ann", "SRC_Bob", "SRC_Cy", "SRC_Di"][i as usize % 4].to_string(),
+            format!("{:.3}", f64::from(i).mul_add(1.37, 0.123)),
+            format!("free text note number {i} about things"),
+            String::new(),
+            format!("2021-{month:02}-{day:02}"),
+            city.to_string(),
+            state.to_string(),
+            format!("2020-{month:02}-{day:02}"),
+            format!("2020-{month:02}-{:02}", day + 10),
+            (i * 10).to_string(),
+            format!("{:.2}", f64::from(i).mul_add(9.5, f64::from(i % 3))),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+        "fields": [
+            {"name": "email", "type": "String", "content_type": "email"},
+            {"name": "first_name", "type": "String", "content_type": "first_name"}
+        ],
+        "relationships": [
+            {"kind": "joint", "members": ["city", "state"]},
+            {"kind": "ordered", "members": ["created", "closed"], "anchor": "created"},
+            {"kind": "correlated", "members": ["x", "y"]}
+        ]
+    }"#,
+    );
+}
+
+/// A fitting run of `rows` rows with the model fixture's options, plus `extra`.
+fn model_fit_cmd(wrk: &Workdir, rows: &str, extra: &[&str]) -> std::process::Command {
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        rows,
+        "--seed",
+        "11",
+        "--min-count",
+        "1",
+        "--consistent-fakes",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv")
+    .args(extra);
+    cmd
+}
+
+#[test]
+fn synthesize_model_reproduces_the_fitting_run() {
+    let wrk = Workdir::new("synthesize_model_same_output");
+    model_fixture(&wrk);
+
+    // Raw stdout bytes: the promise is byte-identical output, line endings included.
+    let direct = wrk.output(&mut model_fit_cmd(&wrk, "20000", &[])).stdout;
+    let saving = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &["--save-model", "m.json"],
+        ))
+        .stdout;
+    let mut from_model = wrk.command("synthesize");
+    from_model.args(["--model", "m.json", "-n", "20000", "--seed", "11"]);
+    let from_model = wrk.output(&mut from_model).stdout;
+
+    let model = wrk.read_to_string("m.json").unwrap();
+    for variant in [
+        "\"FrequencyWeighted\":",
+        "\"Faker\":",
+        "\"FakerMapped\":",
+        "\"NumericQuantile\":",
+        "\"DateQuantile\":",
+        "\"LoremFallback\":",
+        "\"Empty\"",
+        "\"Joint\":",
+        "\"Ordered\":",
+        "\"Correlated\":",
+    ] {
+        assert!(model.contains(variant), "model has no {variant} generator");
+    }
+    assert_eq!(direct.iter().filter(|&&b| b == b'\n').count(), 20001);
+    assert!(saving == direct, "--save-model must not change the output");
+    assert!(
+        from_model == direct,
+        "a --model run must write the bytes of the run that saved the model"
+    );
+}
+
+#[test]
+fn synthesize_model_shards_join_to_the_fitting_run() {
+    let wrk = Workdir::new("synthesize_model_shards");
+    model_fixture(&wrk);
+
+    let direct = wrk.output(&mut model_fit_cmd(&wrk, "20000", &[])).stdout;
+    let mut joined = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &["--shard", "1/3", "--save-model", "m.json"],
+        ))
+        .stdout;
+    for shard in ["2/3", "3/3"] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args([
+            "--model", "m.json", "-n", "20000", "--seed", "11", "--shard", shard,
+        ]);
+        let slice = wrk.output(&mut cmd).stdout;
+        // Drop only the repeated header line, keeping every byte after it.
+        let body = slice.iter().position(|&b| b == b'\n').unwrap() + 1;
+        joined.extend_from_slice(&slice[body..]);
+    }
+    assert!(
+        joined == direct,
+        "model slices joined in order must equal the fitting run's bytes"
+    );
+}
+
+#[test]
+fn synthesize_model_refuses_fit_options() {
+    let wrk = Workdir::new("synthesize_model_refusals");
+    model_fixture(&wrk);
+    wrk.output(&mut model_fit_cmd(&wrk, "10", &["--save-model", "m.json"]));
+
+    for extra in [
+        &["data.csv"][..],
+        &["--dictionary", "dict.json"],
+        &["--report", "r.json"],
+        &["--save-model", "m2.json"],
+        &["--delimiter", ";"],
+    ] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--model", "m.json"]).args(extra);
+        let err = wrk.output_stderr(&mut cmd);
+        assert!(
+            err.contains("--model can't be combined with"),
+            "{extra:?}: {err}"
+        );
+    }
+
+    // Defaulted fit options are ignored with --model, even values a fit refuses.
+    let mut ignored = wrk.command("synthesize");
+    ignored.args([
+        "--model",
+        "m.json",
+        "-n",
+        "3",
+        "--locale",
+        "xx",
+        "--min-count",
+        "0",
+    ]);
+    assert_eq!(
+        wrk.output(&mut ignored)
+            .stdout
+            .split(|&b| b == b'\n')
+            .count(),
+        5
+    );
+
+    let before = wrk.read_to_string("m.json").unwrap();
+    let mut overwrite = wrk.command("synthesize");
+    overwrite.args(["--model", "m.json", "-o", "m.json"]);
+    assert!(
+        wrk.stderr_on_error(&mut overwrite)
+            .contains("is the same file as an input")
+    );
+    assert_eq!(
+        wrk.read_to_string("m.json").unwrap(),
+        before,
+        "a refused run must leave the model intact"
+    );
+
+    let mut clash = model_fit_cmd(&wrk, "10", &["--save-model", "data.csv"]);
+    assert!(
+        wrk.output_stderr(&mut clash)
+            .contains("--save-model must not be the input")
+    );
+}
+
+#[test]
+fn synthesize_model_rejects_other_versions_and_broken_models() {
+    let wrk = Workdir::new("synthesize_model_broken");
+    model_fixture(&wrk);
+    wrk.output(&mut model_fit_cmd(&wrk, "10", &["--save-model", "m.json"]));
+    let model: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("m.json").unwrap()).unwrap();
+
+    let expect_error = |name: &str, model: &serde_json::Value, needle: &str| {
+        wrk.create_from_string(name, &model.to_string());
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--model", name]);
+        let err = wrk.output_stderr(&mut cmd);
+        assert!(
+            err.contains(needle),
+            "{name}: expected '{needle}', got: {err}"
+        );
+    };
+
+    let mut newer = model.clone();
+    newer["qsv_synthesize_model"] = 99.into();
+    expect_error("newer.json", &newer, "model format version 99");
+    expect_error(
+        "other.json",
+        &serde_json::json!({}),
+        "not a model written by",
+    );
+
+    // Column 0 is filled twice, so the last column is never filled.
+    let mut twice = model.clone();
+    let units = twice["schedule"].as_array_mut().unwrap();
+    let first = units[0].clone();
+    *units.last_mut().unwrap() = first;
+    expect_error("twice.json", &twice, "is generated twice");
+
+    let mut short = model.clone();
+    short["columns"].as_array_mut().unwrap().pop();
+    expect_error("short.json", &short, "out of range");
+
+    // tier is enumerated: an empty value list would panic when sampled.
+    let mut empty = model;
+    let tier = &mut empty["schedule"][0]["Independent"]["generator"]["FrequencyWeighted"];
+    tier["values"] = serde_json::json!([]);
+    tier["cumulative"] = serde_json::json!([]);
+    expect_error("empty.json", &empty, "a value list that is empty");
+}
+
+#[test]
+fn synthesize_model_leaves_out_values_below_min_count() {
+    let wrk = Workdir::new("synthesize_model_min_count");
+    wrk.create("data.csv", min_count_fixture());
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "10",
+        "--seed",
+        "1",
+        "--save-model",
+        "m.json",
+        "data.csv",
+    ]);
+    wrk.output(&mut cmd);
+    let model = wrk.read_to_string("m.json").unwrap();
+    assert!(model.contains("\"A\""), "kept values belong in the model");
+    assert!(
+        !model.contains("RARE"),
+        "a value below --min-count must not reach the model"
+    );
+}

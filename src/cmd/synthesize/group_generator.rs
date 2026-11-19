@@ -7,6 +7,7 @@
 //! routed through a `GroupGenerator` (see `relationships.rs`).
 
 use rand::{RngExt, rngs::StdRng};
+use serde::{Deserialize, Serialize};
 
 use super::generator::draw_null;
 
@@ -16,7 +17,7 @@ use super::generator::draw_null;
 /// members; per-member integer-vs-float formatting is tracked separately (see
 /// `Ordered::is_int`) so a mixed group never drifts an Integer column to a
 /// float string.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum OrderedKind {
     Numeric,
     Date,
@@ -24,6 +25,7 @@ pub(crate) enum OrderedKind {
 }
 
 /// A joint, multi-column generator for one relationship group.
+#[derive(Serialize, Deserialize)]
 pub(crate) enum GroupGenerator {
     /// Frequency-weighted sampling of whole observed tuples. Every emitted
     /// combination is one that actually occurs in the source, so functional

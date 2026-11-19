@@ -9,8 +9,8 @@
       {
         "name": "input",
         "type": "file",
-        "required": true,
-        "description": "Input CSV file."
+        "required": false,
+        "description": "The source CSV to profile. Omitted with --model, which generates from a saved model instead."
       }
     ],
     "options": [
@@ -65,6 +65,11 @@
         "default": 5
       },
       {
+        "flag": "--model",
+        "type": "string",
+        "description": "Generate from a model saved with --save-model instead of profiling an input, which must then be omitted. The model fixes everything fitted from the input, so options that shape the fit or read the input are refused when they have no default (for example the --dictionary, --stats-options, the --report and --delimiter options) and ignored when they do (for example the --locale, the --min-count and the frequency limit)."
+      },
+      {
         "flag": "--no-relationships",
         "type": "flag",
         "description": "Disable inter-column relationship modeling. Every column is generated independently even when the dictionary declares a `relationships` array."
@@ -86,6 +91,11 @@
         "default": 100
       },
       {
+        "flag": "--save-model",
+        "type": "string",
+        "description": "Also save the fitted model to <file>, so later runs can generate from it with --model without reading <input> again. A --model run with the same --rows and --seed writes the same rows as this run (pools of fake values are sized for this run's --rows). The model holds real values from <input>, some of which the output may never show (see the privacy note above), so share it at least as carefully as the output. Its format is internal to qsv and versioned: a qsv that reads another model version refuses it, and it must be fitted again."
+      },
+      {
         "flag": "--seed",
         "type": "number",
         "description": "RNG seed for fully reproducible output. The same seed gives the same rows at any --jobs, unless stats uses approximate estimators: either asked for via --stats-options (e.g. `--quantile-method approx`), or switched on by stats itself (with a warning) when the input won't fit in memory."
@@ -93,7 +103,7 @@
       {
         "flag": "--shard",
         "type": "string",
-        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only."
+        "description": "Generate only slice k of N (k from 1 to N) of the rows --rows asks for. Requires --seed. Each slice is a run of whole 8192-row blocks, and slices 1 to N joined in order (with `qsv cat rows`) are the same as one unsharded run. Every slice must use the same <input>, options, qsv version and dictionary file, if any (--infer-content-type without --dictionary is refused). Each slice still profiles all of <input> itself, so if stats or frequency warns on one machine that it switched to approximate estimators for lack of memory, that slice comes from a different fit and the joined rows won't match one run. Generating the slices from one model saved with --save-model avoids this. Each slice gets a header row even when it has no rows (when N exceeds the number of blocks). With --report, the counts are for this slice only."
       },
       {
         "flag": "--stats-options",
@@ -143,6 +153,14 @@
     {
       "description": "Generate 1B rows as 4 slices, e.g. one per machine, then join them into the same file a single run would write",
       "command": "qsv cat rows part1.csv part2.csv part3.csv part4.csv -o synthetic.csv"
+    },
+    {
+      "description": "The same, profiling data.csv only once: the first slice saves the fitted model, and the other slices generate from it without data.csv",
+      "command": "qsv synthesize data.csv -n 1000000000 --seed 42 --shard 1/4 --save-model model.json -o part1.csv"
+    },
+    {
+      "description": "The same, profiling data.csv only once: the first slice saves the fitted model, and the other slices generate from it without data.csv",
+      "command": "qsv synthesize --model model.json -n 1000000000 --seed 42 --shard 2/4 -o part2.csv"
     }
   ]
 }

@@ -29,6 +29,7 @@ use std::collections::HashSet;
 
 use indexmap::IndexMap;
 use rand::{RngExt, rngs::StdRng};
+use serde::{Deserialize, Serialize};
 
 use super::faker_map::{self, Locale};
 use crate::cmd::describegpt::dictionary::{FrequencyRecord, StatsRecord};
@@ -62,7 +63,7 @@ const UNSTRUCTURED_CONTENT_TYPES: &[&str] = &[
 /// Per-column character-length distribution extracted from `qsv stats`
 /// (`min_length` / `max_length` / `avg_length` / `stddev_length`). Only attached
 /// to unstructured/free-text generators — structured fakers ignore it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct LengthStats {
     pub min:    usize,
     pub max:    usize,
@@ -111,6 +112,7 @@ fn is_unstructured(content_type: &str) -> bool {
     UNSTRUCTURED_CONTENT_TYPES.contains(&content_type)
 }
 
+#[derive(Serialize, Deserialize)]
 pub(crate) enum ColumnGenerator {
     /// Sample real values with real frequency weights.
     FrequencyWeighted {

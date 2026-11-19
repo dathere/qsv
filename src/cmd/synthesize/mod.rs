@@ -83,10 +83,15 @@ not stop it:
     can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
+A model saved with --save-model holds real values from <input>, such as
+enumerated values, quartile boundaries and range ends, including some the
+output never shows. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
 Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
 and --shard, several machines can each generate one slice of a dataset.
+To profile <input> only once, save the fitted model with --save-model and
+generate the other slices from it with --model.
 
 Examples:
 
@@ -112,12 +117,23 @@ Examples:
   ...
   $ qsv cat rows part1.csv part2.csv part3.csv part4.csv -o synthetic.csv
 
+  # The same, profiling data.csv only once: the first slice saves the
+  # fitted model, and the other slices generate from it without data.csv
+  $ qsv synthesize data.csv -n 1000000000 --seed 42 --shard 1/4 --save-model model.json -o part1.csv
+  $ qsv synthesize --model model.json -n 1000000000 --seed 42 --shard 2/4 -o part2.csv
+  ...
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs.
 See also https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize
 
 Usage:
     qsv synthesize [options] <input>
+    qsv synthesize [options] --model <file>
     qsv synthesize --help
+
+synthesize arguments:
+    <input>                The source CSV to profile. Omitted with --model,
+                           which generates from a saved model instead.
 
 synthesize options:
     --dictionary <file>    Data Dictionary JSON file produced by
@@ -147,10 +163,33 @@ synthesize options:
                            frequency warns on one machine that it switched to
                            approximate estimators for lack of memory, that
                            slice comes from a different fit and the joined
-                           rows won't match one run. Each slice gets a header
+                           rows won't match one run. Generating the slices
+                           from one model saved with --save-model avoids
+                           this. Each slice gets a header
                            row even when it has no rows (when N exceeds the
                            number of blocks). With --report, the counts are
                            for this slice only.
+    --save-model <file>    Also save the fitted model to <file>, so later
+                           runs can generate from it with --model without
+                           reading <input> again. A --model run with the
+                           same --rows and --seed writes the same rows as
+                           this run (pools of fake values are sized for
+                           this run's --rows). The model holds real values
+                           from <input>, some of which the output may never
+                           show (see the privacy note above), so share it
+                           at least as carefully as the output. Its format
+                           is internal to qsv and versioned: a qsv that reads
+                           another model version refuses it, and it must be
+                           fitted again.
+    --model <file>         Generate from a model saved with --save-model
+                           instead of profiling an input, which must then be
+                           omitted. The model fixes everything fitted from
+                           the input, so options that shape the fit or read
+                           the input are refused when they have no default
+                           (for example the --dictionary, --stats-options,
+                           the --report and --delimiter options) and ignored
+                           when they do (for example the --locale,
+                           the --min-count and the frequency limit).
     --locale <loc>         Locale for faker-backed columns. Case-insensitive.
                            Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt,
                            ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl,
@@ -257,7 +296,7 @@ use serde::Deserialize;
 
 use crate::{
     CliError, CliResult,
-    cmd::describegpt::dictionary::{parse_frequency_csv, parse_stats_csv},
+    cmd::describegpt::dictionary::{StatsRecord, parse_frequency_csv, parse_stats_csv},
     config::{Config, Delimiter},
     util,
 };
@@ -266,6 +305,7 @@ mod dictionary;
 mod faker_map;
 mod generator;
 mod group_generator;
+mod model;
 mod range_trim;
 mod relationships;
 mod report;
@@ -275,7 +315,9 @@ use relationships::{EmitUnit, ScheduleParams, build_emit_schedule};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:                  String,
+    arg_input:                  Option<String>,
+    flag_model:                 Option<String>,
+    flag_save_model:            Option<String>,
     flag_dictionary:            Option<String>,
     flag_infer_content_type:    bool,
     flag_rows:                  u64,
@@ -299,15 +341,6 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Parse --locale into the typed dispatch enum. Case-insensitive; unknown
-    // tokens surface the user's exact spelling alongside the supported list.
-    let locale = Locale::from_token(&args.flag_locale).map_err(|bad| {
-        CliError::IncorrectUsage(format!(
-            "Unsupported --locale '{bad}'. Supported: {}.",
-            Locale::ALL.join(", "),
-        ))
-    })?;
-
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
     }
@@ -328,6 +361,215 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         Some(spec) => Some(parse_shard(spec)?),
         None => None,
     };
+    if args.flag_model.is_some() {
+        // These only shape the fit, which the model already fixed. Options with
+        // a default (--locale, --min-count, …) can't be told apart from unset,
+        // so they are ignored instead (see USAGE).
+        let fit_only = [
+            (args.arg_input.is_some(), "<input>"),
+            (args.flag_dictionary.is_some(), "--dictionary"),
+            (args.flag_infer_content_type, "--infer-content-type"),
+            (args.flag_stats_options.is_some(), "--stats-options"),
+            (args.flag_consistent_fakes, "--consistent-fakes"),
+            (args.flag_no_relationships, "--no-relationships"),
+            (args.flag_strict_relationships, "--strict-relationships"),
+            (args.flag_save_model.is_some(), "--save-model"),
+            (args.flag_report.is_some(), "--report"),
+            (args.flag_delimiter.is_some(), "--delimiter"),
+        ];
+        if let Some((_, name)) = fit_only.iter().find(|(set, _)| *set) {
+            return fail_incorrectusage_clierror!(
+                "--model can't be combined with {name}: the model was already fitted from its \
+                 source."
+            );
+        }
+    }
+    let clashes_with_inputs = |path: &str| {
+        let path = report::resolve_path(path);
+        [
+            args.arg_input.as_deref(),
+            args.flag_dictionary.as_deref(),
+            args.flag_output.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|other| report::resolve_path(other) == path)
+    };
+    if args
+        .flag_save_model
+        .as_deref()
+        .is_some_and(clashes_with_inputs)
+    {
+        return fail_incorrectusage_clierror!(
+            "--save-model must not be the input, --dictionary or --output file."
+        );
+    }
+    if let Some(report_path) = args.flag_report.as_deref()
+        && (clashes_with_inputs(report_path)
+            || args
+                .flag_save_model
+                .as_deref()
+                .is_some_and(|m| report::resolve_path(m) == report::resolve_path(report_path)))
+    {
+        return fail_incorrectusage_clierror!(
+            "--report must not be the input, --dictionary, --output or --save-model file."
+        );
+    }
+
+    // The fit (pools, fake values, relationship validation) draws from an RNG
+    // seeded with the base seed; each output chunk gets its own RNG keyed on
+    // (base seed, chunk index), so a given --seed gives the same output at any
+    // --jobs, and from a saved model as from the fit that saved it.
+    let base_seed = args.flag_seed.unwrap_or_else(rand::random::<u64>);
+
+    let (model, fitted) = match args.flag_model.as_deref() {
+        Some(model_path) => (model::Model::load(model_path)?, None),
+        None => {
+            let (model, fitted) = fit(&args, base_seed)?;
+            (model, Some(fitted))
+        },
+    };
+    if let Some(model_path) = args.flag_save_model.as_deref() {
+        model.save(model_path)?;
+    }
+
+    // Only with --report: hash every source row so emitted rows can be checked
+    // for exact copies. Uses no RNG, so output is the same with or without it.
+    let report_keys = match (&args.flag_report, &fitted) {
+        (Some(_), Some(fitted)) => {
+            let keyer = report::RowKeyer::new(
+                &fitted.stats_records,
+                &fitted.source_cols,
+                &model.schedule,
+                fitted.prefer_dmy,
+            );
+            let keys = report::source_row_keys(&keyer, &fitted.input_path, args.flag_delimiter)?;
+            Some((keyer, keys))
+        },
+        _ => None,
+    };
+    let mut exact_matches = 0_u64;
+
+    // --- 5. Emit -----------------------------------------------------------
+    let out_conf = Config::new(args.flag_output.as_ref());
+    let mut wtr = out_conf.writer()?;
+    let chunk_builder = out_conf.writer_builder();
+
+    wtr.write_record(&model.columns)?;
+    // Chunks arrive already encoded, so append them to the raw writer; taking
+    // it out of the csv writer flushes the header first.
+    let mut out = wtr.into_inner().map_err(|e| e.into_error())?;
+
+    // Chunks are generated in parallel, a window at a time, and written in
+    // chunk order. The window starts at one chunk and is then sized from the
+    // largest chunk seen so far, so the bytes held at once stay near
+    // WINDOW_BYTES (but never below one chunk) however wide the rows are. The
+    // window only affects memory and speed, never the output.
+    let ncols = model.columns.len();
+    let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
+    let (mut first_chunk, end_chunk) =
+        shard.map_or((0, total_chunks), |(k, n)| shard_chunks(total_chunks, k, n));
+    let synthetic_rows = end_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows)
+        - first_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows);
+    let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
+    let mut window = 1_u64;
+    let mut largest_chunk = 0_u64;
+    while first_chunk < end_chunk {
+        let last_chunk = (first_chunk + window).min(end_chunk);
+        let chunks: Vec<CliResult<(Vec<u8>, u64)>> = (first_chunk..last_chunk)
+            .into_par_iter()
+            .map(|chunk| {
+                let rows = CHUNK_ROWS.min(args.flag_rows - chunk * CHUNK_ROWS);
+                generate_chunk(
+                    &chunk_builder,
+                    &model.schedule,
+                    ncols,
+                    base_seed,
+                    chunk,
+                    rows,
+                    largest_chunk,
+                    report_keys.as_ref(),
+                )
+            })
+            .collect();
+        for chunk in chunks {
+            let (bytes, matches) = chunk?;
+            exact_matches += matches;
+            largest_chunk = largest_chunk.max(bytes.len() as u64);
+            out.write_all(&bytes)?;
+        }
+        first_chunk = last_chunk;
+        window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
+    }
+    out.flush()?;
+
+    if let (Some(report_path), Some((keyer, keys)), Some(fitted)) =
+        (&args.flag_report, &report_keys, &fitted)
+    {
+        let compared: Vec<usize> = keyer.compared().collect();
+        let names = |pred: &dyn Fn(usize) -> bool| -> Vec<&str> {
+            model
+                .columns
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| pred(*i))
+                .map(|(_, name)| name.as_str())
+                .collect()
+        };
+        // With no column compared every row hashes the same, so a match count
+        // would be meaningless: report the row metrics as null instead.
+        let any_compared = !compared.is_empty();
+        #[allow(clippy::cast_precision_loss)]
+        let rate = (any_compared && synthetic_rows > 0)
+            .then(|| exact_matches as f64 / synthetic_rows as f64);
+        let report = serde_json::json!({
+            "source_rows": fitted.total_rows,
+            "synthetic_rows": synthetic_rows,
+            "shard": args.flag_shard,
+            "seed": args.flag_seed,
+            "min_count": args.flag_min_count,
+            "privacy": {
+                "exact_matches": any_compared.then_some(exact_matches),
+                "exact_match_rate": rate,
+                "distinct_source_rows": any_compared.then_some(keys.len()),
+                "compared_columns": names(&|i| compared.contains(&i)),
+                "excluded_columns": names(&|i| !compared.contains(&i)),
+                "suppressed": &fitted.suppressions,
+            },
+        });
+        std::fs::write(report_path, serde_json::to_string_pretty(&report)? + "\n")?;
+    }
+    Ok(())
+}
+
+/// What a fit leaves behind besides the model, for `--report`.
+struct Fitted {
+    input_path:    String,
+    stats_records: Vec<StatsRecord>,
+    source_cols:   Vec<Option<usize>>,
+    prefer_dmy:    bool,
+    total_rows:    u64,
+    suppressions:  Vec<report::Suppression>,
+}
+
+/// Profiles <input> (stats, frequency, count, optional dictionary) and builds
+/// the emit schedule from it.
+fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
+    // Parse --locale into the typed dispatch enum. Case-insensitive; unknown
+    // tokens surface the user's exact spelling alongside the supported list.
+    let locale = Locale::from_token(&args.flag_locale).map_err(|bad| {
+        CliError::IncorrectUsage(format!(
+            "Unsupported --locale '{bad}'. Supported: {}.",
+            Locale::ALL.join(", "),
+        ))
+    })?;
+    if args.flag_min_count == 0 {
+        return fail_incorrectusage_clierror!(
+            "--min-count must be at least 1 (1 disables suppression)."
+        );
+    }
+    let mut rng = StdRng::seed_from_u64(base_seed); // DevSkim: ignore DS148264
+
     // Column selection and --weight change which columns stats reports and in
     // what order, which synthesize can't see; every pass that reads source
     // cells relies on stats covering every column in order. Select first.
@@ -352,42 +594,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
     }
-    if args.flag_min_count == 0 {
-        return fail_incorrectusage_clierror!(
-            "--min-count must be at least 1 (1 disables suppression)."
-        );
-    }
 
-    let input_path = args.arg_input.as_str();
+    // Docopt requires <input> whenever --model is absent.
+    let input_path = args.arg_input.as_deref().unwrap_or_default();
     if !Path::new(input_path).is_file() {
         return fail_clierror!("Input file '{input_path}' does not exist or is not a file.");
     }
-    if let Some(report_path) = &args.flag_report {
-        let report = report::resolve_path(report_path);
-        let clashes = std::iter::once(Some(input_path))
-            .chain([args.flag_dictionary.as_deref(), args.flag_output.as_deref()])
-            .flatten()
-            .any(|other| report::resolve_path(other) == report);
-        if clashes {
-            return fail_incorrectusage_clierror!(
-                "--report must not be the input, --dictionary or --output file."
-            );
-        }
-    }
-
-    // The fit (pools, fake values, relationship validation) draws from an RNG
-    // seeded with the base seed; each output chunk gets its own RNG keyed on
-    // (base seed, chunk index), so a given --seed gives the same output at any
-    // --jobs.
-    let base_seed = args.flag_seed.unwrap_or_else(rand::random::<u64>);
-    let mut rng = StdRng::seed_from_u64(base_seed); // DevSkim: ignore DS148264
 
     // --- 1. Analysis (stats + frequency + count) ---------------------------
     // Index the input first (best-effort) to speed up stats/frequency.
     // `Config::index_files()` returns `Ok(None)` when no index exists (not an
     // error) and may auto-index large inputs internally — so we explicitly fall
     // back to `qsv index` whenever it doesn't hand us an existing index.
-    let config = Config::new(Some(&args.arg_input));
+    let config = Config::new(args.arg_input.as_ref());
     if !matches!(config.index_files(), Ok(Some(_))) {
         let _ = util::run_qsv_cmd("index", &[], input_path, "  Indexed input");
     }
@@ -490,7 +709,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .is_some_and(|o| o.split_whitespace().any(|t| t == "--prefer-dmy"));
     // Stats records are not positional (`--stats-options` can `--select` or
     // reorder), so every pass that reads source cells maps by header name.
-    let source_config = Config::new(Some(&args.arg_input)).delimiter(args.flag_delimiter);
+    let source_config = Config::new(args.arg_input.as_ref()).delimiter(args.flag_delimiter);
     let source_headers = source_config.reader()?.headers()?.clone();
     let source_cols = range_trim::source_column_indices(
         &stats_records,
@@ -545,109 +764,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
 
-    // Only with --report: hash every source row so emitted rows can be checked
-    // for exact copies. Uses no RNG, so output is the same with or without it.
-    let report_keys = match args.flag_report {
-        Some(_) => {
-            let keyer = report::RowKeyer::new(&stats_records, &source_cols, &schedule, prefer_dmy);
-            let keys = report::source_row_keys(&keyer, input_path, args.flag_delimiter)?;
-            Some((keyer, keys))
-        },
-        None => None,
+    let columns = stats_records.iter().map(|sr| sr.field.clone()).collect();
+    let fit_info = model::FitInfo {
+        seed:        args.flag_seed,
+        rows:        args.flag_rows,
+        source_rows: total_rows,
+        min_count:   args.flag_min_count,
     };
-    let mut exact_matches = 0_u64;
-
-    // --- 5. Emit -----------------------------------------------------------
-    let out_conf = Config::new(args.flag_output.as_ref());
-    let mut wtr = out_conf.writer()?;
-    let chunk_builder = out_conf.writer_builder();
-
-    let header: csv::StringRecord = stats_records
-        .iter()
-        .map(|stats_record| stats_record.field.clone())
-        .collect();
-    wtr.write_record(&header)?;
-    // Chunks arrive already encoded, so append them to the raw writer; taking
-    // it out of the csv writer flushes the header first.
-    let mut out = wtr.into_inner().map_err(|e| e.into_error())?;
-
-    // Chunks are generated in parallel, a window at a time, and written in
-    // chunk order. The window starts at one chunk and is then sized from the
-    // largest chunk seen so far, so the bytes held at once stay near
-    // WINDOW_BYTES (but never below one chunk) however wide the rows are. The
-    // window only affects memory and speed, never the output.
-    let ncols = stats_records.len();
-    let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
-    let (mut first_chunk, end_chunk) =
-        shard.map_or((0, total_chunks), |(k, n)| shard_chunks(total_chunks, k, n));
-    let synthetic_rows = end_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows)
-        - first_chunk.saturating_mul(CHUNK_ROWS).min(args.flag_rows);
-    let max_window = (util::njobs(args.flag_jobs) as u64 * 2).max(1);
-    let mut window = 1_u64;
-    let mut largest_chunk = 0_u64;
-    while first_chunk < end_chunk {
-        let last_chunk = (first_chunk + window).min(end_chunk);
-        let chunks: Vec<CliResult<(Vec<u8>, u64)>> = (first_chunk..last_chunk)
-            .into_par_iter()
-            .map(|chunk| {
-                let rows = CHUNK_ROWS.min(args.flag_rows - chunk * CHUNK_ROWS);
-                generate_chunk(
-                    &chunk_builder,
-                    &schedule,
-                    ncols,
-                    base_seed,
-                    chunk,
-                    rows,
-                    largest_chunk,
-                    report_keys.as_ref(),
-                )
-            })
-            .collect();
-        for chunk in chunks {
-            let (bytes, matches) = chunk?;
-            exact_matches += matches;
-            largest_chunk = largest_chunk.max(bytes.len() as u64);
-            out.write_all(&bytes)?;
-        }
-        first_chunk = last_chunk;
-        window = (WINDOW_BYTES / largest_chunk.max(1)).clamp(1, max_window);
-    }
-    out.flush()?;
-
-    if let (Some(report_path), Some((keyer, keys))) = (&args.flag_report, &report_keys) {
-        let compared: Vec<usize> = keyer.compared().collect();
-        let names = |pred: &dyn Fn(usize) -> bool| -> Vec<&str> {
-            stats_records
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| pred(*i))
-                .map(|(_, sr)| sr.field.as_str())
-                .collect()
-        };
-        // With no column compared every row hashes the same, so a match count
-        // would be meaningless: report the row metrics as null instead.
-        let any_compared = !compared.is_empty();
-        #[allow(clippy::cast_precision_loss)]
-        let rate = (any_compared && synthetic_rows > 0)
-            .then(|| exact_matches as f64 / synthetic_rows as f64);
-        let report = serde_json::json!({
-            "source_rows": total_rows,
-            "synthetic_rows": synthetic_rows,
-            "shard": args.flag_shard,
-            "seed": args.flag_seed,
-            "min_count": args.flag_min_count,
-            "privacy": {
-                "exact_matches": any_compared.then_some(exact_matches),
-                "exact_match_rate": rate,
-                "distinct_source_rows": any_compared.then_some(keys.len()),
-                "compared_columns": names(&|i| compared.contains(&i)),
-                "excluded_columns": names(&|i| !compared.contains(&i)),
-                "suppressed": &*suppressions.borrow(),
-            },
-        });
-        std::fs::write(report_path, serde_json::to_string_pretty(&report)? + "\n")?;
-    }
-    Ok(())
+    let fitted = Fitted {
+        input_path: input_path.to_string(),
+        stats_records,
+        source_cols,
+        prefer_dmy,
+        total_rows,
+        suppressions: suppressions.into_inner(),
+    };
+    Ok((model::Model::new(columns, schedule, fit_info), fitted))
 }
 
 /// Rows per output chunk. Each chunk has its own RNG, so this value is part of

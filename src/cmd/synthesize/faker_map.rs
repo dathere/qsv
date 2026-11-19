@@ -215,7 +215,7 @@ macro_rules! define_locales {
         /// Sparse locales (those without per-category data) silently fall back to EN
         /// trait defaults at runtime; see module-level docs.
         #[allow(non_camel_case_types)]
-        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+        #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub(crate) enum Locale {
             $($variant,)*
         }

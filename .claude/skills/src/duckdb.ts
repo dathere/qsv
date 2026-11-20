@@ -388,6 +388,25 @@ export function translateSql(
 }
 
 /**
+ * Find a statement that makes DuckDB write files itself: `COPY ... TO` or
+ * `EXPORT DATABASE`. Returns its kind, or null. String literals, quoted identifiers and
+ * comments are blanked first, so a 'COPY' or 'TO' inside them doesn't count.
+ * `COPY <table> FROM` (a read) is allowed.
+ */
+export function findFileWritingStatement(sql: string): string | null {
+  const blanked = sql.replace(
+    /'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\//g,
+    " ",
+  );
+  for (const stmt of blanked.split(";")) {
+    const s = stmt.trim();
+    if (/^COPY\b/i.test(s) && /\bTO\b/i.test(s)) return "COPY ... TO";
+    if (/^EXPORT\s+DATABASE\b/i.test(s)) return "EXPORT DATABASE";
+  }
+  return null;
+}
+
+/**
  * Execute a SQL query using DuckDB.
  *
  * SECURITY: The SQL string is executed directly by DuckDB without sanitization.

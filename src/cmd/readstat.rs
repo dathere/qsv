@@ -695,7 +695,7 @@ impl RowWindow {
             return Ok(df.clear());
         }
         match &self.sample {
-            None => Ok(df.slice((lo - start) as i64, (hi - lo) as usize)),
+            None => Ok(df.slice(((lo - start) as i64, (hi - lo) as usize))),
             Some(sample) => {
                 let first = sample.partition_point(|&p| p < lo);
                 let last = sample.partition_point(|&p| p < hi);

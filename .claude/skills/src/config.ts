@@ -667,6 +667,20 @@ export function isPluginMode(): boolean {
 }
 
 /**
+ * Pass the SQL file-write policy on to qsv child processes, which inherit process.env.
+ * qsv's Polars SQL contexts (sqlp, joinp --sql-filter, profile, scoresql) honor
+ * QSV_SQL_DISABLE_FILE_WRITES. An explicit value already in the environment is kept.
+ */
+export function applySqlFileWritePolicy(
+  allowWrites: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!allowWrites && env["QSV_SQL_DISABLE_FILE_WRITES"] === undefined) {
+    env["QSV_SQL_DISABLE_FILE_WRITES"] = "1";
+  }
+}
+
+/**
  * Initialize qsv binary path with auto-detection
  */
 const qsvBinaryInit = initializeQsvBinaryPath();
@@ -878,6 +892,15 @@ export const config = {
    * because the host environment provides filesystem isolation
    */
   isPluginMode: isPluginMode(),
+
+  /**
+   * Whether SQL may write files itself (`COPY ... TO '<file>'`, DuckDB `EXPORT DATABASE`).
+   * The query, not output_file, picks the target, so this is off in plugin mode
+   * (Cowork / Claude Code plugin) and on elsewhere. Override with QSV_MCP_SQL_FILE_WRITES.
+   * When off, qsv children get QSV_SQL_DISABLE_FILE_WRITES=1 (see applySqlFileWritePolicy)
+   * and the DuckDB route rejects such statements.
+   */
+  sqlFileWrites: getOptionalBooleanEnv("QSV_MCP_SQL_FILE_WRITES") ?? !isPluginMode(),
 
   /**
    * Expose all tools mode

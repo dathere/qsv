@@ -26,7 +26,7 @@ import { homedir } from "node:os";
 import { SkillLoader } from "./loader.js";
 import { SkillExecutor, runQsvSimple } from "./executor.js";
 import { FilesystemResourceProvider } from "./mcp-filesystem.js";
-import { config, revalidateQsvBinary } from "./config.js";
+import { applySqlFileWritePolicy, config, revalidateQsvBinary } from "./config.js";
 import {
   COMMON_COMMANDS,
   createToolDefinition,
@@ -1237,6 +1237,12 @@ class QsvMcpServer {
     await loadCommandGuidance();
 
     console.error("Starting QSV MCP Server...");
+
+    // Before any qsv child is spawned: they inherit process.env.
+    applySqlFileWritePolicy(config.sqlFileWrites);
+    if (!config.sqlFileWrites) {
+      console.error("  SQL file writes (COPY ... TO): disabled");
+    }
 
     await this.server.connect(transport);
     console.error("QSV MCP Server running on stdio");

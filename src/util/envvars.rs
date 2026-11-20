@@ -185,6 +185,23 @@ pub fn get_envvar_flag(key: &str) -> bool {
     truthy
 }
 
+/// A Polars `SQLContext` for running caller-supplied SQL.
+///
+/// Polars SQL can write files itself, through `COPY (<query>) TO '<path>'`, and allows it
+/// by default. Setting `QSV_SQL_DISABLE_FILE_WRITES` turns that off. The qsv MCP server
+/// sets it in plugin mode, where the SQL is model-written and the write target is chosen by
+/// the query rather than by `--output`. Reading files (`read_csv` etc.) is unaffected.
+#[cfg(feature = "polars")]
+pub fn new_sql_context() -> polars::sql::SQLContext {
+    let ctx = polars::sql::SQLContext::new();
+    if get_envvar_flag("QSV_SQL_DISABLE_FILE_WRITES") {
+        ctx.with_file_writes(false)
+            .with_file_writes_disabled_by("QSV_SQL_DISABLE_FILE_WRITES")
+    } else {
+        ctx
+    }
+}
+
 /// Returns `true` if `flag` appears in `argv` as either a standalone token
 /// (`--flag`) or in the `--flag=value` form. Used by the OOM auto-fallback in
 /// `stats` and `frequency` to detect whether the user explicitly passed an

@@ -10,6 +10,7 @@ import {
   detectDuckDb,
   markDuckDbUnavailable,
   translateSql,
+  findFileWritingStatement,
   executeDuckDbQuery,
   CSV_LIKE_EXTENSIONS,
 } from "./duckdb.js";
@@ -814,6 +815,19 @@ export async function tryDuckDbExecution(
   const state = detectDuckDb();
   if (state.status !== "available") {
     return null; // Fall through to sqlp
+  }
+
+  // With SQL file writes off (plugin mode), refuse here rather than fall back: sqlp would
+  // refuse it too (QSV_SQL_DISABLE_FILE_WRITES), and DuckDB would write the file.
+  if (!config.sqlFileWrites) {
+    const kind = findFileWritingStatement(sql);
+    if (kind) {
+      return errorResult(
+        `SQL that writes files itself (${kind}) is disabled in this MCP server ` +
+        `(plugin mode). Use output_file to save query results instead. ` +
+        `Set QSV_MCP_SQL_FILE_WRITES=true to allow it.`,
+      );
+    }
   }
 
   const format = String(params.format ?? "csv").toLowerCase();

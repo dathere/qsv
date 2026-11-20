@@ -9,6 +9,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   translateSql,
+  findFileWritingStatement,
   isDuckDbEnabled,
   getDuckDbStatus,
   resetDuckDbState,
@@ -621,5 +622,34 @@ describe("DuckDB live integration", { concurrency: false }, () => {
     assert.strictEqual(lines.length, 2, "Should have header + 1 data row");
     const count = parseInt(lines[1], 10);
     assert.ok(count > 0, `Brooklyn count should be positive, got ${count}`);
+  });
+});
+
+describe("findFileWritingStatement", () => {
+  test("flags COPY ... TO and EXPORT DATABASE", () => {
+    assert.strictEqual(
+      findFileWritingStatement("COPY (SELECT * FROM _t_1) TO '/tmp/x.csv'"),
+      "COPY ... TO",
+    );
+    assert.strictEqual(
+      findFileWritingStatement("copy _t_1 to 'x.parquet' (FORMAT parquet)"),
+      "COPY ... TO",
+    );
+    assert.strictEqual(findFileWritingStatement("EXPORT DATABASE 'outdir'"), "EXPORT DATABASE");
+  });
+
+  test("finds a write in any statement of a script", () => {
+    assert.strictEqual(
+      findFileWritingStatement("SELECT 1;\n  -- note\n  COPY (SELECT 2) TO 'y.csv';"),
+      "COPY ... TO",
+    );
+  });
+
+  test("ignores reads, string literals, identifiers and comments", () => {
+    assert.strictEqual(findFileWritingStatement("SELECT * FROM _t_1 WHERE x = 'COPY a TO b'"), null);
+    assert.strictEqual(findFileWritingStatement("SELECT \"copy\" FROM _t_1 -- COPY x TO y"), null);
+    assert.strictEqual(findFileWritingStatement("/* COPY x TO 'y' */ SELECT 1"), null);
+    assert.strictEqual(findFileWritingStatement("COPY t FROM 'in.csv'"), null);
+    assert.strictEqual(findFileWritingStatement("SELECT 'it''s; COPY x TO y' AS s"), null);
   });
 });

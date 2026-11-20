@@ -88,7 +88,7 @@ use std::{
 };
 
 use foldhash::{HashMap, HashMapExt};
-use polars::{prelude::*, sql::SQLContext};
+use polars::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{CliResult, cmd::joinp::path_delim, config::Delimiter, util};
@@ -1097,7 +1097,7 @@ fn get_polars_plan(
     table_aliases: &HashMap<String, String>,
     input_delims: &[u8],
 ) -> CliResult<String> {
-    let mut ctx = SQLContext::new();
+    let mut ctx = util::new_sql_context();
 
     // The flags sqlp runs its queries with, so the plan shown is the plan sqlp would run.
     let optflags = OptFlags::default();

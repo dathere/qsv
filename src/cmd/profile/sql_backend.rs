@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use polars::{prelude::*, sql::SQLContext};
+use polars::prelude::*;
 
 use crate::{CliError, CliResult};
 
@@ -83,7 +83,7 @@ impl SqlBackend {
         let lf = reader
             .finish()
             .map_err(|e| CliError::Other(format!("SqlBackend: read CSV: {e}")))?;
-        let mut ctx = SQLContext::new();
+        let mut ctx = crate::util::new_sql_context();
         ctx.register("data", lf);
         ctx.execute(sql)
             .and_then(LazyFrame::collect)

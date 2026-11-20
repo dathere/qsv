@@ -112,7 +112,7 @@ impl Tallies {
             let series = col.as_materialized_series();
             let mut offset = 0;
             'slices: while offset < series.len() {
-                let unique = series.slice(offset as i64, UNIQUE_SLICE).unique()?;
+                let unique = series.slice((offset as i64, UNIQUE_SLICE)).unique()?;
                 offset += UNIQUE_SLICE;
                 for value in unique.iter() {
                     let Some(text) = value_text(&value) else {

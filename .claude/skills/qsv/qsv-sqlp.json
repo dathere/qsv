@@ -281,6 +281,10 @@
       "command": "qsv sqlp SKIP_INPUT \"SELECT * FROM generate_series(1, 10, 2)\""
     },
     {
+      "description": "COPY writes a query's result to a file itself, in the format its extension or a FORMAT option names. Set QSV_SQL_DISABLE_FILE_WRITES to turn this off; the qsv MCP server does so in plugin mode (Cowork and the Claude Code plugin).",
+      "command": "qsv sqlp data.csv \"COPY (SELECT * FROM data WHERE col1 > 10) TO 'result.parquet'\""
+    },
+    {
       "description": "use stdin as input",
       "command": "cat data.csv | qsv sqlp - 'select * from stdin'"
     },

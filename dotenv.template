@@ -170,6 +170,11 @@ QSV_COMMENT_CHAR = '#'
 # the `sqlp` command.
 # QSV_POLARS_FLOAT_PRECISION = 8
 
+# If set, Polars SQL can't write files itself: COPY (<query>) TO '<file>' fails in sqlp,
+# joinp --sql-filter, profile and scoresql. Reading files and --output are unaffected.
+# The qsv MCP server sets it in plugin mode.
+# QSV_SQL_DISABLE_FILE_WRITES = False
+
 # The scale to use when using the Polars Decimal type. If not set, defaults to 5.
 # QSV_POLARS_DECIMAL_SCALE = 5
 

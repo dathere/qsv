@@ -308,6 +308,14 @@ qsv sqlp SKIP_INPUT "SELECT 1 AS one, '2' AS two, 3.0 AS three"
 qsv sqlp SKIP_INPUT "SELECT * FROM generate_series(1, 10, 2)"
 ```
 
+> COPY writes a query's result to a file itself, in the format its extension or a FORMAT
+> option names. Set QSV_SQL_DISABLE_FILE_WRITES to turn this off; the qsv MCP server does
+> so in plugin mode (Cowork and the Claude Code plugin).
+
+```console
+qsv sqlp data.csv "COPY (SELECT * FROM data WHERE col1 > 10) TO 'result.parquet'"
+```
+
 > use stdin as input
 
 ```console

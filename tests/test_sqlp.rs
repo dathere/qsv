@@ -7622,6 +7622,8 @@ fn sqlp_create_and_drop_view() {
 #[test]
 fn sqlp_describe_table() {
     // pola-rs/polars#30778 added DESCRIBE (61fdb30: "statement type is not supported").
+    // Between 2d9938d and 93d31f0, column_type became the SQL type name (the change proposed
+    // in pola-rs/polars#30805, landed via later SQL PRs); 2d9938d printed str/i64/bool.
     let wrk = Workdir::new("sqlp_describe_table");
     sides_fixture(&wrk);
 
@@ -7632,11 +7634,11 @@ fn sqlp_describe_table() {
         got,
         vec![
             svec!["column_name", "column_type"],
-            svec!["side", "str"],
-            svec!["qty", "i64"],
-            svec!["flag", "bool"],
-            svec!["name", "str"],
-            svec!["s", "str"],
+            svec!["side", "VARCHAR"],
+            svec!["qty", "BIGINT"],
+            svec!["flag", "BOOLEAN"],
+            svec!["name", "VARCHAR"],
+            svec!["s", "VARCHAR"],
         ]
     );
 }
@@ -7688,6 +7690,295 @@ fn sqlp_explain_rejects_non_queries() {
     cmd.arg("t.csv").arg("EXPLAIN SELECT name FROM t");
     let plan: String = wrk.stdout_on_success(&mut cmd);
     assert!(plan.contains("Csv SCAN"), "{plan}");
+}
+
+// Polars SQL behavior changed between 2d9938d and 93d31f0.
+
+#[test]
+fn sqlp_copy_to_writes_file() {
+    // pola-rs/polars#30834 added `COPY (<query>) TO '<file>'` (2d9938d: "statement type is not
+    // supported"). Polars allows file writes by default, and so does sqlp.
+    let wrk = Workdir::new("sqlp_copy_to_writes_file");
+    sides_fixture(&wrk);
+    let out = wrk.path("copied.csv");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(format!(
+        "COPY (SELECT name FROM t WHERE side = 'buy' ORDER BY name) TO '{}'",
+        out.display()
+    ));
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap().replace("\r\n", "\n"),
+        "name\nalice\ncarol\nerin\n"
+    );
+}
+
+#[test]
+fn sqlp_copy_to_disabled_by_envvar() {
+    // QSV_SQL_DISABLE_FILE_WRITES turns COPY ... TO off (the qsv MCP server sets it in plugin
+    // mode). Check the file is never written, wherever the COPY sits.
+    let wrk = Workdir::new("sqlp_copy_to_disabled_by_envvar");
+    sides_fixture(&wrk);
+    let out = wrk.path("copied.csv");
+    let copy = format!("COPY (SELECT name FROM t) TO '{}'", out.display());
+    wrk.create_from_string(
+        "mid.sql",
+        &format!("{copy};\nSELECT COUNT(*) AS n FROM t;\n"),
+    );
+    wrk.create_from_string(
+        "macro.sql",
+        &format!(
+            "CREATE MACRO m() AS TABLE (SELECT name FROM t);\nCOPY (SELECT * FROM m()) TO \
+             '{}';\nSELECT 1 AS one;\n",
+            out.display()
+        ),
+    );
+
+    for sql in [copy.as_str(), "mid.sql", "macro.sql"] {
+        let mut cmd = wrk.command("sqlp");
+        cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+            .arg("t.csv")
+            .arg(sql);
+        let stderr = wrk.output_stderr(&mut cmd);
+        assert!(
+            stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+            "{sql}: {stderr}"
+        );
+        assert!(!out.exists(), "{sql}: COPY wrote {}", out.display());
+    }
+
+    // reading files is unaffected
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .arg("t.csv")
+        .arg("SELECT COUNT(*) AS n FROM read_csv('t.csv')");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["5"]]);
+}
+
+#[test]
+fn sqlp_copy_to_disabled_envvar_survives_dotenv() {
+    // load_dotenv overrides the environment, so a .env in the working directory could undo
+    // the switch the MCP server set. It may turn it on, never off.
+    let wrk = Workdir::new("sqlp_copy_to_disabled_envvar_survives_dotenv");
+    sides_fixture(&wrk);
+    wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=0\n");
+    let out = wrk.path("copied.csv");
+
+    // QSV_DOTENV_PATH (e.g. <NONE>) would skip the .env this test depends on
+    let mut cmd = wrk.command("sqlp");
+    cmd.env_remove("QSV_DOTENV_PATH")
+        .env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .arg("t.csv")
+        .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+        "{stderr}"
+    );
+    assert!(!out.exists(), "COPY wrote {}", out.display());
+
+    // set in .env alone, it still turns writes off
+    wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=1\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.env_remove("QSV_DOTENV_PATH")
+        .env_remove("QSV_SQL_DISABLE_FILE_WRITES")
+        .arg("t.csv")
+        .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+        "{stderr}"
+    );
+    assert!(!out.exists(), "COPY wrote {}", out.display());
+}
+
+#[test]
+fn sqlp_range_frame_with_offset() {
+    // pola-rs/polars#30849: RANGE frames with an offset, enabled by polars'
+    // `rolling_window_by` feature (2d9938d: "... window frame ... is not supported").
+    let wrk = Workdir::new("sqlp_range_frame_with_offset");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT name, qty, SUM(qty) OVER (ORDER BY qty RANGE BETWEEN 3 PRECEDING AND CURRENT ROW) \
+         AS w FROM t ORDER BY qty",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "qty", "w"],
+            svec!["erin", "1", "1"],
+            svec!["dave", "3", "4"],
+            svec!["bob", "4", "8"],
+            svec!["carol", "7", "11"],
+            svec!["alice", "10", "17"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_delete_changes_table() {
+    // pola-rs/polars#30869 (fix!): DELETE changes the registered table. On 2d9938d a later
+    // statement still saw the deleted rows (COUNT was 5).
+    let wrk = Workdir::new("sqlp_delete_changes_table");
+    sides_fixture(&wrk);
+    wrk.create_from_string(
+        "del.sql",
+        "DELETE FROM t WHERE side = 'sell';\nSELECT COUNT(*) AS n FROM t;\n",
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("del.sql");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["3"]]);
+}
+
+#[test]
+fn sqlp_null_length_and_null_string_args() {
+    // pola-rs/polars#30934: a NULL length makes LEFT and SUBSTRING NULL (2d9938d: LEFT
+    // returned the whole string). pola-rs/polars#30936: SPLIT_PART of NULL is NULL.
+    let wrk = Workdir::new("sqlp_null_length_and_null_string_args");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT name, LEFT(name, CASE WHEN side = 'buy' THEN 2 END) AS l, SUBSTRING(name, 1, CASE \
+         WHEN side = 'buy' THEN 2 END) AS sb, SPLIT_PART(CASE WHEN side = 'buy' THEN s END, 'd', \
+         1) AS sp FROM t ORDER BY name",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "l", "sb", "sp"],
+            svec!["alice", "al", "al", "abc123"],
+            svec!["bob", "", "", ""],
+            svec!["carol", "ca", "ca", "no "],
+            svec!["dave", "", "", ""],
+            svec!["erin", "er", "er", "7up8"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_repeated_expression_renamed() {
+    // pola-rs/polars#30949: a repeated unaliased expression gets a `:1` suffix
+    // (2d9938d: "projections contained duplicate output name").
+    let wrk = Workdir::new("sqlp_repeated_expression_renamed");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT qty + 1, qty + 1 FROM t ORDER BY 1 LIMIT 2");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["qty", "qty:1"], svec!["2", "2"], svec!["4", "4"]]
+    );
+}
+
+#[test]
+fn sqlp_select_alias_reuse() {
+    // pola-rs/polars#30819: a SELECT alias can be used later in the same SELECT
+    // (2d9938d: "unable to find column \"dbl\"").
+    let wrk = Workdir::new("sqlp_select_alias_reuse");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT qty * 2 AS dbl, dbl + 1 AS dbl1 FROM t ORDER BY dbl LIMIT 2");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["dbl", "dbl1"], svec!["2", "3"], svec!["6", "7"]]
+    );
+}
+
+#[test]
+fn sqlp_pivot_unpivot() {
+    // pola-rs/polars#30799 added PIVOT and UNPIVOT (2d9938d: "not yet implemented").
+    let wrk = Workdir::new("sqlp_pivot_unpivot");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT name, buy, sell FROM (SELECT name, side, qty FROM t) PIVOT (SUM(qty) FOR side IN \
+         ('buy', 'sell')) ORDER BY name",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "buy", "sell"],
+            svec!["alice", "10", ""],
+            svec!["bob", "", "4"],
+            svec!["carol", "7", ""],
+            svec!["dave", "", "3"],
+            svec!["erin", "1", ""],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT name, k, v FROM (SELECT name, CAST(qty AS VARCHAR) AS qty, s FROM t WHERE name < \
+         'c') UNPIVOT (v FOR k IN (qty, s)) ORDER BY name, k",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["name", "k", "v"],
+            svec!["alice", "qty", "10"],
+            svec!["alice", "s", "abc123def"],
+            svec!["bob", "qty", "4"],
+            svec!["bob", "s", "x9y"],
+        ]
+    );
+}
+
+#[test]
+fn sqlp_new_functions_93d31f0() {
+    // New SQL functions, all "unsupported function" on 2d9938d: MAKE_DATE (#30828), CHR
+    // (#30826), DATE_DIFF (#30833), TYPEOF and TO_CHAR (#30809), PRINTF and FORMAT (#30835;
+    // FORMAT takes `{}` placeholders), and CAST AS CATEGORICAL (#30801).
+    let wrk = Workdir::new("sqlp_new_functions_93d31f0");
+    sides_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg(
+        "SELECT MAKE_DATE(2024, 2, 29) AS md, CHR(65) AS c, DATE_DIFF('day', DATE '2024-01-01', \
+         DATE '2024-03-01') AS dd, TYPEOF(1) AS ty, TO_CHAR(DATE '2024-03-01', 'YYYY/MM/DD') AS \
+         tc, PRINTF('%05d', 42) AS pf, FORMAT('{}-{}', 'a', 'b') AS f",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["md", "c", "dd", "ty", "tc", "pf", "f"],
+            svec![
+                "2024-02-29",
+                "A",
+                "60",
+                "INTEGER",
+                "2024/03/01",
+                "00042",
+                "a-b"
+            ],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg("SELECT CAST(side AS CATEGORICAL) AS c, COUNT(*) AS n FROM t GROUP BY c ORDER BY c");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["c", "n"], svec!["buy", "3"], svec!["sell", "2"]]
+    );
 }
 
 // ---------------------------------------------------------------------------

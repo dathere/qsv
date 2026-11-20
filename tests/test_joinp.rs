@@ -3620,3 +3620,31 @@ fn joinp_sniff_preamble_allstring_schema() {
         );
     }
 }
+
+#[test]
+fn joinp_sql_filter_copy_to_disabled_by_envvar() {
+    // Polars SQL's `COPY (<query>) TO '<file>'` (pola-rs/polars#30834) is turned off by
+    // QSV_SQL_DISABLE_FILE_WRITES, in --sql-filter too. The file must never be written.
+    let wrk = Workdir::new("joinp_sql_filter_copy_to_disabled_by_envvar");
+    wrk.create(
+        "a.csv",
+        vec![svec!["id", "x"], svec!["1", "a"], svec!["2", "b"]],
+    );
+    wrk.create("b.csv", vec![svec!["id", "y"], svec!["1", "c"]]);
+    let out = wrk.path("copied.csv");
+
+    let mut cmd = wrk.command("joinp");
+    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .args(["id", "a.csv", "id", "b.csv"])
+        .arg("--sql-filter")
+        .arg(format!(
+            "COPY (SELECT * FROM join_result) TO '{}'",
+            out.display()
+        ));
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+        "{stderr}"
+    );
+    assert!(!out.exists(), "COPY wrote {}", out.display());
+}

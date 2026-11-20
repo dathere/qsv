@@ -161,6 +161,11 @@ Examples:
   # integers. generate_series includes stop; range does not.
   $ qsv sqlp SKIP_INPUT "SELECT * FROM generate_series(1, 10, 2)"
 
+  # COPY writes a query's result to a file itself, in the format its extension or a FORMAT
+  # option names. Set QSV_SQL_DISABLE_FILE_WRITES to turn this off; the qsv MCP server does
+  # so in plugin mode (Cowork and the Claude Code plugin).
+  $ qsv sqlp data.csv "COPY (SELECT * FROM data WHERE col1 > 10) TO 'result.parquet'"
+
   # use stdin as input
   $ cat data.csv | qsv sqlp - 'select * from stdin'
   $ cat data.csv | qsv sqlp - data2.csv 'select * from stdin join data2 on stdin.col1 = data2.col1'
@@ -1135,7 +1140,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    let mut ctx = SQLContext::new();
+    let mut ctx = util::new_sql_context();
     let mut table_aliases = HashMap::with_capacity(args.arg_input.len());
     let mut lossy_table_name = Cow::default();
     let mut table_name;

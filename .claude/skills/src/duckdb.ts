@@ -388,6 +388,21 @@ export function translateSql(
 }
 
 /**
+ * Find a statement that makes DuckDB write files itself: `COPY ... TO` or
+ * `EXPORT DATABASE`. Returns its kind, or null. `COPY <table> FROM` (a read) is allowed.
+ */
+export function findFileWritingStatement(sql: string): string | null {
+  // Deliberately scans the raw text, strings and comments included. Blanking them first
+  // needs DuckDB's own lexer (nested block comments, $tag$ strings, E'' escapes), and any
+  // mismatch would hide a real statement. These keywords can't be spelled any other way,
+  // so a raw match can only err toward refusing; a refused query can drop the word from
+  // its literals or comments, or the server can be run with QSV_MCP_SQL_FILE_WRITES=true.
+  if (/\bEXPORT\b/i.test(sql)) return "EXPORT DATABASE";
+  if (/\bCOPY\b/i.test(sql) && /\bTO\b/i.test(sql)) return "COPY ... TO";
+  return null;
+}
+
+/**
  * Execute a SQL query using DuckDB.
  *
  * SECURITY: The SQL string is executed directly by DuckDB without sanitization.

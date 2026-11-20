@@ -669,13 +669,15 @@ export function isPluginMode(): boolean {
 /**
  * Pass the SQL file-write policy on to qsv child processes, which inherit process.env.
  * qsv's Polars SQL contexts (sqlp, joinp --sql-filter, profile, scoresql) honor
- * QSV_SQL_DISABLE_FILE_WRITES. An explicit value already in the environment is kept.
+ * QSV_SQL_DISABLE_FILE_WRITES. When writes are allowed, the environment is left as is.
  */
 export function applySqlFileWritePolicy(
   allowWrites: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (!allowWrites && env["QSV_SQL_DISABLE_FILE_WRITES"] === undefined) {
+  // Authoritative when off: an inherited QSV_SQL_DISABLE_FILE_WRITES=0 must not keep
+  // writes on while the server reports them disabled (QSV_MCP_SQL_FILE_WRITES is the knob).
+  if (!allowWrites) {
     env["QSV_SQL_DISABLE_FILE_WRITES"] = "1";
   }
 }

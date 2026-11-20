@@ -645,11 +645,26 @@ describe("findFileWritingStatement", () => {
     );
   });
 
-  test("ignores reads, string literals, identifiers and comments", () => {
-    assert.strictEqual(findFileWritingStatement("SELECT * FROM _t_1 WHERE x = 'COPY a TO b'"), null);
-    assert.strictEqual(findFileWritingStatement("SELECT \"copy\" FROM _t_1 -- COPY x TO y"), null);
-    assert.strictEqual(findFileWritingStatement("/* COPY x TO 'y' */ SELECT 1"), null);
+  test("can't be hidden behind comments or strings DuckDB lexes differently", () => {
+    // nested block comments: a non-nesting stripper would leave `*/ EXPORT ...`
+    assert.strictEqual(
+      findFileWritingStatement("/* /* */ */ EXPORT DATABASE 'out'"),
+      "EXPORT DATABASE",
+    );
+    // a dollar-quoted string holding a single quote
+    assert.strictEqual(
+      findFileWritingStatement("SELECT $$'$$; COPY (SELECT 1) TO 'x.csv'"),
+      "COPY ... TO",
+    );
+    assert.strictEqual(
+      findFileWritingStatement("SELECT E'\\''; COPY (SELECT 1) TO 'x.csv'"),
+      "COPY ... TO",
+    );
+  });
+
+  test("allows reads and ordinary queries", () => {
     assert.strictEqual(findFileWritingStatement("COPY t FROM 'in.csv'"), null);
-    assert.strictEqual(findFileWritingStatement("SELECT 'it''s; COPY x TO y' AS s"), null);
+    assert.strictEqual(findFileWritingStatement("SELECT TO_CHAR(d, 'YYYY') AS y FROM _t_1"), null);
+    assert.strictEqual(findFileWritingStatement("SELECT name, copy_count FROM _t_1"), null);
   });
 });

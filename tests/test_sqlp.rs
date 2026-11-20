@@ -7758,6 +7758,39 @@ fn sqlp_copy_to_disabled_by_envvar() {
 }
 
 #[test]
+fn sqlp_copy_to_disabled_envvar_survives_dotenv() {
+    // load_dotenv overrides the environment, so a .env in the working directory could undo
+    // the switch the MCP server set. It may turn it on, never off.
+    let wrk = Workdir::new("sqlp_copy_to_disabled_envvar_survives_dotenv");
+    sides_fixture(&wrk);
+    wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=0\n");
+    let out = wrk.path("copied.csv");
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .arg("t.csv")
+        .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+        "{stderr}"
+    );
+    assert!(!out.exists(), "COPY wrote {}", out.display());
+
+    // set in .env alone, it still turns writes off
+    wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=1\n");
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv")
+        .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("writing files is disabled by QSV_SQL_DISABLE_FILE_WRITES"),
+        "{stderr}"
+    );
+    assert!(!out.exists(), "COPY wrote {}", out.display());
+}
+
+#[test]
 fn sqlp_range_frame_with_offset() {
     // pola-rs/polars#30849: RANGE frames with an offset, enabled by polars'
     // `rolling_window_by` feature (2d9938d: "... window frame ... is not supported").

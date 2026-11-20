@@ -389,20 +389,16 @@ export function translateSql(
 
 /**
  * Find a statement that makes DuckDB write files itself: `COPY ... TO` or
- * `EXPORT DATABASE`. Returns its kind, or null. String literals, quoted identifiers and
- * comments are blanked first, so a 'COPY' or 'TO' inside them doesn't count.
- * `COPY <table> FROM` (a read) is allowed.
+ * `EXPORT DATABASE`. Returns its kind, or null. `COPY <table> FROM` (a read) is allowed.
  */
 export function findFileWritingStatement(sql: string): string | null {
-  const blanked = sql.replace(
-    /'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\//g,
-    " ",
-  );
-  for (const stmt of blanked.split(";")) {
-    const s = stmt.trim();
-    if (/^COPY\b/i.test(s) && /\bTO\b/i.test(s)) return "COPY ... TO";
-    if (/^EXPORT\s+DATABASE\b/i.test(s)) return "EXPORT DATABASE";
-  }
+  // Deliberately scans the raw text, strings and comments included. Blanking them first
+  // needs DuckDB's own lexer (nested block comments, $tag$ strings, E'' escapes), and any
+  // mismatch would hide a real statement. These keywords can't be spelled any other way,
+  // so a raw match can only err toward refusing; a refused query can drop the word from
+  // its literals or comments, or the server can be run with QSV_MCP_SQL_FILE_WRITES=true.
+  if (/\bEXPORT\b/i.test(sql)) return "EXPORT DATABASE";
+  if (/\bCOPY\b/i.test(sql) && /\bTO\b/i.test(sql)) return "COPY ... TO";
   return null;
 }
 

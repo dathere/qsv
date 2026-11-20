@@ -146,7 +146,7 @@ pub(crate) fn holds(column: &OutType, values: &OutType) -> bool {
         || (*column == OutType::Float && *values == OutType::Integer)
 }
 
-const fn number_type(is_int: bool) -> OutType {
+pub(crate) const fn number_type(is_int: bool) -> OutType {
     if is_int {
         OutType::Integer
     } else {
@@ -187,7 +187,7 @@ fn date_type(is_datetime: bool, date_format: Option<&String>) -> OutType {
 /// so a zero-padded code stays text; a float must keep its decimal value
 /// through f64; a date must be a whole day and a datetime must fit in
 /// microseconds, as Parquet stores them.
-fn pooled_type<'a>(
+pub(crate) fn pooled_type<'a>(
     stats_type: &str,
     mut values: impl Iterator<Item = &'a str>,
     prefer_dmy: bool,

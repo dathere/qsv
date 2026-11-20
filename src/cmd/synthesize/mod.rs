@@ -283,8 +283,13 @@ synthesize options:
                            name <col> drop it from their members, as do
                            fake-value columns in the classes, and each class
                            fits (and with --strict-relationships, enforces)
-                           them on its own rows. `stats` and
-                           `frequency` run once more per class, on a
+                           them on its own rows. A group an ordinary fit
+                           skips (it overlapped an earlier one only on
+                           <col>) is fitted too, and like any `joint`
+                           group writes real value-tuples, so a column an
+                           ordinary fit fakes can then write real values.
+                           `stats` and `frequency` run once more per
+                           class, on a
                            temporary copy of <input> split by class.
     --min-count <k>        Privacy threshold. A real value of an enumerated
                            column, or a real `joint` value-tuple, that occurs
@@ -1028,6 +1033,18 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     // A grouped column a class writes as another type can't fall back alone,
     // so its type widens to String, which holds any value.
     if let Some(target) = &target {
+        // The target writes numbers drawn from its buckets, or its class
+        // labels, not what its whole-input generator would.
+        let t = target.col_idx;
+        types[t] = if target.classes.iter().any(|c| c.bucket.is_some()) {
+            output::number_type(target.is_int)
+        } else {
+            output::pooled_type(
+                stats_types[t],
+                target.classes.iter().map(|c| c.label.as_str()),
+                prefer_dmy,
+            )
+        };
         for class in &target.classes {
             let class_types = output::resolve_types(&class.schedule, &stats_types, prefer_dmy);
             // A column empty throughout a class writes only nulls, which any
@@ -1365,11 +1382,15 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             if col == t {
                 continue;
             }
-            let use_whole = if is_faker(col) {
-                true
-            } else if matches!(generator, ColumnGenerator::Empty)
-                && class_stats[col].nullcount < class.rows
+            let use_whole = if matches!(generator, ColumnGenerator::Empty)
+                && class_stats[col].nullcount >= class.rows
             {
+                // Empty in every source row of the class: any type holds
+                // that, and a faker would invent values the class never had.
+                false
+            } else if is_faker(col) {
+                true
+            } else if matches!(generator, ColumnGenerator::Empty) {
                 // Empty although the class holds values: too few to profile
                 // (range trimming or suppression emptied it).
                 fell_back[col] += 1;
@@ -1384,9 +1405,6 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
                 // one (values all unique in a class, enumerated overall).
                 fell_back[col] += 1;
                 true
-            } else if matches!(generator, ColumnGenerator::Empty) {
-                // Empty in every source row of the class: any type holds that.
-                false
             } else if !output::holds_exactly(&whole_types[col], &unit_type(&unit, col)) {
                 retyped[col] += 1;
                 true

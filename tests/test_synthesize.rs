@@ -4988,7 +4988,11 @@ fn synthesize_target_class_groups_leave_out_fake_value_columns() {
         .iter()
         .filter(|r| r[1].starts_with("SRC_"))
         .collect();
-    assert!(real.is_empty(), "real names written: {:?}", &real[..3]);
+    assert!(
+        real.is_empty(),
+        "real names written: {:?}",
+        &real[..real.len().min(3)]
+    );
 }
 
 #[test]
@@ -5023,6 +5027,75 @@ fn synthesize_target_keeps_a_column_empty_in_a_class_null() {
             assert!(r["amount"].is_i64(), "{r}");
         }
     }
+}
+
+#[test]
+fn synthesize_target_keeps_a_fake_value_column_empty_in_a_class_null() {
+    let wrk = Workdir::new("synthesize_target_empty_class_faker");
+    let mut csv = String::from("cls,first_name\n");
+    for i in 0..60 {
+        csv.push_str(&format!("a,{}\n", ["SRC_Michael", "SRC_Sarah"][i % 2]));
+    }
+    for _ in 0..30 {
+        csv.push_str("b,\n");
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}],
+            "enum_threshold": 10}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "300", "--seed", "1", "--consistent-fakes"])
+        .args(["--target", "cls", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(got[1..].iter().any(|r| r[0] == "b"));
+    for r in &got[1..] {
+        // Class b had no names, so it gets no fakes either.
+        if r[0] == "b" {
+            assert!(r[1].is_empty(), "{r:?}");
+        } else {
+            assert!(!r[1].starts_with("SRC_"), "{r:?}");
+        }
+    }
+    assert!(got[1..].iter().any(|r| r[0] == "a" && !r[1].is_empty()));
+}
+
+#[test]
+fn synthesize_target_types_by_value_labels_from_the_labels() {
+    // Uppercase TRUE/FALSE profile as Boolean with --infer-boolean, but the
+    // target writes its labels as they are, so JSONL must take them as text.
+    let wrk = Workdir::new("synthesize_target_boolean_labels");
+    let mut csv = String::from("flag,amount\n");
+    for i in 0..60 {
+        csv.push_str(&format!("{},{}\n", ["TRUE", "FALSE"][i % 2], i % 4));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "100", "--seed", "1", "--target", "flag"])
+        .args(["--stats-options", "--infer-boolean", "--freq-limit", "1"])
+        .args(["--format", "jsonl"])
+        .arg("data.csv");
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let labels: std::collections::HashSet<String> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| {
+            let r: serde_json::Value = serde_json::from_str(l).unwrap();
+            r["flag"].as_str().unwrap().to_string()
+        })
+        .collect();
+    assert_eq!(
+        labels,
+        std::collections::HashSet::from(["TRUE".to_string(), "FALSE".to_string()])
+    );
 }
 
 #[test]

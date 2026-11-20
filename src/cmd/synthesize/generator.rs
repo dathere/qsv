@@ -19,20 +19,23 @@
 //!   3. `Faker` — the dictionary `content_type` maps to a `fake-rs` faker. Bounded-cardinality
 //!      columns sample from a fixed pre-generated pool of distinct fake values (the consistency
 //!      mechanism); all-unique columns generate a fresh value per row.
-//!   4. Type-based — `NumericQuantile` / `DateQuantile` (quartile-bucketed to reproduce
+//!   4. Type-based — `NumericQuantile` / `DateQuantile` (quantile-bucketed to reproduce
 //!      distribution shape), `Boolean`, or `LoremFallback`.
 //!
 //! Cross-column correlation is out of scope: every column is generated
 //! independently.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use indexmap::IndexMap;
 use rand::{RngExt, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 
 use super::faker_map::{self, Locale};
-use crate::cmd::describegpt::dictionary::{FrequencyRecord, StatsRecord};
+use crate::{
+    CliResult,
+    cmd::describegpt::dictionary::{FrequencyRecord, StatsRecord},
+};
 
 /// `qsv frequency`'s default text for null/empty values (`--null-text`).
 const NULL_TEXT: &str = "(NULL)";
@@ -155,13 +158,13 @@ pub(crate) enum ColumnGenerator {
         cumulative: Vec<f64>,
         null_ratio: f64,
     },
-    /// Numeric column reproduced via quartile buckets.
+    /// Numeric column reproduced via quantile buckets.
     NumericQuantile {
         buckets:    Vec<(f64, f64)>,
         is_int:     bool,
         null_ratio: f64,
     },
-    /// Date / `DateTime` column reproduced via quartile buckets over epoch seconds.
+    /// Date / `DateTime` column reproduced via quantile buckets over epoch seconds.
     /// `date_format` carries the describegpt-inferred chrono strftime format
     /// (from a `date:<fmt>` / `datetime:<fmt>` content type); when `None`,
     /// `next()` falls back to RFC 3339 (`DateTime`) / `%Y-%m-%d` (Date).
@@ -734,10 +737,10 @@ fn build_faker_pool(
     if pool.is_empty() { None } else { Some(pool) }
 }
 
-/// Build a quartile-bucketed numeric generator. Falls back to `Empty` when
+/// Build a quantile-bucketed numeric generator. Falls back to `Empty` when
 /// there is no usable numeric range at all.
 fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGenerator {
-    match numeric_quartile_buckets(stats) {
+    match numeric_buckets(stats) {
         Some(buckets) => ColumnGenerator::NumericQuantile {
             buckets,
             is_int,
@@ -747,42 +750,27 @@ fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGe
     }
 }
 
-/// Quartile buckets for a numeric column, derived from its `stats` min/max and
-/// quartiles. Falls back to a single `[min, max]` bucket when quartiles are
-/// missing/inconsistent; returns `None` when there is no usable numeric range.
-pub(crate) fn numeric_quartile_buckets(stats: &StatsRecord) -> Option<Vec<(f64, f64)>> {
+/// Equal-mass buckets for a numeric column, from its `stats` min/max and its
+/// interior edges (see `interior_edges`). Falls back to a single `[min, max]`
+/// bucket when the edges are missing/inconsistent; returns `None` when there is
+/// no usable numeric range.
+pub(crate) fn numeric_buckets(stats: &StatsRecord) -> Option<Vec<(f64, f64)>> {
     let lo = parse_f64(&stats.min)?;
     let hi = parse_f64(&stats.max)?;
     if hi < lo {
         return None;
     }
-    // Quartiles are clamped into [lo, hi]: `--min-count` range trimming can
-    // move the ends inside the source quartiles on small columns.
-    let clamp = |v: f64| v.clamp(lo, hi);
-    let q1 = stats
-        .addl_cols
-        .get("q1")
-        .and_then(|s| parse_f64(s))
-        .map(clamp);
-    let q2 = stats
-        .addl_cols
-        .get("q2_median")
-        .and_then(|s| parse_f64(s))
-        .map(clamp);
-    let q3 = stats
-        .addl_cols
-        .get("q3")
-        .and_then(|s| parse_f64(s))
-        .map(clamp);
-    Some(match (q1, q2, q3) {
-        (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
-            vec![(lo, a), (a, b), (b, c), (c, hi)]
-        },
-        _ => vec![(lo, hi)],
-    })
+    // Edges are clamped into [lo, hi]: `--min-count` range trimming can move
+    // the ends inside the source quantiles on small columns.
+    let edges = interior_edges(stats).and_then(|e| {
+        e.iter()
+            .map(|s| parse_f64(s).map(|v| v.clamp(lo, hi)))
+            .collect::<Option<Vec<f64>>>()
+    });
+    Some(buckets_from_edges(lo, hi, edges))
 }
 
-/// Build a quartile-bucketed date/datetime generator. Bucket bounds are
+/// Build a quantile-bucketed date/datetime generator. Bucket bounds are
 /// expressed in *days since the UNIX epoch* for `Date` columns and *seconds
 /// since the UNIX epoch* for `DateTime` columns — see `parse_epoch`.
 ///
@@ -795,7 +783,7 @@ fn build_date(
     null_ratio: f64,
     date_format: Option<String>,
 ) -> ColumnGenerator {
-    match date_quartile_buckets(stats, is_datetime) {
+    match date_buckets(stats, is_datetime) {
         Some(buckets) => ColumnGenerator::DateQuantile {
             buckets,
             is_datetime,
@@ -806,42 +794,131 @@ fn build_date(
     }
 }
 
-/// Quartile buckets for a date/datetime column. Bounds are *days since the UNIX
-/// epoch* for `Date` and *seconds since the UNIX epoch* for `DateTime` — see
-/// `parse_epoch`. Falls back to a single `[min, max]` bucket when quartiles are
-/// missing/inconsistent; returns `None` when there is no usable range.
-pub(crate) fn date_quartile_buckets(
-    stats: &StatsRecord,
-    is_datetime: bool,
-) -> Option<Vec<(i64, i64)>> {
+/// Equal-mass buckets for a date/datetime column. Bounds are *days since the
+/// UNIX epoch* for `Date` and *seconds since the UNIX epoch* for `DateTime` —
+/// see `parse_epoch`. Falls back to a single `[min, max]` bucket when the edges
+/// are missing/inconsistent; returns `None` when there is no usable range.
+pub(crate) fn date_buckets(stats: &StatsRecord, is_datetime: bool) -> Option<Vec<(i64, i64)>> {
     let lo = parse_epoch(&stats.min, is_datetime)?;
     let hi = parse_epoch(&stats.max, is_datetime)?;
     if hi < lo {
         return None;
     }
-    // Clamped into [lo, hi] for the same reason as `numeric_quartile_buckets`.
-    let clamp = |v: i64| v.clamp(lo, hi);
-    let q1 = stats
-        .addl_cols
-        .get("q1")
-        .and_then(|s| parse_epoch(s, is_datetime))
-        .map(clamp);
-    let q2 = stats
-        .addl_cols
-        .get("q2_median")
-        .and_then(|s| parse_epoch(s, is_datetime))
-        .map(clamp);
-    let q3 = stats
-        .addl_cols
-        .get("q3")
-        .and_then(|s| parse_epoch(s, is_datetime))
-        .map(clamp);
-    Some(match (q1, q2, q3) {
-        (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
-            vec![(lo, a), (a, b), (b, c), (c, hi)]
-        },
-        _ => vec![(lo, hi)],
-    })
+    // Clamped into [lo, hi] for the same reason as `numeric_buckets`.
+    let edges = interior_edges(stats).and_then(|e| {
+        e.iter()
+            .map(|s| parse_epoch(s, is_datetime).map(|v| v.clamp(lo, hi)))
+            .collect::<Option<Vec<i64>>>()
+    });
+    Some(buckets_from_edges(lo, hi, edges))
+}
+
+/// `addl_cols` key under which `apply_quantiles` stores a column's
+/// `--quantiles` interior edges, joined by `QUANTILE_EDGE_SEP`.
+const QUANTILE_EDGES_KEY: &str = "synthesize_quantile_edges";
+const QUANTILE_EDGE_SEP: char = '\u{1f}';
+
+/// Bucket counts `--quantiles` accepts: the divisors of 100, so every edge is a
+/// whole percentile (`stats` truncates fractional ones) and every bucket holds
+/// the same share of rows, which the samplers assume.
+pub(crate) const QUANTILE_CHOICES: [usize; 8] = [2, 4, 5, 10, 20, 25, 50, 100];
+
+/// The bucket count a column of `values` non-null values gets for
+/// `--quantiles requested`: the largest choice dividing `requested` that leaves
+/// every bucket at least `min_count` values. Nearest-rank edges are real source
+/// values, so a thinner bucket could pin a value seen fewer than `min_count`
+/// times. `None` = keep the default quartiles (also when nothing qualifies).
+pub(crate) fn effective_quantiles(requested: usize, values: u64, min_count: u64) -> Option<usize> {
+    if requested == 4 {
+        return None;
+    }
+    QUANTILE_CHOICES
+        .iter()
+        .rev()
+        .copied()
+        .find(|&d| requested.is_multiple_of(d) && values / d as u64 >= min_count.max(1))
+        .filter(|&d| d != 4)
+}
+
+/// Interior bucket edges of a column, as stats strings: the `--quantiles`
+/// edges when `apply_quantiles` stored them, else the quartiles.
+fn interior_edges(stats: &StatsRecord) -> Option<Vec<&str>> {
+    if let Some(edges) = stats.addl_cols.get(QUANTILE_EDGES_KEY) {
+        return Some(edges.split(QUANTILE_EDGE_SEP).collect());
+    }
+    let get = |k: &str| stats.addl_cols.get(k).map(String::as_str);
+    Some(vec![get("q1")?, get("q2_median")?, get("q3")?])
+}
+
+/// `[lo, e1], [e1, e2], …, [en, hi]`, or the single `[lo, hi]` when the edges
+/// are missing or out of order.
+fn buckets_from_edges<T: Copy + PartialOrd>(lo: T, hi: T, edges: Option<Vec<T>>) -> Vec<(T, T)> {
+    let Some(edges) = edges else {
+        return vec![(lo, hi)];
+    };
+    let mut chain = Vec::with_capacity(edges.len() + 2);
+    chain.push(lo);
+    chain.extend(edges);
+    chain.push(hi);
+    let pairs: Vec<(T, T)> = chain
+        .iter()
+        .copied()
+        .zip(chain.iter().copied().skip(1))
+        .collect();
+    if !pairs.iter().all(|(a, b)| a <= b) {
+        return vec![(lo, hi)];
+    }
+    pairs
+}
+
+/// For `--quantiles` other than 4, store each numeric/date column's interior
+/// edges (from the `stats --percentiles` cell) for the bucket builders. A
+/// column keeps its quartiles when `effective_quantiles` says so.
+pub(crate) fn apply_quantiles(
+    records: &mut [StatsRecord],
+    requested: usize,
+    total_rows: u64,
+    min_count: u64,
+) -> CliResult<()> {
+    if requested == 4 {
+        return Ok(());
+    }
+    let sep = crate::cmd::stats::stats_separator_from_env();
+    for sr in records.iter_mut() {
+        if !matches!(
+            sr.r#type.as_str(),
+            "Integer" | "Float" | "Date" | "DateTime"
+        ) {
+            continue;
+        }
+        let values = total_rows.saturating_sub(sr.nullcount);
+        let Some(n) = effective_quantiles(requested, values, min_count) else {
+            continue;
+        };
+        let Some(cell) = sr.addl_cols.get("percentiles").filter(|c| !c.is_empty()) else {
+            continue;
+        };
+        // Each item is "<pct>: <value>"; a DateTime value has colons of its
+        // own, so split on the first ": " only.
+        let by_label: HashMap<&str, &str> = cell
+            .split(sep.as_str())
+            .filter_map(|item| item.split_once(": "))
+            .collect();
+        let mut edges = Vec::with_capacity(n - 1);
+        for i in 1..n {
+            let label = (100 * i / n).to_string();
+            let Some(v) = by_label.get(label.as_str()) else {
+                return fail_clierror!(
+                    "stats reported no {label}th percentile for column '{}' (got '{cell}').",
+                    sr.field
+                );
+            };
+            edges.push(*v);
+        }
+        let joined = edges.join(&QUANTILE_EDGE_SEP.to_string());
+        sr.addl_cols.insert(QUANTILE_EDGES_KEY.to_string(), joined);
+    }
+    Ok(())
 }
 
 /// Build a boolean generator, deriving the true/false ratio from the frequency
@@ -1010,6 +1087,92 @@ mod tests {
             percentage: 0.0,
             rank,
         }
+    }
+
+    #[test]
+    fn effective_quantiles_caps_thin_buckets() {
+        // 4 is the quartile path, never capped.
+        assert_eq!(effective_quantiles(4, 3, 5), None);
+        assert_eq!(effective_quantiles(20, 1000, 5), Some(20));
+        // 60 values at k=5 hold at most 12 buckets: 100 → 10, 20 → 10.
+        assert_eq!(effective_quantiles(100, 60, 5), Some(10));
+        assert_eq!(effective_quantiles(20, 60, 5), Some(10));
+        // 25's only smaller choice is 5.
+        assert_eq!(effective_quantiles(25, 60, 5), Some(5));
+        // Nothing qualifies, or the cap lands on 4 → the quartiles.
+        assert_eq!(effective_quantiles(100, 8, 5), None);
+        assert_eq!(effective_quantiles(100, 20, 5), None);
+        assert_eq!(effective_quantiles(10, 4, 0), Some(2));
+    }
+
+    #[test]
+    fn apply_quantiles_builds_buckets_from_percentiles() {
+        let mut records = vec![
+            stats(
+                "n",
+                "Float",
+                100,
+                0,
+                "0",
+                "100",
+                &[
+                    ("q1", "25"),
+                    ("q2_median", "50"),
+                    ("q3", "75"),
+                    ("percentiles", "20: 1|40: 2|60: 3|80: 90"),
+                ],
+            ),
+            stats(
+                "ts",
+                "DateTime",
+                100,
+                0,
+                "2024-01-01T00:00:00+00:00",
+                "2024-01-05T00:00:00+00:00",
+                &[(
+                    "percentiles",
+                    "20: 2024-01-02T00:00:00+00:00|40: 2024-01-03T00:00:00+00:00|60: \
+                     2024-01-03T12:00:00+00:00|80: 2024-01-04T00:00:00+00:00",
+                )],
+            ),
+            stats("s", "String", 3, 0, "a", "c", &[("percentiles", "")]),
+        ];
+        apply_quantiles(&mut records, 5, 100, 5).unwrap();
+        assert_eq!(
+            numeric_buckets(&records[0]).unwrap(),
+            vec![
+                (0.0, 1.0),
+                (1.0, 2.0),
+                (2.0, 3.0),
+                (3.0, 90.0),
+                (90.0, 100.0)
+            ]
+        );
+        let day = 86_400;
+        let start = 1_704_067_200;
+        assert_eq!(
+            date_buckets(&records[1], true).unwrap(),
+            vec![
+                (start, start + day),
+                (start + day, start + 2 * day),
+                (start + 2 * day, start + 2 * day + day / 2),
+                (start + 2 * day + day / 2, start + 3 * day),
+                (start + 3 * day, start + 4 * day),
+            ]
+        );
+        assert!(!records[2].addl_cols.contains_key(QUANTILE_EDGES_KEY));
+
+        // A missing percentile is an error, not a silent fallback.
+        let mut short = vec![stats(
+            "n",
+            "Integer",
+            100,
+            0,
+            "0",
+            "9",
+            &[("percentiles", "20: 1|40: 2")],
+        )];
+        assert!(apply_quantiles(&mut short, 5, 100, 5).is_err());
     }
 
     #[test]

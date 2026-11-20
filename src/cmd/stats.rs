@@ -606,7 +606,7 @@ fn default_stats_separator() -> String {
 }
 
 /// The separator for multi-value cells: `QSV_STATS_SEPARATOR`, or the default when unset.
-fn stats_separator_from_env() -> String {
+pub(crate) fn stats_separator_from_env() -> String {
     std::env::var("QSV_STATS_SEPARATOR").unwrap_or_else(|_| default_stats_separator())
 }
 

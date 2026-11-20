@@ -42,7 +42,7 @@ pub(crate) enum GroupGenerator {
         cumulative:  Vec<f64>,
     },
     /// Anchor + learned-gap generation for a monotonic chain of columns. The
-    /// anchor (`member_cols[0]`) is drawn from its own quartile distribution;
+    /// anchor (`member_cols[0]`) is drawn from its own quantile distribution;
     /// each later member is the previous member plus a non-negative gap drawn
     /// from the gap distribution learned from the source. Because every gap is
     /// >= 0, the declared order holds in every output row.
@@ -57,9 +57,9 @@ pub(crate) enum GroupGenerator {
         is_int:         Vec<bool>,
         /// describegpt-inferred chrono strftime format for date members.
         date_format:    Option<String>,
-        /// Anchor quartile buckets, in the numeric domain.
+        /// Anchor quantile buckets, in the numeric domain.
         anchor_buckets: Vec<(f64, f64)>,
-        /// Consecutive-gap quartile buckets; `gap_buckets[i]` is the gap from
+        /// Consecutive-gap quantile buckets; `gap_buckets[i]` is the gap from
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
         gap_buckets:    Vec<Vec<(f64, f64)>>,
@@ -82,7 +82,7 @@ pub(crate) enum GroupGenerator {
         /// Row-normalized lower-triangular Cholesky factor of the correlation
         /// matrix; `cholesky_l[i][j]` is used for `j <= i`.
         cholesky_l:  Vec<Vec<f64>>,
-        /// Per-member quartile buckets — a piecewise-uniform inverse CDF that
+        /// Per-member quantile buckets — a piecewise-uniform inverse CDF that
         /// maps a uniform draw back onto the column's own distribution.
         marginals:   Vec<Vec<(f64, f64)>>,
         /// Per-member flag: round the emitted value to an integer.
@@ -225,7 +225,7 @@ impl GroupGenerator {
     }
 }
 
-/// Uniformly draw a value from a randomly chosen quartile bucket.
+/// Uniformly draw a value from a randomly chosen quantile bucket.
 fn sample_bucket(buckets: &[(f64, f64)], rng: &mut StdRng) -> f64 {
     let (lo, hi) = buckets[rng.random_range(0..buckets.len())];
     if lo < hi {
@@ -307,7 +307,7 @@ fn normal_cdf(x: f64) -> f64 {
 }
 
 /// Map a uniform `u` in `[0, 1)` back onto a column's distribution, treating
-/// its quartile buckets as a piecewise-uniform inverse CDF. Each of the `n`
+/// its quantile buckets as a piecewise-uniform inverse CDF. Each of the `n`
 /// buckets carries probability `1/n`; within a bucket the mapping is linear.
 /// This reproduces exactly the marginal that `ColumnGenerator::NumericQuantile`
 /// produces, so the copula only couples columns — it never distorts a marginal.

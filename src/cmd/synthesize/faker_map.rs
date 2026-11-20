@@ -283,7 +283,7 @@ define_locales! {
 /// `unique_id` is here because there is no general-purpose `fake-rs` faker that
 /// guarantees per-row uniqueness across a synthesis pass. Instead, synthesize
 /// uses the same fallback path as `unknown`: numeric columns go through
-/// `build_numeric` (which samples from min/max or quartile buckets — so it does
+/// `build_numeric` (which samples from min/max or quantile buckets — so it does
 /// NOT guarantee uniqueness and can emit duplicates), and string columns get
 /// type-based text. A future enhancement could swap in a dedicated unique-value
 /// generator (e.g. counter-backed for integers, `UUIDv4` for strings) to honor

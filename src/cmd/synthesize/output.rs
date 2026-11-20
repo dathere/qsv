@@ -398,6 +398,38 @@ pub(crate) enum Output {
 }
 
 impl Output {
+    /// Opens `path` (stdout when `None`) for `format`, writing the CSV header.
+    pub(crate) fn open(
+        format: Format,
+        path: Option<&str>,
+        columns: &[String],
+        types: &[OutType],
+    ) -> CliResult<Self> {
+        let conf = crate::config::Config::new(path.map(str::to_string).as_ref());
+        match format {
+            Format::Csv => {
+                let mut wtr = conf.writer()?;
+                wtr.write_record(columns)?;
+                // Chunks arrive already encoded, so append them to the raw
+                // writer; taking it out of the csv writer flushes the header.
+                Ok(Self::Bytes(Box::new(
+                    wtr.into_inner().map_err(|e| e.into_error())?,
+                )))
+            },
+            Format::Jsonl => Ok(Self::Bytes(conf.io_writer()?)),
+            #[cfg(feature = "polars")]
+            Format::Parquet => Ok(Self::Parquet(Box::new(parquet::Writer::create(
+                path.unwrap_or_default(),
+                &parquet::schema(columns, types),
+            )?))),
+            #[cfg(not(feature = "polars"))]
+            Format::Parquet => {
+                let _ = types;
+                unreachable!("Format::parse refuses parquet")
+            },
+        }
+    }
+
     pub(crate) fn write(&mut self, chunk: u64, end_chunk: u64, enc: Encoded) -> CliResult<()> {
         match (self, enc) {
             (Self::Bytes(out), Encoded::Bytes(b)) => out.write_all(&b)?,
@@ -418,6 +450,60 @@ impl Output {
             Self::Parquet(w) => w.finish()?,
         }
         Ok(())
+    }
+}
+
+/// The `--output` template of `--rows-per-file`: `{}` becomes the zero-based
+/// number of each file's first row, as in `qsv split`, zero-padded to the
+/// widest one so the names sort in order.
+pub(crate) struct FileNames {
+    prefix: String,
+    suffix: String,
+    width:  usize,
+}
+
+impl FileNames {
+    pub(crate) fn new(template: &str, last_start: u64) -> CliResult<Self> {
+        match template.split("{}").collect::<Vec<_>>()[..] {
+            [prefix, suffix] if !suffix.contains(['/', '\\']) => Ok(Self {
+                prefix: prefix.to_string(),
+                suffix: suffix.to_string(),
+                width:  last_start.to_string().len(),
+            }),
+            _ => Err(CliError::IncorrectUsage(
+                "--rows-per-file needs an --output name with one {} in its file name, which is \
+                 replaced by each file's first row number."
+                    .to_string(),
+            )),
+        }
+    }
+
+    pub(crate) fn name(&self, start: u64) -> String {
+        format!("{}{start:0>w$}{}", self.prefix, self.suffix, w = self.width)
+    }
+
+    /// Whether `path` is one of the files this template writes: a file whose
+    /// first row is a multiple of `step` below `total`.
+    pub(crate) fn writes(&self, path: &str, step: u64, total: u64) -> bool {
+        use super::report::resolve_path;
+        let ours = resolve_path(&self.name(0));
+        let theirs = resolve_path(path);
+        if ours.parent() != theirs.parent() {
+            return false;
+        }
+        let file_prefix = self.prefix.rsplit(['/', '\\']).next().unwrap_or_default();
+        theirs
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| {
+                n.strip_prefix(file_prefix)?
+                    .strip_suffix(self.suffix.as_str())
+            })
+            .filter(|digits| {
+                digits.len() == self.width && digits.bytes().all(|b| b.is_ascii_digit())
+            })
+            .and_then(|digits| digits.parse::<u64>().ok())
+            .is_some_and(|start| start < total && start.is_multiple_of(step))
     }
 }
 

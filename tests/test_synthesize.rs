@@ -3764,6 +3764,253 @@ fn synthesize_format_refusals() {
     );
 }
 
+/// The files a `--rows-per-file` run wrote for `prefix`, in name order.
+fn split_files(wrk: &Workdir, prefix: &str) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(wrk.path("."))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(prefix))
+        .collect();
+    names.sort();
+    names
+}
+
+/// Joins split CSV or JSONL files as `qsv cat rows` or plain concatenation
+/// would: CSV files after the first lose their header line.
+fn join_split_text(wrk: &Workdir, files: &[String], csv: bool) -> Vec<u8> {
+    let mut joined = Vec::new();
+    for (i, name) in files.iter().enumerate() {
+        let bytes = std::fs::read(wrk.path(name)).unwrap();
+        let skip = if csv && i > 0 {
+            bytes.iter().position(|&b| b == b'\n').unwrap() + 1
+        } else {
+            0
+        };
+        joined.extend_from_slice(&bytes[skip..]);
+    }
+    joined
+}
+
+#[cfg(feature = "polars")]
+fn read_parquet(wrk: &Workdir, name: &str) -> polars::prelude::DataFrame {
+    polars::prelude::LazyFrame::scan_parquet(
+        polars::prelude::PlRefPath::new(wrk.path(name).to_string_lossy().as_ref()),
+        Default::default(),
+    )
+    .unwrap()
+    .collect()
+    .unwrap()
+}
+
+#[test]
+fn synthesize_rows_per_file_joins_back_to_the_single_file() {
+    let wrk = Workdir::new("synthesize_rows_per_file_join");
+    model_fixture(&wrk);
+    let mut formats = vec![("csv", "csv"), ("jsonl", "jsonl")];
+    if cfg!(feature = "polars") {
+        formats.push(("parquet", "parquet"));
+    }
+    for (format, ext) in formats {
+        let single = format!("single.{ext}");
+        let mut one = model_fit_cmd(
+            &wrk,
+            "20000",
+            &["--format", format, "--save-model", "m.json", "-o", &single],
+        );
+        wrk.assert_success(&mut one);
+        let model_prefix = format!("{format}_model_");
+        let mut from_model = wrk.command("synthesize");
+        from_model.args([
+            "--model",
+            "m.json",
+            "-n",
+            "20000",
+            "--seed",
+            "11",
+            "--format",
+            format,
+            "--rows-per-file",
+            "10000",
+            "-o",
+            &format!("{model_prefix}{{}}.{ext}"),
+        ]);
+        wrk.assert_success(&mut from_model);
+        let model_files = split_files(&wrk, &model_prefix);
+        assert_eq!(model_files.len(), 2, "{format}: --model file count");
+        // Below one 8192-row block, cutting blocks mid-way, and on block
+        // boundaries (each later file starts a block).
+        for per_file in [3000_u64, 10000, 8192] {
+            let starts: Vec<u64> = (0..20000).step_by(per_file as usize).collect();
+            let width = starts.last().unwrap().to_string().len();
+            let mut previous: Option<Vec<Vec<u8>>> = None;
+            for jobs in ["1", "4"] {
+                let prefix = format!("{format}_{per_file}_j{jobs}_");
+                let mut split = model_fit_cmd(
+                    &wrk,
+                    "20000",
+                    &[
+                        "--format",
+                        format,
+                        "--rows-per-file",
+                        &per_file.to_string(),
+                        "-j",
+                        jobs,
+                        "-o",
+                        &format!("{prefix}{{}}.{ext}"),
+                    ],
+                );
+                wrk.assert_success(&mut split);
+                let files = split_files(&wrk, &prefix);
+                let expected: Vec<String> = starts
+                    .iter()
+                    .map(|s| format!("{prefix}{s:0>width$}.{ext}"))
+                    .collect();
+                assert_eq!(files, expected, "{format} {per_file}: file names");
+
+                let bytes: Vec<Vec<u8>> = files
+                    .iter()
+                    .map(|f| std::fs::read(wrk.path(f)).unwrap())
+                    .collect();
+                if let Some(previous) = &previous {
+                    assert!(
+                        previous == &bytes,
+                        "{format} {per_file}: --jobs changed the files"
+                    );
+                }
+                if per_file == 10000 {
+                    let model_bytes: Vec<Vec<u8>> = model_files
+                        .iter()
+                        .map(|f| std::fs::read(wrk.path(f)).unwrap())
+                        .collect();
+                    assert!(model_bytes == bytes, "{format}: --model changed the files");
+                }
+                previous = Some(bytes);
+
+                if format == "parquet" {
+                    #[cfg(feature = "polars")]
+                    {
+                        let mut joined = read_parquet(&wrk, &files[0]);
+                        for f in &files[1..] {
+                            let part = read_parquet(&wrk, f);
+                            assert!(part.height() as u64 <= per_file);
+                            joined.vstack_mut(&part).unwrap();
+                        }
+                        assert!(
+                            joined.equals_missing(&read_parquet(&wrk, &single)),
+                            "parquet {per_file}: joined files differ from one file"
+                        );
+                    }
+                } else {
+                    assert!(
+                        join_split_text(&wrk, &files, format == "csv")
+                            == std::fs::read(wrk.path(&single)).unwrap(),
+                        "{format} {per_file}: joined files differ from one file"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn synthesize_rows_per_file_cuts_between_rows_holding_newlines() {
+    let wrk = Workdir::new("synthesize_rows_per_file_newlines");
+    let mut rows = vec![svec!["id", "note"]];
+    for i in 0..30 {
+        rows.push(vec![
+            (i % 3).to_string(),
+            format!("line one {}\nline two", i % 3),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["data.csv", "-n", "50", "--seed", "3", "--min-count", "1"])
+            .args(extra);
+        cmd
+    };
+    wrk.assert_success(&mut run(&["-o", "single.csv"]));
+    wrk.assert_success(&mut run(&["--rows-per-file", "7", "-o", "nl_{}.csv"]));
+    let files = split_files(&wrk, "nl_");
+    assert_eq!(files.len(), 8);
+    let single = std::fs::read_to_string(wrk.path("single.csv")).unwrap();
+    assert!(
+        single.contains("\nline two"),
+        "the pool must hold the newlines"
+    );
+    assert!(join_split_text(&wrk, &files, true) == single.into_bytes());
+    for f in &files[..7] {
+        let mut rdr = csv::Reader::from_path(wrk.path(f)).unwrap();
+        assert_eq!(rdr.records().count(), 7, "{f}");
+    }
+}
+
+#[test]
+fn synthesize_rows_per_file_refusals() {
+    let wrk = Workdir::new("synthesize_rows_per_file_refusals");
+    wrk.create("p_10.csv", vec![svec!["a"], svec!["1"], svec!["2"]]);
+    let refused = |extra: &[&str], message: &str| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["p_10.csv", "-n", "20", "--seed", "1"])
+            .args(extra);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(stderr.contains(message), "{extra:?}: {stderr}");
+    };
+    refused(
+        &["--rows-per-file", "0", "-o", "o_{}.csv"],
+        "must be greater than 0",
+    );
+    refused(
+        &["--rows-per-file", "5", "--shard", "1/2", "-o", "o_{}.csv"],
+        "can't be combined with --shard",
+    );
+    refused(&["--rows-per-file", "5"], "--rows-per-file needs --output");
+    refused(
+        &["--rows-per-file", "5", "-o", "-"],
+        "--rows-per-file needs --output",
+    );
+    for template in ["out.csv", "o_{}_{}.csv", "dir_{}/out.csv"] {
+        refused(
+            &["--rows-per-file", "5", "-o", template],
+            "needs an --output name with one {} in its file name",
+        );
+    }
+    // p_{}.csv writes p_00.csv and p_10.csv: the second is the input.
+    refused(
+        &["--rows-per-file", "10", "-o", "p_{}.csv"],
+        "--rows-per-file would write over 'p_10.csv'",
+    );
+    assert_eq!(
+        std::fs::read_to_string(wrk.path("p_10.csv")).unwrap(),
+        "a\n1\n2\n"
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_rows_per_file_finishes_a_parquet_file_before_opening_the_next() {
+    let wrk = Workdir::new("synthesize_rows_per_file_open_fails");
+    wrk.create("data.csv", vec![svec!["a"], svec!["1"], svec!["2"]]);
+    // The second file's name is taken by a directory, so opening it fails.
+    std::fs::create_dir(wrk.path("q_100.parquet")).unwrap();
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "data.csv",
+        "-n",
+        "300",
+        "--seed",
+        "1",
+        "--format",
+        "parquet",
+        "--rows-per-file",
+        "100",
+        "-o",
+        "q_{}.parquet",
+    ]);
+    wrk.assert_err(&mut cmd);
+    assert_eq!(read_parquet(&wrk, "q_000.parquet").height(), 100);
+}
+
 #[test]
 fn synthesize_format_refuses_parquet_to_stdout_dash() {
     let wrk = Workdir::new("synthesize_format_parquet_dash");

@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 import {
   translateSql,
   findFileWritingStatement,
+  supportsSandbox,
+  buildSandboxPrelude,
   isDuckDbEnabled,
   getDuckDbStatus,
   resetDuckDbState,
@@ -625,6 +627,93 @@ describe("DuckDB live integration", { concurrency: false }, () => {
   });
 });
 
+describe("DuckDB sandbox", { concurrency: false }, () => {
+  beforeEach(() => {
+    (config as Record<string, unknown>).useDuckDb = true;
+    resetDuckDbState();
+    detectDuckDb();
+  });
+
+  after(() => {
+    (config as Record<string, unknown>).useDuckDb = savedUseDuckDb;
+    resetDuckDbState();
+  });
+
+  test("supportsSandbox needs DuckDB 1.2.0 or later", () => {
+    assert.strictEqual(supportsSandbox("1.1.3"), false);
+    assert.strictEqual(supportsSandbox("1.2.0"), true);
+    assert.strictEqual(supportsSandbox("1.10.0"), true);
+    assert.strictEqual(supportsSandbox("2.0.0"), true);
+    assert.strictEqual(supportsSandbox("0.10.3"), false);
+    assert.strictEqual(supportsSandbox("garbage"), false);
+  });
+
+  test("buildSandboxPrelude quotes paths and locks the configuration last", () => {
+    const prelude = buildSandboxPrelude({
+      allowedDirectories: ["/data/it's", "C:\\work\\"],
+      allowedPaths: ["/data/in.parquet", ""],
+    });
+    assert.ok(prelude.includes("['/data/it''s/', 'C:/work/']"), prelude);
+    assert.ok(prelude.includes("SET allowed_paths = ['/data/in.parquet'];"), prelude);
+    assert.ok(prelude.trimEnd().endsWith("SET lock_configuration = true;"), prelude);
+  });
+
+  test("a caller's SQL never starts the duckdb script", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
+    // a leading '.' would be a CLI meta-command; it must reach DuckDB as (invalid) SQL
+    const result = await executeDuckDbQuery(".print qsv_meta_marker", { format: "csv" });
+    assert.ok(result, "result should not be null");
+    assert.ok(!result.output.includes("qsv_meta_marker"), `ran as a meta-command: ${result.output}`);
+    assert.notStrictEqual(result.exitCode, 0, "should fail as SQL");
+  });
+
+  test("blocks file writes outside the allowed directories", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async () => {
+    const allowed = await createTestDir("duckdb-sandbox-allowed");
+    const outside = await createTestDir("duckdb-sandbox-outside");
+    try {
+      const sandbox = { allowedDirectories: [allowed], allowedPaths: [NYC_311_FILE] };
+      const out = (name: string) => sqlPath(join(outside, name));
+      const attempts: Array<[string, string, string?]> = [
+        ["attach.db", `ATTACH '${out("attach.db")}' AS a; CREATE TABLE a.t AS SELECT 1 AS x`],
+        ["export", `EXPORT DATABASE '${out("export")}'`],
+        ["copy.csv", `COPY (SELECT 1 AS x) TO '${out("copy.csv")}'`],
+        // parquet output wraps the SQL as COPY (<sql>) TO '<output>'; a closing paren
+        // in the SQL could otherwise redirect that COPY
+        ["inject.csv", `SELECT 1 AS x) TO '${out("inject.csv")}' (FORMAT csv); --`, "parquet"],
+      ];
+      for (const [file, sql, format] of attempts) {
+        const result = await executeDuckDbQuery(sql, {
+          format: format ?? "csv",
+          outputFile: format ? join(allowed, "result.parquet") : undefined,
+          sandbox,
+        });
+        assert.ok(result, `${file}: result should not be null`);
+        assert.ok(!existsSync(join(outside, file)), `${file}: written outside the sandbox`);
+      }
+
+      // the allowed input is readable and the allowed directory writable
+      const read = await executeDuckDbQuery(
+        `SELECT COUNT(*) AS n FROM read_csv('${NYC_311_SQL}', auto_detect = true)`,
+        { format: "csv", sandbox },
+      );
+      assert.ok(read);
+      assert.strictEqual(read.exitCode, 0, `read failed: ${read.stderr}`);
+      assert.strictEqual(read.output.trim().split("\n")[1], "100");
+
+      const outputFile = join(allowed, "ok.parquet");
+      const write = await executeDuckDbQuery(
+        `SELECT * FROM read_csv('${NYC_311_SQL}', auto_detect = true) LIMIT 3`,
+        { format: "parquet", outputFile, sandbox },
+      );
+      assert.ok(write);
+      assert.strictEqual(write.exitCode, 0, `parquet output failed: ${write.stderr}`);
+      assert.ok(existsSync(outputFile), "parquet output should be written");
+    } finally {
+      await cleanupTestDir(allowed);
+      await cleanupTestDir(outside);
+    }
+  });
+});
+
 describe("findFileWritingStatement", () => {
   test("flags COPY ... TO and EXPORT DATABASE", () => {
     assert.strictEqual(
@@ -636,6 +725,11 @@ describe("findFileWritingStatement", () => {
       "COPY ... TO",
     );
     assert.strictEqual(findFileWritingStatement("EXPORT DATABASE 'outdir'"), "EXPORT DATABASE");
+    assert.strictEqual(
+      findFileWritingStatement("ATTACH 'new.db' AS a; CREATE TABLE a.t AS SELECT 1"),
+      "ATTACH",
+    );
+    assert.strictEqual(findFileWritingStatement("/* /* */ */ attach 'x.db'"), "ATTACH");
   });
 
   test("finds a write in any statement of a script", () => {

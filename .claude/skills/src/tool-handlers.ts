@@ -404,6 +404,7 @@ async function runSqlpParquetInterception(
   params: Record<string, unknown>,
   inputFile: string,
   outputFile: string | undefined,
+  filesystemProvider?: FilesystemProviderExtended,
 ): Promise<SqlpInterceptionResult> {
   const rawSql = params.sql as string | undefined;
   if (!rawSql) {
@@ -432,7 +433,20 @@ async function runSqlpParquetInterception(
 
     // Try DuckDB execution (single-table path)
     const duckDbStart = Date.now();
-    const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
+    // The DuckDB sandbox (used when SQL file writes are off) allows these directories
+    const allowedDirectories = filesystemProvider?.getAllowedDirectories
+      ? [
+        ...filesystemProvider.getAllowedDirectories(),
+        filesystemProvider.getWorkingDirectory(),
+      ]
+      : undefined;
+    const duckDbResult = await tryDuckDbExecution(
+      sql,
+      parquetFile,
+      params,
+      outputFile,
+      allowedDirectories,
+    );
     if (duckDbResult !== null) {
       // Attach pipeline metadata for parity with the sqlp path
       const duckDbSuccess = !("isError" in duckDbResult && duckDbResult.isError === true);
@@ -825,7 +839,12 @@ export async function handleToolCall(
     // this function stays free of command-specific logic.
     let parquetConversionWarning = "";
     if (commandName === "sqlp" && !isHelpRequest && inputFile) {
-      const interception = await runSqlpParquetInterception(params, inputFile, outputFile);
+      const interception = await runSqlpParquetInterception(
+        params,
+        inputFile,
+        outputFile,
+        filesystemProvider,
+      );
       if (interception.earlyResult) {
         return interception.earlyResult;
       }

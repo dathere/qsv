@@ -823,7 +823,7 @@ impl JoinStruct {
 
         let mut results_lf = match &self.sql_filter {
             Some(sql_filter) => {
-                let mut ctx = polars::sql::SQLContext::new();
+                let mut ctx = util::new_sql_context();
                 ctx.register("join_result", join_lf);
                 ctx.execute(sql_filter)?
             },

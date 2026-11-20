@@ -564,7 +564,7 @@ fn insert_subtotals(df: &DataFrame, index_cols: &[String], label: &str) -> CliRe
 
         if is_boundary {
             let group_len = i - group_start;
-            let group_df = df.slice(group_start as i64, group_len);
+            let group_df = df.slice((group_start as i64, group_len));
 
             let group_value = start_val.unwrap_or_default();
 

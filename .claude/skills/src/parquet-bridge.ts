@@ -10,6 +10,7 @@ import {
   detectDuckDb,
   markDuckDbUnavailable,
   translateSql,
+  findFileWritingStatement,
   executeDuckDbQuery,
   CSV_LIKE_EXTENSIONS,
 } from "./duckdb.js";
@@ -814,6 +815,20 @@ export async function tryDuckDbExecution(
   const state = detectDuckDb();
   if (state.status !== "available") {
     return null; // Fall through to sqlp
+  }
+
+  // With SQL file writes off (plugin mode), SQL that may write files never reaches DuckDB.
+  // The check over-matches (a column named "export" trips it), so fall back to sqlp rather
+  // than fail: Polars runs under QSV_SQL_DISABLE_FILE_WRITES=1 and refuses a real COPY TO.
+  if (!config.sqlFileWrites) {
+    const kind = findFileWritingStatement(sql);
+    if (kind) {
+      console.error(
+        `[MCP Tools] DuckDB: SQL file writes are disabled and the query may contain ${kind}; ` +
+        `running it with sqlp instead`,
+      );
+      return null;
+    }
   }
 
   const format = String(params.format ?? "csv").toLowerCase();

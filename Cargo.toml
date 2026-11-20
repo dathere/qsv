@@ -408,6 +408,11 @@ polars = { version = "0.55", features = [
     # aggregates) in sqlp. Without it, polars-sql fails at plan time with
     # "'ROWS <n> PRECEDING' window frames require the 'rolling_window' feature".
     "rolling_window",
+    # "rolling_window_by" powers RANGE window frames with an offset
+    # (`RANGE BETWEEN 1 PRECEDING AND CURRENT ROW`, pola-rs/polars#30849). Without
+    # it, polars-sql fails with "RANGE window frames with an offset require the
+    # 'rolling_window_by' feature".
+    "rolling_window_by",
     "semi_anti_join",
     # "serde" (not "serde-lazy"): qsv only serializes polars Schema/DataType
     # (the .pschema.json cache in util/special_format.rs), which polars-core
@@ -544,8 +549,13 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 [patch.crates-io]
 # polars-readstat-rs depends on these directly; redirect them onto the same git polars
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io. (#5021)
-polars-core  = { git = "https://github.com/pola-rs/polars", rev = "2d9938dfa3558a89c5d7a05d4ff1b0e5afccfd59" }
-polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "2d9938dfa3558a89c5d7a05d4ff1b0e5afccfd59" }
+polars-core  = { git = "https://github.com/pola-rs/polars", rev = "93d31f095fe3247677895b67d32f681b89e1e103" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "93d31f095fe3247677895b67d32f681b89e1e103" }
+# polars-readstat-rs 0.27.0 calls DataFrame/Series::slice(offset, len), which polars main
+# replaced with slice(impl Into<Slice>) (pola-rs/polars#30887). Our fork passes the pair as a
+# tuple; upstream can't take it while it builds on crates.io polars 0.55.1. Drop once a
+# polars-readstat-rs release builds against the pinned polars rev.
+polars-readstat-rs = { git = "https://github.com/dathere/polars_readstat", rev = "2714269c43532016b2da72839269ff3015a31f20" }
 # Polars (since py-2.0.0) calls HashTable::prefetch_{get,insert}, which exist only in its
 # hashbrown fork (https://github.com/rust-lang/hashbrown/pull/727). Polars' own workspace
 # [patch] doesn't propagate to dependents, so mirror it here; keep the rev in sync with the
@@ -622,9 +632,9 @@ compact_bytes = { git = "https://github.com/jqnatividad/compact_bytes", branch =
 #      and the commit hash 52ea381)
 # ================================
 # Keep the next line bare: build.rs reads everything after `=` into --version.
-# QSV_POLARS_REV=py-2.1.0:2d9938d
+# QSV_POLARS_REV=py-2.1.0:93d31f0
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "2d9938dfa3558a89c5d7a05d4ff1b0e5afccfd59", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "93d31f095fe3247677895b67d32f681b89e1e103", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

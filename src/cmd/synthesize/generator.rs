@@ -840,7 +840,9 @@ pub(crate) fn effective_quantiles(requested: usize, values: u64, min_count: u64)
         .rev()
         .copied()
         .find(|&d| requested.is_multiple_of(d) && values / d as u64 > min_count.max(1))
-        .filter(|&d| d != 4)
+        // Fewer than the default 4 only when asked for: a capped count below
+        // 4 would be coarser than not passing --quantiles at all.
+        .filter(|&d| d > 4 || d == requested)
 }
 
 /// Interior bucket edges of a column, as stats strings: the `--quantiles`
@@ -1137,11 +1139,14 @@ mod tests {
         assert_eq!(effective_quantiles(25, 60, 5), Some(5));
         // More than k per bucket: 60 values at k=6 can't hold 10 (6 each) → 5.
         assert_eq!(effective_quantiles(100, 60, 6), Some(5));
-        // Nothing qualifies → the quartiles; 20 at k=5 skips 4 (5 each) for 2.
+        // Nothing qualifies → the quartiles.
         assert_eq!(effective_quantiles(100, 8, 5), None);
-        assert_eq!(effective_quantiles(100, 20, 5), Some(2));
         assert_eq!(effective_quantiles(20, 11, 5), None);
-        assert_eq!(effective_quantiles(10, 4, 0), Some(2));
+        // A cap below 4 would be coarser than the default → the quartiles,
+        // unless 2 is what was asked for.
+        assert_eq!(effective_quantiles(100, 20, 5), None);
+        assert_eq!(effective_quantiles(10, 4, 0), None);
+        assert_eq!(effective_quantiles(2, 20, 5), Some(2));
     }
 
     #[test]

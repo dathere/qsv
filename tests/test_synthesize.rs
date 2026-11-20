@@ -4809,6 +4809,23 @@ fn synthesize_reads_non_utf8_input() {
         );
     }
 
+    // Every synthetic row here copies a source row, so --report must count
+    // matches although the copies hold U+FFFD where the source has bytes.
+    let mut data = b"name,amount\n".to_vec();
+    for i in 1..=6 {
+        data.extend_from_slice(b"ab\xff,");
+        data.extend_from_slice(format!("{i}\n").as_bytes());
+    }
+    std::fs::write(wrk.path("copies.csv"), data).unwrap();
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "1", "--min-count", "1", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("copies.csv");
+    wrk.assert_success(&mut cmd);
+    let report: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("report.json").unwrap()).unwrap();
+    assert_eq!(report["privacy"]["exact_matches"], 20, "{report}");
+
     // Headerless, the first row is read where a header would be.
     let mut data = b"x\xff,1\n".to_vec();
     for i in 2..30 {

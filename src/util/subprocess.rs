@@ -114,6 +114,7 @@ pub fn run_qsv_cmd(
 
 /// `run_qsv_cmd` for commands that echo input values (e.g. `frequency`), so their
 /// output is only as valid UTF-8 as the input: invalid bytes become U+FFFD.
+#[cfg(feature = "synthesize")]
 pub fn run_qsv_cmd_lossy(
     command: &str,
     args: &[&str],

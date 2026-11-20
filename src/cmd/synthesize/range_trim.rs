@@ -5,7 +5,7 @@
 //! module replaces each range end with the k-th smallest / k-th largest value
 //! (k = `--min-count`), so at least k source rows lie at or beyond each end.
 //! The new bounds are written back into the `StatsRecord`, so every consumer of
-//! `numeric_quartile_buckets` / `date_quartile_buckets` (independent columns
+//! `numeric_buckets` / `date_buckets` (independent columns
 //! and `ordered` / `correlated` groups) sees the trimmed range.
 
 use std::{cmp::Ordering, collections::BinaryHeap};

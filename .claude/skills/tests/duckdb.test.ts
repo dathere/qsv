@@ -4,8 +4,8 @@
 
 import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert";
-import { existsSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, statSync, writeFileSync, symlinkSync, chmodSync } from "node:fs";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   translateSql,
@@ -24,6 +24,7 @@ import {
 } from "../src/duckdb.js";
 import { config } from "../src/config.js";
 import { handleToParquetCall } from "../src/mcp-tools.js";
+import { tryDuckDbExecution } from "../src/parquet-bridge.js";
 import { createTestDir, cleanupTestDir, createTestCSV, DUCKDB_AVAILABLE } from "./test-helpers.js";
 
 // ============================================================
@@ -735,9 +736,103 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
       assert.ok(write);
       assert.strictEqual(write.exitCode, 0, `parquet output failed: ${write.stderr}`);
       assert.ok(existsSync(outputFile), "parquet output should be written");
+
+      // reads outside the sandbox, `..` and symlink escapes, and INSTALL are all refused
+      const outsideCsv = join(outside, "secret.csv");
+      writeFileSync(outsideCsv, "a\n1\n");
+      const refused: Array<[string, string]> = [
+        ["outside read", `SELECT * FROM read_csv('${sqlPath(outsideCsv)}')`],
+        [
+          "dot-dot escape",
+          `SELECT * FROM read_csv('${sqlPath(join(allowed, "..", basename(outside), "secret.csv"))}')`,
+        ],
+        ["INSTALL", "INSTALL spatial"],
+      ];
+      if (process.platform !== "win32") {
+        const link = join(allowed, "link.csv");
+        symlinkSync(outsideCsv, link);
+        refused.push(["symlink escape", `SELECT * FROM read_csv('${sqlPath(link)}')`]);
+      }
+      for (const [what, sql] of refused) {
+        const r = await executeDuckDbQuery(sql, { format: "csv", sandbox });
+        assert.ok(r, `${what}: result should not be null`);
+        assert.notStrictEqual(r.exitCode, 0, `${what}: should be refused, got ${r.output}`);
+        assert.match(r.stderr, /disabled by configuration|Permission Error/i, `${what}: ${r.stderr}`);
+      }
     } finally {
       await cleanupTestDir(allowed);
       await cleanupTestDir(outside);
+    }
+  });
+
+  test("with SQL file writes off, unsandboxable or writing queries go to sqlp", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async () => {
+    const savedWrites = config.sqlFileWrites;
+    const dir = await createTestDir("duckdb-routing");
+    try {
+      (config as Record<string, unknown>).sqlFileWrites = false;
+      const input = NYC_311_FILE;
+      const sql = "SELECT COUNT(*) AS n FROM _t_1";
+
+      // sandboxable: runs on DuckDB
+      const ok = await tryDuckDbExecution(sql, input, { format: "csv" }, undefined, [dir]);
+      assert.ok(ok, "a plain query should run on DuckDB");
+      assert.ok(ok.content[0].text.includes("Engine: DuckDB"), ok.content[0].text);
+
+      // no allowed-directory list: sqlp
+      assert.strictEqual(await tryDuckDbExecution(sql, input, { format: "csv" }, undefined, undefined), null);
+
+      // parquet output (the server's COPY wrapper): sqlp, and DuckDB writes nothing
+      const out = join(dir, "never.parquet");
+      assert.strictEqual(
+        await tryDuckDbExecution(
+          `SELECT 1 AS x) TO '${sqlPath(join(dir, "escaped.csv"))}' (FORMAT csv); --`,
+          input,
+          { format: "parquet" },
+          out,
+          [dir],
+        ),
+        null,
+      );
+      assert.ok(!existsSync(out) && !existsSync(join(dir, "escaped.csv")), "DuckDB wrote a file");
+
+      // file-writing keywords and a leading meta-command: sqlp
+      assert.strictEqual(
+        await tryDuckDbExecution("ATTACH 'x.db' AS a", input, { format: "csv" }, undefined, [dir]),
+        null,
+      );
+      assert.strictEqual(
+        await tryDuckDbExecution(".print hi", input, { format: "csv" }, undefined, [dir]),
+        null,
+      );
+    } finally {
+      (config as Record<string, unknown>).sqlFileWrites = savedWrites;
+      await cleanupTestDir(dir);
+    }
+  });
+
+  test("with SQL file writes off, a DuckDB older than 1.2.0 goes to sqlp", { skip: process.platform === "win32", timeout: 30_000 }, async () => {
+    const savedWrites = config.sqlFileWrites;
+    const savedBin = config.duckDbBinPath;
+    const dir = await createTestDir("duckdb-old");
+    try {
+      // a stand-in binary that only answers --version, as DuckDB 1.1.3 would
+      const fake = join(dir, "duckdb");
+      writeFileSync(fake, "#!/bin/sh\necho 'v1.1.3 19864453f7'\n");
+      chmodSync(fake, 0o755);
+      (config as Record<string, unknown>).duckDbBinPath = fake;
+      (config as Record<string, unknown>).sqlFileWrites = false;
+      resetDuckDbState();
+      const state = detectDuckDb();
+      assert.strictEqual(state.status, "available");
+      assert.strictEqual(
+        await tryDuckDbExecution("SELECT 1", NYC_311_FILE, { format: "csv" }, undefined, [dir]),
+        null,
+      );
+    } finally {
+      (config as Record<string, unknown>).duckDbBinPath = savedBin;
+      (config as Record<string, unknown>).sqlFileWrites = savedWrites;
+      resetDuckDbState();
+      await cleanupTestDir(dir);
     }
   });
 });

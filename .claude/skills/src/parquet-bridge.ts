@@ -830,10 +830,18 @@ export async function tryDuckDbExecution(
   // With SQL file writes off (plugin mode), SQL that may write files never reaches DuckDB.
   // The check over-matches (a column named "export" trips it), so fall back to sqlp rather
   // than fail: Polars runs under QSV_SQL_DISABLE_FILE_WRITES=1 and refuses a real COPY TO.
-  // DuckDB itself then runs sandboxed to the MCP allowed directories plus the input and
-  // output files (#5082), which also confines what the keyword check can't see.
+  // DuckDB itself then runs sandboxed to the MCP allowed directories plus the input file
+  // (#5082), which also confines what the keyword check can't see.
+  const format = String(params.format ?? "csv").toLowerCase();
   let sandbox: DuckDbSandbox | undefined;
   if (!config.sqlFileWrites) {
+    // Parquet output wraps the caller's SQL in the server's own COPY ... TO, which the SQL
+    // could close early to redirect the write. sqlp writes parquet output instead, so
+    // DuckDB never writes a file in this mode.
+    if (format === "parquet") {
+      console.error("[MCP Tools] DuckDB: SQL file writes are disabled; parquet output runs with sqlp");
+      return null;
+    }
     const kind = findFileWritingStatement(sql);
     if (kind) {
       console.error(
@@ -851,13 +859,9 @@ export async function tryDuckDbExecution(
     }
     sandbox = {
       allowedDirectories,
-      allowedPaths: [parquetFile, outputFile].filter(
-        (p): p is string => typeof p === "string" && p !== "SKIP_INPUT",
-      ),
+      allowedPaths: parquetFile === "SKIP_INPUT" ? [] : [parquetFile],
     };
   }
-
-  const format = String(params.format ?? "csv").toLowerCase();
 
   // Unsupported formats fall back to sqlp
   if (format === "arrow" || format === "avro") {

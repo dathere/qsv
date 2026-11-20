@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{CliError, CliResult, cmd::describegpt::dictionary::is_valid_strftime};
 
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Model {
@@ -198,6 +198,7 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
         GroupGenerator::Ordered {
             member_cols,
             is_int,
+            decimals,
             date_format,
             anchor_buckets,
             gap_buckets,
@@ -207,6 +208,7 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             let n = member_cols.len();
             if n == 0
                 || is_int.len() != n
+                || decimals.len() != n
                 || member_ranges.len() != n
                 || gap_buckets.len() != n - 1
                 || anchor_buckets.is_empty()
@@ -224,6 +226,7 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             cholesky_l,
             marginals,
             is_int,
+            decimals,
             null_ratios,
         } => {
             let k = col_indices.len();
@@ -232,6 +235,7 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
                 || marginals.len() != k
                 || marginals.iter().any(Vec::is_empty)
                 || is_int.len() != k
+                || decimals.len() != k
                 || null_ratios.len() != k
             {
                 return bad("a correlated group with inconsistent members");

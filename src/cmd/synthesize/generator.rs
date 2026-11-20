@@ -162,6 +162,9 @@ pub(crate) enum ColumnGenerator {
     NumericQuantile {
         buckets:    Vec<(f64, f64)>,
         is_int:     bool,
+        /// Float columns only: decimal places to round to (the source's
+        /// `max_precision`); `None` leaves values unrounded.
+        decimals:   Option<u32>,
         null_ratio: f64,
     },
     /// Date / `DateTime` column reproduced via quantile buckets over epoch seconds.
@@ -389,6 +392,7 @@ impl ColumnGenerator {
             ColumnGenerator::NumericQuantile {
                 buckets,
                 is_int,
+                decimals,
                 null_ratio,
             } => {
                 if draw_null(*null_ratio, rng) {
@@ -400,14 +404,7 @@ impl ColumnGenerator {
                 } else {
                     lo
                 };
-                if *is_int {
-                    #[allow(clippy::cast_possible_truncation)]
-                    {
-                        (value.round() as i64).to_string()
-                    }
-                } else {
-                    value.to_string()
-                }
+                format_number(value, *is_int, *decimals)
             },
 
             ColumnGenerator::DateQuantile {
@@ -744,9 +741,95 @@ fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGe
         Some(buckets) => ColumnGenerator::NumericQuantile {
             buckets,
             is_int,
+            decimals: if is_int { None } else { float_decimals(stats) },
             null_ratio,
         },
         None => ColumnGenerator::Empty,
+    }
+}
+
+/// Above this many decimal places a column's `max_precision` reflects binary
+/// float noise (`0.30000000000000004` counts 17), not how the source was
+/// written, so its values are left unrounded.
+const MAX_ROUNDED_DECIMALS: u32 = 15;
+
+/// The decimal places a Float column's synthetic values are rounded to: the
+/// most any source value shows (`stats` `max_precision`), or `None` when that
+/// is unknown or float noise.
+pub(crate) fn float_decimals(stats: &StatsRecord) -> Option<u32> {
+    stats
+        .addl_cols
+        .get("max_precision")?
+        .parse::<u32>()
+        .ok()
+        .filter(|&d| d <= MAX_ROUNDED_DECIMALS)
+}
+
+/// `value` on the grid of `decimals` places, as `(steps, scale)` with
+/// `value ≈ steps / scale`; `None` when it can't be rounded exactly (no
+/// decimals, or too large for the grid to be finer than an f64's spacing).
+/// Working in whole steps keeps clear of noise like `1.1 * 100 =
+/// 110.00000000000001`: `steps / scale` is the f64 nearest the decimal, so it
+/// prints as that decimal.
+pub(crate) fn decimal_steps(value: f64, decimals: Option<u32>) -> Option<(f64, f64)> {
+    let scale = 10_f64.powi(i32::try_from(decimals?).ok()?);
+    let steps = (value * scale).round();
+    (steps.is_finite() && steps.abs() < 9_007_199_254_740_992.0).then_some((steps, scale))
+}
+
+/// Round `value` to `decimals` places (no-op for `None`), never returning
+/// negative zero.
+pub(crate) fn round_to(value: f64, decimals: Option<u32>) -> f64 {
+    match decimal_steps(value, decimals) {
+        Some((steps, scale)) => steps / scale + 0.0,
+        None => value,
+    }
+}
+
+/// The largest value on the `decimals` grid that is <= `value` (no-op for
+/// `None`).
+pub(crate) fn floor_to(value: f64, decimals: Option<u32>) -> f64 {
+    match decimal_steps(value, decimals) {
+        Some((steps, scale)) => {
+            let rounded = steps / scale;
+            (if rounded > value {
+                (steps - 1.0) / scale
+            } else {
+                rounded
+            }) + 0.0
+        },
+        None => value,
+    }
+}
+
+/// `value` rounded to the `decimals` grid, moved up one step if rounding took
+/// it below `floor` (no-op for `None`). With `value >= floor`, the result is
+/// the smallest grid value >= `floor` in that case, so it stays in order
+/// after a predecessor and no higher than any grid value >= `floor`.
+pub(crate) fn round_at_least(value: f64, floor: f64, decimals: Option<u32>) -> f64 {
+    match decimal_steps(value, decimals) {
+        Some((steps, scale)) => {
+            let rounded = steps / scale;
+            (if rounded < floor {
+                (steps + 1.0) / scale
+            } else {
+                rounded
+            }) + 0.0
+        },
+        None => value,
+    }
+}
+
+/// Render a numeric value as an Integer column (rounded to a whole number) or
+/// a Float column (rounded to `decimals` places, shortest form).
+pub(crate) fn format_number(value: f64, is_int: bool, decimals: Option<u32>) -> String {
+    if is_int {
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            (value.round() as i64).to_string()
+        }
+    } else {
+        round_to(value, decimals).to_string()
     }
 }
 
@@ -1236,6 +1319,38 @@ mod tests {
             !got.contains_key("25") && !got.contains_key("75"),
             "{got:?}"
         );
+    }
+
+    #[test]
+    fn decimal_rounding_helpers() {
+        let mut sr = stats("v", "Float", 10, 0, "0", "1", &[]);
+        let mut decimals = |p: &str| {
+            sr.addl_cols
+                .insert("max_precision".to_string(), p.to_string());
+            float_decimals(&sr)
+        };
+        assert_eq!(decimals("2"), Some(2));
+        assert_eq!(decimals("15"), Some(15));
+        assert_eq!(decimals("17"), None, "float noise is left unrounded");
+
+        assert_eq!(round_to(1.234_5, Some(2)), 1.23);
+        let zero = round_to(-0.004, Some(2));
+        assert!(zero == 0.0 && zero.is_sign_positive(), "no negative zero");
+        assert_eq!(format_number(-0.004, false, Some(2)), "0");
+        assert_eq!(round_to(1.234_5, None), 1.234_5);
+        assert_eq!(round_to(1e300, Some(2)), 1e300, "too large to round");
+
+        // A cap is floored to the grid, never rounded past the real bound.
+        assert_eq!(floor_to(10.47, Some(1)), 10.4);
+        assert_eq!(floor_to(0.29, Some(2)), 0.29, "0.29 * 100 is 28.999…");
+        assert_eq!(floor_to(-1.25, Some(1)), -1.3);
+        assert_eq!(floor_to(7.9, Some(0)), 7.0);
+
+        // A follower moves up a step rather than print below its predecessor.
+        assert_eq!(round_at_least(10.43, 10.42, Some(1)), 10.5);
+        assert_eq!(round_at_least(10.46, 10.42, Some(1)), 10.5);
+        assert_eq!(round_at_least(10.44, 10.4, Some(1)), 10.4);
+        assert_eq!(round_at_least(3.2, 3.1, Some(0)), 4.0);
     }
 
     #[test]

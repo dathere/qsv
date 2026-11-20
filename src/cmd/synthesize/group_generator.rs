@@ -9,7 +9,7 @@
 use rand::{RngExt, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 
-use super::generator::draw_null;
+use super::generator::{draw_null, format_number, round_at_least};
 
 /// The value domain an `ordered` relationship group is generated in. Date
 /// values are carried as whole days since the UNIX epoch, datetimes as seconds
@@ -55,6 +55,9 @@ pub(crate) enum GroupGenerator {
         /// integer when true, a float when false. Lets a mixed Integer/Float
         /// group keep each column's declared type. Ignored for Date/DateTime.
         is_int:         Vec<bool>,
+        /// Per-member decimal places a Float member is rounded to (its source
+        /// `max_precision`); `None` for Integer, unrounded and date members.
+        decimals:       Vec<Option<u32>>,
         /// describegpt-inferred chrono strftime format for date members.
         date_format:    Option<String>,
         /// Anchor quantile buckets, in the numeric domain.
@@ -87,6 +90,9 @@ pub(crate) enum GroupGenerator {
         marginals:   Vec<Vec<(f64, f64)>>,
         /// Per-member flag: round the emitted value to an integer.
         is_int:      Vec<bool>,
+        /// Per-member decimal places a Float member is rounded to; `None`
+        /// for Integer and unrounded members.
+        decimals:    Vec<Option<u32>>,
         /// Per-member null ratio. Each member draws null independently, so its
         /// marginal null ratio is preserved and nulls do not all co-occur.
         null_ratios: Vec<f64>,
@@ -129,6 +135,7 @@ impl GroupGenerator {
                 member_cols,
                 kind,
                 is_int,
+                decimals,
                 date_format,
                 anchor_buckets,
                 gap_buckets,
@@ -144,25 +151,22 @@ impl GroupGenerator {
                 // The anchor's upper bound is capped by every follower's (see
                 // `resolve_ordered`), so the chain can always stay in range.
                 let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
-                // Chain from the value actually emitted: an Integer member is
-                // printed rounded, so the next member must build on the
-                // rounded value or a Float follower can print below it. An
-                // Integer follower rounds no lower than ceil(floor), or it can
-                // print below a Float predecessor. ceil(floor) stays within
-                // range: the predecessor's cap is at most this member's
-                // integer-floored cap.
+                // Chain from the value actually emitted: a member is printed
+                // rounded to its grid (whole numbers for Integer, its source
+                // decimals for Float), so the next member must build on the
+                // rounded value or it can print below it. A follower rounds no
+                // lower than its predecessor, or a coarser grid can print it
+                // below a finer one (1.24 at one decimal is 1.2). That stays
+                // within range: the predecessor's cap is at most this
+                // member's grid-floored cap.
                 let quantize = |v: f64, i: usize, floor: f64| {
-                    if *kind == OrderedKind::Numeric && is_int[i] {
-                        v.round().max(floor.ceil())
-                    } else {
-                        v
-                    }
+                    round_at_least(v, floor, member_grid(*kind, is_int[i], decimals[i]))
                 };
                 value = quantize(value, 0, f64::NEG_INFINITY);
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],
-                    format_ordered(value, *kind, is_int[0], date_format.as_ref()),
+                    format_ordered(value, *kind, is_int[0], decimals[0], date_format.as_ref()),
                 ));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
                     // Gap buckets are clamped to >= 0, and the clamp into the
@@ -177,7 +181,13 @@ impl GroupGenerator {
                     );
                     out.push((
                         member_cols[i + 1],
-                        format_ordered(value, *kind, is_int[i + 1], date_format.as_ref()),
+                        format_ordered(
+                            value,
+                            *kind,
+                            is_int[i + 1],
+                            decimals[i + 1],
+                            date_format.as_ref(),
+                        ),
                     ));
                 }
                 out
@@ -188,6 +198,7 @@ impl GroupGenerator {
                 cholesky_l,
                 marginals,
                 is_int,
+                decimals,
                 null_ratios,
             } => {
                 let k = col_indices.len();
@@ -209,13 +220,8 @@ impl GroupGenerator {
                     // all co-occur.
                     let text = if draw_null(null_ratios[i], rng) {
                         String::new()
-                    } else if is_int[i] {
-                        #[allow(clippy::cast_possible_truncation)]
-                        {
-                            (value.round() as i64).to_string()
-                        }
                     } else {
-                        value.to_string()
+                        format_number(value, is_int[i], decimals[i])
                     };
                     out.push((col_indices[i], text));
                 }
@@ -235,24 +241,34 @@ fn sample_bucket(buckets: &[(f64, f64)], rng: &mut StdRng) -> f64 {
     }
 }
 
+/// The decimal grid an ordered member's emitted value lies on: whole numbers
+/// for an Integer member, its source decimals for a Float one, none (`None`)
+/// for date members, which `format_ordered` rounds itself.
+pub(crate) const fn member_grid(
+    kind: OrderedKind,
+    is_int: bool,
+    decimals: Option<u32>,
+) -> Option<u32> {
+    match kind {
+        OrderedKind::Numeric if is_int => Some(0),
+        OrderedKind::Numeric => decimals,
+        OrderedKind::Date | OrderedKind::DateTime => None,
+    }
+}
+
 /// Format a numeric-domain value back into the member column's textual form.
-/// `is_int` selects integer vs float rendering for a `Numeric` member; it is
-/// ignored for Date/DateTime.
+/// `is_int` and `decimals` select integer vs float rendering for a `Numeric`
+/// member; they are ignored for Date/DateTime.
 fn format_ordered(
     value: f64,
     kind: OrderedKind,
     is_int: bool,
+    decimals: Option<u32>,
     date_format: Option<&String>,
 ) -> String {
     #[allow(clippy::cast_possible_truncation)]
     match kind {
-        OrderedKind::Numeric => {
-            if is_int {
-                (value.round() as i64).to_string()
-            } else {
-                value.to_string()
-            }
-        },
+        OrderedKind::Numeric => format_number(value, is_int, decimals),
         OrderedKind::Date | OrderedKind::DateTime => {
             let is_datetime = kind == OrderedKind::DateTime;
             // Date values are whole days since the epoch; datetimes are seconds.

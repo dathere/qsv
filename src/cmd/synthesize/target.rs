@@ -5,8 +5,9 @@
 //! draws a class (by its share of source rows), then fills the row from that
 //! class's schedule. A target with at most `MAX_CLASSES` distinct values is
 //! split by value; a numeric target with more is split by its own (whole-input)
-//! quantile buckets, and its value is drawn from the class's bucket, so its
-//! marginal is the same as without `--target`.
+//! quantile buckets, and its value is drawn from the class's bucket (from the
+//! written values that land back in it), each class at its share of source
+//! rows.
 
 use std::{collections::HashMap, fs::File, path::PathBuf};
 
@@ -38,6 +39,9 @@ pub(crate) struct Class {
     /// Binned classes only: the bucket the class's target values are drawn
     /// from.
     pub(crate) bucket:   Option<(f64, f64)>,
+    /// Binned classes of a rounded target: the written values that land back
+    /// in the bucket (see `grid`), drawn instead of the bucket itself.
+    pub(crate) grid:     Option<(i64, i64)>,
     /// Source rows in the class; its weight when a row draws a class.
     pub(crate) rows:     u64,
     /// Generators for every column except the target.
@@ -68,8 +72,13 @@ impl Target {
             .partition_point(|&c| c < r)
             .min(self.classes.len() - 1);
         let class = &self.classes[idx];
-        let value = match class.bucket {
-            Some((lo, hi)) => {
+        let value = match (class.grid, scale(self.is_int, self.decimals), class.bucket) {
+            (Some((a, b)), Some(scale), _) => {
+                #[allow(clippy::cast_precision_loss)]
+                let v = rng.random_range(a..=b) as f64 / scale;
+                format_number(v, self.is_int, self.decimals)
+            },
+            (_, _, Some((lo, hi))) => {
                 let v = if lo < hi {
                     rng.random_range(lo..hi)
                 } else {
@@ -77,7 +86,7 @@ impl Target {
                 };
                 format_number(v, self.is_int, self.decimals)
             },
-            None => class.label.clone(),
+            _ => class.label.clone(),
         };
         (value, &class.schedule)
     }
@@ -92,12 +101,65 @@ pub(crate) fn class_rng(base_seed: u64, class: usize) -> StdRng {
     StdRng::from_seed(key)
 }
 
+/// How many written steps make one unit: 1 for an Integer target, 10^decimals
+/// for a rounded Float one; `None` for a Float written unrounded.
+fn scale(is_int: bool, decimals: Option<u32>) -> Option<f64> {
+    if is_int {
+        return Some(1.0);
+    }
+    let scale = 10_f64.powi(i32::try_from(decimals?).ok()?);
+    scale.is_finite().then_some(scale)
+}
+
+/// The written values of a binned class, as a range of steps (see `scale`):
+/// those that, written and read back, land in the bucket under `bin_of`, i.e.
+/// above `lo` (or at it, for the first bucket, `!open_low`) and at most `hi`.
+/// Drawing from it keeps every row's target in the class its other columns
+/// were drawn for, which a value drawn from the bucket and then rounded
+/// doesn't. `None` for a target written unrounded, or when no written value
+/// lands in the bucket.
+pub(crate) fn grid(
+    (lo, hi): (f64, f64),
+    open_low: bool,
+    is_int: bool,
+    decimals: Option<u32>,
+) -> Option<(i64, i64)> {
+    // Steps are exact integers in an f64 below 2^53.
+    const LIMIT: f64 = 9_007_199_254_740_992.0;
+    let scale = scale(is_int, decimals)?;
+    let (a, b) = (lo * scale, hi * scale);
+    if !(a.abs() < LIMIT && b.abs() < LIMIT) || a > b {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let fits = |k: i64| {
+        let v: f64 = format_number(k as f64 / scale, is_int, decimals)
+            .parse()
+            .unwrap_or(f64::NAN);
+        (if open_low { v > lo } else { v >= lo }) && v <= hi
+    };
+    // Start a step outside each edge and move in: rounding can put the value
+    // written nearest an edge on either side of it.
+    #[allow(clippy::cast_possible_truncation)]
+    let (mut kmin, mut kmax) = (a.floor() as i64 - 1, b.ceil() as i64 + 1);
+    while kmin <= kmax && !fits(kmin) {
+        kmin += 1;
+    }
+    while kmax >= kmin && !fits(kmax) {
+        kmax -= 1;
+    }
+    (kmin <= kmax).then_some((kmin, kmax))
+}
+
 /// One class's rows, written to a temporary comma-separated file.
 pub(crate) struct ClassFile {
-    pub(crate) label:  String,
-    pub(crate) bucket: Option<(f64, f64)>,
-    pub(crate) rows:   u64,
-    pub(crate) path:   PathBuf,
+    pub(crate) label:    String,
+    pub(crate) bucket:   Option<(f64, f64)>,
+    /// Binned classes: whether the bucket excludes its low edge (every bucket
+    /// but the first; see `bin_of`).
+    pub(crate) open_low: bool,
+    pub(crate) rows:     u64,
+    pub(crate) path:     PathBuf,
 }
 
 /// Writes each source row to its class's file in `dir`, in one read of the
@@ -146,7 +208,12 @@ pub(crate) fn split(
                 return Ok(None);
             }
             let path = dir.join(format!("class{}.csv", open.len()));
-            let mut writer = csv::WriterBuilder::new().from_path(&path)?;
+            // Every field quoted, so no line starts with a QSV_COMMENT_CHAR the
+            // class readers would skip (a quoted "#north" would otherwise be
+            // written bare).
+            let mut writer = csv::WriterBuilder::new()
+                .quote_style(csv::QuoteStyle::Always)
+                .from_path(&path)?;
             if let Some(headers) = &headers {
                 writer.write_byte_record(headers)?;
             }
@@ -173,18 +240,19 @@ pub(crate) fn split(
         classes
             .into_iter()
             .map(|(key, rows, path)| {
-                let (label, bucket) = match key {
-                    ClassKey::Null => (String::new(), None),
-                    ClassKey::Value(v) => (v, None),
+                let (label, bucket, open_low) = match key {
+                    ClassKey::Null => (String::new(), None, false),
+                    ClassKey::Value(v) => (v, None, false),
                     ClassKey::Bin(i) => {
                         let bins = bins.unwrap_or_default();
                         let (lo, hi) = bins[i];
-                        (format!("{lo}..{hi}"), Some((lo, hi)))
+                        (format!("{lo}..{hi}"), Some((lo, hi)), i > 0)
                     },
                 };
                 ClassFile {
                     label,
                     bucket,
+                    open_low,
                     rows,
                     path,
                 }
@@ -223,6 +291,71 @@ mod tests {
         assert_eq!(bin_of(10.5, &bins), 1);
         assert_eq!(bin_of(30.0, &bins), 2);
         assert_eq!(bin_of(99.0, &bins), 2);
+    }
+
+    /// Every written value a class can draw lands back in that class.
+    fn assert_grid_lands_in_its_bucket(bins: &[(f64, f64)], is_int: bool, decimals: Option<u32>) {
+        let scale = scale(is_int, decimals).unwrap();
+        for (i, &bucket) in bins.iter().enumerate() {
+            let Some((a, b)) = grid(bucket, i > 0, is_int, decimals) else {
+                continue;
+            };
+            for k in a..=b {
+                #[allow(clippy::cast_precision_loss)]
+                let written = format_number(k as f64 / scale, is_int, decimals);
+                assert_eq!(
+                    bin_of(written.parse().unwrap(), bins),
+                    i,
+                    "{written} drawn for bucket {i} {bucket:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grid_keeps_rounded_draws_in_their_bucket() {
+        // A draw in (2, 2.5) from the second bucket used to round to 2, which
+        // belongs to the first.
+        let ints = [(0.0, 2.0), (2.0, 5.5), (5.5, 9.0)];
+        assert_eq!(grid(ints[0], false, true, None), Some((0, 2)));
+        assert_eq!(grid(ints[1], true, true, None), Some((3, 5)));
+        assert_eq!(grid(ints[2], true, true, None), Some((6, 9)));
+        assert_grid_lands_in_its_bucket(&ints, true, None);
+
+        let floats = [(0.0, 0.125), (0.125, 0.3), (0.3, 0.30000000000000004)];
+        assert_eq!(grid(floats[0], false, false, Some(2)), Some((0, 12)));
+        assert_eq!(grid(floats[1], true, false, Some(2)), Some((13, 30)));
+        // 0.3 is written as 0.3, which is the second bucket's.
+        assert_eq!(grid(floats[2], true, false, Some(2)), None);
+        assert_grid_lands_in_its_bucket(&floats, false, Some(2));
+
+        // No integer in (2.2, 2.7]; unrounded floats have no grid.
+        assert_eq!(grid((2.2, 2.7), true, true, None), None);
+        assert_eq!(grid((0.0, 1.0), false, false, None), None);
+    }
+
+    #[test]
+    fn draw_writes_binned_values_from_the_class_grid() {
+        let bucket = (2.0, 5.5);
+        let target = Target {
+            col_idx:  0,
+            is_int:   true,
+            decimals: None,
+            classes:  vec![Class {
+                label:    "2..5.5".into(),
+                bucket:   Some(bucket),
+                grid:     grid(bucket, true, true, None),
+                rows:     1,
+                schedule: Vec::new(),
+            }],
+        };
+        let cumulative = target.cumulative();
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..1000 {
+            seen.insert(target.draw(&cumulative, &mut rng).0);
+        }
+        assert_eq!(seen, ["3", "4", "5"].map(String::from).into());
     }
 
     #[test]

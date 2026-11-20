@@ -4891,6 +4891,161 @@ fn synthesize_target_strict_relationships_abort_on_a_thin_class() {
 }
 
 #[test]
+fn synthesize_target_strict_relationships_skip_groups_only_the_target_formed() {
+    let wrk = Workdir::new("synthesize_target_strict_projected");
+    // Every (label, feature) tuple is unique, so the joint group fails overall,
+    // but in a class (label constant) it is a one-member group and dropped.
+    let mut csv = String::from("label,feature\n");
+    for i in 0..10 {
+        csv.push_str(&format!("{},f{i}\n", i % 2));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "joint", "members": ["label", "feature"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20", "--seed", "1", "--target", "label"])
+        .args(["--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 21);
+
+    // y rises with x in class a and falls in class b: uncorrelated overall,
+    // which --strict-relationships alone refuses, but fitted per class.
+    let mut csv = String::from("cls,x,y\n");
+    for i in 1..=100 {
+        csv.push_str(&format!("a,{i},{}\nb,{i},{}\n", i + i % 3, 200 - i - i % 3));
+    }
+    wrk.create_from_string("opposite.csv", &csv);
+    wrk.create_from_string(
+        "opposite.json",
+        r#"{"fields": [], "relationships": [{"kind": "correlated", "members": ["x", "y"]}]}"#,
+    );
+    let run = |target: bool| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "400", "--seed", "1", "--strict-relationships"])
+            .arg("--dictionary")
+            .arg(wrk.path("opposite.json"))
+            .arg("opposite.csv");
+        if target {
+            cmd.args(["--target", "cls"]);
+        }
+        cmd
+    };
+    wrk.assert_err(&mut run(false));
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut run(true));
+    let rising = |cls: &str| {
+        let rows: Vec<(f64, f64)> = got[1..]
+            .iter()
+            .filter(|r| r[0] == cls)
+            .map(|r| (r[1].parse().unwrap(), r[2].parse().unwrap()))
+            .collect();
+        let n = rows.len() as f64;
+        let (mx, my) = rows
+            .iter()
+            .fold((0.0, 0.0), |(a, b), (x, y)| (a + x / n, b + y / n));
+        rows.iter().map(|(x, y)| (x - mx) * (y - my)).sum::<f64>() > 0.0
+    };
+    assert!(rising("a") && !rising("b"));
+}
+
+#[test]
+fn synthesize_target_class_groups_leave_out_fake_value_columns() {
+    let wrk = Workdir::new("synthesize_target_fakes_in_groups");
+    // 6 distinct (first_name, code) tuples overall, over the cap of 4, so the
+    // whole input fakes first_name; each class has 3, which a class joint
+    // group would keep, writing the real names.
+    let mut csv = String::from("label,first_name,code\n");
+    for i in 0..300 {
+        let (label, names) = if i % 2 == 0 {
+            ("a", ["SRC_Mike", "SRC_Sara", "SRC_Tom"])
+        } else {
+            ("b", ["SRC_Ann", "SRC_Bob", "SRC_Cid"])
+        };
+        let n = (i / 2) % 3;
+        csv.push_str(&format!("{label},{},{label}{n}\n", names[n]));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}],
+            "enum_threshold": 10,
+            "relationships": [{"kind": "joint", "members": ["first_name", "code"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "400", "--seed", "1", "--consistent-fakes"])
+        .args(["--joint-cardinality-cap", "4", "--target", "label"])
+        .arg("--dictionary")
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 401);
+    let real: Vec<&Vec<String>> = got[1..]
+        .iter()
+        .filter(|r| r[1].starts_with("SRC_"))
+        .collect();
+    assert!(real.is_empty(), "real names written: {:?}", &real[..3]);
+}
+
+#[test]
+fn synthesize_target_keeps_a_column_empty_in_a_class_null() {
+    let wrk = Workdir::new("synthesize_target_empty_class_column");
+    let mut csv = String::from("cls,amount\n");
+    for i in 0..60 {
+        csv.push_str(&format!("a,{}\n", i % 4));
+    }
+    for _ in 0..30 {
+        csv.push_str("b,\n");
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "300", "--seed", "1", "--target", "cls"])
+        .args(["--format", "jsonl"])
+        .arg("data.csv");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let rows: Vec<serde_json::Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(rows.iter().any(|r| r["cls"] == "b"));
+    for r in &rows {
+        // Class b's amounts stay null, and the column stays an integer one
+        // (not widened to strings for class b's empty generator).
+        if r["cls"] == "b" {
+            assert!(r["amount"].is_null(), "{r}");
+        } else {
+            assert!(r["amount"].is_i64(), "{r}");
+        }
+    }
+}
+
+#[test]
+fn synthesize_target_class_files_survive_a_comment_char() {
+    let wrk = Workdir::new("synthesize_target_comment_char");
+    // A quoted "#north" is data in the source; written bare to a class file,
+    // the class readers would skip it as a comment line.
+    let mut csv = String::from("region,cls\n");
+    for _ in 0..40 {
+        csv.push_str("\"#north\",a\nsouth,b\n");
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_COMMENT_CHAR", "#")
+        .args(["-n", "200", "--seed", "1", "--target", "cls"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(got[1..].iter().any(|r| r[1] == "a"));
+    for r in &got[1..] {
+        let want = if r[1] == "a" { "#north" } else { "south" };
+        assert_eq!(r[0], want, "{r:?}");
+    }
+}
+
+#[test]
 fn synthesize_target_keeps_one_consistent_fake_per_value_across_classes() {
     let wrk = Workdir::new("synthesize_target_consistent_fakes");
     let mut csv = String::from("cls,first_name\n");
@@ -5060,6 +5215,14 @@ fn synthesize_model_rejects_broken_target_classes() {
         "range.json",
         &out_of_range,
         "target column 99 is out of range",
+    );
+
+    let mut inverted = model.clone();
+    inverted["target"]["classes"][0]["grid"] = serde_json::json!([5, 3]);
+    expect_error(
+        "grid.json",
+        &inverted,
+        "a target class with an empty value range",
     );
 
     let mut no_classes = model;

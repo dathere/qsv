@@ -266,7 +266,10 @@ synthesize options:
                            values is split by value, an empty value being a
                            class of its own; a numeric column with more is
                            split by its quantile buckets (see --quantiles),
-                           and any other column is refused. A class seen in
+                           each class drawn at the share of rows its bucket
+                           holds (with tied bucket edges, not the shares of
+                           an ordinary fit), and any other column is
+                           refused. A class seen in
                            fewer than <k> rows (<k> is set by the --min-count
                            option) is dropped and its share redistributed.
                            Fake-value columns, and columns a class has too
@@ -277,7 +280,10 @@ synthesize options:
                            takes all of them from the whole input; lower
                            the --min-count to profile small classes, if that
                            is acceptable for privacy. Relationships that
-                           name <col> drop it from their members. `stats` and
+                           name <col> drop it from their members, as do
+                           fake-value columns in the classes, and each class
+                           fits (and with --strict-relationships, enforces)
+                           them on its own rows. `stats` and
                            `frequency` run once more per class, on a
                            temporary copy of <input> split by class.
     --min-count <k>        Privacy threshold. A real value of an enumerated
@@ -967,6 +973,13 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     } else {
         relationships
     };
+    // With --target, rows are generated per class, where the target is
+    // constant (and the class already conditions on it), so relationships
+    // drop it from their members, in the whole-input fit too.
+    let relationships = match args.flag_target.as_deref() {
+        Some(name) => without_members(&relationships, |m| m == name),
+        None => relationships,
+    };
 
     // --- 4. Build the row-emission schedule --------------------------------
     // Ungrouped columns get one ColumnGenerator each; columns named by a valid
@@ -986,7 +999,9 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         min_count: args.flag_min_count,
         source_cols: &source_cols,
         correlation_threshold: args.flag_correlation_threshold,
-        strict: args.flag_strict_relationships,
+        // With --target, the class fits generate the rows, so they enforce it:
+        // a relationship can fail overall and still hold in every class.
+        strict: args.flag_strict_relationships && args.flag_target.is_none(),
         input_path,
         delimiter: args.flag_delimiter,
         suppressions: &suppressions,
@@ -1002,6 +1017,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
             stats_args: &class_stats_args,
             freq_args: &class_freq_args,
             prefer_dmy,
+            strict: args.flag_strict_relationships,
         })?),
         None => None,
     };
@@ -1014,8 +1030,22 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     if let Some(target) = &target {
         for class in &target.classes {
             let class_types = output::resolve_types(&class.schedule, &stats_types, prefer_dmy);
+            // A column empty throughout a class writes only nulls, which any
+            // type holds.
+            let empty: HashSet<usize> = class
+                .schedule
+                .iter()
+                .filter_map(|unit| match unit {
+                    EmitUnit::Independent {
+                        col_idx,
+                        generator: ColumnGenerator::Empty,
+                    } => Some(*col_idx),
+                    _ => None,
+                })
+                .collect();
             for (col, ty) in class_types.iter().enumerate() {
-                if col != target.col_idx && !output::holds(&types[col], ty) {
+                if col != target.col_idx && !empty.contains(&col) && !output::holds(&types[col], ty)
+                {
                     types[col] = output::OutType::String;
                 }
             }
@@ -1061,6 +1091,25 @@ fn parse_frequency(freq_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
     Ok(frequency_records)
 }
 
+/// `relationships` without the members `drop` names; one left with fewer than
+/// two members is dropped.
+fn without_members(
+    relationships: &[SynthRelationship],
+    drop: impl Fn(&str) -> bool,
+) -> Vec<SynthRelationship> {
+    relationships
+        .iter()
+        .filter_map(|r| {
+            let members: Vec<String> = r.members.iter().filter(|m| !drop(m)).cloned().collect();
+            (members.len() >= 2).then(|| SynthRelationship {
+                kind: r.kind.clone(),
+                members,
+                anchor: r.anchor.clone().filter(|a| !drop(a)),
+            })
+        })
+        .collect()
+}
+
 /// What `fit_target` needs from the whole-input fit.
 struct TargetFit<'a> {
     name:            &'a str,
@@ -1074,6 +1123,8 @@ struct TargetFit<'a> {
     stats_args:      &'a [String],
     freq_args:       &'a [String],
     prefer_dmy:      bool,
+    /// --strict-relationships, which the class fits enforce.
+    strict:          bool,
 }
 
 /// Splits <input> by the --target column and fits every other column once
@@ -1137,21 +1188,6 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
         );
     }
 
-    // In a class the target is constant, and the class already conditions on
-    // it, so relationships drop it from their members.
-    let relationships: Vec<SynthRelationship> = global
-        .relationships
-        .iter()
-        .filter_map(|r| {
-            let members: Vec<String> = r.members.iter().filter(|m| *m != name).cloned().collect();
-            (members.len() >= 2).then(|| SynthRelationship {
-                kind: r.kind.clone(),
-                members,
-                anchor: r.anchor.clone().filter(|a| a != name),
-            })
-        })
-        .collect();
-
     // Whole-input generators: fake-value columns always use theirs (so
     // --consistent-fakes keeps one fake per source value across classes), and
     // a column a class can't profile falls back to its.
@@ -1168,6 +1204,23 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
                 ColumnGenerator::Faker { .. } | ColumnGenerator::FakerMapped { .. }
             )
         })
+    };
+    // (`fit` already dropped the target from the relationships.) A fake-value
+    // column leaves them too: a class group would write its real values.
+    let relationships = without_members(global.relationships, |m| {
+        stats
+            .iter()
+            .position(|sr| sr.field == m)
+            .is_some_and(is_faker)
+    });
+    let (is_int, decimals) = match whole.get(&t) {
+        Some(ColumnGenerator::NumericQuantile {
+            is_int, decimals, ..
+        }) => (*is_int, *decimals),
+        _ => (
+            target_sr.r#type == "Integer",
+            generator::float_decimals(target_sr),
+        ),
     };
     let content_types: HashMap<String, String> = global
         .content_types
@@ -1292,7 +1345,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             min_count,
             source_cols: global.source_cols,
             correlation_threshold: global.correlation_threshold,
-            strict: global.strict,
+            strict: tf.strict,
             input_path: &path,
             delimiter: comma,
             suppressions: &suppressions,
@@ -1331,6 +1384,9 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
                 // one (values all unique in a class, enumerated overall).
                 fell_back[col] += 1;
                 true
+            } else if matches!(generator, ColumnGenerator::Empty) {
+                // Empty in every source row of the class: any type holds that.
+                false
             } else if !output::holds_exactly(&whole_types[col], &unit_type(&unit, col)) {
                 retyped[col] += 1;
                 true
@@ -1362,6 +1418,9 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
         }
         fitted.push(target::Class {
             label:    class.label,
+            grid:     class
+                .bucket
+                .and_then(|b| target::grid(b, class.open_low, is_int, decimals)),
             bucket:   class.bucket,
             rows:     class.rows,
             schedule: units,
@@ -1386,15 +1445,6 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
         }
     }
 
-    let (is_int, decimals) = match whole.get(&t) {
-        Some(ColumnGenerator::NumericQuantile {
-            is_int, decimals, ..
-        }) => (*is_int, *decimals),
-        _ => (
-            target_sr.r#type == "Integer",
-            generator::float_decimals(target_sr),
-        ),
-    };
     log::info!("synthesize: --target '{name}': {nclasses} classes");
     Ok(target::Target {
         col_idx: t,

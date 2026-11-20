@@ -134,6 +134,9 @@ impl Model {
             {
                 return bad("a target class whose low end is above its high end");
             }
+            if class.grid.is_some_and(|(a, b)| a > b) {
+                return bad("a target class with an empty value range");
+            }
             check_schedule(&class.schedule, ncols, Some(target.col_idx))?;
         }
         Ok(())

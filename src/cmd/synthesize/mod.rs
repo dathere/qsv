@@ -10,7 +10,9 @@ fake data that reproduce the source's per-column attributes:
   * Numeric and date/datetime columns are reproduced with quantile buckets
     (quartiles by default, see --quantiles), so the shape of the distribution
     (not just its [min,max] range) is preserved.
-    The range ends are trimmed by the --min-count (see below).
+    The range ends are trimmed by the --min-count (see below). Float values
+    are rounded to the most decimal places the column shows in <input>
+    (unrounded when that is float noise, more than 15 places).
   * Null ratios are reproduced per column.
 
 When a Data Dictionary is supplied (via --dictionary, or generated on the fly
@@ -79,7 +81,8 @@ not stop it:
     lie at or beyond each end (the k-th smallest and k-th largest values),
     so a lone outlier no longer sets the range. The ends are themselves real
     values, and values inside the range are drawn uniformly per bucket, so
-    integers and dates can still land exactly on real values. With
+    integers, dates and floats (rounded to their source decimals) can still
+    land exactly on real values. With
     the --min-count at 1 the range is the real min and max, and an outlier
     can reappear at or near its real value.
 

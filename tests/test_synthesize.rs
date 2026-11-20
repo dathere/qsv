@@ -3482,6 +3482,12 @@ fn synthesize_model_rejects_other_versions_and_broken_models() {
     v1["qsv_synthesize_model"] = 1.into();
     expect_error("v1.json", &v1, "model format version 1");
 
+    // A version 2 model has no decimal places, so Float columns would print
+    // unrounded.
+    let mut v2 = model.clone();
+    v2["qsv_synthesize_model"] = 2.into();
+    expect_error("v2.json", &v2, "model format version 2");
+
     let mut untyped = model.clone();
     untyped["types"].as_array_mut().unwrap().pop();
     expect_error(
@@ -4307,4 +4313,204 @@ fn synthesize_quantiles_keep_small_float_precision() {
         (median / 5e-6 - 1.0).abs() < 0.15,
         "median {median} should be near 5e-6"
     );
+}
+
+/// Decimal places of a numeric cell as written (`12.5` has 1, `3` has 0).
+fn written_decimals(cell: &str) -> usize {
+    cell.split_once('.').map_or(0, |(_, frac)| frac.len())
+}
+
+/// `price` has 2 places, `ratio` 3, `noise` binary-float noise (stats counts
+/// 17 places, so it stays unrounded) and `whole` 1 (`stats` counts `12.0` as
+/// 1 place, so whole-number draws print as `12`).
+fn float_decimals_fixture(wrk: &Workdir) {
+    let mut csv = String::from("price,ratio,noise,whole\n");
+    for i in 1..=60 {
+        let f = f64::from(i);
+        csv.push_str(&format!(
+            "{:.2},{:.3},{},{f:.1}\n",
+            f * 1.37,
+            f / 7.0,
+            f * 0.1 + 0.2
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+}
+
+#[test]
+fn synthesize_floats_keep_source_decimals() {
+    let wrk = Workdir::new("synthesize_float_decimals");
+    float_decimals_fixture(&wrk);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "3", "--freq-limit", "1", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let max_places = |col: usize| {
+        got[1..]
+            .iter()
+            .filter(|r| !r[col].is_empty())
+            .map(|r| written_decimals(&r[col]))
+            .max()
+            .unwrap()
+    };
+    assert_eq!(max_places(0), 2, "price");
+    assert_eq!(max_places(1), 3, "ratio");
+    assert!(max_places(2) > 10, "noise should stay unrounded");
+    assert_eq!(max_places(3), 1, "whole");
+    assert!(
+        got[1..].iter().any(|r| !r[3].contains('.')),
+        "some whole-number draws should print without a point"
+    );
+    for r in &got[1..] {
+        assert!(!r[0].starts_with("-0"), "negative zero: {r:?}");
+    }
+
+    // A Float value printed without a point is still typed as a float.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "3", "--freq-limit", "1"])
+        .args(["--format", "jsonl", "data.csv"]);
+    for row in jsonl_rows(&wrk.stdout::<String>(&mut cmd)) {
+        assert!(row["whole"].is_f64(), "whole should be a float: {row:?}");
+    }
+}
+
+#[test]
+fn synthesize_ordered_mixed_decimals_keep_order_and_range() {
+    let wrk = Workdir::new("synthesize_ordered_mixed_decimals");
+    // A 2-place Float, a 1-place Float and an Integer, in order, with gaps
+    // smaller than the coarser grids: rounding `b` to 1 place can take it
+    // below `a` (10.42 -> 10.4) unless it is moved up a step.
+    let mut rows = vec![svec!["a", "b", "c"]];
+    for i in 10..50 {
+        rows.push(vec![
+            format!("{i}.37"),
+            format!("{i}.4"),
+            format!("{}", i + 1),
+        ]);
+    }
+    wrk.create("data.csv", rows.clone());
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "a", "type": "Float"},
+                {"name": "b", "type": "Float"},
+                {"name": "c", "type": "Integer"}
+            ],
+            "relationships": [{"kind": "ordered", "members": ["a", "b", "c"]}]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "3000", "--seed", "8", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // `--min-count 5` trims each range to its 5th smallest and largest values.
+    let trimmed: Vec<(f64, f64)> = (0..3)
+        .map(|c| {
+            let mut v: Vec<f64> = rows[1..].iter().map(|r| r[c].parse().unwrap()).collect();
+            v.sort_by(f64::total_cmp);
+            (v[4], v[v.len() - 5])
+        })
+        .collect();
+    for r in &got[1..] {
+        let v: Vec<f64> = r.iter().map(|s| s.parse().unwrap()).collect();
+        assert!(v[0] <= v[1] && v[1] <= v[2], "order broken: {r:?}");
+        for (c, &(lo, hi)) in trimmed.iter().enumerate() {
+            assert!(
+                lo <= v[c] && v[c] <= hi,
+                "column {c} out of {lo}..={hi}: {r:?}"
+            );
+        }
+        assert!(written_decimals(&r[0]) <= 2, "{r:?}");
+        assert!(written_decimals(&r[1]) <= 1, "{r:?}");
+        assert_eq!(written_decimals(&r[2]), 0, "{r:?}");
+    }
+}
+
+#[test]
+fn synthesize_correlated_floats_keep_source_decimals() {
+    let wrk = Workdir::new("synthesize_correlated_decimals");
+    let mut csv = String::from("x,y\n");
+    for i in 1..=40 {
+        let f = f64::from(i);
+        csv.push_str(&format!("{:.2},{:.1}\n", f * 1.13, f * 2.05 + 1.0));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        &CORRELATED_DICT.replace("\"Integer\"", "\"Float\""),
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "5", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let places = |col: usize| got[1..].iter().map(|r| written_decimals(&r[col])).max();
+    assert_eq!(places(0), Some(2), "x");
+    assert_eq!(places(1), Some(1), "y");
+}
+
+#[test]
+fn synthesize_float_decimals_are_the_same_at_any_jobs_and_from_a_model() {
+    let wrk = Workdir::new("synthesize_float_decimals_jobs_model");
+    float_decimals_fixture(&wrk);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "4", "--freq-limit", "1"])
+            .args(extra);
+        wrk.stdout::<String>(&mut cmd)
+    };
+    let j1 = run(&["-j", "1", "data.csv"]);
+    let j4 = run(&["-j", "4", "--save-model", "m.json", "data.csv"]);
+    let from_model = run(&["--model", "m.json"]);
+    assert_eq!(j1, j4, "-j 1 vs -j 4");
+    assert_eq!(j4, from_model, "fit vs --model");
+
+    // The model carries each column's places (noise: none).
+    let model = wrk.read_to_string("m.json").unwrap();
+    let decimals: Vec<serde_json::Value> = serde_json::from_str::<serde_json::Value>(&model)
+        .unwrap()["schedule"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit["Independent"]["generator"]["NumericQuantile"]["decimals"].clone())
+        .collect();
+    assert_eq!(
+        decimals,
+        [2.into(), 3.into(), serde_json::Value::Null, 1.into()]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_format_parquet_keeps_whole_number_floats_as_floats() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("synthesize_float_decimals_parquet");
+    float_decimals_fixture(&wrk);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "500", "--seed", "4", "--freq-limit", "1"])
+            .args(extra)
+            .arg("data.csv");
+        wrk.assert_success(&mut cmd);
+    };
+    run(&["--format", "parquet", "-o", "out.parquet"]);
+    run(&["-o", "out.csv"]);
+
+    let df = read_parquet(&wrk, "out.parquet");
+    let whole = df.column("whole").unwrap();
+    assert_eq!(whole.dtype(), &DataType::Float64);
+    let whole = whole.f64().unwrap();
+    let csv_rows = wrk.read_csv("out.csv");
+    assert!(
+        csv_rows.iter().any(|r| !r[3].contains('.')),
+        "the CSV should have whole-number draws"
+    );
+    for (i, row) in csv_rows.iter().enumerate() {
+        assert_eq!(whole.get(i), row[3].parse().ok(), "whole row {i}");
+    }
 }

@@ -26,10 +26,10 @@ use super::{
     dictionary::SynthRelationship,
     faker_map::{self, Locale},
     generator::{
-        ColumnGenerator, compute_null_ratio, date_buckets, effective_quantiles, numeric_buckets,
-        parse_epoch, parse_f64,
+        ColumnGenerator, compute_null_ratio, date_buckets, effective_quantiles, float_decimals,
+        floor_to, numeric_buckets, parse_epoch, parse_f64,
     },
-    group_generator::{GroupGenerator, OrderedKind},
+    group_generator::{GroupGenerator, OrderedKind, member_grid},
     report::Suppression,
 };
 use crate::{
@@ -481,6 +481,10 @@ fn resolve_ordered(
     // Per-member integer formatting — keeps an Integer column emitting integers
     // even in a mixed Integer/Float ordered group.
     let is_int: Vec<bool> = types.iter().map(|t| *t == "Integer").collect();
+    let decimals: Vec<Option<u32>> = member_cols
+        .iter()
+        .map(|&c| member_decimals(&stats[c]))
+        .collect();
 
     // Every member, not just the anchor, needs a usable range. A member whose
     // range `--min-count` emptied must stay empty, which only independent
@@ -509,20 +513,15 @@ fn resolve_ordered(
     // Members are non-decreasing, so no member may exceed any later member's
     // upper bound. Cap each upper bound by the ones after it; otherwise the
     // order floor (`max(prev)`) would push a follower past its trimmed range.
-    // Integer members are emitted rounded, so their caps are floored (in the
-    // Numeric domain) to keep the rounded value within range and in order.
-    let floor_int = |i: usize, v: f64| {
-        if kind == OrderedKind::Numeric && is_int[i] {
-            v.floor()
-        } else {
-            v
-        }
-    };
+    // Members are emitted rounded to their grid (whole numbers for Integer,
+    // source decimals for Float), so their caps are floored to that grid to
+    // keep the rounded value within range and in order.
+    let floor_grid = |i: usize, v: f64| floor_to(v, member_grid(kind, is_int[i], decimals[i]));
     if let Some(last) = member_ranges.len().checked_sub(1) {
-        member_ranges[last].1 = floor_int(last, member_ranges[last].1);
+        member_ranges[last].1 = floor_grid(last, member_ranges[last].1);
     }
     for i in (0..member_ranges.len().saturating_sub(1)).rev() {
-        member_ranges[i].1 = floor_int(i, member_ranges[i].1.min(member_ranges[i + 1].1));
+        member_ranges[i].1 = floor_grid(i, member_ranges[i].1.min(member_ranges[i + 1].1));
     }
     if let Some(i) = member_ranges.iter().position(|&(lo, hi)| hi < lo) {
         let msg = format!(
@@ -645,12 +644,23 @@ fn resolve_ordered(
         member_cols,
         kind,
         is_int,
+        decimals,
         date_format,
         anchor_buckets,
         gap_buckets,
         member_ranges,
         null_ratio,
     }))
+}
+
+/// The decimals a numeric group member's values are rounded to: its source
+/// `max_precision` for a Float column, `None` otherwise.
+fn member_decimals(stats: &StatsRecord) -> Option<u32> {
+    if stats.r#type == "Float" {
+        float_decimals(stats)
+    } else {
+        None
+    }
 }
 
 /// Classify the shared domain of an ordered group's member columns. Numeric
@@ -868,6 +878,7 @@ fn resolve_correlated(
     // non-null values without forcing nulls to co-occur.
     let mut marginals = Vec::with_capacity(kept_cols.len());
     let mut is_int = Vec::with_capacity(kept_cols.len());
+    let mut decimals = Vec::with_capacity(kept_cols.len());
     let mut null_ratios = Vec::with_capacity(kept_cols.len());
     for &col in &kept_cols {
         let sr = &stats[col];
@@ -881,6 +892,7 @@ fn resolve_correlated(
         };
         marginals.push(buckets);
         is_int.push(sr.r#type == "Integer");
+        decimals.push(member_decimals(sr));
         null_ratios.push(compute_null_ratio(sr.nullcount, params.total_rows));
     }
 
@@ -893,6 +905,7 @@ fn resolve_correlated(
         cholesky_l,
         marginals,
         is_int,
+        decimals,
         null_ratios,
     }))
 }

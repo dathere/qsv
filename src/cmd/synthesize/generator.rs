@@ -774,11 +774,20 @@ pub(crate) fn float_decimals(stats: &StatsRecord) -> Option<u32> {
 pub(crate) fn decimal_steps(value: f64, decimals: Option<u32>) -> Option<(f64, f64)> {
     // Below 2^50 the error in `value * scale` is under a quarter step, so a
     // value already on the grid rounds to itself; nearer 2^53 it can land on
-    // a half and round a step away (4.000000000000005 at 15 places).
+    // a half and round a step away (4.000000000000005 at 15 places). Whole
+    // numbers aren't scaled, so they round exactly up to 2^53, beyond which
+    // every f64 is already whole.
     const EXACT_STEPS: f64 = 1_125_899_906_842_624.0;
-    let scale = 10_f64.powi(i32::try_from(decimals?).ok()?);
+    const EXACT_WHOLE: f64 = 9_007_199_254_740_992.0;
+    let decimals = decimals?;
+    let scale = 10_f64.powi(i32::try_from(decimals).ok()?);
     let scaled = value * scale;
-    (scaled.abs() < EXACT_STEPS).then(|| (scaled.round(), scale))
+    let limit = if decimals == 0 {
+        EXACT_WHOLE
+    } else {
+        EXACT_STEPS
+    };
+    (scaled.abs() < limit).then(|| (scaled.round(), scale))
 }
 
 /// Round `value` to `decimals` places (no-op for `None`), never returning
@@ -1353,6 +1362,11 @@ mod tests {
             round_to(0.123_456_789_012_345, Some(15)),
             0.123_456_789_012_345
         );
+        // Whole numbers round exactly all the way to 2^53, so an Integer
+        // member's cap and value stay whole above the decimal cutoff.
+        let big = 1_125_899_906_842_624.75;
+        assert_eq!(floor_to(big, Some(0)), 1_125_899_906_842_624.0);
+        assert_eq!(round_at_least(big, big, Some(0)), 1_125_899_906_842_625.0);
 
         // A cap is floored to the grid, never rounded past the real bound.
         assert_eq!(floor_to(10.47, Some(1)), 10.4);

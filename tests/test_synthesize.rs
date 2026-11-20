@@ -4203,7 +4203,8 @@ fn synthesize_quantiles_cap_thin_buckets_at_min_count() {
     }
     wrk.create_from_string("data.csv", &csv);
 
-    // 60 values at the default --min-count 5 hold at most 12 buckets: 100 → 10.
+    // Every bucket must hold MORE than --min-count values. 60 at the default 5:
+    // 10 buckets of 6 fit, so 100 → 10. At 1: 50 buckets of 1 don't, 25 of 2 do.
     let mut cmd = wrk.command("synthesize");
     cmd.args(["-n", "10", "--quantiles", "100", "--save-model", "m.json"])
         .arg("data.csv");
@@ -4219,7 +4220,7 @@ fn synthesize_quantiles_cap_thin_buckets_at_min_count() {
     wrk.output(&mut cmd);
     assert_eq!(
         model_bucket_counts(&wrk.read_to_string("m1.json").unwrap()),
-        [50]
+        [25]
     );
 }
 
@@ -4275,4 +4276,35 @@ fn synthesize_quantiles_reproduce_tied_values() {
             "column {col}: low-value share {low}"
         );
     }
+}
+
+#[test]
+fn synthesize_quantiles_keep_small_float_precision() {
+    let wrk = Workdir::new("synthesize_quantiles_precision");
+    // 100 distinct values from 1e-7 to 1e-5: rounded to stats' default 4
+    // places every percentile would read 0, collapsing the buckets.
+    let mut csv = String::from("v\n");
+    for i in 1..=100 {
+        csv.push_str(&format!("{:e}\n", f64::from(i) * 1e-7));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "2000",
+        "--seed",
+        "1",
+        "--quantiles",
+        "10",
+        "--freq-limit",
+        "1",
+    ])
+    .args(["--min-count", "1", "data.csv"]);
+    let v = sorted_column(&wrk.stdout::<String>(&mut cmd), 0);
+    let median = v[v.len() / 2];
+    assert!(
+        (median / 5e-6 - 1.0).abs() < 0.15,
+        "median {median} should be near 5e-6"
+    );
 }

@@ -738,16 +738,25 @@ fn gap_buckets_from_samples(
         return None;
     }
     let (lo, hi) = (samples[k - 1], samples[n - k]);
-    let buckets = effective_quantiles(quantiles, n as u64, min_count).unwrap_or(4);
+    let fine = effective_quantiles(quantiles, n as u64, min_count);
+    let buckets = fine.unwrap_or(4);
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)].clamp(lo, hi);
-    #[allow(clippy::cast_precision_loss)]
+    let at = |i: usize| {
+        let idx = if fine.is_some() {
+            // Nearest rank, as `stats --percentiles` cuts the column marginals:
+            // ceil(n * i / buckets) - 1, zero-based.
+            (n * i).div_ceil(buckets) - 1
+        } else {
+            (n as f64 * (i as f64 / buckets as f64)) as usize
+        };
+        samples[idx.min(n - 1)].clamp(lo, hi)
+    };
     let mut bounds: Vec<f64> = std::iter::once(lo)
-        .chain((1..buckets).map(|i| at(i as f64 / buckets as f64)))
+        .chain((1..buckets).map(at))
         .chain(std::iter::once(hi))
         .collect();
     // Clamping a sorted sequence to >= 0 keeps it sorted.
@@ -1089,12 +1098,20 @@ mod tests {
         let samples: Vec<f64> = (0..1000).map(f64::from).collect();
         let tenths = gap_buckets_from_samples(samples.clone(), 1, 10).unwrap();
         assert_eq!(tenths.len(), 10);
-        assert_eq!(tenths[0], (0.0, 100.0));
-        assert_eq!(tenths[9], (900.0, 999.0));
-        // 1000 gaps at k=200 hold 5 buckets of 100 → capped from 100 to 5.
+        // Nearest rank: the 10th percentile of 0..1000 is the 100th value, 99.
+        assert_eq!(tenths[0], (0.0, 99.0));
+        assert_eq!(tenths[9], (899.0, 999.0));
+        // 1000 gaps at k=199 hold 5 buckets of 200 (> k) → capped from 100 to 5.
         assert_eq!(
-            gap_buckets_from_samples(samples, 200, 100).unwrap().len(),
+            gap_buckets_from_samples(samples, 199, 100).unwrap().len(),
             5
+        );
+
+        // An exact-rank median keeps the zero-gap half as its own bucket.
+        let halves: Vec<f64> = (0..100).map(|i| if i < 50 { 0.0 } else { 100.0 }).collect();
+        assert_eq!(
+            gap_buckets_from_samples(halves, 1, 2).unwrap(),
+            vec![(0.0, 0.0), (0.0, 100.0)]
         );
         assert!(gap_buckets_from_samples(vec![40.0], 1, 4).is_some());
     }

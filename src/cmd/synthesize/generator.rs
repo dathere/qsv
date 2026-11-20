@@ -825,9 +825,12 @@ pub(crate) const QUANTILE_CHOICES: [usize; 8] = [2, 4, 5, 10, 20, 25, 50, 100];
 
 /// The bucket count a column of `values` non-null values gets for
 /// `--quantiles requested`: the largest choice dividing `requested` that leaves
-/// every bucket at least `min_count` values. Nearest-rank edges are real source
-/// values, so a thinner bucket could pin a value seen fewer than `min_count`
-/// times. `None` = keep the default quartiles (also when nothing qualifies).
+/// every bucket MORE than `min_count` values. Nearest-rank edges are real
+/// source values, and the range ends are already trimmed to the k-th smallest
+/// and largest values: with exactly k per bucket the first edge lands on the
+/// trimmed minimum, and that zero-width bucket would emit a value seen once for
+/// a whole bucket's share. `None` = keep the default quartiles (also when
+/// nothing qualifies).
 pub(crate) fn effective_quantiles(requested: usize, values: u64, min_count: u64) -> Option<usize> {
     if requested == 4 {
         return None;
@@ -836,7 +839,7 @@ pub(crate) fn effective_quantiles(requested: usize, values: u64, min_count: u64)
         .iter()
         .rev()
         .copied()
-        .find(|&d| requested.is_multiple_of(d) && values / d as u64 >= min_count.max(1))
+        .find(|&d| requested.is_multiple_of(d) && values / d as u64 > min_count.max(1))
         .filter(|&d| d != 4)
 }
 
@@ -884,6 +887,9 @@ pub(crate) fn apply_quantiles(
         return Ok(());
     }
     let sep = crate::cmd::stats::stats_separator_from_env();
+    let requested_labels: Vec<String> = (1..requested)
+        .map(|i| (100 * i / requested).to_string())
+        .collect();
     for sr in records.iter_mut() {
         if !matches!(
             sr.r#type.as_str(),
@@ -898,12 +904,7 @@ pub(crate) fn apply_quantiles(
         let Some(cell) = sr.addl_cols.get("percentiles").filter(|c| !c.is_empty()) else {
             continue;
         };
-        // Each item is "<pct>: <value>"; a DateTime value has colons of its
-        // own, so split on the first ": " only.
-        let by_label: HashMap<&str, &str> = cell
-            .split(sep.as_str())
-            .filter_map(|item| item.split_once(": "))
-            .collect();
+        let by_label = parse_percentiles(cell, &sep, &requested_labels);
         let mut edges = Vec::with_capacity(n - 1);
         for i in 1..n {
             let label = (100 * i / n).to_string();
@@ -919,6 +920,41 @@ pub(crate) fn apply_quantiles(
         sr.addl_cols.insert(QUANTILE_EDGES_KEY.to_string(), joined);
     }
     Ok(())
+}
+
+/// Parse a `stats --percentiles` cell, `<l1>: <v1><sep><l2>: <v2>…`, for the
+/// percentile `labels` requested, in order. Each value ends where the next
+/// `<sep><label>: ` begins, so a separator that also occurs inside values
+/// (`QSV_STATS_SEPARATOR=-` with ISO dates) or a `DateTime` value's own colons can't
+/// split a value. Stops at the first label it can't find.
+fn parse_percentiles<'a>(
+    cell: &'a str,
+    sep: &str,
+    labels: &'a [String],
+) -> HashMap<&'a str, &'a str> {
+    let mut out = HashMap::with_capacity(labels.len());
+    let Some(first) = labels.first() else {
+        return out;
+    };
+    let Some(mut rest) = cell.strip_prefix(&format!("{first}: ")) else {
+        return out;
+    };
+    for (i, label) in labels.iter().enumerate() {
+        match labels.get(i + 1) {
+            Some(next) => {
+                let marker = format!("{sep}{next}: ");
+                let Some(pos) = rest.find(&marker) else {
+                    break;
+                };
+                out.insert(label.as_str(), &rest[..pos]);
+                rest = &rest[pos + marker.len()..];
+            },
+            None => {
+                out.insert(label.as_str(), rest);
+            },
+        }
+    }
+    out
 }
 
 /// Build a boolean generator, deriving the true/false ratio from the frequency
@@ -1099,9 +1135,12 @@ mod tests {
         assert_eq!(effective_quantiles(20, 60, 5), Some(10));
         // 25's only smaller choice is 5.
         assert_eq!(effective_quantiles(25, 60, 5), Some(5));
-        // Nothing qualifies, or the cap lands on 4 → the quartiles.
+        // More than k per bucket: 60 values at k=6 can't hold 10 (6 each) → 5.
+        assert_eq!(effective_quantiles(100, 60, 6), Some(5));
+        // Nothing qualifies → the quartiles; 20 at k=5 skips 4 (5 each) for 2.
         assert_eq!(effective_quantiles(100, 8, 5), None);
-        assert_eq!(effective_quantiles(100, 20, 5), None);
+        assert_eq!(effective_quantiles(100, 20, 5), Some(2));
+        assert_eq!(effective_quantiles(20, 11, 5), None);
         assert_eq!(effective_quantiles(10, 4, 0), Some(2));
     }
 
@@ -1173,6 +1212,25 @@ mod tests {
             &[("percentiles", "20: 1|40: 2")],
         )];
         assert!(apply_quantiles(&mut short, 5, 100, 5).is_err());
+    }
+
+    #[test]
+    fn parse_percentiles_splits_on_labels_not_every_separator() {
+        let labels: Vec<String> = ["25", "50", "75"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let cell = "25: 2020-01-02-50: 2020-06-30-75: 2021-01-01T10:00:00+00:00";
+        let got = parse_percentiles(cell, "-", &labels);
+        assert_eq!(got["25"], "2020-01-02");
+        assert_eq!(got["50"], "2020-06-30");
+        assert_eq!(got["75"], "2021-01-01T10:00:00+00:00");
+        // A missing label stops the parse, so the caller reports it.
+        let got = parse_percentiles("25: 1|75: 3", "|", &labels);
+        assert!(
+            !got.contains_key("25") && !got.contains_key("75"),
+            "{got:?}"
+        );
     }
 
     #[test]

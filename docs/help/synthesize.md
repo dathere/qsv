@@ -19,8 +19,9 @@ fake data that reproduce the source's per-column attributes:
 * Categorical / low-cardinality columns are reproduced by frequency-weighted
 sampling of their *real* value set — cardinality, weights and repetition
 structure are preserved, minus values rarer than the --min-count.
-* Numeric and date/datetime columns are reproduced with quartile buckets, so
-the shape of the distribution (not just its [min,max] range) is preserved.
+* Numeric and date/datetime columns are reproduced with quantile buckets
+(quartiles by default, see --quantiles), so the shape of the distribution
+(not just its [min,max] range) is preserved.
 The range ends are trimmed by the --min-count (see below).
 * Null ratios are reproduced per column.
 
@@ -89,14 +90,14 @@ city/zip/age combination) seen at least --min-count times.
 * Numeric and date ranges are trimmed so that at least --min-count rows
 lie at or beyond each end (the k-th smallest and k-th largest values),
 so a lone outlier no longer sets the range. The ends are themselves real
-values, and values inside the range are drawn uniformly per quartile, so
+values, and values inside the range are drawn uniformly per bucket, so
 integers and dates can still land exactly on real values. With
 the --min-count at 1 the range is the real min and max, and an outlier
 can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
 A model saved with --save-model holds real values from <input>, such as
-enumerated values, quartile boundaries and range ends, including some the
+enumerated values, bucket boundaries and range ends, including some the
 output never shows. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
@@ -221,7 +222,7 @@ qsv synthesize --help
 | &nbsp;`‑‑model`&nbsp; | string | Generate from a model saved with --save-model instead of profiling an input, which must then be omitted. The model fixes everything fitted from the input, so options that shape the fit or read the input are refused when they have no default (for example the --dictionary, --stats-options, the --report and --delimiter options) and ignored when they do (for example the --locale, the --min-count and the frequency limit). |  |
 | &nbsp;`‑‑locale`&nbsp; | string | Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data. | `en` |
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
-| &nbsp;`‑‑quantiles`&nbsp; | integer | Number of equal-share buckets that reproduce the shape of numeric and date columns: 2, 4, 5, 10, 20, 25, 50 or 100. More buckets keep skewed and long-tailed columns closer to the source. 4 (the default) cuts at the source quartiles; other values cut at `stats --percentiles` (real source values). A column with too few non-null values for every bucket to hold <k> of them (see the --min-count option) gets fewer buckets, or the quartiles. Also applies to the gaps of `ordered` relationships. |  |
+| &nbsp;`‑‑quantiles`&nbsp; | integer | Number of equal-share buckets that reproduce the shape of numeric and date columns: 2, 4, 5, 10, 20, 25, 50 or 100. More buckets keep skewed and long-tailed columns closer to the source. 4 (the default) cuts at the source quartiles; other values cut at `stats --percentiles` (real source values). A column with too few non-null values for every bucket to hold more than <k> of them (<k> is set by the --min-count option) gets fewer buckets, or the quartiles. Also applies to the gaps of `ordered` relationships. |  |
 | &nbsp;`‑‑min‑count`&nbsp; | integer | Privacy threshold. A real value of an enumerated column, or a real `joint` value-tuple, that occurs fewer than <k> times in <input> is dropped from the values it samples; its share is redistributed over the kept values. An enumerated column whose values are all below <k> falls back to its faker or type-based generator (numeric and date columns to their trimmed range), and a joint group to independent columns, or aborts under the --strict-relationships option. A warning is printed when either happens. 1 disables suppression. Counts are of rows, not people: where one person has many rows (transactions, visits, logs), one person's value can pass <k> alone. Raise <k>, or dedupe to one row per person first. Numeric and date ranges, and the gaps of `ordered` relationships, are also trimmed to their k-th smallest and k-th largest values (one extra pass over <input>). A numeric or date column with fewer than 2k-1 non-null values is left empty unless its real values are sampled. | `5` |
 | &nbsp;`‑‑report`&nbsp; | string | Write a JSON report of what the run reproduced from <input>: source and synthetic row counts, how many synthetic rows exactly match a source row (numbers and dates compared by value, other columns as text), and the values and joint tuples dropped by the --min-count option. Takes one extra pass over <input> and holds a hash per distinct source row in memory. A row with a float, free-text or faker column rarely matches exactly, so a low match rate does not by itself show that the output is private. A joint group that falls back to independent columns is listed, and so is each of its columns that also drops values, so suppressed rows can be counted more than once. Must not be the input, dictionary or output file. |  |
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. Column selection (--select/-s) and --weight are rejected; run `qsv select` on <input> first. |  |

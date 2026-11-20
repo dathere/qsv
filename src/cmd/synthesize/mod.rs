@@ -7,8 +7,9 @@ fake data that reproduce the source's per-column attributes:
   * Categorical / low-cardinality columns are reproduced by frequency-weighted
     sampling of their *real* value set — cardinality, weights and repetition
     structure are preserved, minus values rarer than the --min-count.
-  * Numeric and date/datetime columns are reproduced with quartile buckets, so
-    the shape of the distribution (not just its [min,max] range) is preserved.
+  * Numeric and date/datetime columns are reproduced with quantile buckets
+    (quartiles by default, see --quantiles), so the shape of the distribution
+    (not just its [min,max] range) is preserved.
     The range ends are trimmed by the --min-count (see below).
   * Null ratios are reproduced per column.
 
@@ -77,14 +78,14 @@ not stop it:
   * Numeric and date ranges are trimmed so that at least --min-count rows
     lie at or beyond each end (the k-th smallest and k-th largest values),
     so a lone outlier no longer sets the range. The ends are themselves real
-    values, and values inside the range are drawn uniformly per quartile, so
+    values, and values inside the range are drawn uniformly per bucket, so
     integers and dates can still land exactly on real values. With
     the --min-count at 1 the range is the real min and max, and an outlier
     can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
 A model saved with --save-model holds real values from <input>, such as
-enumerated values, quartile boundaries and range ends, including some the
+enumerated values, bucket boundaries and range ends, including some the
 output never shows. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
@@ -246,8 +247,9 @@ synthesize options:
                            default) cuts at the source quartiles; other values
                            cut at `stats --percentiles` (real source values).
                            A column with too few non-null values for every
-                           bucket to hold <k> of them (see the --min-count
-                           option) gets fewer buckets, or the quartiles.
+                           bucket to hold more than <k> of them (<k> is set
+                           by the --min-count option) gets fewer buckets, or
+                           the quartiles.
                            Also applies to the gaps of `ordered` relationships.
     --min-count <k>        Privacy threshold. A real value of an enumerated
                            column, or a real `joint` value-tuple, that occurs
@@ -802,6 +804,16 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         stats_args.push("--percentiles".to_string());
         stats_args.push("--percentile-list".to_string());
         stats_args.push(list.join(","));
+        // Edges are fitted values, not display output: rounding to the default
+        // 4 places collapses small-magnitude floats onto one edge.
+        let user_round = args
+            .flag_stats_options
+            .as_deref()
+            .is_some_and(|o| o.split_whitespace().any(|t| t.starts_with("--round")));
+        if !user_round {
+            stats_args.push("--round".to_string());
+            stats_args.push("9999".to_string());
+        }
     }
     stats_args.extend(analysis_common_args.iter().cloned());
     if let Some(ref opts) = args.flag_stats_options {

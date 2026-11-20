@@ -817,16 +817,17 @@ export async function tryDuckDbExecution(
     return null; // Fall through to sqlp
   }
 
-  // With SQL file writes off (plugin mode), refuse here rather than fall back: sqlp would
-  // refuse it too (QSV_SQL_DISABLE_FILE_WRITES), and DuckDB would write the file.
+  // With SQL file writes off (plugin mode), SQL that may write files never reaches DuckDB.
+  // The check over-matches (a column named "export" trips it), so fall back to sqlp rather
+  // than fail: Polars runs under QSV_SQL_DISABLE_FILE_WRITES=1 and refuses a real COPY TO.
   if (!config.sqlFileWrites) {
     const kind = findFileWritingStatement(sql);
     if (kind) {
-      return errorResult(
-        `SQL that writes files itself (${kind}) is disabled in this MCP server ` +
-        `(plugin mode). Use output_file to save query results instead. ` +
-        `Set QSV_MCP_SQL_FILE_WRITES=true to allow it.`,
+      console.error(
+        `[MCP Tools] DuckDB: SQL file writes are disabled and the query may contain ${kind}; ` +
+        `running it with sqlp instead`,
       );
+      return null;
     }
   }
 

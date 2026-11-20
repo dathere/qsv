@@ -900,7 +900,7 @@ export const config = {
    * The query, not output_file, picks the target, so this is off in plugin mode
    * (Cowork / Claude Code plugin) and on elsewhere. Override with QSV_MCP_SQL_FILE_WRITES.
    * When off, qsv children get QSV_SQL_DISABLE_FILE_WRITES=1 (see applySqlFileWritePolicy)
-   * and the DuckDB route rejects such statements.
+   * and the DuckDB route hands SQL that may contain them to sqlp instead.
    */
   sqlFileWrites: getOptionalBooleanEnv("QSV_MCP_SQL_FILE_WRITES") ?? !isPluginMode(),
 

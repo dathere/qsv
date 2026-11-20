@@ -7766,8 +7766,10 @@ fn sqlp_copy_to_disabled_envvar_survives_dotenv() {
     wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=0\n");
     let out = wrk.path("copied.csv");
 
+    // QSV_DOTENV_PATH (e.g. <NONE>) would skip the .env this test depends on
     let mut cmd = wrk.command("sqlp");
-    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+    cmd.env_remove("QSV_DOTENV_PATH")
+        .env("QSV_SQL_DISABLE_FILE_WRITES", "1")
         .arg("t.csv")
         .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
     let stderr = wrk.output_stderr(&mut cmd);
@@ -7780,7 +7782,9 @@ fn sqlp_copy_to_disabled_envvar_survives_dotenv() {
     // set in .env alone, it still turns writes off
     wrk.create_from_string(".env", "QSV_SQL_DISABLE_FILE_WRITES=1\n");
     let mut cmd = wrk.command("sqlp");
-    cmd.arg("t.csv")
+    cmd.env_remove("QSV_DOTENV_PATH")
+        .env_remove("QSV_SQL_DISABLE_FILE_WRITES")
+        .arg("t.csv")
         .arg(format!("COPY (SELECT name FROM t) TO '{}'", out.display()));
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(

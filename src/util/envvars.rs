@@ -75,15 +75,21 @@ pub fn transform(bs: &[u8], casei: bool) -> ByteString {
     }
 }
 
-/// `QSV_SQL_DISABLE_FILE_WRITES` as the process started, before `load_dotenv` could override
-/// it. See `new_sql_context`.
-#[cfg(feature = "polars")]
-static SQL_WRITES_DISABLED_BEFORE_DOTENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-
 pub fn load_dotenv() -> CliResult<()> {
-    #[cfg(feature = "polars")]
-    let _ = SQL_WRITES_DISABLED_BEFORE_DOTENV.set(get_envvar_flag("QSV_SQL_DISABLE_FILE_WRITES"));
+    // The .env loaders below override the environment. QSV_SQL_DISABLE_FILE_WRITES, set by
+    // the process's parent (the qsv MCP server in plugin mode), is a restriction a .env file
+    // may add but not lift, for this process and the qsv subprocesses it spawns.
+    let sql_writes_disabled = get_envvar_flag("QSV_SQL_DISABLE_FILE_WRITES");
+    let result = load_dotenv_files();
+    if sql_writes_disabled {
+        // safety: called once from main at startup, before qsv starts any thread that reads
+        // the environment (as with the other startup set_var calls)
+        unsafe { std::env::set_var("QSV_SQL_DISABLE_FILE_WRITES", "1") };
+    }
+    result
+}
 
+fn load_dotenv_files() -> CliResult<()> {
     // First, check if there is a QSV_DOTENV_PATH environment variable set
     // if there is, use that as the .env file.
     // Second, use the default .env file in the current directory.
@@ -199,17 +205,11 @@ pub fn get_envvar_flag(key: &str) -> bool {
 /// by default. Setting `QSV_SQL_DISABLE_FILE_WRITES` turns that off. The qsv MCP server
 /// sets it in plugin mode, where the SQL is model-written and the write target is chosen by
 /// the query rather than by `--output`. Reading files (`read_csv` etc.) is unaffected.
-///
-/// A `.env` file can turn the switch on, but not off: if the process started with it set,
-/// it stays set whatever `load_dotenv` (which overrides) put there.
+/// A `.env` file can turn the switch on, but not off (see `load_dotenv`).
 #[cfg(feature = "polars")]
 pub fn new_sql_context() -> polars::sql::SQLContext {
     let ctx = polars::sql::SQLContext::new();
-    let set_before_dotenv = SQL_WRITES_DISABLED_BEFORE_DOTENV
-        .get()
-        .copied()
-        .unwrap_or(false);
-    if set_before_dotenv || get_envvar_flag("QSV_SQL_DISABLE_FILE_WRITES") {
+    if get_envvar_flag("QSV_SQL_DISABLE_FILE_WRITES") {
         ctx.with_file_writes(false)
             .with_file_writes_disabled_by("QSV_SQL_DISABLE_FILE_WRITES")
     } else {

@@ -353,16 +353,21 @@ enum JointLearn {
     AllSuppressed(usize, u64),
 }
 
-/// The source cell for stats record `col`, mapped by header name rather than
-/// stats-record position. Empty when the record has no source column.
-fn source_cell<'r>(record: &'r csv::StringRecord, params: &ScheduleParams, col: usize) -> &'r str {
-    params
-        .source_cols
-        .get(col)
-        .copied()
-        .flatten()
-        .and_then(|src| record.get(src))
-        .unwrap_or_default()
+fn source_cell<'r>(
+    record: &'r csv::ByteRecord,
+    params: &ScheduleParams,
+    col: usize,
+) -> std::borrow::Cow<'r, str> {
+    // Lossily, as `stats`/`frequency` report the column's values.
+    String::from_utf8_lossy(
+        params
+            .source_cols
+            .get(col)
+            .copied()
+            .flatten()
+            .and_then(|src| record.get(src))
+            .unwrap_or_default(),
+    )
 }
 
 /// Stream the source CSV once, counting the distinct value-tuples formed by the
@@ -375,8 +380,8 @@ fn learn_joint_tuples(col_indices: &[usize], params: &ScheduleParams) -> CliResu
 
     let cap = params.joint_cardinality_cap;
     let mut counts: IndexMap<Vec<String>, u64> = IndexMap::new();
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
         let tuple: Vec<String> = col_indices
             .iter()
             .map(|&i| source_cell(&record, params, i).to_string())
@@ -718,16 +723,16 @@ fn learn_ordered_gaps(
     let is_date = matches!(kind, OrderedKind::Date | OrderedKind::DateTime);
     let is_datetime = kind == OrderedKind::DateTime;
 
-    let mut record = csv::StringRecord::new();
+    let mut record = csv::ByteRecord::new();
     let mut values: Vec<Option<f64>> = vec![None; member_cols.len()];
-    while rdr.read_record(&mut record)? {
+    while rdr.read_byte_record(&mut record)? {
         for (slot, &col) in values.iter_mut().zip(member_cols) {
             let cell = source_cell(&record, params, col);
             *slot = if is_date {
                 #[allow(clippy::cast_precision_loss)]
-                parse_epoch(cell, is_datetime).map(|e| e as f64)
+                parse_epoch(&cell, is_datetime).map(|e| e as f64)
             } else {
-                parse_f64(cell)
+                parse_f64(&cell)
             };
         }
         for (i, pair_gaps) in gaps.iter_mut().enumerate() {
@@ -926,12 +931,12 @@ fn learn_correlated_columns(
 
     let k = member_cols.len();
     let mut columns: Vec<Vec<f64>> = vec![Vec::new(); k];
-    let mut record = csv::StringRecord::new();
+    let mut record = csv::ByteRecord::new();
     let mut rowvals: Vec<f64> = Vec::with_capacity(k);
-    while rdr.read_record(&mut record)? {
+    while rdr.read_byte_record(&mut record)? {
         rowvals.clear();
         for &col in member_cols {
-            match parse_f64(source_cell(&record, params, col)) {
+            match parse_f64(&source_cell(&record, params, col)) {
                 Some(v) => rowvals.push(v),
                 None => break,
             }

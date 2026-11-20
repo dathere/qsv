@@ -887,7 +887,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     class_freq_args.extend(class_common_args);
     freq_args.extend(analysis_common_args.iter().cloned());
     let freq_args_ref: Vec<&str> = freq_args.iter().map(String::as_str).collect();
-    let (freq_csv, freq_err) = util::run_qsv_cmd(
+    let (freq_csv, freq_err) = util::run_qsv_cmd_lossy(
         "frequency",
         &freq_args_ref,
         input_path,
@@ -925,7 +925,13 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     // Stats records are not positional (`--stats-options` can `--select` or
     // reorder), so every pass that reads source cells maps by header name.
     let source_config = Config::new(args.arg_input.as_ref()).delimiter(args.flag_delimiter);
-    let source_headers = source_config.reader()?.headers()?.clone();
+    // Lossily, as `stats` writes the names it reports.
+    let source_headers: csv::StringRecord = source_config
+        .reader()?
+        .byte_headers()?
+        .iter()
+        .map(String::from_utf8_lossy)
+        .collect();
     let source_cols = range_trim::source_column_indices(
         &stats_records,
         &source_headers,
@@ -1240,7 +1246,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
         )?;
         eprint!("{stats_err}");
         let freq_args: Vec<&str> = tf.freq_args.iter().map(String::as_str).collect();
-        let (freq_csv, freq_err) = util::run_qsv_cmd(
+        let (freq_csv, freq_err) = util::run_qsv_cmd_lossy(
             "frequency",
             &freq_args,
             &path,

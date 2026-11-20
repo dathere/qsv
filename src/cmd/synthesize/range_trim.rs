@@ -234,11 +234,14 @@ pub(crate) fn trim_range_bounds(
     let k = usize::try_from(min_count).unwrap_or(usize::MAX);
     let mut extremes: Vec<Extremes> = targets.iter().map(|_| Extremes::new(k)).collect();
 
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
+    // Byte records: a non-UTF8 cell elsewhere in the row mustn't fail the pass,
+    // and one in a trimmed column is no number or date.
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
         for ((_, src_idx, kind), ext) in targets.iter().zip(extremes.iter_mut()) {
             if let Some(v) = record
                 .get(*src_idx)
+                .and_then(|raw| std::str::from_utf8(raw).ok())
                 .and_then(|raw| kind.key(raw, prefer_dmy))
             {
                 ext.add(v);

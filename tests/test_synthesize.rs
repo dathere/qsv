@@ -4754,6 +4754,76 @@ fn synthesize_target_drops_itself_from_relationships() {
 }
 
 #[test]
+fn synthesize_reads_non_utf8_input() {
+    let wrk = Workdir::new("synthesize_non_utf8");
+    // Non-UTF8 cells in a plain string column and in a joint member, next to
+    // range-trimmed, ordered and correlated columns: every pass over the
+    // source (range trimming, each relationship's, `frequency`'s output) must
+    // read them, writing invalid bytes as U+FFFD as `stats` does. (`stats`
+    // itself refuses a non-UTF8 header.)
+    let mut data = b"name,region,kind,start,end,x,y\n".to_vec();
+    for i in 0..200_u32 {
+        let region: &[u8] = if i % 2 == 0 { b"north\xfe" } else { b"south" };
+        data.extend_from_slice(format!("n{}", i % 10).as_bytes());
+        data.extend_from_slice(b"\xff,");
+        data.extend_from_slice(region);
+        data.extend_from_slice(
+            format!(",k{},{i},{},{i},{}\n", i % 3, i + 5 + i % 7, 2 * i + i % 3).as_bytes(),
+        );
+    }
+    std::fs::write(wrk.path("data.csv"), data).unwrap();
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [
+            {"kind": "ordered", "members": ["start", "end"]},
+            {"kind": "correlated", "members": ["x", "y"]},
+            {"kind": "joint", "members": ["region", "kind"]}
+        ]}"#,
+    );
+    for target in [None, Some("region")] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "300", "--seed", "5", "--strict-relationships"])
+            .arg("--dictionary")
+            .arg(wrk.path("dict.json"))
+            .arg("data.csv");
+        if let Some(target) = target {
+            cmd.args(["--target", target]);
+        }
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(
+            got[0],
+            ["name", "region", "kind", "start", "end", "x", "y"],
+            "{target:?}"
+        );
+        assert_eq!(got.len(), 301, "{target:?}");
+        let mut regions = std::collections::HashSet::new();
+        for row in &got[1..] {
+            regions.insert(row[1].as_str());
+            let (start, end): (f64, f64) = (row[3].parse().unwrap(), row[4].parse().unwrap());
+            assert!(start <= end, "{target:?}: {row:?}");
+        }
+        assert_eq!(
+            regions,
+            std::collections::HashSet::from(["north\u{fffd}", "south"]),
+            "{target:?}"
+        );
+    }
+
+    // Headerless, the first row is read where a header would be.
+    let mut data = b"x\xff,1\n".to_vec();
+    for i in 2..30 {
+        data.extend_from_slice(format!("y{},{i}\n", i % 3).as_bytes());
+    }
+    std::fs::write(wrk.path("headerless.csv"), data).unwrap();
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args(["-n", "50", "--seed", "5"])
+        .arg("headerless.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 51);
+}
+
+#[test]
 fn synthesize_target_strict_relationships_abort_on_a_thin_class() {
     let wrk = Workdir::new("synthesize_target_strict");
     // Class "b" has 6 rows of distinct (city, zip) tuples, all below

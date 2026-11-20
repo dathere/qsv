@@ -2593,7 +2593,9 @@ fn synthesize_report_keeps_large_ints_and_subseconds_distinct() {
     }
 }
 
-/// A cell that is not UTF-8 is hashed as bytes instead of failing the run.
+/// A cell that is not UTF-8 is hashed as its decoded text (U+FFFD for each
+/// invalid sequence, as synthetic copies are written) instead of failing the
+/// run.
 #[test]
 fn synthesize_report_accepts_non_utf8_source() {
     let wrk = Workdir::new("synthesize_report_non_utf8");

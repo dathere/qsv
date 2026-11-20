@@ -7,8 +7,9 @@ fake data that reproduce the source's per-column attributes:
   * Categorical / low-cardinality columns are reproduced by frequency-weighted
     sampling of their *real* value set — cardinality, weights and repetition
     structure are preserved, minus values rarer than the --min-count.
-  * Numeric and date/datetime columns are reproduced with quartile buckets, so
-    the shape of the distribution (not just its [min,max] range) is preserved.
+  * Numeric and date/datetime columns are reproduced with quantile buckets
+    (quartiles by default, see --quantiles), so the shape of the distribution
+    (not just its [min,max] range) is preserved.
     The range ends are trimmed by the --min-count (see below).
   * Null ratios are reproduced per column.
 
@@ -77,14 +78,14 @@ not stop it:
   * Numeric and date ranges are trimmed so that at least --min-count rows
     lie at or beyond each end (the k-th smallest and k-th largest values),
     so a lone outlier no longer sets the range. The ends are themselves real
-    values, and values inside the range are drawn uniformly per quartile, so
+    values, and values inside the range are drawn uniformly per bucket, so
     integers and dates can still land exactly on real values. With
     the --min-count at 1 the range is the real min and max, and an outlier
     can reappear at or near its real value.
 
 Review the output before sharing it, or training on it, as de-identified data.
 A model saved with --save-model holds real values from <input>, such as
-enumerated values, quartile boundaries and range ends, including some the
+enumerated values, bucket boundaries and range ends, including some the
 output never shows. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
@@ -239,6 +240,17 @@ synthesize options:
                            is fully captured within this limit; higher values
                            reproduce more columns verbatim. 0 means unlimited.
                            [default: 100]
+    --quantiles <n>        Number of equal-share buckets that reproduce the
+                           shape of numeric and date columns: 2, 4, 5, 10,
+                           20, 25, 50 or 100. More buckets keep skewed and
+                           long-tailed columns closer to the source. 4 (the
+                           default) cuts at the source quartiles; other values
+                           cut at `stats --percentiles` (real source values).
+                           A column with too few non-null values for every
+                           bucket to hold more than <k> of them (<k> is set
+                           by the --min-count option) gets fewer buckets, or
+                           the quartiles.
+                           Also applies to the gaps of `ordered` relationships.
     --min-count <k>        Privacy threshold. A real value of an enumerated
                            column, or a real `joint` value-tuple, that occurs
                            fewer than <k> times in <input> is dropped from the
@@ -362,6 +374,7 @@ struct Args {
     flag_format:                String,
     flag_locale:                String,
     flag_freq_limit:            usize,
+    flag_quantiles:             Option<usize>,
     flag_stats_options:         Option<String>,
     flag_consistent_fakes:      bool,
     flag_no_relationships:      bool,
@@ -380,6 +393,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     if args.flag_rows == 0 {
         return fail_incorrectusage_clierror!("--rows must be greater than 0.");
+    }
+    if let Some(q) = args.flag_quantiles
+        && !generator::QUANTILE_CHOICES.contains(&q)
+    {
+        return fail_incorrectusage_clierror!(
+            "--quantiles must be one of 2, 4, 5, 10, 20, 25, 50 or 100 (a divisor of 100), got \
+             {q}."
+        );
     }
     let shard = match args.flag_shard.as_deref() {
         Some(_) if args.flag_seed.is_none() => {
@@ -454,6 +475,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             (args.flag_save_model.is_some(), "--save-model"),
             (args.flag_report.is_some(), "--report"),
             (args.flag_delimiter.is_some(), "--delimiter"),
+            (args.flag_quantiles.is_some(), "--quantiles"),
         ];
         if let Some((_, name)) = fit_only.iter().find(|(set, _)| *set) {
             return fail_incorrectusage_clierror!(
@@ -718,6 +740,18 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
             );
         }
     }
+    let quantiles = args.flag_quantiles.unwrap_or(4);
+    if quantiles != 4
+        && let Some(bad) = args.flag_stats_options.as_deref().and_then(|opts| {
+            opts.split_whitespace()
+                .find(|t| t.starts_with("--percentiles") || t.starts_with("--percentile-list"))
+        })
+    {
+        return fail_incorrectusage_clierror!(
+            "--stats-options may not include '{bad}' with --quantiles: synthesize sets the \
+             percentiles itself."
+        );
+    }
 
     // Docopt requires <input> whenever --model is absent.
     let input_path = args.arg_input.as_deref().unwrap_or_default();
@@ -763,6 +797,24 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         "--quartiles".to_string(),
         "--infer-dates".to_string(),
     ];
+    if quantiles != 4 {
+        let list: Vec<String> = (1..quantiles)
+            .map(|i| (100 * i / quantiles).to_string())
+            .collect();
+        stats_args.push("--percentiles".to_string());
+        stats_args.push("--percentile-list".to_string());
+        stats_args.push(list.join(","));
+        // Edges are fitted values, not display output: rounding to the default
+        // 4 places collapses small-magnitude floats onto one edge.
+        let user_round = args
+            .flag_stats_options
+            .as_deref()
+            .is_some_and(|o| o.split_whitespace().any(|t| t.starts_with("--round")));
+        if !user_round {
+            stats_args.push("--round".to_string());
+            stats_args.push("9999".to_string());
+        }
+    }
     stats_args.extend(analysis_common_args.iter().cloned());
     if let Some(ref opts) = args.flag_stats_options {
         stats_args.extend(opts.split_whitespace().map(ToString::to_string));
@@ -848,6 +900,12 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         args.flag_min_count,
         prefer_dmy,
     )?;
+    generator::apply_quantiles(
+        &mut stats_records,
+        quantiles,
+        total_rows,
+        args.flag_min_count,
+    )?;
 
     // --- 3. Dictionary (optional) → content types + relationships ----------
     let (content_types, relationships) = if let Some(ref dict_path) = args.flag_dictionary {
@@ -878,6 +936,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         locale,
         consistent_fakes: args.flag_consistent_fakes,
         joint_cardinality_cap: args.flag_joint_cardinality_cap,
+        quantiles,
         min_count: args.flag_min_count,
         source_cols: &source_cols,
         correlation_threshold: args.flag_correlation_threshold,

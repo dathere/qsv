@@ -3391,6 +3391,7 @@ fn synthesize_model_refuses_fit_options() {
         &["--report", "r.json"],
         &["--save-model", "m2.json"],
         &["--delimiter", ";"],
+        &["--quantiles", "4"],
     ] {
         let mut cmd = wrk.command("synthesize");
         cmd.args(["--model", "m.json"]).args(extra);
@@ -4054,4 +4055,256 @@ fn synthesize_format_jsonl_writes_inferred_booleans_as_booleans() {
     assert_eq!(rows.len(), 30);
     assert!(rows.iter().all(|r| r["flag"].is_boolean()), "{rows:?}");
     assert!(rows.iter().any(|r| r["flag"] == true) && rows.iter().any(|r| r["flag"] == false));
+}
+
+#[test]
+fn synthesize_quantiles_4_is_the_default() {
+    let wrk = Workdir::new("synthesize_quantiles_default");
+    model_fixture(&wrk);
+
+    let default = wrk.output(&mut model_fit_cmd(&wrk, "5000", &[])).stdout;
+    let explicit = wrk
+        .output(&mut model_fit_cmd(&wrk, "5000", &["--quantiles", "4"]))
+        .stdout;
+    let finer = wrk
+        .output(&mut model_fit_cmd(&wrk, "5000", &["--quantiles", "20"]))
+        .stdout;
+    assert!(
+        explicit == default,
+        "--quantiles 4 must write the default bytes"
+    );
+    assert!(finer != default, "--quantiles 20 must change the buckets");
+}
+
+#[test]
+fn synthesize_quantiles_is_the_same_at_any_jobs_and_from_a_model() {
+    let wrk = Workdir::new("synthesize_quantiles_jobs_model");
+    model_fixture(&wrk);
+
+    let q = ["--quantiles", "20"];
+    let j1 = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &[&q[..], &["-j", "1"]].concat(),
+        ))
+        .stdout;
+    let j4 = wrk
+        .output(&mut model_fit_cmd(
+            &wrk,
+            "20000",
+            &[&q[..], &["-j", "4", "--save-model", "m.json"]].concat(),
+        ))
+        .stdout;
+    let mut from_model = wrk.command("synthesize");
+    from_model.args(["--model", "m.json", "-n", "20000", "--seed", "11"]);
+    let from_model = wrk.output(&mut from_model).stdout;
+
+    assert!(j4 == j1, "--quantiles output must not depend on --jobs");
+    assert!(
+        from_model == j1,
+        "a --model run must write the bytes of the --quantiles run that saved it"
+    );
+}
+
+/// Sorted non-empty values of column `col` of a CSV.
+fn sorted_column(csv: &str, col: usize) -> Vec<f64> {
+    let mut v: Vec<f64> = csv
+        .lines()
+        .skip(1)
+        .filter_map(|l| l.split(',').nth(col)?.parse().ok())
+        .collect();
+    v.sort_by(f64::total_cmp);
+    v
+}
+
+#[test]
+fn synthesize_quantiles_keep_a_long_tail() {
+    let wrk = Workdir::new("synthesize_quantiles_tail");
+    // 2^(i/100): each value doubles every 100 rows, so the top quartile spans
+    // three quarters of the range and one uniform bucket can't follow it.
+    let mut csv = String::from("v\n");
+    for i in 1..=2000 {
+        csv.push_str(&format!("{:.3}\n", 2f64.powf(f64::from(i) / 100.0)));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let source_p90 = 2f64.powi(18);
+
+    let p90 = |quantiles: &str| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "3", "--quantiles", quantiles])
+            .arg("data.csv");
+        let v = sorted_column(&wrk.stdout::<String>(&mut cmd), 0);
+        assert_eq!(v.len(), 20000);
+        v[v.len() * 9 / 10]
+    };
+    let coarse = p90("4");
+    let fine = p90("20");
+    assert!(
+        coarse > source_p90 * 1.5,
+        "quartile buckets should overshoot the tail: p90 {coarse} vs {source_p90}"
+    );
+    assert!(
+        (fine / source_p90 - 1.0).abs() < 0.1,
+        "--quantiles 20 should keep p90 within 10%: {fine} vs {source_p90}"
+    );
+}
+
+#[test]
+fn synthesize_quantiles_rejects_bad_values_and_percentile_stats_options() {
+    let wrk = Workdir::new("synthesize_quantiles_refusals");
+    wrk.create("data.csv", vec![svec!["v"], svec!["1"], svec!["2"]]);
+
+    for q in ["0", "1", "3", "8", "200"] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--quantiles", q, "data.csv"]);
+        let err = wrk.output_stderr(&mut cmd);
+        assert!(err.contains("--quantiles must be one of"), "{q}: {err}");
+    }
+    for opt in ["--percentiles", "--percentile-list=5,95"] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--quantiles", "10", "--stats-options", opt, "data.csv"]);
+        let err = wrk.output_stderr(&mut cmd);
+        assert!(
+            err.contains("synthesize sets the percentiles itself"),
+            "{opt}: {err}"
+        );
+    }
+}
+
+/// Bucket counts of every quantile generator in a saved model, in model order.
+fn model_bucket_counts(model: &str) -> Vec<usize> {
+    fn walk(v: &serde_json::Value, out: &mut Vec<usize>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, v) in map {
+                    if k == "NumericQuantile" || k == "DateQuantile" {
+                        out.push(v["buckets"].as_array().unwrap().len());
+                    } else {
+                        walk(v, out);
+                    }
+                }
+            },
+            serde_json::Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
+            _ => {},
+        }
+    }
+    let mut out = Vec::new();
+    walk(&serde_json::from_str(model).unwrap(), &mut out);
+    out
+}
+
+#[test]
+fn synthesize_quantiles_cap_thin_buckets_at_min_count() {
+    let wrk = Workdir::new("synthesize_quantiles_cap");
+    let mut csv = String::from("v\n");
+    for i in 0..60 {
+        csv.push_str(&format!("{}\n", i * i));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    // Every bucket must hold MORE than --min-count values. 60 at the default 5:
+    // 10 buckets of 6 fit, so 100 → 10. At 1: 50 buckets of 1 don't, 25 of 2 do.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--quantiles", "100", "--save-model", "m.json"])
+        .arg("data.csv");
+    wrk.output(&mut cmd);
+    assert_eq!(
+        model_bucket_counts(&wrk.read_to_string("m.json").unwrap()),
+        [10]
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--quantiles", "100", "--min-count", "1"])
+        .args(["--save-model", "m1.json", "data.csv"]);
+    wrk.output(&mut cmd);
+    assert_eq!(
+        model_bucket_counts(&wrk.read_to_string("m1.json").unwrap()),
+        [25]
+    );
+}
+
+#[test]
+fn synthesize_quantiles_reproduce_tied_values() {
+    let wrk = Workdir::new("synthesize_quantiles_ties");
+    // Few distinct values, so most buckets are zero-width; --freq-limit 1 keeps
+    // the columns off frequency sampling and on their buckets.
+    let mut csv = String::from("i,d,ts\n");
+    for r in 0..1000 {
+        let (i, d, ts) = if r % 4 == 0 {
+            ("9", "2021-06-30", "2023-05-05T12:00:00+00:00")
+        } else {
+            ("1", "2020-01-01", "2022-01-01T00:00:00+00:00")
+        };
+        csv.push_str(&format!("{i},{d},{ts}\n"));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "4000",
+        "--seed",
+        "1",
+        "--freq-limit",
+        "1",
+        "--quantiles",
+        "100",
+    ])
+    .args(["--save-model", "m.json", "data.csv"]);
+    let out: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        model_bucket_counts(&wrk.read_to_string("m.json").unwrap()),
+        [100, 100, 100]
+    );
+    let rows: Vec<&str> = out.lines().skip(1).collect();
+    assert_eq!(rows.len(), 4000);
+    // 75% of each source column is its low value; zero-width buckets emit it
+    // exactly. Columns are independent, so check each one on its own.
+    for (col, low_value) in ["1", "2020-01-01", "2022-01-01T00:00:00+00:00"]
+        .iter()
+        .enumerate()
+    {
+        #[allow(clippy::cast_precision_loss)]
+        let low = rows
+            .iter()
+            .filter(|r| r.split(',').nth(col) == Some(low_value))
+            .count() as f64
+            / 4000.0;
+        assert!(
+            (low - 0.75).abs() < 0.05,
+            "column {col}: low-value share {low}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_quantiles_keep_small_float_precision() {
+    let wrk = Workdir::new("synthesize_quantiles_precision");
+    // 100 distinct values from 1e-7 to 1e-5: rounded to stats' default 4
+    // places every percentile would read 0, collapsing the buckets.
+    let mut csv = String::from("v\n");
+    for i in 1..=100 {
+        csv.push_str(&format!("{:e}\n", f64::from(i) * 1e-7));
+    }
+    wrk.create_from_string("data.csv", &csv);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "2000",
+        "--seed",
+        "1",
+        "--quantiles",
+        "10",
+        "--freq-limit",
+        "1",
+    ])
+    .args(["--min-count", "1", "data.csv"]);
+    let v = sorted_column(&wrk.stdout::<String>(&mut cmd), 0);
+    let median = v[v.len() / 2];
+    assert!(
+        (median / 5e-6 - 1.0).abs() < 0.15,
+        "median {median} should be near 5e-6"
+    );
 }

@@ -26,7 +26,7 @@ use super::{
     dictionary::SynthRelationship,
     faker_map::{self, Locale},
     generator::{
-        ColumnGenerator, compute_null_ratio, date_quartile_buckets, numeric_quartile_buckets,
+        ColumnGenerator, compute_null_ratio, date_buckets, effective_quantiles, numeric_buckets,
         parse_epoch, parse_f64,
     },
     group_generator::{GroupGenerator, OrderedKind},
@@ -73,6 +73,8 @@ pub(crate) struct ScheduleParams<'a> {
     pub consistent_fakes:      bool,
     pub joint_cardinality_cap: u64,
     pub min_count:             u64,
+    /// `--quantiles`: bucket count for numeric/date marginals and ordered gaps.
+    pub quantiles:             usize,
     /// Source CSV column of each stats record (see `source_column_indices`).
     pub source_cols:           &'a [Option<usize>],
     pub correlation_threshold: f64,
@@ -541,7 +543,7 @@ fn resolve_ordered(
     let anchor_stats = &stats[member_cols[0]];
     let anchor_buckets: Vec<(f64, f64)> = match kind {
         OrderedKind::Numeric => {
-            if let Some(buckets) = numeric_quartile_buckets(anchor_stats) {
+            if let Some(buckets) = numeric_buckets(anchor_stats) {
                 buckets
             } else {
                 log::warn!(
@@ -554,7 +556,7 @@ fn resolve_ordered(
         },
         OrderedKind::Date | OrderedKind::DateTime => {
             let is_datetime = kind == OrderedKind::DateTime;
-            if let Some(buckets) = date_quartile_buckets(anchor_stats, is_datetime) {
+            if let Some(buckets) = date_buckets(anchor_stats, is_datetime) {
                 #[allow(clippy::cast_precision_loss)]
                 buckets
                     .into_iter()
@@ -611,7 +613,8 @@ fn resolve_ordered(
             );
         }
         let n_samples = samples.len();
-        let Some(buckets) = gap_buckets_from_samples(samples, params.min_count) else {
+        let Some(buckets) = gap_buckets_from_samples(samples, params.min_count, params.quantiles)
+        else {
             let msg = format!(
                 "ordered relationship {names:?}: only {n_samples} row(s) have both '{}' and '{}'; \
                  trimming their gap by --min-count ({}) needs at least {}",
@@ -723,15 +726,11 @@ fn learn_ordered_gaps(
     Ok(gaps)
 }
 
-/// Build clamped quartile gap buckets from a non-empty set of gap samples.
-/// Every bound is clamped to >= 0 so the synthetic chain is always ordered.
-///
-/// Like `range_trim`, the outer bounds are the k-th smallest and k-th largest
-/// gaps (k = `--min-count`), so a lone extreme gap (a decades-long tenure) can't
-/// reappear. With fewer than 2k-1 samples no such range exists; returns `None`
-/// and the caller drops the relationship (any single gap, or a mean of a few,
-/// would reproduce source pairs' gaps).
-fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Option<Vec<(f64, f64)>> {
+fn gap_buckets_from_samples(
+    mut samples: Vec<f64>,
+    min_count: u64,
+    quantiles: usize,
+) -> Option<Vec<(f64, f64)>> {
     samples.sort_by(f64::total_cmp);
     let n = samples.len();
     let k = usize::try_from(min_count.max(1)).unwrap_or(usize::MAX);
@@ -739,20 +738,38 @@ fn gap_buckets_from_samples(mut samples: Vec<f64>, min_count: u64) -> Option<Vec
         return None;
     }
     let (lo, hi) = (samples[k - 1], samples[n - k]);
+    let fine = effective_quantiles(quantiles, n as u64, min_count);
+    let buckets = fine.unwrap_or(4);
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let at = |frac: f64| samples[((n as f64 * frac) as usize).min(n - 1)].clamp(lo, hi);
-    let mut bounds = [lo, at(0.25), at(0.5), at(0.75), hi];
+    let at = |i: usize| {
+        let idx = if fine.is_some() {
+            // Nearest rank, as `stats --percentiles` cuts the column marginals:
+            // ceil(n * i / buckets) - 1, zero-based.
+            (n * i).div_ceil(buckets) - 1
+        } else {
+            (n as f64 * (i as f64 / buckets as f64)) as usize
+        };
+        samples[idx.min(n - 1)].clamp(lo, hi)
+    };
+    let mut bounds: Vec<f64> = std::iter::once(lo)
+        .chain((1..buckets).map(at))
+        .chain(std::iter::once(hi))
+        .collect();
     // Clamping a sorted sequence to >= 0 keeps it sorted.
     for b in &mut bounds {
         *b = b.max(0.0);
     }
-    let [min, q1, q2, q3, max] = bounds;
+    let (&min, &max) = (bounds.first()?, bounds.last()?);
     Some(if min < max {
-        vec![(min, q1), (q1, q2), (q2, q3), (q3, max)]
+        bounds
+            .iter()
+            .copied()
+            .zip(bounds.iter().copied().skip(1))
+            .collect()
     } else {
         vec![(min, min)]
     })
@@ -764,11 +781,11 @@ fn member_range(sr: &StatsRecord, kind: OrderedKind, is_datetime: bool) -> Optio
     #[allow(clippy::cast_precision_loss)]
     match kind {
         OrderedKind::Numeric => {
-            let b = numeric_quartile_buckets(sr)?;
+            let b = numeric_buckets(sr)?;
             Some((b.first()?.0, b.last()?.1))
         },
         OrderedKind::Date | OrderedKind::DateTime => {
-            let b = date_quartile_buckets(sr, is_datetime)?;
+            let b = date_buckets(sr, is_datetime)?;
             Some((b.first()?.0 as f64, b.last()?.1 as f64))
         },
     }
@@ -854,7 +871,7 @@ fn resolve_correlated(
     let mut null_ratios = Vec::with_capacity(kept_cols.len());
     for &col in &kept_cols {
         let sr = &stats[col];
-        let Some(buckets) = numeric_quartile_buckets(sr) else {
+        let Some(buckets) = numeric_buckets(sr) else {
             log::warn!(
                 "synthesize: correlated relationship {names:?} dropped — column '{}' has no \
                  usable numeric range",
@@ -1052,7 +1069,7 @@ mod tests {
     fn gap_buckets_trim_extreme_gaps() {
         // Gaps 1..=20 plus one 10,000 outlier; k = 5 trims to [5, 17].
         let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
-        let buckets = gap_buckets_from_samples(samples, 5).unwrap();
+        let buckets = gap_buckets_from_samples(samples, 5, 4).unwrap();
         assert_eq!(buckets.first().unwrap().0, 5.0);
         assert_eq!(buckets.last().unwrap().1, 17.0);
     }
@@ -1060,7 +1077,7 @@ mod tests {
     #[test]
     fn gap_buckets_k_one_keeps_full_range() {
         let samples: Vec<f64> = (1..=20).map(f64::from).chain([10_000.0]).collect();
-        let buckets = gap_buckets_from_samples(samples, 1).unwrap();
+        let buckets = gap_buckets_from_samples(samples, 1, 4).unwrap();
         assert_eq!(buckets.first().unwrap().0, 1.0);
         assert_eq!(buckets.last().unwrap().1, 10_000.0);
     }
@@ -1070,10 +1087,32 @@ mod tests {
         // 4 samples < 2k-1 = 9: no trimmed range exists; a mean of a few gaps
         // (or the one gap, with a single pair) would reproduce source gaps.
         assert_eq!(
-            gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5),
+            gap_buckets_from_samples(vec![1.0, 2.0, 3.0, 100.0], 5, 4),
             None
         );
-        assert_eq!(gap_buckets_from_samples(vec![40.0], 5), None);
-        assert!(gap_buckets_from_samples(vec![40.0], 1).is_some());
+        assert_eq!(gap_buckets_from_samples(vec![40.0], 5, 4), None);
+    }
+
+    #[test]
+    fn gap_buckets_follow_quantiles() {
+        let samples: Vec<f64> = (0..1000).map(f64::from).collect();
+        let tenths = gap_buckets_from_samples(samples.clone(), 1, 10).unwrap();
+        assert_eq!(tenths.len(), 10);
+        // Nearest rank: the 10th percentile of 0..1000 is the 100th value, 99.
+        assert_eq!(tenths[0], (0.0, 99.0));
+        assert_eq!(tenths[9], (899.0, 999.0));
+        // 1000 gaps at k=199 hold 5 buckets of 200 (> k) → capped from 100 to 5.
+        assert_eq!(
+            gap_buckets_from_samples(samples, 199, 100).unwrap().len(),
+            5
+        );
+
+        // An exact-rank median keeps the zero-gap half as its own bucket.
+        let halves: Vec<f64> = (0..100).map(|i| if i < 50 { 0.0 } else { 100.0 }).collect();
+        assert_eq!(
+            gap_buckets_from_samples(halves, 1, 2).unwrap(),
+            vec![(0.0, 0.0), (0.0, 100.0)]
+        );
+        assert!(gap_buckets_from_samples(vec![40.0], 1, 4).is_some());
     }
 }

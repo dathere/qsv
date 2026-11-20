@@ -594,19 +594,19 @@ test('QSV_MCP_PLUGIN_MODE with invalid value falls back to auto-detection', () =
 test('applySqlFileWritePolicy sets QSV_SQL_DISABLE_FILE_WRITES only when writes are off', () => {
   const off: NodeJS.ProcessEnv = {};
   applySqlFileWritePolicy(false, off);
-  assert.strictEqual(off['QSV_SQL_DISABLE_FILE_WRITES'], '1');
+  assert.strictEqual(off.QSV_SQL_DISABLE_FILE_WRITES, '1');
 
   const on: NodeJS.ProcessEnv = {};
   applySqlFileWritePolicy(true, on);
-  assert.strictEqual(on['QSV_SQL_DISABLE_FILE_WRITES'], undefined);
+  assert.strictEqual(on.QSV_SQL_DISABLE_FILE_WRITES, undefined);
 
   // when off, the server's value wins over an inherited one
   const inherited: NodeJS.ProcessEnv = { QSV_SQL_DISABLE_FILE_WRITES: '0' };
   applySqlFileWritePolicy(false, inherited);
-  assert.strictEqual(inherited['QSV_SQL_DISABLE_FILE_WRITES'], '1');
+  assert.strictEqual(inherited.QSV_SQL_DISABLE_FILE_WRITES, '1');
 
   // when on, a user's own setting is left alone
   const userSet: NodeJS.ProcessEnv = { QSV_SQL_DISABLE_FILE_WRITES: '1' };
   applySqlFileWritePolicy(true, userSet);
-  assert.strictEqual(userSet['QSV_SQL_DISABLE_FILE_WRITES'], '1');
+  assert.strictEqual(userSet.QSV_SQL_DISABLE_FILE_WRITES, '1');
 });

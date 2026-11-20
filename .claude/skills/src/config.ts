@@ -678,7 +678,7 @@ export function applySqlFileWritePolicy(
   // Authoritative when off: an inherited QSV_SQL_DISABLE_FILE_WRITES=0 must not keep
   // writes on while the server reports them disabled (QSV_MCP_SQL_FILE_WRITES is the knob).
   if (!allowWrites) {
-    env["QSV_SQL_DISABLE_FILE_WRITES"] = "1";
+    env.QSV_SQL_DISABLE_FILE_WRITES = "1";
   }
 }
 

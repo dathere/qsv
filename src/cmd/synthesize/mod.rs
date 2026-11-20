@@ -89,7 +89,8 @@ not stop it:
 Review the output before sharing it, or training on it, as de-identified data.
 A model saved with --save-model holds real values from <input>, such as
 enumerated values, bucket boundaries and range ends, including some the
-output never shows. Review and share it at least as carefully as the output.
+output never shows; with --target, it holds them for each class, and the
+class values. Review and share it at least as carefully as the output.
 
 With --seed, output is fully reproducible, whatever the --jobs setting.
 Rows are generated in parallel, in fixed blocks of 8192 rows. With --seed
@@ -254,6 +255,31 @@ synthesize options:
                            by the --min-count option) gets fewer buckets, or
                            the quartiles.
                            Also applies to the gaps of `ordered` relationships.
+    --target <col>         Generate the other columns conditionally on the
+                           class of column <col> (a column name; with no
+                           headers, its 0-based index), e.g. a label to train
+                           a classifier on. Each row first draws a class by
+                           its share of the rows of <input>, then fills every
+                           other column from that class's own profile, so
+                           each column keeps its distribution within each
+                           class. A column with at most 50 distinct (trimmed)
+                           values is split by value, an empty value being a
+                           class of its own; a numeric column with more is
+                           split by its quantile buckets (see --quantiles),
+                           and any other column is refused. A class seen in
+                           fewer than <k> rows (<k> is set by the --min-count
+                           option) is dropped and its share redistributed.
+                           Fake-value columns, and columns a class has too
+                           few values to profile, use the generator fitted
+                           on the whole input. A numeric or date column
+                           needs at least 2k-1 values in a class, so with
+                           the default <k> of 5 a class of fewer than 9 rows
+                           takes all of them from the whole input; lower
+                           the --min-count to profile small classes, if that
+                           is acceptable for privacy. Relationships that
+                           name <col> drop it from their members. `stats` and
+                           `frequency` run once more per class, on a
+                           temporary copy of <input> split by class.
     --min-count <k>        Privacy threshold. A real value of an enumerated
                            column, or a real `joint` value-tuple, that occurs
                            fewer than <k> times in <input> is dropped from the
@@ -345,7 +371,9 @@ use serde::Deserialize;
 
 use crate::{
     CliError, CliResult,
-    cmd::describegpt::dictionary::{StatsRecord, parse_frequency_csv, parse_stats_csv},
+    cmd::describegpt::dictionary::{
+        FrequencyRecord, StatsRecord, parse_frequency_csv, parse_stats_csv,
+    },
     config::{Config, Delimiter},
     util,
 };
@@ -359,9 +387,13 @@ mod output;
 mod range_trim;
 mod relationships;
 mod report;
+mod target;
 
+use dictionary::SynthRelationship;
 use faker_map::Locale;
+use generator::ColumnGenerator;
 use relationships::{EmitUnit, ScheduleParams, build_emit_schedule};
+use report::Suppression;
 
 #[derive(Deserialize)]
 struct Args {
@@ -378,6 +410,7 @@ struct Args {
     flag_locale:                String,
     flag_freq_limit:            usize,
     flag_quantiles:             Option<usize>,
+    flag_target:                Option<String>,
     flag_stats_options:         Option<String>,
     flag_consistent_fakes:      bool,
     flag_no_relationships:      bool,
@@ -479,6 +512,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             (args.flag_report.is_some(), "--report"),
             (args.flag_delimiter.is_some(), "--delimiter"),
             (args.flag_quantiles.is_some(), "--quantiles"),
+            (args.flag_target.is_some(), "--target"),
         ];
         if let Some((_, name)) = fit_only.iter().find(|(set, _)| *set) {
             return fail_incorrectusage_clierror!(
@@ -597,6 +631,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // WINDOW_BYTES (but never below one chunk) however wide the rows are. The
     // window only affects memory and speed, never the output.
     let ncols = model.columns.len();
+    let target_cumulative = model.target.as_ref().map(target::Target::cumulative);
+    let target = model.target.as_ref().zip(target_cumulative.as_deref());
     let total_chunks = args.flag_rows.div_ceil(CHUNK_ROWS);
     let (mut first_chunk, end_chunk) =
         shard.map_or((0, total_chunks), |(k, n)| shard_chunks(total_chunks, k, n));
@@ -616,6 +652,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 generate_chunk(
                     &|piece_rows| new_sink(piece_rows, largest_chunk * piece_rows / rows),
                     &model.schedule,
+                    target,
                     &model.types,
                     ncols,
                     base_seed,
@@ -677,6 +714,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "shard": args.flag_shard,
             "seed": args.flag_seed,
             "min_count": args.flag_min_count,
+            "target": args.flag_target,
             "privacy": {
                 "exact_matches": any_compared.then_some(exact_matches),
                 "exact_match_rate": rate,
@@ -818,9 +856,19 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
             stats_args.push("9999".to_string());
         }
     }
+    // Class files (--target) are plain comma-separated CSV, so their runs
+    // take `-d ,` instead of the user's delimiter.
+    let mut class_common_args: Vec<String> = vec!["-d".to_string(), ",".to_string()];
+    if let Some(jobs) = args.flag_jobs {
+        class_common_args.push("--jobs".to_string());
+        class_common_args.push(jobs.to_string());
+    }
+    let mut class_stats_args = stats_args.clone();
+    class_stats_args.extend(class_common_args.iter().cloned());
     stats_args.extend(analysis_common_args.iter().cloned());
     if let Some(ref opts) = args.flag_stats_options {
         stats_args.extend(opts.split_whitespace().map(ToString::to_string));
+        class_stats_args.extend(opts.split_whitespace().map(ToString::to_string));
     }
     let stats_args_ref: Vec<&str> = stats_args.iter().map(String::as_str).collect();
     // stats and frequency are silent unless they warn (e.g. that they switched
@@ -835,6 +883,8 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
 
     // frequency
     let mut freq_args: Vec<String> = vec!["--limit".to_string(), args.flag_freq_limit.to_string()];
+    let mut class_freq_args = freq_args.clone();
+    class_freq_args.extend(class_common_args);
     freq_args.extend(analysis_common_args.iter().cloned());
     let freq_args_ref: Vec<&str> = freq_args.iter().map(String::as_str).collect();
     let (freq_csv, freq_err) = util::run_qsv_cmd(
@@ -858,21 +908,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
 
     // --- 2. Parse analysis -------------------------------------------------
     let (mut stats_records, _addl_cols) = parse_stats_csv(&stats_csv)?;
-    let mut frequency_records = parse_frequency_csv(&freq_csv)?;
-    // Without headers stats names columns "0", "1", … but frequency names them
-    // "1", "2", …; renumber frequency's so both point at the same column.
-    if crate::config::resolved_no_headers(false) {
-        for fr in &mut frequency_records {
-            if let Some(n) = fr
-                .field
-                .parse::<usize>()
-                .ok()
-                .and_then(|n| n.checked_sub(1))
-            {
-                fr.field = n.to_string();
-            }
-        }
-    }
+    let frequency_records = parse_frequency(&freq_csv)?;
 
     if stats_records.is_empty() {
         return fail_clierror!("No columns found in '{input_path}'.");
@@ -949,6 +985,19 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         suppressions: &suppressions,
     };
     let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
+    let target = match args.flag_target.as_deref() {
+        Some(name) => Some(fit_target(&TargetFit {
+            name,
+            base_seed,
+            global: &schedule_params,
+            global_schedule: &schedule,
+            source_config: &source_config,
+            stats_args: &class_stats_args,
+            freq_args: &class_freq_args,
+            prefer_dmy,
+        })?),
+        None => None,
+    };
 
     let columns = stats_records.iter().map(|sr| sr.field.clone()).collect();
     let stats_types: Vec<&str> = stats_records.iter().map(|sr| sr.r#type.as_str()).collect();
@@ -968,9 +1017,317 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         suppressions: suppressions.into_inner(),
     };
     Ok((
-        model::Model::new(columns, types, prefer_dmy, schedule, fit_info),
+        model::Model::new(columns, types, prefer_dmy, schedule, target, fit_info),
         fitted,
     ))
+}
+
+/// Parses `frequency` output. Without headers `stats` names columns "0", "1",
+/// … but `frequency` names them "1", "2", …; renumber so both point at the
+/// same column.
+fn parse_frequency(freq_csv: &str) -> CliResult<Vec<FrequencyRecord>> {
+    let mut frequency_records = parse_frequency_csv(freq_csv)?;
+    if crate::config::resolved_no_headers(false) {
+        for fr in &mut frequency_records {
+            if let Some(n) = fr
+                .field
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+            {
+                fr.field = n.to_string();
+            }
+        }
+    }
+    Ok(frequency_records)
+}
+
+/// What `fit_target` needs from the whole-input fit.
+struct TargetFit<'a> {
+    name:            &'a str,
+    base_seed:       u64,
+    /// The whole-input schedule parameters (stats, frequency, dictionary,
+    /// relationships and options); each class fit borrows its options.
+    global:          &'a ScheduleParams<'a>,
+    global_schedule: &'a [EmitUnit],
+    source_config:   &'a Config,
+    /// `stats` / `frequency` arguments for the comma-separated class files.
+    stats_args:      &'a [String],
+    freq_args:       &'a [String],
+    prefer_dmy:      bool,
+}
+
+/// Splits <input> by the --target column and fits every other column once
+/// per class (see `target`).
+fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
+    let global = tf.global;
+    let stats = global.stats_records;
+    let name = tf.name;
+    let min_count = global.min_count;
+    let Some(t) = stats.iter().position(|sr| sr.field == name) else {
+        return fail_incorrectusage_clierror!("--target column '{name}' is not in <input>.");
+    };
+    let Some(src_col) = global.source_cols[t] else {
+        return fail_incorrectusage_clierror!("--target column '{name}' is not in <input>.");
+    };
+    let target_sr = &stats[t];
+    let numeric = matches!(target_sr.r#type.as_str(), "Integer" | "Float");
+
+    let dir = tempfile::tempdir()?;
+    let classes = match target::split(tf.source_config, src_col, None, dir.path())? {
+        Some(classes) => classes,
+        None if numeric => {
+            let Some(bins) = generator::numeric_buckets(target_sr) else {
+                return fail_clierror!(
+                    "--target column '{name}' has more than {} distinct values but no usable \
+                     numeric range to split it by.",
+                    target::MAX_CLASSES
+                );
+            };
+            target::split(tf.source_config, src_col, Some(&bins), dir.path())?.unwrap_or_default()
+        },
+        None => {
+            return fail_incorrectusage_clierror!(
+                "--target column '{name}' has more than {} distinct values and isn't numeric, so \
+                 it can't be split into classes.",
+                target::MAX_CLASSES
+            );
+        },
+    };
+    // A class seen in fewer than --min-count rows is dropped like a rare value.
+    let (classes, dropped): (Vec<_>, Vec<_>) =
+        classes.into_iter().partition(|c| c.rows >= min_count);
+    if !dropped.is_empty() {
+        let rows = dropped.iter().map(|c| c.rows).sum();
+        log::warn!(
+            "synthesize: --target '{name}': {} class(es) seen in fewer than {min_count} rows \
+             dropped ({rows} rows); their share is redistributed",
+            dropped.len()
+        );
+        global.suppressions.borrow_mut().push(Suppression {
+            columns: vec![name.to_string()],
+            distinct: dropped.len(),
+            rows,
+            class: None,
+        });
+    }
+    if classes.is_empty() {
+        return fail_clierror!(
+            "--target column '{name}': every class is seen in fewer than {min_count} rows (the \
+             --min-count). Lower --min-count or choose another target."
+        );
+    }
+
+    // In a class the target is constant, and the class already conditions on
+    // it, so relationships drop it from their members.
+    let relationships: Vec<SynthRelationship> = global
+        .relationships
+        .iter()
+        .filter_map(|r| {
+            let members: Vec<String> = r.members.iter().filter(|m| *m != name).cloned().collect();
+            (members.len() >= 2).then(|| SynthRelationship {
+                kind: r.kind.clone(),
+                members,
+                anchor: r.anchor.clone().filter(|a| a != name),
+            })
+        })
+        .collect();
+
+    // Whole-input generators: fake-value columns always use theirs (so
+    // --consistent-fakes keeps one fake per source value across classes), and
+    // a column a class can't profile falls back to its.
+    let mut whole: HashMap<usize, &ColumnGenerator> = HashMap::new();
+    for unit in tf.global_schedule {
+        if let EmitUnit::Independent { col_idx, generator } = unit {
+            whole.insert(*col_idx, generator);
+        }
+    }
+    let is_faker = |col: usize| {
+        whole.get(&col).is_some_and(|g| {
+            matches!(
+                g,
+                ColumnGenerator::Faker { .. } | ColumnGenerator::FakerMapped { .. }
+            )
+        })
+    };
+    let content_types: HashMap<String, String> = global
+        .content_types
+        .iter()
+        .filter(|(field, _)| {
+            stats
+                .iter()
+                .position(|sr| &sr.field == *field)
+                .is_none_or(|c| !is_faker(c))
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    // A whole-input generator for a column a class can't profile, built on
+    // demand for columns the whole-input schedule fills as part of a group.
+    let mut fallbacks: HashMap<usize, ColumnGenerator> = HashMap::new();
+    let mut fallback = |col: usize| -> ColumnGenerator {
+        if let Some(g) = whole.get(&col) {
+            return (*g).clone();
+        }
+        fallbacks
+            .entry(col)
+            .or_insert_with(|| {
+                let sr = &stats[col];
+                let freqs: Vec<&FrequencyRecord> = global
+                    .frequency_records
+                    .iter()
+                    .filter(|fr| fr.field == sr.field)
+                    .collect();
+                let content_type = global
+                    .content_types
+                    .get(&sr.field)
+                    .map_or("unknown", String::as_str);
+                ColumnGenerator::build_tracked(
+                    sr,
+                    &freqs,
+                    content_type,
+                    global.total_rows,
+                    global.requested_rows,
+                    global.locale,
+                    global.consistent_fakes,
+                    min_count,
+                    &mut None,
+                    &mut target::class_rng(tf.base_seed, usize::MAX - col),
+                )
+            })
+            .clone()
+    };
+
+    let comma = Some(Delimiter(b','));
+    let nclasses = classes.len();
+    let mut fitted = Vec::with_capacity(nclasses);
+    let mut fell_back: Vec<usize> = vec![0; stats.len()];
+    for (i, class) in classes.into_iter().enumerate() {
+        let path = class.path.to_string_lossy().to_string();
+        let stats_args: Vec<&str> = tf.stats_args.iter().map(String::as_str).collect();
+        let (stats_csv, stats_err) = util::run_qsv_cmd(
+            "stats",
+            &stats_args,
+            &path,
+            &format!(
+                "  Computed summary statistics for class {}/{nclasses}",
+                i + 1
+            ),
+        )?;
+        eprint!("{stats_err}");
+        let freq_args: Vec<&str> = tf.freq_args.iter().map(String::as_str).collect();
+        let (freq_csv, freq_err) = util::run_qsv_cmd(
+            "frequency",
+            &freq_args,
+            &path,
+            &format!(
+                "  Computed frequency distribution for class {}/{nclasses}",
+                i + 1
+            ),
+        )?;
+        eprint!("{freq_err}");
+        let (mut class_stats, _) = parse_stats_csv(&stats_csv)?;
+        let class_freqs = parse_frequency(&freq_csv)?;
+        if class_stats.len() != stats.len() {
+            return fail_clierror!(
+                "--target: class {} of '{name}' was profiled with {} columns instead of {}.",
+                i + 1,
+                class_stats.len(),
+                stats.len()
+            );
+        }
+        range_trim::trim_range_bounds(
+            &mut class_stats,
+            global.source_cols,
+            &path,
+            comma,
+            min_count,
+            tf.prefer_dmy,
+        )?;
+        generator::apply_quantiles(&mut class_stats, global.quantiles, class.rows, min_count)?;
+
+        let suppressions = RefCell::new(Vec::new());
+        let params = ScheduleParams {
+            stats_records: &class_stats,
+            frequency_records: &class_freqs,
+            content_types: &content_types,
+            relationships: &relationships,
+            total_rows: class.rows,
+            requested_rows: global.requested_rows,
+            locale: global.locale,
+            consistent_fakes: global.consistent_fakes,
+            joint_cardinality_cap: global.joint_cardinality_cap,
+            quantiles: global.quantiles,
+            min_count,
+            source_cols: global.source_cols,
+            correlation_threshold: global.correlation_threshold,
+            strict: global.strict,
+            input_path: &path,
+            delimiter: comma,
+            suppressions: &suppressions,
+        };
+        let schedule = build_emit_schedule(&params, &mut target::class_rng(tf.base_seed, i))?;
+        let schedule = schedule
+            .into_iter()
+            .filter_map(|unit| match unit {
+                EmitUnit::Independent { col_idx, .. } if col_idx == t => None,
+                EmitUnit::Independent { col_idx, .. } if is_faker(col_idx) => {
+                    Some(EmitUnit::Independent {
+                        col_idx,
+                        generator: fallback(col_idx),
+                    })
+                },
+                // Empty although the class holds values: too few to profile
+                // (range trimming or suppression emptied it).
+                EmitUnit::Independent {
+                    col_idx,
+                    generator: ColumnGenerator::Empty,
+                } if class_stats[col_idx].nullcount < class.rows => {
+                    fell_back[col_idx] += 1;
+                    Some(EmitUnit::Independent {
+                        col_idx,
+                        generator: fallback(col_idx),
+                    })
+                },
+                unit => Some(unit),
+            })
+            .collect();
+        for mut s in suppressions.into_inner() {
+            s.class = Some(class.label.clone());
+            global.suppressions.borrow_mut().push(s);
+        }
+        fitted.push(target::Class {
+            label: class.label,
+            bucket: class.bucket,
+            rows: class.rows,
+            schedule,
+        });
+    }
+    for (col, &n) in fell_back.iter().enumerate() {
+        if n > 0 {
+            log::warn!(
+                "synthesize: --target '{name}': '{}' has too few values to profile in {n} of \
+                 {nclasses} classes, which use its whole-input generator",
+                stats[col].field
+            );
+        }
+    }
+
+    let (is_int, decimals) = match whole.get(&t) {
+        Some(ColumnGenerator::NumericQuantile {
+            is_int, decimals, ..
+        }) => (*is_int, *decimals),
+        _ => (
+            target_sr.r#type == "Integer",
+            generator::float_decimals(target_sr),
+        ),
+    };
+    log::info!("synthesize: --target '{name}': {nclasses} classes");
+    Ok(target::Target {
+        col_idx: t,
+        is_int,
+        decimals,
+        classes: fitted,
+    })
 }
 
 /// Rows per output chunk. Each chunk has its own RNG, so this value is part of
@@ -1020,6 +1377,7 @@ fn chunk_rng(base_seed: u64, chunk: u64) -> StdRng {
 fn generate_chunk(
     new_sink: &(dyn Fn(u64) -> output::Sink + Sync),
     schedule: &[EmitUnit],
+    target: Option<(&target::Target, &[f64])>,
     types: &[output::OutType],
     ncols: usize,
     base_seed: u64,
@@ -1050,7 +1408,16 @@ fn generate_chunk(
             let done = std::mem::replace(&mut sink, new_sink(piece_rows(i)));
             pieces.push(done.finish()?);
         }
-        for unit in schedule {
+        // With --target the row draws its class first, then uses its schedule.
+        let units = match target {
+            Some((target, cumulative)) => {
+                let (value, units) = target.draw(cumulative, &mut rng);
+                row[target.col_idx] = value;
+                units
+            },
+            None => schedule,
+        };
+        for unit in units {
             match unit {
                 EmitUnit::Independent { col_idx, generator } => {
                     row[*col_idx] = generator.next(&mut rng);

@@ -3488,6 +3488,11 @@ fn synthesize_model_rejects_other_versions_and_broken_models() {
     v2["qsv_synthesize_model"] = 2.into();
     expect_error("v2.json", &v2, "model format version 2");
 
+    // A version 3 model has no --target classes.
+    let mut v3 = model.clone();
+    v3["qsv_synthesize_model"] = 3.into();
+    expect_error("v3.json", &v3, "model format version 3");
+
     let mut untyped = model.clone();
     untyped["types"].as_array_mut().unwrap().pop();
     expect_error(
@@ -4513,4 +4518,453 @@ fn synthesize_format_parquet_keeps_whole_number_floats_as_floats() {
     for (i, row) in csv_rows.iter().enumerate() {
         assert_eq!(whole.get(i), row[3].parse().ok(), "whole row {i}");
     }
+}
+
+/// An imbalanced 0/1 label: 10% of rows are label 1, whose `amount` is about
+/// 10x larger and whose `region` is mostly "south" (label 0: mostly "north").
+fn target_fixture(wrk: &Workdir) {
+    let mut csv = String::from("id,label,amount,region\n");
+    for i in 0..2000_u32 {
+        let positive = i % 10 == 0;
+        let jitter = f64::from(i % 97);
+        let (amount, region) = if positive {
+            (500.0 + jitter, if i % 20 == 0 { "south" } else { "east" })
+        } else {
+            (
+                50.0 + jitter / 10.0,
+                if i % 7 == 0 { "east" } else { "north" },
+            )
+        };
+        csv.push_str(&format!(
+            "{i},{},{amount:.2},{region}\n",
+            u8::from(positive)
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+}
+
+/// Per-class (share of rows, mean `amount`, share of `region == region`).
+fn class_profile(rows: &[Vec<String>], label: &str, region: &str) -> (f64, f64, f64) {
+    let class: Vec<&Vec<String>> = rows[1..].iter().filter(|r| r[1] == label).collect();
+    let n = class.len() as f64;
+    let mean = class
+        .iter()
+        .map(|r| r[2].parse::<f64>().unwrap())
+        .sum::<f64>()
+        / n;
+    let share = class.iter().filter(|r| r[3] == region).count() as f64 / n;
+    (n / (rows.len() - 1) as f64, mean, share)
+}
+
+#[test]
+fn synthesize_target_keeps_class_shares_and_per_class_features() {
+    let wrk = Workdir::new("synthesize_target_classes");
+    target_fixture(&wrk);
+    let source = wrk.read_csv("data.csv");
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n", "20000", "--seed", "1", "--target", "label", "data.csv",
+    ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for (label, region) in [("0", "north"), ("1", "south")] {
+        let (src_share, src_mean, src_region) = class_profile(&source, label, region);
+        let (share, mean, region_share) = class_profile(&got, label, region);
+        assert!(
+            (share - src_share).abs() < 0.01,
+            "label {label} share {share}"
+        );
+        assert!(
+            (mean / src_mean - 1.0).abs() < 0.05,
+            "label {label} amount mean {mean} vs {src_mean}"
+        );
+        assert!(
+            (region_share - src_region).abs() < 0.03,
+            "label {label} {region} share {region_share} vs {src_region}"
+        );
+    }
+
+    // Without --target the features ignore the label.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "20000", "--seed", "1", "data.csv"]);
+    let plain: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let (_, mean, _) = class_profile(&plain, "1", "south");
+    assert!(mean < 300.0, "label 1 amount mean {mean} without --target");
+}
+
+#[test]
+fn synthesize_target_is_the_same_at_any_jobs_from_a_model_and_split() {
+    let wrk = Workdir::new("synthesize_target_jobs_model");
+    target_fixture(&wrk);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "6"]).args(extra);
+        wrk.stdout::<String>(&mut cmd)
+    };
+    let fit = &["--target", "label", "data.csv"];
+    let j1 = run(&[&["-j", "1"][..], fit].concat());
+    let j4 = run(&[&["-j", "4", "--save-model", "m.json"][..], fit].concat());
+    assert_eq!(j1, j4, "-j 1 vs -j 4");
+    assert_eq!(j4, run(&["--model", "m.json"]), "fit vs --model");
+    let shards: String = (1..=3)
+        .map(|k| {
+            let spec = format!("{k}/3");
+            let out = run(&["--model", "m.json", "--shard", &spec]);
+            if k == 1 {
+                out + "\n"
+            } else {
+                out.split_once('\n')
+                    .map(|(_, rest)| rest.to_string() + "\n")
+                    .unwrap_or_default()
+            }
+        })
+        .collect();
+    assert_eq!(j4 + "\n", shards, "joined --shard slices");
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--model", "m.json", "--target", "label"]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("can't be combined with --target")
+    );
+}
+
+#[test]
+fn synthesize_target_bins_a_numeric_target_by_its_buckets() {
+    let wrk = Workdir::new("synthesize_target_bins");
+    // 1000 distinct ids, too many to split by value; `double` follows `id`.
+    let mut csv = String::from("id,double\n");
+    for i in 0..1000 {
+        csv.push_str(&format!("{i},{}\n", i * 2));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "8000", "--seed", "2", "--target", "id", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let mut ids: Vec<i64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
+    ids.sort_unstable();
+    // The default --min-count 5 trims the range to [4, 995].
+    assert!(
+        ids[0] >= 4 && *ids.last().unwrap() <= 995,
+        "{:?}",
+        (ids[0], ids.last())
+    );
+    let median = ids[ids.len() / 2];
+    assert!((450..=550).contains(&median), "median id {median}");
+    // Each row's `double` comes from its id's bucket (quartiles: 250 ids, so
+    // `double` spans about 500), never from another bucket.
+    for r in &got[1..] {
+        let id: f64 = r[0].parse().unwrap();
+        let double: f64 = r[1].parse().unwrap();
+        assert!((double - 2.0 * id).abs() <= 520.0, "{r:?}");
+    }
+}
+
+#[test]
+fn synthesize_target_refusals_and_thin_classes() {
+    let wrk = Workdir::new("synthesize_target_refusals");
+    let mut csv = String::from("name,v\n");
+    for i in 0..120 {
+        csv.push_str(&format!("n{i},{}\n", i % 3));
+    }
+    // Class "9" appears 3 times, below the default --min-count of 5.
+    csv.push_str("x,9\nx,9\nx,9\n");
+    wrk.create_from_string("data.csv", &csv);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--target", "missing", "data.csv"]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("'missing' is not in <input>")
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--target", "name", "data.csv"]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("more than 50 distinct values and isn't numeric")
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "3000", "--seed", "1", "--target", "v", "--report"])
+        .arg(wrk.path("report.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got[1..].iter().all(|r| r[1] != "9"),
+        "the thin class leaked"
+    );
+    let report = read_report(&wrk);
+    assert_eq!(report["target"], "v");
+    assert!(
+        report["privacy"]["suppressed"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!({"columns": ["v"], "distinct": 1, "rows": 3})),
+        "{report}"
+    );
+}
+
+#[test]
+fn synthesize_target_falls_back_for_columns_a_class_cannot_profile() {
+    let wrk = Workdir::new("synthesize_target_fallback");
+    // Class "b" has 6 rows: too few for --min-count 5 to keep a range of
+    // `amount` (it needs 2k-1 = 9 values), so it uses the whole-input one.
+    let mut csv = String::from("cls,amount\n");
+    for i in 0..200 {
+        csv.push_str(&format!("a,{}.5\n", i));
+    }
+    for i in 0..6 {
+        csv.push_str(&format!("b,{}.5\n", 1000 + i));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "3000", "--seed", "4", "--target", "cls", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let b: Vec<&Vec<String>> = got[1..].iter().filter(|r| r[0] == "b").collect();
+    assert!(!b.is_empty());
+    assert!(
+        b.iter().all(|r| !r[1].is_empty()),
+        "class b amount left empty"
+    );
+}
+
+#[test]
+fn synthesize_target_drops_itself_from_relationships() {
+    let wrk = Workdir::new("synthesize_target_relationships");
+    target_fixture(&wrk);
+    // Both groups name the target. In a class the target is constant, so
+    // left in, the correlated pair couldn't be fitted and
+    // --strict-relationships would abort; dropped from the members, each
+    // group keeps one column and is dropped. The run must succeed and still
+    // condition on the label.
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [
+            {"kind": "correlated", "members": ["label", "amount"]},
+            {"kind": "joint", "members": ["label", "region"]}
+        ]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "5000", "--seed", "3", "--target", "label"])
+        .args(["--strict-relationships", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let (_, _, south) = class_profile(&got, "1", "south");
+    assert!((south - 0.5).abs() < 0.08, "label 1 south share {south}");
+}
+
+#[test]
+fn synthesize_target_strict_relationships_abort_on_a_thin_class() {
+    let wrk = Workdir::new("synthesize_target_strict");
+    // Class "b" has 6 rows of distinct (city, zip) tuples, all below
+    // --min-count 5, so its joint group can't be kept.
+    let mut csv = String::from("cls,city,zip\n");
+    for i in 0..100 {
+        csv.push_str(&format!("a,c{},{}\n", i % 2, 100 + i % 2));
+    }
+    for i in 0..6 {
+        csv.push_str(&format!("b,u{i},{}\n", 900 + i));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "joint", "members": ["city", "zip"]}]}"#,
+    );
+    let run = |strict: bool| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args([
+            "-n",
+            "100",
+            "--seed",
+            "1",
+            "--target",
+            "cls",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict.json"));
+        if strict {
+            cmd.arg("--strict-relationships");
+        }
+        cmd.arg("data.csv");
+        cmd
+    };
+    wrk.assert_success(&mut run(false));
+    assert!(!wrk.output_stderr(&mut run(true)).is_empty());
+}
+
+#[test]
+fn synthesize_target_keeps_one_consistent_fake_per_value_across_classes() {
+    let wrk = Workdir::new("synthesize_target_consistent_fakes");
+    let mut csv = String::from("cls,first_name\n");
+    for i in 0..300 {
+        let name = ["SRC_Michael", "SRC_Sarah", "SRC_Tom"][i % 3];
+        csv.push_str(&format!(
+            "{},{name}\n",
+            ["a", "b", "c"][i % 2 + (i % 5 == 0) as usize]
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}],
+            "enum_threshold": 10}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "1000",
+        "--seed",
+        "5",
+        "--consistent-fakes",
+        "--target",
+        "cls",
+    ])
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let fakes: std::collections::HashSet<&str> = got[1..].iter().map(|r| r[1].as_str()).collect();
+    assert_eq!(fakes.len(), 3, "one fake per source value: {fakes:?}");
+    assert!(fakes.iter().all(|f| !f.starts_with("SRC_")));
+}
+
+#[test]
+fn synthesize_target_reads_no_headers_and_a_custom_delimiter() {
+    let wrk = Workdir::new("synthesize_target_no_headers");
+    let mut csv = String::new();
+    for i in 0..400 {
+        let positive = i % 4 == 0;
+        csv.push_str(&format!(
+            "{};{}\n",
+            if positive { "y" } else { "n" },
+            if positive { 900 + i % 50 } else { 10 + i % 50 }
+        ));
+    }
+    wrk.create_from_string("data.ssv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.env("QSV_NO_HEADERS", "1")
+        .args([
+            "-n",
+            "2000",
+            "--seed",
+            "2",
+            "--delimiter",
+            ";",
+            "--target",
+            "0",
+        ])
+        .arg("data.ssv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let v: i64 = r[1].parse().unwrap();
+        assert_eq!(r[0] == "y", v >= 900, "{r:?}");
+    }
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_format_parquet_holds_a_column_classes_type_differently() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("synthesize_target_parquet");
+    // `score` is all whole numbers in class "a" (Integer) and has decimals in
+    // class "b" (Float); the column is Float for the whole input.
+    let mut csv = String::from("cls,score\n");
+    for i in 0..200 {
+        if i % 2 == 0 {
+            csv.push_str(&format!("a,{}\n", i));
+        } else {
+            csv.push_str(&format!("b,{}.25\n", i));
+        }
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n", "500", "--seed", "1", "--target", "cls", "--format", "parquet",
+    ])
+    .args(["-o", "out.parquet", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let df = read_parquet(&wrk, "out.parquet");
+    assert_eq!(df.column("score").unwrap().dtype(), &DataType::Float64);
+    assert_eq!(df.height(), 500);
+}
+
+#[test]
+fn synthesize_target_classes_use_the_dictionary_by_column_name() {
+    let wrk = Workdir::new("synthesize_target_dictionary");
+    let mut csv = String::from("cls,day\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "{},2024-{:02}-{:02}\n",
+            ["a", "b"][i % 2],
+            1 + i % 12,
+            1 + i % 28
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "day", "type": "Date", "content_type": "date:%d/%m/%Y"}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "500",
+        "--seed",
+        "2",
+        "--target",
+        "cls",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let parts: Vec<&str> = r[1].split('/').collect();
+        assert!(
+            parts.len() == 3 && parts[2].len() == 4,
+            "day not in the dictionary's %d/%m/%Y format: {r:?}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_model_rejects_broken_target_classes() {
+    let wrk = Workdir::new("synthesize_target_broken_model");
+    target_fixture(&wrk);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1", "--target", "label"])
+        .args(["--save-model", "m.json", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let model: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("m.json").unwrap()).unwrap();
+    let expect_error = |name: &str, model: &serde_json::Value, needle: &str| {
+        wrk.create_from_string(name, &model.to_string());
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--model", name]);
+        let err = wrk.output_stderr(&mut cmd);
+        assert!(
+            err.contains(needle),
+            "{name}: expected '{needle}', got: {err}"
+        );
+    };
+
+    let mut missing = model.clone();
+    missing["target"]["classes"][0]["schedule"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    expect_error("missing.json", &missing, "is never generated");
+
+    let mut out_of_range = model.clone();
+    out_of_range["target"]["col_idx"] = 99.into();
+    expect_error(
+        "range.json",
+        &out_of_range,
+        "target column 99 is out of range",
+    );
+
+    let mut no_classes = model;
+    no_classes["target"]["classes"] = serde_json::json!([]);
+    expect_error("empty.json", &no_classes, "a target with no classes");
 }

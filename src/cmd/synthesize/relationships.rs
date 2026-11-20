@@ -156,6 +156,7 @@ pub(crate) fn build_emit_schedule(
                 columns: vec![sr.field.clone()],
                 distinct,
                 rows,
+                class: None,
             });
         }
         schedule.push(EmitUnit::Independent {
@@ -277,6 +278,7 @@ fn resolve_joint(indices: &[usize], params: &ScheduleParams) -> CliResult<Option
                     columns:  names.iter().map(|n| (*n).to_string()).collect(),
                     distinct: suppressed.0,
                     rows:     suppressed.1,
+                    class:    None,
                 });
             }
             log::info!(
@@ -315,6 +317,7 @@ fn resolve_joint(indices: &[usize], params: &ScheduleParams) -> CliResult<Option
                 columns: names.iter().map(|n| (*n).to_string()).collect(),
                 distinct,
                 rows,
+                class: None,
             });
             let msg = format!(
                 "joint relationship on {names:?}: all {distinct} distinct tuple(s) occur fewer \

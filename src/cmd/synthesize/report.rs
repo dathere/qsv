@@ -27,6 +27,10 @@ pub(crate) struct Suppression {
     pub(crate) distinct: usize,
     /// Source rows holding a dropped value (or tuple).
     pub(crate) rows:     u64,
+    /// With `--target`, the class whose profile dropped them; `None` for the
+    /// whole-input profile and for dropped classes themselves.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) class:    Option<String>,
 }
 
 /// Hashes a row by value, so the same value printed differently (`10.50` vs

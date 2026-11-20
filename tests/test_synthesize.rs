@@ -4789,7 +4789,18 @@ fn synthesize_target_strict_relationships_abort_on_a_thin_class() {
         cmd
     };
     wrk.assert_success(&mut run(false));
-    assert!(!wrk.output_stderr(&mut run(true)).is_empty());
+    // Without --strict-relationships the same message is only a warning, so
+    // the exit status is what shows the abort.
+    let out = wrk.output(&mut run(true));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "expected the thin class to abort: {err}"
+    );
+    assert!(
+        err.contains("all 6 distinct tuple(s) occur fewer than --min-count"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -4967,4 +4978,213 @@ fn synthesize_model_rejects_broken_target_classes() {
     let mut no_classes = model;
     no_classes["target"]["classes"] = serde_json::json!([]);
     expect_error("empty.json", &no_classes, "a target with no classes");
+}
+
+#[test]
+fn synthesize_target_report_lists_only_suppressions_that_shape_the_output() {
+    let wrk = Workdir::new("synthesize_target_report_suppressions");
+    // `first_name` is a fake-value column (its whole-input generator is
+    // used), with a name rare within each class; `v` is a binned target.
+    let mut csv = String::from("v,first_name\n");
+    for i in 0..400 {
+        let name = if i % 50 == 0 {
+            "SRC_Rare"
+        } else {
+            ["SRC_A", "SRC_B"][i % 2]
+        };
+        csv.push_str(&format!("{i},{name}\n"));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "first_name", "type": "String", "content_type": "first_name"}],
+            "enum_threshold": 10}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "200",
+        "--seed",
+        "1",
+        "--consistent-fakes",
+        "--target",
+        "v",
+    ])
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("--report")
+    .arg(wrk.path("report.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let report = read_report(&wrk);
+    let suppressed = report["privacy"]["suppressed"].as_array().unwrap();
+    assert!(
+        suppressed.iter().all(|s| s.get("class").is_none()),
+        "suppressions from discarded class generators: {suppressed:?}"
+    );
+}
+
+/// Class "b" has 3 distinct dates (enumerated in the class) while the column
+/// overall has 200 (generated from buckets in the dictionary's format), and
+/// unique zero-padded codes (filler text in the class, enumerated overall).
+fn target_type_fixture(wrk: &Workdir) {
+    let mut csv = String::from("cls,day,code\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "a,2024-{:02}-{:02},{:05}\n",
+            1 + i / 28,
+            1 + i % 28,
+            i % 20
+        ));
+    }
+    for i in 0..30 {
+        csv.push_str(&format!("b,2026-03-0{},{:05}\n", 1 + i % 3, 900 + i));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [{"name": "day", "type": "Date", "content_type": "date:%d/%m/%Y"}]}"#,
+    );
+}
+
+#[test]
+fn synthesize_target_classes_keep_each_column_written_one_way() {
+    let wrk = Workdir::new("synthesize_target_one_form");
+    target_type_fixture(&wrk);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "600",
+        "--seed",
+        "1",
+        "--min-count",
+        "1",
+        "--target",
+        "cls",
+    ])
+    .arg("--dictionary")
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(got[1..].iter().any(|r| r[0] == "b"));
+    for r in &got[1..] {
+        assert_eq!(r[1].split('/').count(), 3, "day not in %d/%m/%Y: {r:?}");
+        assert!(
+            r[2].len() == 5 && r[2].bytes().all(|b| b.is_ascii_digit()),
+            "code lost its zero padding: {r:?}"
+        );
+    }
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_target_parquet_holds_columns_classes_generate_differently() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("synthesize_target_parquet_forms");
+    target_type_fixture(&wrk);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "600",
+        "--seed",
+        "1",
+        "--min-count",
+        "1",
+        "--target",
+        "cls",
+    ])
+    .args(["--format", "parquet", "-o", "out.parquet", "--dictionary"])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let df = read_parquet(&wrk, "out.parquet");
+    assert_eq!(df.height(), 600);
+    assert_eq!(df.column("day").unwrap().dtype(), &DataType::Date);
+    assert_eq!(df.column("code").unwrap().dtype(), &DataType::String);
+}
+
+#[test]
+fn synthesize_target_splits_50_values_and_an_empty_one_by_value() {
+    let wrk = Workdir::new("synthesize_target_cap");
+    let rows = |values: usize| {
+        let mut csv = String::from("cls,v\n");
+        for i in 0..values * 6 {
+            csv.push_str(&format!("c{:02},{i}\n", i % values));
+        }
+        csv.push_str(&",1\n".repeat(6));
+        csv
+    };
+    wrk.create_from_string("fifty.csv", &rows(50));
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "1", "--target", "cls", "fifty.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let classes: std::collections::HashSet<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(classes.len(), 51, "50 values and the empty class");
+
+    wrk.create_from_string("fiftyone.csv", &rows(51));
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--target", "cls", "fiftyone.csv"]);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("more than 50 distinct values and isn't numeric")
+    );
+}
+
+#[test]
+fn synthesize_target_trims_labels_like_frequency() {
+    let wrk = Workdir::new("synthesize_target_trim");
+    let mut csv = String::from("cls,v\n");
+    for i in 0..100 {
+        // " yes" and "yes" are one class, as `frequency` counts them.
+        let label = if i % 2 == 0 { " yes" } else { "yes" };
+        csv.push_str(&format!("\"{label}\",{i}\n"));
+    }
+    for i in 0..100 {
+        csv.push_str(&format!("no,{}\n", 1000 + i));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "1", "--target", "cls", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let classes: std::collections::HashSet<&str> = got[1..].iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(
+        classes,
+        ["yes", "no"]
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+    );
+    for r in &got[1..] {
+        let v: f64 = r[1].parse().unwrap();
+        assert_eq!(r[0] == "no", v >= 1000.0, "{r:?}");
+    }
+}
+
+#[test]
+fn synthesize_target_rows_per_file_join_to_the_single_file() {
+    let wrk = Workdir::new("synthesize_target_rows_per_file");
+    target_fixture(&wrk);
+    let mut single = wrk.command("synthesize");
+    single.args([
+        "-n", "20000", "--seed", "8", "--target", "label", "data.csv",
+    ]);
+    let single = wrk.stdout::<String>(&mut single);
+    let mut split = wrk.command("synthesize");
+    split
+        .args(["-n", "20000", "--seed", "8", "--target", "label"])
+        .args(["--rows-per-file", "7000", "-o", "out_{}.csv", "data.csv"]);
+    wrk.assert_success(&mut split);
+    let joined: String = ["out_00000.csv", "out_07000.csv", "out_14000.csv"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let text = wrk.read_to_string(name).unwrap();
+            if i == 0 {
+                text
+            } else {
+                text.split_once('\n').unwrap().1.to_string()
+            }
+        })
+        .collect();
+    assert_eq!(single + "\n", joined);
 }

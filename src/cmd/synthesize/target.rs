@@ -138,7 +138,11 @@ pub(crate) fn split(
         let slot = if let Some(&slot) = index.get(&key) {
             slot
         } else {
-            if bins.is_none() && open.len() == MAX_CLASSES {
+            // The null class doesn't count toward the cap.
+            if bins.is_none()
+                && key != ClassKey::Null
+                && open.iter().filter(|o| o.key != ClassKey::Null).count() == MAX_CLASSES
+            {
                 return Ok(None);
             }
             let path = dir.join(format!("class{}.csv", open.len()));

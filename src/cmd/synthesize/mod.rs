@@ -938,6 +938,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         args.flag_delimiter,
         args.flag_min_count,
         prefer_dmy,
+        false,
     )?;
     generator::apply_quantiles(
         &mut stats_records,
@@ -1001,7 +1002,19 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
 
     let columns = stats_records.iter().map(|sr| sr.field.clone()).collect();
     let stats_types: Vec<&str> = stats_records.iter().map(|sr| sr.r#type.as_str()).collect();
-    let types = output::resolve_types(&schedule, &stats_types, prefer_dmy);
+    let mut types = output::resolve_types(&schedule, &stats_types, prefer_dmy);
+    // A grouped column a class writes as another type can't fall back alone,
+    // so its type widens to String, which holds any value.
+    if let Some(target) = &target {
+        for class in &target.classes {
+            let class_types = output::resolve_types(&class.schedule, &stats_types, prefer_dmy);
+            for (col, ty) in class_types.iter().enumerate() {
+                if col != target.col_idx && !output::holds(&types[col], ty) {
+                    types[col] = output::OutType::String;
+                }
+            }
+        }
+    }
     let fit_info = model::FitInfo {
         seed:        args.flag_seed,
         rows:        args.flag_rows,
@@ -1099,7 +1112,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
         classes.into_iter().partition(|c| c.rows >= min_count);
     if !dropped.is_empty() {
         let rows = dropped.iter().map(|c| c.rows).sum();
-        log::warn!(
+        wwarn!(
             "synthesize: --target '{name}': {} class(es) seen in fewer than {min_count} rows \
              dropped ({rows} rows); their share is redistributed",
             dropped.len()
@@ -1197,10 +1210,22 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             .clone()
     };
 
+    // A class generator must write what the whole-input type can hold (an
+    // Integer column's values in a Float column are fine): one enumerated in
+    // a class but generated overall would print raw source values in a
+    // column whose other classes print the dictionary's date format.
+    let stats_types: Vec<&str> = stats.iter().map(|sr| sr.r#type.as_str()).collect();
+    let whole_types = output::resolve_types(tf.global_schedule, &stats_types, tf.prefer_dmy);
+    let unit_type = |unit: &EmitUnit, col: usize| {
+        output::resolve_types(std::slice::from_ref(unit), &stats_types, tf.prefer_dmy)
+            .swap_remove(col)
+    };
+
     let comma = Some(Delimiter(b','));
     let nclasses = classes.len();
     let mut fitted = Vec::with_capacity(nclasses);
     let mut fell_back: Vec<usize> = vec![0; stats.len()];
+    let mut retyped: Vec<usize> = vec![0; stats.len()];
     for (i, class) in classes.into_iter().enumerate() {
         let path = class.path.to_string_lossy().to_string();
         let stats_args: Vec<&str> = tf.stats_args.iter().map(String::as_str).collect();
@@ -1242,6 +1267,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             comma,
             min_count,
             tf.prefer_dmy,
+            true,
         )?;
         generator::apply_quantiles(&mut class_stats, global.quantiles, class.rows, min_count)?;
 
@@ -1266,45 +1292,87 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             suppressions: &suppressions,
         };
         let schedule = build_emit_schedule(&params, &mut target::class_rng(tf.base_seed, i))?;
-        let schedule = schedule
-            .into_iter()
-            .filter_map(|unit| match unit {
-                EmitUnit::Independent { col_idx, .. } if col_idx == t => None,
-                EmitUnit::Independent { col_idx, .. } if is_faker(col_idx) => {
-                    Some(EmitUnit::Independent {
-                        col_idx,
-                        generator: fallback(col_idx),
-                    })
-                },
+        // Columns this class takes from the whole input. Their class
+        // generators are discarded, and with them what `--min-count` dropped
+        // for them.
+        let mut replaced: HashSet<usize> = HashSet::from([t]);
+        let mut units = Vec::with_capacity(schedule.len());
+        for unit in schedule {
+            let EmitUnit::Independent { col_idx, generator } = &unit else {
+                units.push(unit);
+                continue;
+            };
+            let col = *col_idx;
+            if col == t {
+                continue;
+            }
+            let use_whole = if is_faker(col) {
+                true
+            } else if matches!(generator, ColumnGenerator::Empty)
+                && class_stats[col].nullcount < class.rows
+            {
                 // Empty although the class holds values: too few to profile
                 // (range trimming or suppression emptied it).
-                EmitUnit::Independent {
-                    col_idx,
-                    generator: ColumnGenerator::Empty,
-                } if class_stats[col_idx].nullcount < class.rows => {
-                    fell_back[col_idx] += 1;
-                    Some(EmitUnit::Independent {
-                        col_idx,
-                        generator: fallback(col_idx),
-                    })
-                },
-                unit => Some(unit),
-            })
-            .collect();
+                fell_back[col] += 1;
+                true
+            } else if matches!(generator, ColumnGenerator::LoremFallback { .. })
+                && !matches!(
+                    whole.get(&col),
+                    None | Some(ColumnGenerator::LoremFallback { .. })
+                )
+            {
+                // Filler text is no profile either, when the whole input has
+                // one (values all unique in a class, enumerated overall).
+                fell_back[col] += 1;
+                true
+            } else if !output::holds_exactly(&whole_types[col], &unit_type(&unit, col)) {
+                retyped[col] += 1;
+                true
+            } else {
+                false
+            };
+            if use_whole {
+                replaced.insert(col);
+                units.push(EmitUnit::Independent {
+                    col_idx:   col,
+                    generator: fallback(col),
+                });
+            } else {
+                units.push(unit);
+            }
+        }
         for mut s in suppressions.into_inner() {
-            s.class = Some(class.label.clone());
-            global.suppressions.borrow_mut().push(s);
+            let discarded = match s.columns.as_slice() {
+                [field] => stats
+                    .iter()
+                    .position(|sr| &sr.field == field)
+                    .is_some_and(|c| replaced.contains(&c)),
+                _ => false,
+            };
+            if !discarded {
+                s.class = Some(class.label.clone());
+                global.suppressions.borrow_mut().push(s);
+            }
         }
         fitted.push(target::Class {
-            label: class.label,
-            bucket: class.bucket,
-            rows: class.rows,
-            schedule,
+            label:    class.label,
+            bucket:   class.bucket,
+            rows:     class.rows,
+            schedule: units,
         });
+    }
+    for (col, &n) in retyped.iter().enumerate() {
+        if n > 0 {
+            wwarn!(
+                "synthesize: --target '{name}': '{}' would be written differently in {n} of \
+                 {nclasses} classes than in the whole input, which use its whole-input generator",
+                stats[col].field
+            );
+        }
     }
     for (col, &n) in fell_back.iter().enumerate() {
         if n > 0 {
-            log::warn!(
+            wwarn!(
                 "synthesize: --target '{name}': '{}' has too few values to profile in {n} of \
                  {nclasses} classes, which use its whole-input generator",
                 stats[col].field

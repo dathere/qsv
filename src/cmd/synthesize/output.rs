@@ -131,6 +131,21 @@ pub(crate) fn resolve_types(
     types
 }
 
+/// Whether values a generator types `values` keep their written form in a
+/// column typed `column`: the same type, or Integer values in a Float column.
+pub(crate) fn holds_exactly(column: &OutType, values: &OutType) -> bool {
+    column == values || (*column == OutType::Float && *values == OutType::Integer)
+}
+
+/// Whether a column typed `column` can hold values a generator types
+/// `values`: the same type, Integer values in a Float column, or anything in a
+/// String column.
+pub(crate) fn holds(column: &OutType, values: &OutType) -> bool {
+    column == values
+        || *column == OutType::String
+        || (*column == OutType::Float && *values == OutType::Integer)
+}
+
 const fn number_type(is_int: bool) -> OutType {
     if is_int {
         OutType::Integer

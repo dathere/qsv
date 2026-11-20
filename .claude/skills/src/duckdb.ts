@@ -72,6 +72,15 @@ export interface DuckDbSandbox {
 }
 
 /** First DuckDB release with the allowed_directories / allowed_paths settings. */
+/**
+ * A path as DuckDB SQL should name it. Windows separators become '/', but only on Windows:
+ * elsewhere a backslash is an ordinary filename character, and rewriting it would point
+ * DuckDB at a different file than the one the server approved (`a\..\b` → `a/../b`).
+ */
+export function duckDbPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? p.replace(/\\/g, "/") : p;
+}
+
 export const MIN_SANDBOX_DUCKDB_VERSION = "1.2.0";
 
 /** Whether a DuckDB version (x.y.z) supports the sandbox settings. */
@@ -90,11 +99,15 @@ export function supportsSandbox(version: string): boolean {
  * SET statements that confine DuckDB to the sandbox, then lock its configuration so the
  * query can't change them back (or point temp_directory and the like elsewhere).
  */
-export function buildSandboxPrelude(sandbox: DuckDbSandbox): string {
-  const quote = (p: string) => `'${p.replace(/\\/g, "/").replace(/'/g, "''")}'`;
+export function buildSandboxPrelude(
+  sandbox: DuckDbSandbox,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const quote = (p: string) => `'${duckDbPath(p, platform).replace(/'/g, "''")}'`;
   const dirs = sandbox.allowedDirectories
     .filter((d) => d.length > 0)
-    .map((d) => quote(d.endsWith("/") || d.endsWith("\\") ? d : `${d}/`));
+    .map((d) => duckDbPath(d, platform))
+    .map((d) => quote(d.endsWith("/") ? d : `${d}/`));
   const paths = sandbox.allowedPaths.filter((p) => p.length > 0).map(quote);
   return (
     `SET allowed_directories = [${dirs.join(", ")}];\n` +
@@ -300,7 +313,7 @@ export function translateSql(
   options?: TranslateSqlOptions,
 ): string {
   // Normalize path separators for SQL (Windows backslashes → forward slashes)
-  const normalizedPath = inputFile.replace(/\\/g, "/");
+  const normalizedPath = duckDbPath(inputFile);
   // Escape single quotes in path
   const escapedPath = normalizedPath.replace(/'/g, "''");
 
@@ -498,7 +511,7 @@ export async function executeDuckDbQuery(
     if (!outputFile) {
       throw new Error("output_file is required for parquet format output with DuckDB");
     }
-    const normalizedOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+    const normalizedOutput = duckDbPath(outputFile).replace(/'/g, "''");
     const codec = (options?.compression ?? "zstd").toLowerCase();
     if (!VALID_PARQUET_CODECS.has(codec)) {
       throw new Error(`Invalid parquet codec '${codec}'. Valid codecs: ${[...VALID_PARQUET_CODECS].join(", ")}`);

@@ -13,6 +13,7 @@ import {
   findFileWritingStatement,
   executeDuckDbQuery,
   supportsSandbox,
+  duckDbPath,
   MIN_SANDBOX_DUCKDB_VERSION,
   CSV_LIKE_EXTENSIONS,
   type DuckDbSandbox,
@@ -166,8 +167,8 @@ async function buildDuckDbParquetSql(
 
   // Normalize paths for SQL: backslash to forward slash (Windows compat),
   // then single-quote escaping for SQL string literals.
-  const normInput = inputFile.replace(/\\/g, "/").replace(/'/g, "''");
-  const normOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+  const normInput = duckDbPath(inputFile).replace(/'/g, "''");
+  const normOutput = duckDbPath(outputFile).replace(/'/g, "''");
 
   const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
 

@@ -12,6 +12,7 @@ import {
   findFileWritingStatement,
   supportsSandbox,
   buildSandboxPrelude,
+  duckDbPath,
   isDuckDbEnabled,
   getDuckDbStatus,
   resetDuckDbState,
@@ -108,13 +109,25 @@ describe("translateSql", () => {
     );
   });
 
-  test("normalizes Windows backslashes in paths", () => {
+  test("normalizes Windows backslashes in paths", { skip: process.platform !== "win32" }, () => {
     const sql = "SELECT * FROM _t_1";
     const result = translateSql(sql, "C:\\Users\\data\\test.parquet");
     assert.strictEqual(
       result,
       "SELECT * FROM read_parquet('C:/Users/data/test.parquet') AS _tbl_1",
     );
+  });
+
+  test("keeps a literal backslash in POSIX paths", { skip: process.platform === "win32" }, () => {
+    // a backslash is an ordinary filename character here; '/' would name another path
+    const result = translateSql("SELECT * FROM _t_1", "/data/a\\..\\b.parquet");
+    assert.strictEqual(result, "SELECT * FROM read_parquet('/data/a\\..\\b.parquet') AS _tbl_1");
+  });
+
+  test("duckDbPath converts separators only on Windows", () => {
+    assert.strictEqual(duckDbPath("C:\\work\\x.csv", "win32"), "C:/work/x.csv");
+    assert.strictEqual(duckDbPath("/work/a\\..\\..\\etc", "linux"), "/work/a\\..\\..\\etc");
+    assert.strictEqual(duckDbPath("/work/a\\b", "darwin"), "/work/a\\b");
   });
 
   test("escapes single quotes in file paths", () => {
@@ -649,13 +662,23 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
   });
 
   test("buildSandboxPrelude quotes paths and locks the configuration last", () => {
-    const prelude = buildSandboxPrelude({
-      allowedDirectories: ["/data/it's", "C:\\work\\"],
-      allowedPaths: ["/data/in.parquet", ""],
-    });
+    const prelude = buildSandboxPrelude(
+      {
+        allowedDirectories: ["/data/it's", "C:\\work\\"],
+        allowedPaths: ["/data/in.parquet", ""],
+      },
+      "win32",
+    );
     assert.ok(prelude.includes("['/data/it''s/', 'C:/work/']"), prelude);
     assert.ok(prelude.includes("SET allowed_paths = ['/data/in.parquet'];"), prelude);
     assert.ok(prelude.trimEnd().endsWith("SET lock_configuration = true;"), prelude);
+
+    // on POSIX an approved name with backslashes must not become a `..` path
+    const posix = buildSandboxPrelude(
+      { allowedDirectories: ["/work"], allowedPaths: ["/work/x\\..\\..\\etc\\passwd"] },
+      "linux",
+    );
+    assert.ok(posix.includes("SET allowed_paths = ['/work/x\\..\\..\\etc\\passwd'];"), posix);
   });
 
   test("a caller's SQL never starts the duckdb script", { skip: !DUCKDB_AVAILABLE, timeout: 30_000 }, async () => {
@@ -666,7 +689,12 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
     assert.notStrictEqual(result.exitCode, 0, "should fail as SQL");
   });
 
-  test("blocks file writes outside the allowed directories", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async () => {
+  test("blocks file writes outside the allowed directories", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async (t) => {
+    const status = getDuckDbStatus();
+    if (status.status !== "available" || !supportsSandbox(status.version)) {
+      t.skip("DuckDB too old for the sandbox settings (plugin mode routes it to sqlp)");
+      return;
+    }
     const allowed = await createTestDir("duckdb-sandbox-allowed");
     const outside = await createTestDir("duckdb-sandbox-outside");
     try {

@@ -3482,6 +3482,12 @@ fn synthesize_model_rejects_other_versions_and_broken_models() {
     v1["qsv_synthesize_model"] = 1.into();
     expect_error("v1.json", &v1, "model format version 1");
 
+    // A version 2 model has no decimal places, so Float columns would print
+    // unrounded.
+    let mut v2 = model.clone();
+    v2["qsv_synthesize_model"] = 2.into();
+    expect_error("v2.json", &v2, "model format version 2");
+
     let mut untyped = model.clone();
     untyped["types"].as_array_mut().unwrap().pop();
     expect_error(
@@ -4314,12 +4320,10 @@ fn written_decimals(cell: &str) -> usize {
     cell.split_once('.').map_or(0, |(_, frac)| frac.len())
 }
 
-#[test]
-fn synthesize_floats_keep_source_decimals() {
-    let wrk = Workdir::new("synthesize_float_decimals");
-    // `price` has 2 places, `ratio` 3, `noise` binary-float noise (stats
-    // counts 17 places, so it stays unrounded) and `whole` 1 (`stats` counts
-    // `12.0` as 1 place, so whole-number draws print as `12`).
+/// `price` has 2 places, `ratio` 3, `noise` binary-float noise (stats counts
+/// 17 places, so it stays unrounded) and `whole` 1 (`stats` counts `12.0` as
+/// 1 place, so whole-number draws print as `12`).
+fn float_decimals_fixture(wrk: &Workdir) {
     let mut csv = String::from("price,ratio,noise,whole\n");
     for i in 1..=60 {
         let f = f64::from(i);
@@ -4331,6 +4335,12 @@ fn synthesize_floats_keep_source_decimals() {
         ));
     }
     wrk.create_from_string("data.csv", &csv);
+}
+
+#[test]
+fn synthesize_floats_keep_source_decimals() {
+    let wrk = Workdir::new("synthesize_float_decimals");
+    float_decimals_fixture(&wrk);
 
     let mut cmd = wrk.command("synthesize");
     cmd.args(["-n", "2000", "--seed", "3", "--freq-limit", "1", "data.csv"]);
@@ -4441,4 +4451,66 @@ fn synthesize_correlated_floats_keep_source_decimals() {
     let places = |col: usize| got[1..].iter().map(|r| written_decimals(&r[col])).max();
     assert_eq!(places(0), Some(2), "x");
     assert_eq!(places(1), Some(1), "y");
+}
+
+#[test]
+fn synthesize_float_decimals_are_the_same_at_any_jobs_and_from_a_model() {
+    let wrk = Workdir::new("synthesize_float_decimals_jobs_model");
+    float_decimals_fixture(&wrk);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "4", "--freq-limit", "1"])
+            .args(extra);
+        wrk.stdout::<String>(&mut cmd)
+    };
+    let j1 = run(&["-j", "1", "data.csv"]);
+    let j4 = run(&["-j", "4", "--save-model", "m.json", "data.csv"]);
+    let from_model = run(&["--model", "m.json"]);
+    assert_eq!(j1, j4, "-j 1 vs -j 4");
+    assert_eq!(j4, from_model, "fit vs --model");
+
+    // The model carries each column's places (noise: none).
+    let model = wrk.read_to_string("m.json").unwrap();
+    let decimals: Vec<serde_json::Value> = serde_json::from_str::<serde_json::Value>(&model)
+        .unwrap()["schedule"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|unit| unit["Independent"]["generator"]["NumericQuantile"]["decimals"].clone())
+        .collect();
+    assert_eq!(
+        decimals,
+        [2.into(), 3.into(), serde_json::Value::Null, 1.into()]
+    );
+}
+
+#[test]
+#[cfg(feature = "polars")]
+fn synthesize_format_parquet_keeps_whole_number_floats_as_floats() {
+    use polars::prelude::DataType;
+
+    let wrk = Workdir::new("synthesize_float_decimals_parquet");
+    float_decimals_fixture(&wrk);
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "500", "--seed", "4", "--freq-limit", "1"])
+            .args(extra)
+            .arg("data.csv");
+        wrk.assert_success(&mut cmd);
+    };
+    run(&["--format", "parquet", "-o", "out.parquet"]);
+    run(&["-o", "out.csv"]);
+
+    let df = read_parquet(&wrk, "out.parquet");
+    let whole = df.column("whole").unwrap();
+    assert_eq!(whole.dtype(), &DataType::Float64);
+    let whole = whole.f64().unwrap();
+    let csv_rows = wrk.read_csv("out.csv");
+    assert!(
+        csv_rows.iter().any(|r| !r[3].contains('.')),
+        "the CSV should have whole-number draws"
+    );
+    for (i, row) in csv_rows.iter().enumerate() {
+        assert_eq!(whole.get(i), row[3].parse().ok(), "whole row {i}");
+    }
 }

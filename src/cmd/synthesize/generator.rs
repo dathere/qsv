@@ -772,9 +772,13 @@ pub(crate) fn float_decimals(stats: &StatsRecord) -> Option<u32> {
 /// 110.00000000000001`: `steps / scale` is the f64 nearest the decimal, so it
 /// prints as that decimal.
 pub(crate) fn decimal_steps(value: f64, decimals: Option<u32>) -> Option<(f64, f64)> {
+    // Below 2^50 the error in `value * scale` is under a quarter step, so a
+    // value already on the grid rounds to itself; nearer 2^53 it can land on
+    // a half and round a step away (4.000000000000005 at 15 places).
+    const EXACT_STEPS: f64 = 1_125_899_906_842_624.0;
     let scale = 10_f64.powi(i32::try_from(decimals?).ok()?);
-    let steps = (value * scale).round();
-    (steps.is_finite() && steps.abs() < 9_007_199_254_740_992.0).then_some((steps, scale))
+    let scaled = value * scale;
+    (scaled.abs() < EXACT_STEPS).then(|| (scaled.round(), scale))
 }
 
 /// Round `value` to `decimals` places (no-op for `None`), never returning
@@ -1339,6 +1343,16 @@ mod tests {
         assert_eq!(format_number(-0.004, false, Some(2)), "0");
         assert_eq!(round_to(1.234_5, None), 1.234_5);
         assert_eq!(round_to(1e300, Some(2)), 1e300, "too large to round");
+        // Too close to an f64's spacing to round exactly: left as is rather
+        // than moved a step off a real value.
+        let edge = 4.000_000_000_000_005;
+        assert_eq!(round_to(edge, Some(15)), edge);
+        assert_eq!(floor_to(edge, Some(15)), edge);
+        assert_eq!(round_at_least(edge, edge, Some(15)), edge);
+        assert_eq!(
+            round_to(0.123_456_789_012_345, Some(15)),
+            0.123_456_789_012_345
+        );
 
         // A cap is floored to the grid, never rounded past the real bound.
         assert_eq!(floor_to(10.47, Some(1)), 10.4);

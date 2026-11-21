@@ -103,12 +103,14 @@ export function buildSandboxPrelude(
   sandbox: DuckDbSandbox,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const quote = (p: string) => `'${duckDbPath(p, platform).replace(/'/g, "''")}'`;
+  const quote = (p: string) => `'${p.replace(/'/g, "''")}'`;
   const dirs = sandbox.allowedDirectories
     .filter((d) => d.length > 0)
     .map((d) => duckDbPath(d, platform))
     .map((d) => quote(d.endsWith("/") ? d : `${d}/`));
-  const paths = sandbox.allowedPaths.filter((p) => p.length > 0).map(quote);
+  const paths = sandbox.allowedPaths
+    .filter((p) => p.length > 0)
+    .map((p) => quote(duckDbPath(p, platform)));
   return (
     `SET allowed_directories = [${dirs.join(", ")}];\n` +
     `SET allowed_paths = [${paths.join(", ")}];\n` +

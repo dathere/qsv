@@ -666,12 +666,12 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
     const prelude = buildSandboxPrelude(
       {
         allowedDirectories: ["/data/it's", "C:\\work\\"],
-        allowedPaths: ["/data/in.parquet", ""],
+        allowedPaths: ["/data/in.parquet", "", "C:\\work\\in.parquet"],
       },
       "win32",
     );
     assert.ok(prelude.includes("['/data/it''s/', 'C:/work/']"), prelude);
-    assert.ok(prelude.includes("SET allowed_paths = ['/data/in.parquet'];"), prelude);
+    assert.ok(prelude.includes("SET allowed_paths = ['/data/in.parquet', 'C:/work/in.parquet'];"), prelude);
     assert.ok(prelude.trimEnd().endsWith("SET lock_configuration = true;"), prelude);
 
     // on POSIX an approved name with backslashes must not become a `..` path

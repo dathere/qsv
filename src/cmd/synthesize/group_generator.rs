@@ -66,19 +66,20 @@ pub(crate) enum GroupGenerator {
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
         gap_buckets:      Vec<Vec<(f64, f64)>>,
-        /// Per-member `[lo, hi]` in the same domain as the buckets, with each
-        /// `hi` capped by every later member's. Each follower is clamped into
-        /// its range (then kept >= its predecessor, which the cap keeps in
-        /// range), so anchor + gap can't reach a follower's real extremes once
-        /// `--min-count` has trimmed them.
-        member_ranges:    Vec<(f64, f64)>,
+        /// Per blank pattern, per-member `[lo, hi]` in the same domain as the
+        /// buckets, with each `hi` capped by every later member the pattern
+        /// leaves filled; a blank member's range is otherwise unbounded. Each
+        /// follower is clamped into its range (then kept >= its predecessor,
+        /// which the cap keeps in range), so anchor + gap can't reach a
+        /// follower's real extremes once `--min-count` has trimmed them.
+        pattern_ranges:   Vec<Vec<(f64, f64)>>,
         /// Share of source rows where every member is blank; such a row is
         /// emitted blank without drawing any value.
         null_ratio:       f64,
         /// Which members are blank in the other rows, as seen in the source:
         /// `blank_patterns[p][k]` is true when member `k` is blank. The chain
-        /// is drawn whole and then blanked, so the members left filled stay in
-        /// order.
+        /// is drawn whole, its blank members unprinted, so the members left
+        /// filled stay in order.
         blank_patterns:   Vec<Vec<bool>>,
         /// Normalized cumulative weights of `blank_patterns`, ascending, last
         /// element == 1.0. A single pattern takes no draw.
@@ -147,7 +148,7 @@ impl GroupGenerator {
                 date_format,
                 anchor_buckets,
                 gap_buckets,
-                member_ranges,
+                pattern_ranges,
                 null_ratio,
                 blank_patterns,
                 blank_cumulative,
@@ -158,9 +159,29 @@ impl GroupGenerator {
                 if draw_null(*null_ratio, rng) {
                     return member_cols.iter().map(|&c| (c, String::new())).collect();
                 }
-                // The anchor's upper bound is capped by every follower's (see
-                // `resolve_ordered`), so the chain can always stay in range.
-                let mut value = sample_bucket(anchor_buckets, rng).min(member_ranges[0].1);
+                // A chain with one pattern takes no draw, so one whose members
+                // are blank in the same rows keeps the draws it had when a
+                // blank anchor blanked the chain.
+                let p = if blank_patterns.len() > 1 {
+                    let r = rng.random_range(0.0..1.0);
+                    blank_cumulative
+                        .partition_point(|&c| c < r)
+                        .min(blank_patterns.len() - 1)
+                } else {
+                    0
+                };
+                let (blanks, ranges) = (&blank_patterns[p], &pattern_ranges[p]);
+                let text = |value: f64, i: usize| {
+                    if blanks[i] {
+                        String::new()
+                    } else {
+                        format_ordered(value, *kind, is_int[i], decimals[i], date_format.as_ref())
+                    }
+                };
+                // The anchor's upper bound is capped by every filled
+                // follower's (see `resolve_ordered`), so the chain can always
+                // stay in range.
+                let mut value = sample_bucket(anchor_buckets, rng).min(ranges[0].1);
                 // Chain from the value actually emitted: a member is printed
                 // rounded to its grid (whole numbers for Integer, its source
                 // decimals for Float), so the next member must build on the
@@ -174,49 +195,19 @@ impl GroupGenerator {
                 };
                 value = quantize(value, 0, f64::NEG_INFINITY);
                 let mut out = Vec::with_capacity(member_cols.len());
-                out.push((
-                    member_cols[0],
-                    format_ordered(value, *kind, is_int[0], decimals[0], date_format.as_ref()),
-                ));
+                out.push((member_cols[0], text(value, 0)));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
                     // Gap buckets are clamped to >= 0, and the clamp into the
                     // follower's range is floored at the predecessor, so
                     // `value` stays non-decreasing along the chain.
                     let prev = value;
-                    let (lo, hi) = member_ranges[i + 1];
+                    let (lo, hi) = ranges[i + 1];
                     value = quantize(
                         (value + sample_bucket(gaps, rng)).clamp(lo, hi).max(prev),
                         i + 1,
                         prev,
                     );
-                    out.push((
-                        member_cols[i + 1],
-                        format_ordered(
-                            value,
-                            *kind,
-                            is_int[i + 1],
-                            decimals[i + 1],
-                            date_format.as_ref(),
-                        ),
-                    ));
-                }
-                // Drawn after the values, so a chain with one pattern keeps
-                // the draws it had when a blank anchor blanked the chain.
-                let blanks = if blank_patterns.len() > 1 {
-                    let r = rng.random_range(0.0..1.0);
-                    let idx = blank_cumulative
-                        .partition_point(|&c| c < r)
-                        .min(blank_patterns.len() - 1);
-                    blank_patterns.get(idx)
-                } else {
-                    blank_patterns.first()
-                };
-                if let Some(blanks) = blanks {
-                    for ((_, text), &blank) in out.iter_mut().zip(blanks) {
-                        if blank {
-                            text.clear();
-                        }
-                    }
+                    out.push((member_cols[i + 1], text(value, i + 1)));
                 }
                 out
             },

@@ -1076,3 +1076,29 @@ if (!QSV_AVAILABLE) {
   console.log('\n⚠️  qsv integration tests skipped - qsv binary not available or version too old');
   console.log(`   Current validation: ${JSON.stringify(config.qsvValidation, null, 2)}`);
 }
+
+test('qsv_sqlp runs a .sql script file, also when DuckDB is available', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+    const csvPath = await createTestCSV(testDir, 'test.csv', 'id,name\n2,Bob\n1,Alice\n');
+    const scriptPath = await createTestCSV(testDir, 'q.sql', 'SELECT name FROM _t_1 ORDER BY id;\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: testDir, allowedDirectories: [testDir] });
+
+    const result = await handleToolCall(
+      'qsv_sqlp',
+      { input_file: csvPath, sql: scriptPath },
+      executor,
+      loader,
+      provider,
+    );
+
+    assert.ok(!result.isError, result.content[0].text);
+    assert.match(result.content[0].text ?? '', /Alice\s+Bob/);
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});

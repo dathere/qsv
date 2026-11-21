@@ -13,31 +13,11 @@ import type {
   McpResource,
   FileMetadata,
 } from "./types.js";
-import { formatBytes, getErrorMessage } from "./utils.js";
+import { expandTilde, formatBytes, getErrorMessage } from "./utils.js";
 import { config as appConfig } from "./config.js";
 import { runQsvSimple } from "./executor.js";
 import { statsFilePath } from "./parquet-bridge.js";
 import { SENSITIVE_HOME_DIRS, normalizeForCaseFs } from "./tool-constants.js";
-
-/**
- * Expand tilde (~) in paths to the user's home directory
- * Handles: ~ (home dir), ~/path or ~\path (relative to home)
- */
-function expandTilde(path: string): string {
-  if (!path) return path;
-
-  // Handle ~/ or ~\ (Windows users might use backslash)
-  if (path.startsWith("~/") || path.startsWith("~\\")) {
-    return join(homedir(), path.slice(2));
-  }
-
-  // Handle ~ alone (just home directory)
-  if (path === "~") {
-    return homedir();
-  }
-
-  return path;
-}
 
 /**
  * Cache expiration time in milliseconds (1 minute)

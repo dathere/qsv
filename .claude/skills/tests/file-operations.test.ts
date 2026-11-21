@@ -10,6 +10,7 @@ import assert from "node:assert";
 import { writeFile, stat, mkdir, symlink, realpath } from "node:fs/promises";
 import { FilesystemResourceProvider } from "../src/mcp-filesystem.js";
 import { dirname, join, resolve, sep } from "node:path";
+import { homedir } from "node:os";
 import {
   buildConversionArgs,
   mapSchemaType,
@@ -675,6 +676,36 @@ describe("path confinement", () => {
     await resolveFilePathParams(p, outdir, provider);
     assert.strictEqual(p.outdir, join(ALLOWED, "out", "parts", "2026"));
     await refused({ outdir: resolve(sep, "elsewhere", "new", "parts") }, outdir);
+
+    // `to parquet` creates its destination directory too
+    const to = skill("to", [{ name: "destination", type: "string", required: true, description: "dest" }]);
+    const parquet: Record<string, unknown> = { subcommand: "parquet", destination: "out/pq/2026" };
+    await resolveFilePathParams(parquet, to, provider);
+    assert.strictEqual(parquet.destination, join(ALLOWED, "out", "pq", "2026"));
+    await refused({ subcommand: "parquet", destination: resolve(sep, "elsewhere", "new", "pq") }, to);
+  });
+
+  test("a home-relative directory may have several missing levels", async () => {
+    // only the home directory exists, and it is the allowed directory
+    const home = homedir();
+    const homeProvider = {
+      getWorkingDirectory: () => home,
+      resolvePath: async (p: string) => {
+        const r = resolve(home, p.replace(/^~(?=$|[\\/])/, home));
+        if (r !== home && dirname(r) !== home) {
+          throw new Error(`Path does not exist and parent directory is inaccessible: ${p}`);
+        }
+        return r;
+      },
+    } as unknown as FilesystemProviderExtended;
+    const outdir = skill("split", [{ name: "outdir", type: "string", required: true, description: "dir" }]);
+    const p: Record<string, unknown> = { outdir: "~/out/parts/2026" };
+    await resolveFilePathParams(p, outdir, homeProvider);
+    assert.strictEqual(p.outdir, join(home, "out", "parts", "2026"));
+    // `~\` is home too, as the provider expands it, even where `\` isn't a separator
+    const back: Record<string, unknown> = { outdir: "~\\out" };
+    await resolveFilePathParams(back, outdir, homeProvider);
+    assert.strictEqual(back.outdir, join(home, "out"));
   });
 
   test("a positional output arg receives the validated output file", () => {

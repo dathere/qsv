@@ -2,6 +2,29 @@
  * Shared utility functions for QSV MCP Server
  */
 
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+/**
+ * Expand tilde (~) in paths to the user's home directory
+ * Handles: ~ (home dir), ~/path or ~\path (relative to home)
+ */
+export function expandTilde(path: string): string {
+  if (!path) return path;
+
+  // Handle ~/ or ~\ (Windows users might use backslash)
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return join(homedir(), path.slice(2));
+  }
+
+  // Handle ~ alone (just home directory)
+  if (path === "~") {
+    return homedir();
+  }
+
+  return path;
+}
+
 /**
  * Extract a human-readable message from an unknown error.
  * Use in catch blocks: `catch (error: unknown) { getErrorMessage(error) }`

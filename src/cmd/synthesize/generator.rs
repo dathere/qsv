@@ -217,13 +217,16 @@ impl ColumnGenerator {
             consistent_fakes,
             min_count,
             &mut None,
+            true,
             rng,
         )
     }
 
     /// `suppressed_out` receives the (distinct values, rows) that `min_count`
     /// dropped, when the column's real values were sampled from (or would
-    /// have been, before every value was dropped).
+    /// have been, before every value was dropped). `warn` = false keeps the
+    /// warning that every value was dropped off stderr.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_tracked(
         stats: &StatsRecord,
         freqs: &[&FrequencyRecord],
@@ -234,6 +237,7 @@ impl ColumnGenerator {
         consistent_fakes: bool,
         min_count: u64,
         suppressed_out: &mut Option<(usize, u64)>,
+        warn: bool,
         rng: &mut StdRng,
     ) -> ColumnGenerator {
         let null_ratio = compute_null_ratio(stats.nullcount, total_rows);
@@ -277,7 +281,7 @@ impl ColumnGenerator {
         // 2. Fully-enumerated frequency pool — reproduces the real value set, weights, cardinality
         //    and repetition structure, minus values seen fewer than `min_count` times.
         if let Some(generator) =
-            try_frequency_weighted(freqs, null_ratio, min_count, suppressed_out)
+            try_frequency_weighted(freqs, null_ratio, min_count, suppressed_out, warn)
         {
             return generator;
         }
@@ -506,6 +510,7 @@ fn try_frequency_weighted(
     null_ratio: f64,
     min_count: u64,
     suppressed_out: &mut Option<(usize, u64)>,
+    warn: bool,
 ) -> Option<ColumnGenerator> {
     if freqs.is_empty() {
         return None;
@@ -547,7 +552,7 @@ fn try_frequency_weighted(
         );
     }
     if values.is_empty() {
-        if suppressed > 0 {
+        if suppressed > 0 && warn {
             wwarn!(
                 "synthesize: every value of column '{}' occurs fewer than --min-count \
                  ({min_count}) times; it will be generated from its faker or type-based generator \
@@ -1405,7 +1410,7 @@ mod tests {
     fn frequency_weighted_only_emits_pool_values_at_the_right_ratio() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "B", 300, 2.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        let generator = try_frequency_weighted(&refs, 0.0, 1, &mut None).unwrap();
+        let generator = try_frequency_weighted(&refs, 0.0, 1, &mut None, true).unwrap();
 
         let mut rng = StdRng::seed_from_u64(7); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -1426,7 +1431,7 @@ mod tests {
     fn frequency_weighted_rejects_other_bucket() {
         let freqs = [freq("c", "A", 700, 1.0), freq("c", "Other (5)", 300, 0.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        assert!(try_frequency_weighted(&refs, 0.0, 1, &mut None).is_none());
+        assert!(try_frequency_weighted(&refs, 0.0, 1, &mut None, true).is_none());
     }
 
     #[test]
@@ -1437,7 +1442,7 @@ mod tests {
             freq("c", "RARE", 4, 3.0),
         ];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        let generator = try_frequency_weighted(&refs, 0.0, 5, &mut None).unwrap();
+        let generator = try_frequency_weighted(&refs, 0.0, 5, &mut None, true).unwrap();
 
         let mut rng = StdRng::seed_from_u64(11); // DevSkim: ignore DS148264
         let n = 20_000;
@@ -1459,9 +1464,9 @@ mod tests {
     fn frequency_weighted_returns_none_when_all_values_below_min_count() {
         let freqs = [freq("c", "A", 4, 1.0), freq("c", "B", 1, 2.0)];
         let refs: Vec<&FrequencyRecord> = freqs.iter().collect();
-        assert!(try_frequency_weighted(&refs, 0.0, 5, &mut None).is_none());
+        assert!(try_frequency_weighted(&refs, 0.0, 5, &mut None, true).is_none());
         // The threshold is inclusive: count == min_count is kept.
-        assert!(try_frequency_weighted(&refs, 0.0, 4, &mut None).is_some());
+        assert!(try_frequency_weighted(&refs, 0.0, 4, &mut None, true).is_some());
     }
 
     #[test]

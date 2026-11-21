@@ -83,6 +83,9 @@ pub(crate) struct ScheduleParams<'a> {
     pub delimiter:             Option<Delimiter>,
     /// What `min_count` dropped, per column or joint group, for `--report`.
     pub suppressions:          &'a RefCell<Vec<Suppression>>,
+    /// Keep per-column warnings off stderr (the discovery probe, whose
+    /// columns the real build warns about).
+    pub quiet:                 bool,
 }
 
 /// Resolve the declared relationships and build the ordered `EmitUnit`
@@ -149,6 +152,7 @@ pub(crate) fn build_emit_schedule(
             params.consistent_fakes,
             params.min_count,
             &mut suppressed,
+            !params.quiet,
             rng,
         );
         if let Some((distinct, rows)) = suppressed {
@@ -353,7 +357,7 @@ enum JointLearn {
     AllSuppressed(usize, u64),
 }
 
-fn source_cell<'r>(
+pub(super) fn source_cell<'r>(
     record: &'r csv::ByteRecord,
     params: &ScheduleParams,
     col: usize,
@@ -953,7 +957,7 @@ fn learn_correlated_columns(
 /// The Spearman rank-correlation matrix of the given columns. Spearman (rather
 /// than Pearson) is used because the copula operates on ranks, and rank
 /// correlation survives the marginal transform.
-fn spearman_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
+pub(super) fn spearman_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let k = columns.len();
     let ranks: Vec<Vec<f64>> = columns.iter().map(|c| fractional_ranks(c)).collect();
     let mut matrix = vec![vec![0.0_f64; k]; k];
@@ -995,7 +999,7 @@ fn fractional_ranks(values: &[f64]) -> Vec<f64> {
 
 /// Pearson correlation of two equal-length vectors. A zero-variance input
 /// yields `0.0` (an undefined correlation is treated as "uncorrelated").
-fn pearson(a: &[f64], b: &[f64]) -> f64 {
+pub(super) fn pearson(a: &[f64], b: &[f64]) -> f64 {
     #[allow(clippy::cast_precision_loss)]
     let n = a.len() as f64;
     let mean_a = a.iter().sum::<f64>() / n;

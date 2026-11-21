@@ -53,7 +53,8 @@ generated *jointly* so inter-column structure survives into each output row:
                  column's own distribution unchanged.
 
 Relationships are read from the dictionary's `relationships` array — inferred
-by `describegpt` or hand-authored. Columns not named by any relationship are
+by `describegpt`, hand-authored, or found in <input> with the option
+called --discover-relationships. Columns not named by any relationship are
 still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
@@ -351,6 +352,32 @@ synthesize options:
     --no-relationships     Disable inter-column relationship modeling. Every
                            column is generated independently even when the
                            dictionary declares a `relationships` array.
+    --discover-relationships <file>  Find relationships in <input>, use them
+                           in this run, and write them to <file> for review.
+                           <file> holds the dictionary (from --dictionary, or
+                           from --infer-content-type) with the found groups
+                           appended to its `relationships`, each with a score;
+                           without a dictionary, it holds only those groups.
+                           Rerunning with <file> as the dictionary gives the
+                           same output. Declared relationships keep their
+                           columns, which discovery leaves out. A pair scores
+                           0.7 or more by bias-corrected Cramer's V for
+                           `joint` (columns with 2 to 50 enumerated values; a
+                           group must keep 80% of rows in tuples seen at least
+                           the --min-count times), or by |Spearman| for
+                           `correlated` (numeric) and `ordered` (dates, where
+                           one never exceeds the other in a row, their ranges
+                           overlap, and blank rates differ by at most 5
+                           points). Groups don't share columns and hold up to
+                           8 each. Columns with a faker content type, and
+                           free-text, constant and all-unique integer columns
+                           are never proposed, nor is the target. Scores read
+                           up to 100,000 rows (at a fixed stride beyond) and
+                           up to 64 columns of each family. With --shard,
+                           every slice finds the same groups and writes the
+                           same <file>. Not allowed with --no-relationships,
+                           nor with --strict-relationships, which would abort
+                           on a found group the source only nearly satisfies.
     --joint-cardinality-cap <n>  Maximum number of distinct value-tuples a
                            `joint` relationship may have. A joint group above
                            this cap falls back to independent generation (or
@@ -392,6 +419,7 @@ use crate::{
 };
 
 mod dictionary;
+mod discover;
 mod faker_map;
 mod generator;
 mod group_generator;
@@ -410,31 +438,32 @@ use report::Suppression;
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:                  Option<String>,
-    flag_model:                 Option<String>,
-    flag_save_model:            Option<String>,
-    flag_dictionary:            Option<String>,
-    flag_infer_content_type:    bool,
-    flag_rows:                  u64,
-    flag_seed:                  Option<u64>,
-    flag_shard:                 Option<String>,
-    flag_rows_per_file:         Option<u64>,
-    flag_format:                String,
-    flag_locale:                String,
-    flag_freq_limit:            usize,
-    flag_quantiles:             Option<usize>,
-    flag_target:                Option<String>,
-    flag_stats_options:         Option<String>,
-    flag_consistent_fakes:      bool,
-    flag_no_relationships:      bool,
-    flag_joint_cardinality_cap: u64,
-    flag_min_count:             u64,
-    flag_report:                Option<String>,
-    flag_correlation_threshold: f64,
-    flag_strict_relationships:  bool,
-    flag_jobs:                  Option<usize>,
-    flag_output:                Option<String>,
-    flag_delimiter:             Option<Delimiter>,
+    arg_input:                   Option<String>,
+    flag_model:                  Option<String>,
+    flag_save_model:             Option<String>,
+    flag_dictionary:             Option<String>,
+    flag_infer_content_type:     bool,
+    flag_rows:                   u64,
+    flag_seed:                   Option<u64>,
+    flag_shard:                  Option<String>,
+    flag_rows_per_file:          Option<u64>,
+    flag_format:                 String,
+    flag_locale:                 String,
+    flag_freq_limit:             usize,
+    flag_quantiles:              Option<usize>,
+    flag_target:                 Option<String>,
+    flag_stats_options:          Option<String>,
+    flag_consistent_fakes:       bool,
+    flag_no_relationships:       bool,
+    flag_discover_relationships: Option<String>,
+    flag_joint_cardinality_cap:  u64,
+    flag_min_count:              u64,
+    flag_report:                 Option<String>,
+    flag_correlation_threshold:  f64,
+    flag_strict_relationships:   bool,
+    flag_jobs:                   Option<usize>,
+    flag_output:                 Option<String>,
+    flag_delimiter:              Option<Delimiter>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -502,6 +531,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_model.as_deref(),
             args.flag_save_model.as_deref(),
             args.flag_report.as_deref(),
+            args.flag_discover_relationships.as_deref(),
         ]
         .into_iter()
         .flatten()
@@ -526,11 +556,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             (args.flag_delimiter.is_some(), "--delimiter"),
             (args.flag_quantiles.is_some(), "--quantiles"),
             (args.flag_target.is_some(), "--target"),
+            (
+                args.flag_discover_relationships.is_some(),
+                "--discover-relationships",
+            ),
         ];
         if let Some((_, name)) = fit_only.iter().find(|(set, _)| *set) {
             return fail_incorrectusage_clierror!(
                 "--model can't be combined with {name}: the model was already fitted from its \
                  source."
+            );
+        }
+    }
+    if args.flag_discover_relationships.is_some() {
+        if args.flag_no_relationships {
+            return fail_incorrectusage_clierror!(
+                "--discover-relationships can't be combined with --no-relationships."
+            );
+        }
+        if args.flag_strict_relationships {
+            return fail_incorrectusage_clierror!(
+                "--discover-relationships can't be combined with --strict-relationships: a found \
+                 group the source only nearly satisfies would abort the run."
             );
         }
     }
@@ -552,6 +599,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     {
         return fail_incorrectusage_clierror!(
             "--save-model must not be the input, --dictionary or --output file."
+        );
+    }
+    if let Some(found_path) = args.flag_discover_relationships.as_deref()
+        && (clashes_with_inputs(found_path)
+            || [args.flag_save_model.as_deref(), args.flag_report.as_deref()]
+                .into_iter()
+                .flatten()
+                .any(|p| report::resolve_path(p) == report::resolve_path(found_path)))
+    {
+        return fail_incorrectusage_clierror!(
+            "--discover-relationships must not be the input, --dictionary, --output, --save-model \
+             or --report file."
         );
     }
     if let Some(report_path) = args.flag_report.as_deref()
@@ -737,6 +796,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "suppressed": &fitted.suppressions,
             },
         });
+        let mut report = report;
+        if let Some(discovered) = &fitted.discovered {
+            report["discovered_relationships"] = discovered.clone().into();
+        }
         std::fs::write(report_path, serde_json::to_string_pretty(&report)? + "\n")?;
     }
     Ok(())
@@ -750,6 +813,54 @@ struct Fitted {
     prefer_dmy:    bool,
     total_rows:    u64,
     suppressions:  Vec<report::Suppression>,
+    /// `--discover-relationships`: the groups written to its file.
+    discovered:    Option<Vec<serde_json::Value>>,
+}
+
+/// Write the discovered groups the fit kept (as a group in the whole-input
+/// schedule or in any class) to `path`, appended to the dictionary's
+/// relationships, and list them on stderr. A group the fit dropped would be
+/// dropped again on a rerun, so leaving it out changes nothing.
+fn write_discovered(
+    found: &[discover::Found],
+    schedule: &[EmitUnit],
+    target: Option<&target::Target>,
+    params: &ScheduleParams,
+    dict_doc: Option<serde_json::Value>,
+    path: &str,
+) -> CliResult<Vec<serde_json::Value>> {
+    let class_schedules = target
+        .into_iter()
+        .flat_map(|t| t.classes.iter().map(|c| c.schedule.as_slice()));
+    let grouped: HashSet<usize> = std::iter::once(schedule)
+        .chain(class_schedules)
+        .flatten()
+        .filter_map(|unit| match unit {
+            EmitUnit::Group(group) => Some(group.col_indices()),
+            EmitUnit::Independent { .. } => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    let kept: Vec<serde_json::Value> = found
+        .iter()
+        .filter(|f| f.members.iter().any(|m| grouped.contains(m)))
+        .map(|f| f.to_json(params))
+        .collect();
+    for entry in &kept {
+        eprintln!(
+            "  Discovered {} relationship {} (score {})",
+            entry["kind"].as_str().unwrap_or_default(),
+            entry["members"],
+            entry["score"]
+        );
+    }
+    dictionary::write_with_relationships(dict_doc, kept.clone(), path)?;
+    eprintln!(
+        "  Wrote {} discovered relationship(s) to {path}",
+        kept.len()
+    );
+    Ok(kept)
 }
 
 /// Profiles <input> (stats, frequency, count, optional dictionary) and builds
@@ -967,13 +1078,24 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     )?;
 
     // --- 3. Dictionary (optional) → content types + relationships ----------
-    let (content_types, relationships) = if let Some(ref dict_path) = args.flag_dictionary {
-        dictionary::load_dictionary(dict_path)?
+    let (content_types, relationships, dict_doc) = if let Some(ref dict_path) = args.flag_dictionary
+    {
+        let (types, rels, doc) = dictionary::load_dictionary(dict_path)?;
+        (types, rels, Some(doc))
     } else if args.flag_infer_content_type {
-        dictionary::infer_dictionary(input_path)?
+        let (types, rels, doc) = dictionary::infer_dictionary(input_path)?;
+        (types, rels, Some(doc))
     } else {
-        (HashMap::new(), Vec::new())
+        (HashMap::new(), Vec::new(), None)
     };
+    // Discovery leaves every column a declared relationship names alone, even
+    // one that relationship can't claim, as well as the target.
+    let not_discovered: HashSet<String> = relationships
+        .iter()
+        .flat_map(|r| r.members.iter().chain(&r.anchor))
+        .cloned()
+        .chain(args.flag_target.clone())
+        .collect();
     // --no-relationships forces fully independent generation (legacy behavior).
     let relationships = if args.flag_no_relationships {
         Vec::new()
@@ -992,11 +1114,12 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     // Ungrouped columns get one ColumnGenerator each; columns named by a valid
     // `relationship` are grouped under a GroupGenerator that emits them jointly.
     let suppressions = RefCell::new(Vec::new());
-    let schedule_params = ScheduleParams {
+    let probe_suppressions = RefCell::new(Vec::new());
+    let probe_params = ScheduleParams {
         stats_records: &stats_records,
         frequency_records: &frequency_records,
         content_types: &content_types,
-        relationships: &relationships,
+        relationships: &[],
         total_rows,
         requested_rows: args.flag_rows,
         locale,
@@ -1011,7 +1134,37 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         strict: args.flag_strict_relationships && args.flag_target.is_none(),
         input_path,
         delimiter: args.flag_delimiter,
+        suppressions: &probe_suppressions,
+        quiet: true,
+    };
+    // Discovery classifies columns by the kind of generator each would get
+    // alone, which no draw changes. The probe gets its own RNG, so the fit
+    // below draws exactly what a rerun with the written dictionary draws.
+    let found = if args.flag_discover_relationships.is_some() {
+        let probe = build_emit_schedule(&probe_params, &mut StdRng::seed_from_u64(0))?;
+        let excluded: HashSet<usize> = stats_records
+            .iter()
+            .enumerate()
+            .filter(|(_, sr)| not_discovered.contains(sr.field.as_str()))
+            .map(|(i, _)| i)
+            .collect();
+        discover::discover(&probe_params, &probe, &excluded)?
+    } else {
+        Vec::new()
+    };
+    let relationships = if found.is_empty() {
+        relationships
+    } else {
+        relationships
+            .into_iter()
+            .chain(found.iter().map(|f| f.relationship(&probe_params)))
+            .collect()
+    };
+    let schedule_params = ScheduleParams {
+        relationships: &relationships,
         suppressions: &suppressions,
+        quiet: false,
+        ..probe_params
     };
     let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
     let target = match args.flag_target.as_deref() {
@@ -1026,6 +1179,17 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
             prefer_dmy,
             strict: args.flag_strict_relationships,
         })?),
+        None => None,
+    };
+    let discovered = match args.flag_discover_relationships.as_deref() {
+        Some(path) => Some(write_discovered(
+            &found,
+            &schedule,
+            target.as_ref(),
+            &schedule_params,
+            dict_doc,
+            path,
+        )?),
         None => None,
     };
 
@@ -1083,6 +1247,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         prefer_dmy,
         total_rows,
         suppressions: suppressions.into_inner(),
+        discovered,
     };
     Ok((
         model::Model::new(columns, types, prefer_dmy, schedule, target, fit_info),
@@ -1282,6 +1447,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
                     global.consistent_fakes,
                     min_count,
                     &mut None,
+                    true,
                     &mut target::class_rng(tf.base_seed, usize::MAX - col),
                 )
             })
@@ -1368,6 +1534,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             input_path: &path,
             delimiter: comma,
             suppressions: &suppressions,
+            quiet: false,
         };
         let schedule = build_emit_schedule(&params, &mut target::class_rng(tf.base_seed, i))?;
         // Columns this class takes from the whole input. Their class

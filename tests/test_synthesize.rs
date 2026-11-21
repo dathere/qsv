@@ -6247,3 +6247,51 @@ fn synthesize_discover_tolerates_a_few_reversed_date_rows() {
     }
     assert_eq!(discover_on(&wrk, &csv, None), ordered);
 }
+
+#[test]
+fn synthesize_discover_checks_blanks_in_the_rows_the_sample_skips() {
+    let wrk = Workdir::new("synthesize_discover_blanks_skipped");
+    // 150,000 rows are read at a stride of 2. closed is blank in every odd
+    // row, which the sample never sees; the whole input's blank counts do.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::with_capacity(4_000_000);
+    csv.push_str("opened,closed\n");
+    for i in 0..150_000_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        if i % 2 == 0 {
+            csv.push_str(&format!(
+                "{opened},{}\n",
+                opened + chrono::Duration::days(1 + i % 9)
+            ));
+        } else {
+            csv.push_str(&format!("{opened},\n"));
+        }
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
+}
+
+#[test]
+fn synthesize_discover_checks_blanks_across_a_whole_chain() {
+    let wrk = Workdir::new("synthesize_discover_chain_blanks");
+    // a <= b <= c, each blank in its own 2% of rows: any two disagree on 4%,
+    // within the limit, but all three on 6%, so only a pair is grouped.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("a,b,c\n");
+    for i in 0..300_i64 {
+        let a = base + chrono::Duration::days((i * 7) % 200);
+        let b = a + chrono::Duration::days(1 + i % 5);
+        let c = b + chrono::Duration::days(1 + i % 3);
+        let cell = |d: chrono::NaiveDate, k: i64| {
+            if i % 50 == k {
+                String::new()
+            } else {
+                d.to_string()
+            }
+        };
+        csv.push_str(&format!("{},{},{}\n", cell(a, 0), cell(b, 1), cell(c, 2)));
+    }
+    let found = discover_on(&wrk, &csv, None);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "ordered");
+    assert_eq!(found[0].1.len(), 2, "{found:?}");
+}

@@ -220,6 +220,17 @@ pub(crate) fn discover(
     // different rows would pass a rate check.) Whole counts, so exactly that
     // share passes.
     let blanks_close = |cols: &[usize]| {
+        // The whole input's blank counts, too: the sample can miss blanks in
+        // the rows it skips.
+        let counts = cols.iter().map(|&c| stats[c].nullcount);
+        let spread = counts.clone().max().unwrap_or(0) - counts.min().unwrap_or(0);
+        if spread.saturating_mul(100)
+            > params
+                .total_rows
+                .saturating_mul(MAX_BLANK_MISMATCH_PCT as u64)
+        {
+            return false;
+        }
         let cols: Vec<&[Option<f64>]> = cols
             .iter()
             .filter_map(|&c| numeric_pos[c].map(|k| values[k].as_slice()))

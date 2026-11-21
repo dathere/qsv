@@ -311,6 +311,12 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
                         || s.marginals.len() != k
                         || s.marginals.iter().any(Vec::is_empty)
                         || s.null_ratios.len() != k
+                        || s.rest.as_ref().is_some_and(|r| {
+                            !(0.0..1.0).contains(&r.share)
+                                || r.marginals.len() != k
+                                || r.marginals.iter().any(Vec::is_empty)
+                                || r.null_ratios.len() != k
+                        })
                 })
             {
                 return bad("a correlated group with inconsistent members");

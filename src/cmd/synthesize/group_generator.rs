@@ -134,6 +134,19 @@ pub(crate) struct Stratum {
     pub(crate) marginals:   Vec<Vec<(f64, f64)>>,
     /// Per numeric member share of this stratum's rows left blank.
     pub(crate) null_ratios: Vec<f64>,
+    /// The rows of rare combinations sharing this stratum's declared
+    /// categorical value, which it prints in their place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) rest:        Option<StratumRest>,
+}
+
+/// The share of a stratum's draws that stand in for rows of rare combinations
+/// it can't print, and those rows' numeric distributions.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct StratumRest {
+    pub(crate) share:       f64,
+    pub(crate) marginals:   Vec<Vec<(f64, f64)>>,
+    pub(crate) null_ratios: Vec<f64>,
 }
 
 impl GroupGenerator {
@@ -264,8 +277,15 @@ impl GroupGenerator {
                         .partition_point(|&c| c < r)
                         .min(strata.len() - 1)]
                 });
-                let (marginals, null_ratios) =
-                    stratum.map_or((marginals, null_ratios), |s| (&s.marginals, &s.null_ratios));
+                let (marginals, null_ratios) = match stratum {
+                    None => (marginals, null_ratios),
+                    Some(s) => match &s.rest {
+                        Some(rest) if rng.random_range(0.0..1.0) < rest.share => {
+                            (&rest.marginals, &rest.null_ratios)
+                        },
+                        _ => (&s.marginals, &s.null_ratios),
+                    },
+                };
                 let k = cholesky_l.len();
                 // k iid standard normals.
                 let z: Vec<f64> = (0..k).map(|_| standard_normal(rng)).collect();

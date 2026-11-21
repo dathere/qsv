@@ -46,6 +46,7 @@ import {
   resolveParamAliases,
   shouldUseTempFile,
   canonicalFlag,
+  isSqlScriptArg,
 } from "./file-operations.js";
 import {
   ensureParquet,
@@ -869,7 +870,8 @@ export async function handleToolCall(
     // SQL rewrite, warning capture) lives in runSqlpParquetInterception so
     // this function stays free of command-specific logic.
     let parquetConversionWarning = "";
-    if (commandName === "sqlp" && !isHelpRequest && inputFile) {
+    // A .sql script runs on sqlp as is: DuckDB would parse its path as SQL
+    if (commandName === "sqlp" && !isHelpRequest && inputFile && !isSqlScriptArg(params.sql)) {
       const interception = await runSqlpParquetInterception(
         params,
         inputFile,

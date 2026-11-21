@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { stat, access, readFile, unlink, rename, copyFile, readdir, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import type {
   QsvSkill,
@@ -492,6 +493,11 @@ export function canonicalFlag(key: string, command: string): string {
  * Backslash `\` is only treated as a path indicator with Windows path signals:
  * drive letter prefix (`C:\`), `.\`, or `..\`.
  */
+/** Like sqlp, treat any `sql` value with a .sql extension as a script file path. */
+export function isSqlScriptArg(value: unknown): boolean {
+  return typeof value === "string" && /\.sql[\\/]*$/i.test(value);
+}
+
 export function looksLikeFilePath(value: string): boolean {
   const v = value.trim();
   // Multi-segment forward-slash path: 2+ slashes makes division very unlikely.
@@ -551,11 +557,11 @@ export async function resolveFilePathParams(
     try {
       return await filesystemProvider.resolvePath(value);
     } catch (error: unknown) {
-      if (!/does not exist/i.test(getErrorMessage(error)) || value.startsWith("~")) {
-        throw invalid(label, error);
-      }
+      if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
     }
-    let ancestor = resolve(filesystemProvider.getWorkingDirectory(), value);
+    // expand ~ as the provider does; each ancestor is still checked by the provider
+    const expanded = value.replace(/^~(?=$|[\\/])/, homedir());
+    let ancestor = resolve(filesystemProvider.getWorkingDirectory(), expanded);
     const missing: string[] = [];
     while (dirname(ancestor) !== ancestor) {
       missing.unshift(basename(ancestor));
@@ -611,13 +617,14 @@ export async function resolveFilePathParams(
     const value = asString(`arg '${arg.name}'`, params[arg.name]);
     if (value === undefined) continue;
     const label = `arg '${arg.name}'`;
-    if (DIRECTORY_PATH_ARGS.has(arg.name)) {
+    // `to parquet` writes into a directory it creates, with any missing parents
+    const isParquetDir = command === "to" && arg.name === "destination" && params.subcommand === "parquet";
+    if (DIRECTORY_PATH_ARGS.has(arg.name) || isParquetDir) {
       params[arg.name] = await resolveDir(label, value);
     } else if (arg.name in PATH_OR_REMOTE) {
       params[arg.name] = await resolveRemoteOrPath(arg.name, label, value);
     } else if (isSqlScript) {
-      // like sqlp, treat any value with a .sql extension as a script file
-      if (/\.sql[\\/]*$/i.test(value)) params[arg.name] = await resolveOrThrow(label, value);
+      if (isSqlScriptArg(value)) params[arg.name] = await resolveOrThrow(label, value);
     } else {
       params[arg.name] = await resolveOrThrow(label, value);
     }

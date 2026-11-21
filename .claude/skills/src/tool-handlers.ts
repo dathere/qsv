@@ -769,6 +769,16 @@ export async function handleToolCall(
       return errorResult("Error: input_file parameter is required (unless using help=true to view command documentation)");
     }
 
+    // qsv would never write it, and the result would claim it was written and
+    // drop what qsv printed; drop it before path checks that could reject it
+    let ignoredOutputNote = "";
+    if (outputFile && !isHelpRequest && !skillTakesOutputFile(skill)) {
+      ignoredOutputNote =
+        `Note: qsv ${commandName} has no output file option, so the output_file parameter was ignored. ` +
+        `Commands that write their own files take a destination parameter (see help=true).`;
+      outputFile = undefined;
+    }
+
     // Resolve file paths using filesystem provider if available (skip for help requests)
     if (filesystemProvider && inputFile) {
       try {
@@ -866,13 +876,6 @@ export async function handleToolCall(
       return errorResult(`Error: output_file can't be the input file for ${commandName}; it would be emptied.`);
     }
 
-    // qsv would never write it, yet the result would claim it was written
-    if (outputFile && !isHelpRequest && !skillTakesOutputFile(skill)) {
-      return errorResult(
-        `Error: qsv ${commandName} has no output file option, so output_file can't be used. ` +
-          `It writes its own files; set its destination parameter instead (see help=true).`,
-      );
-    }
 
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration
     // (multi-table detection, Parquet conversion, DuckDB attempt, fallback
@@ -999,6 +1002,10 @@ export async function handleToolCall(
         } else {
           console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
         }
+      }
+      // a separate block keeps qsv's output (e.g. count --json) parseable
+      if (ignoredOutputNote) {
+        formattedResult.content.push({ type: "text", text: ignoredOutputNote });
       }
       // Attach pipeline metadata for reproducibility manifest.
       // Note: formatToolResult can return isError (e.g., temp file I/O failure)

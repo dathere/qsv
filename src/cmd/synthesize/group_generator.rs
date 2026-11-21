@@ -49,32 +49,40 @@ pub(crate) enum GroupGenerator {
     Ordered {
         /// Output column index per member, in member (low-to-high) order;
         /// `member_cols[0]` is the anchor.
-        member_cols:    Vec<usize>,
-        kind:           OrderedKind,
+        member_cols:      Vec<usize>,
+        kind:             OrderedKind,
         /// Per-member flag (`Numeric` groups only): format the member as an
         /// integer when true, a float when false. Lets a mixed Integer/Float
         /// group keep each column's declared type. Ignored for Date/DateTime.
-        is_int:         Vec<bool>,
+        is_int:           Vec<bool>,
         /// Per-member decimal places a Float member is rounded to (its source
         /// `max_precision`); `None` for Integer, unrounded and date members.
-        decimals:       Vec<Option<u32>>,
+        decimals:         Vec<Option<u32>>,
         /// describegpt-inferred chrono strftime format for date members.
-        date_format:    Option<String>,
+        date_format:      Option<String>,
         /// Anchor quantile buckets, in the numeric domain.
-        anchor_buckets: Vec<(f64, f64)>,
+        anchor_buckets:   Vec<(f64, f64)>,
         /// Consecutive-gap quantile buckets; `gap_buckets[i]` is the gap from
         /// `member_cols[i]` to `member_cols[i + 1]`, clamped to >= 0. Length is
         /// `member_cols.len() - 1`.
-        gap_buckets:    Vec<Vec<(f64, f64)>>,
+        gap_buckets:      Vec<Vec<(f64, f64)>>,
         /// Per-member `[lo, hi]` in the same domain as the buckets, with each
         /// `hi` capped by every later member's. Each follower is clamped into
         /// its range (then kept >= its predecessor, which the cap keeps in
         /// range), so anchor + gap can't reach a follower's real extremes once
         /// `--min-count` has trimmed them.
-        member_ranges:  Vec<(f64, f64)>,
-        /// Null ratio of the anchor column — when the anchor draws null, the
-        /// whole chain is emitted null.
-        null_ratio:     f64,
+        member_ranges:    Vec<(f64, f64)>,
+        /// Share of source rows where every member is blank; such a row is
+        /// emitted blank without drawing any value.
+        null_ratio:       f64,
+        /// Which members are blank in the other rows, as seen in the source:
+        /// `blank_patterns[p][k]` is true when member `k` is blank. The chain
+        /// is drawn whole and then blanked, so the members left filled stay in
+        /// order.
+        blank_patterns:   Vec<Vec<bool>>,
+        /// Normalized cumulative weights of `blank_patterns`, ascending, last
+        /// element == 1.0. A single pattern takes no draw.
+        blank_cumulative: Vec<f64>,
     },
     /// Gaussian-copula generation for a set of correlated numeric columns. Each
     /// column keeps its own quartile-bucket marginal exactly; the copula only
@@ -141,10 +149,12 @@ impl GroupGenerator {
                 gap_buckets,
                 member_ranges,
                 null_ratio,
+                blank_patterns,
+                blank_cumulative,
             } => {
-                // A null anchor nulls the whole chain — a monotonic chain
-                // `m[i] = m[i-1] + gap` cannot have a non-null member sitting
-                // after a null predecessor.
+                // An all-blank row is drawn first and draws no values, so a
+                // chain whose members are blank in the same rows takes the
+                // same draws as one whose anchor's blanks blank it whole.
                 if draw_null(*null_ratio, rng) {
                     return member_cols.iter().map(|&c| (c, String::new())).collect();
                 }
@@ -189,6 +199,24 @@ impl GroupGenerator {
                             date_format.as_ref(),
                         ),
                     ));
+                }
+                // Drawn after the values, so a chain with one pattern keeps
+                // the draws it had when a blank anchor blanked the chain.
+                let blanks = if blank_patterns.len() > 1 {
+                    let r = rng.random_range(0.0..1.0);
+                    let idx = blank_cumulative
+                        .partition_point(|&c| c < r)
+                        .min(blank_patterns.len() - 1);
+                    blank_patterns.get(idx)
+                } else {
+                    blank_patterns.first()
+                };
+                if let Some(blanks) = blanks {
+                    for ((_, text), &blank) in out.iter_mut().zip(blanks) {
+                        if blank {
+                            text.clear();
+                        }
+                    }
                 }
                 out
             },

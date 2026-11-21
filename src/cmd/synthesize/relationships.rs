@@ -15,7 +15,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
 };
 
 use indexmap::IndexMap;
@@ -587,7 +587,7 @@ fn resolve_ordered(
     };
 
     // Learn the consecutive-gap distributions from the source.
-    let gap_samples = learn_ordered_gaps(&member_cols, kind, params)?;
+    let (gap_samples, mut blank_counts) = learn_ordered_gaps(&member_cols, kind, params)?;
     let mut gap_buckets = Vec::with_capacity(gap_samples.len());
     for (i, samples) in gap_samples.into_iter().enumerate() {
         if samples.is_empty() {
@@ -647,7 +647,25 @@ fn resolve_ordered(
         gap_buckets.push(buckets);
     }
 
-    let null_ratio = compute_null_ratio(anchor_stats.nullcount, params.total_rows);
+    // Rows blank in every member are emitted blank outright; the rest draw
+    // which members to blank from the patterns the source shows.
+    let all_blank_rows = blank_counts
+        .remove(vec![true; member_cols.len()].as_slice())
+        .unwrap_or(0);
+    let null_ratio = compute_null_ratio(all_blank_rows, params.total_rows);
+    let other_rows: u64 = blank_counts.values().sum();
+    let mut blank_patterns = Vec::with_capacity(blank_counts.len());
+    let mut blank_cumulative = Vec::with_capacity(blank_counts.len());
+    let mut seen = 0_u64;
+    for (pattern, count) in blank_counts {
+        seen += count;
+        blank_patterns.push(pattern);
+        #[allow(clippy::cast_precision_loss)]
+        blank_cumulative.push(seen as f64 / other_rows as f64);
+    }
+    if let Some(last) = blank_cumulative.last_mut() {
+        *last = 1.0;
+    }
     let date_format = ordered_date_format(&member_cols, params, kind);
 
     log::info!(
@@ -664,6 +682,8 @@ fn resolve_ordered(
         gap_buckets,
         member_ranges,
         null_ratio,
+        blank_patterns,
+        blank_cumulative,
     }))
 }
 
@@ -712,28 +732,33 @@ fn ordered_date_format(
 }
 
 /// Stream the source CSV once, collecting the consecutive gaps
-/// `member[i + 1] - member[i]` for every adjacent member pair. Values are
-/// parsed into the group's numeric domain; rows where either member of a pair
-/// is null/unparseable contribute no gap for that pair.
+/// `member[i + 1] - member[i]` for every adjacent member pair, and how often
+/// each pattern of blank members occurs. Values are parsed into the group's
+/// numeric domain; rows where either member of a pair is null/unparseable
+/// contribute no gap for that pair. A member is blank when its cell is empty,
+/// as `stats` counts nulls.
 fn learn_ordered_gaps(
     member_cols: &[usize],
     kind: OrderedKind,
     params: &ScheduleParams,
-) -> CliResult<Vec<Vec<f64>>> {
+) -> CliResult<(Vec<Vec<f64>>, BTreeMap<Vec<bool>, u64>)> {
     let input = params.input_path.to_string();
     let config = Config::new(Some(&input)).delimiter(params.delimiter);
     let mut rdr = config.reader()?;
 
     let npairs = member_cols.len() - 1;
     let mut gaps: Vec<Vec<f64>> = vec![Vec::new(); npairs];
+    let mut patterns: BTreeMap<Vec<bool>, u64> = BTreeMap::new();
     let is_date = matches!(kind, OrderedKind::Date | OrderedKind::DateTime);
     let is_datetime = kind == OrderedKind::DateTime;
 
     let mut record = csv::ByteRecord::new();
     let mut values: Vec<Option<f64>> = vec![None; member_cols.len()];
+    let mut blanks: Vec<bool> = vec![false; member_cols.len()];
     while rdr.read_byte_record(&mut record)? {
-        for (slot, &col) in values.iter_mut().zip(member_cols) {
+        for ((slot, blank), &col) in values.iter_mut().zip(blanks.iter_mut()).zip(member_cols) {
             let cell = source_cell(&record, params, col);
+            *blank = cell.is_empty();
             *slot = if is_date {
                 #[allow(clippy::cast_precision_loss)]
                 parse_source_epoch(&cell, is_datetime, params.prefer_dmy).map(|e| e as f64)
@@ -746,8 +771,13 @@ fn learn_ordered_gaps(
                 pair_gaps.push(hi - lo);
             }
         }
+        if let Some(count) = patterns.get_mut(blanks.as_slice()) {
+            *count += 1;
+        } else {
+            patterns.insert(blanks.clone(), 1);
+        }
     }
-    Ok(gaps)
+    Ok((gaps, patterns))
 }
 
 fn gap_buckets_from_samples(

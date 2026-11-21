@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hardened the DuckDB CLI invocation**: the script passed to `duckdb -c` now always starts with a server statement, and SQL starting with `.` is left to `sqlp`. On macOS and Linux, paths keep their backslashes when written into DuckDB SQL. A backslash is an ordinary filename character there, and turning it into `/` could make DuckDB open a different file than the one the server approved; only Windows separators are converted now. ([#5083](https://github.com/dathere/qsv/pull/5083))
 
 ### Fixed
+- **`qsv_sqlp` runs `.sql` script files when DuckDB is installed.** A `sql` value with a `.sql` extension went to DuckDB, which parsed the path as SQL and failed; such scripts now run on Polars `sqlp`, which reads the file.
+- **Output directories with several missing levels**: a `~/`-relative `outdir`, and a `to parquet` destination directory, may now have more than one missing level, as qsv creates them all. Each existing ancestor is still checked against the allowed directories.
 - **`extsort` / `extdedup` can't empty a file through `output_file`.** Since `output_file` is now passed to their positional output (#5083), an `output_file` naming the input file would have emptied the input before it was read: the call is now refused. With `extdedup --no-output`, `output_file` is no longer passed on, since opening it emptied it even though nothing is written there. ([#5086](https://github.com/dathere/qsv/pull/5086))
 
 ### Added

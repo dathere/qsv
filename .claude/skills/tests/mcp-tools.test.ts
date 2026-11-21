@@ -355,6 +355,47 @@ test('handleToolCall rejects reserved cache file as --output', async () => {
   assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
 });
 
+test('handleToolCall checks a path option given by its short flag', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+
+  const result = await handleToolCall(
+    'qsv_dedup',
+    { input_file: 'test.csv', '-D': 'data.stats.csv' },
+    executor,
+    loader,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes('reserved cache file pattern'));
+});
+
+test('handleToolCall needs a destination for binary sqlp output and keeps SKIP_INPUT literal', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+  const resolved: string[] = [];
+  const provider = {
+    resolvePath: async (p: string) => {
+      resolved.push(p);
+      return p;
+    },
+  } as unknown as Parameters<typeof handleToolCall>[4];
+
+  const result = await handleToolCall(
+    'qsv_sqlp',
+    { input_file: 'SKIP_INPUT', sql: 'SELECT 1', format: 'parquet' },
+    executor,
+    loader,
+    provider,
+  );
+
+  assert.strictEqual(result.isError, true);
+  assert.ok(result.content[0].text?.includes("binary results can't be returned as text"), result.content[0].text);
+  assert.ok(!resolved.includes('SKIP_INPUT'), `SKIP_INPUT was resolved as a path: ${resolved}`);
+});
+
 test('handleToParquetCall rejects reserved cache file as output', async () => {
   const result = await handleToParquetCall({
     input_file: 'test.csv',

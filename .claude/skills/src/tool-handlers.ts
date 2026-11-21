@@ -44,7 +44,7 @@ import {
   formatToolResult,
   resolveParamAliases,
   shouldUseTempFile,
-  paramKeyToFlag,
+  canonicalFlag,
 } from "./file-operations.js";
 import {
   ensureParquet,
@@ -763,11 +763,14 @@ export async function handleToolCall(
     // Resolve file paths using filesystem provider if available (skip for help requests)
     if (filesystemProvider && inputFile) {
       try {
-        inputFile = await resolveAndConvertInputFile(inputFile, filesystemProvider);
+        // sqlp's SKIP_INPUT is a sentinel (the SQL names its own files), not a path
+        if (!(commandName === "sqlp" && inputFile === "SKIP_INPUT")) {
+          inputFile = await resolveAndConvertInputFile(inputFile, filesystemProvider);
 
-        // Auto-index native CSV files (skip for help requests)
-        if (!isHelpRequest) {
-          await autoIndexIfNeeded(inputFile);
+          // Auto-index native CSV files (skip for help requests)
+          if (!isHelpRequest) {
+            await autoIndexIfNeeded(inputFile);
+          }
         }
 
         if (outputFile) {
@@ -790,7 +793,11 @@ export async function handleToolCall(
 
     // Resolve additional file-path parameters (positional args and options beyond input/output)
     if (filesystemProvider && !isHelpRequest) {
-      await resolveFilePathParams(params, skill, filesystemProvider);
+      try {
+        await resolveFilePathParams(params, skill, filesystemProvider);
+      } catch (error: unknown) {
+        return errorResult(`Error: ${maybeSanitize(getErrorMessage(error))}`);
+      }
     }
 
     // viz is HTML-only over MCP. viz infers its output format from the -o
@@ -827,10 +834,17 @@ export async function handleToolCall(
     }
     for (const [key, value] of Object.entries(params)) {
       if (!value || typeof value !== "string") continue;
-      const flag = paramKeyToFlag(key);
+      const flag = canonicalFlag(key, commandName);
       if (FILE_PATH_OUTPUT_OPTIONS.has(flag) && isReservedCachePath(value)) {
         return errorResult(reservedCachePathError(value));
       }
+    }
+
+    // Binary results can't come back as text, so they need a validated destination
+    if (commandName === "sqlp" && !isHelpRequest && !outputFile && isBinaryOutputFormat(commandName, params)) {
+      return errorResult(
+        "Error: output_file is required for parquet, arrow and avro output (binary results can't be returned as text).",
+      );
     }
 
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration

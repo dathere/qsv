@@ -744,7 +744,8 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
         ["outside read", `SELECT * FROM read_csv('${sqlPath(outsideCsv)}')`],
         [
           "dot-dot escape",
-          `SELECT * FROM read_csv('${sqlPath(join(allowed, "..", basename(outside), "secret.csv"))}')`,
+          // built by hand so the literal `..` reaches DuckDB (path.join would collapse it)
+          `SELECT * FROM read_csv('${sqlPath(allowed)}/../${basename(outside)}/secret.csv')`,
         ],
         ["INSTALL", "INSTALL spatial"],
       ];
@@ -765,7 +766,12 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
     }
   });
 
-  test("with SQL file writes off, unsandboxable or writing queries go to sqlp", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async () => {
+  test("with SQL file writes off, unsandboxable or writing queries go to sqlp", { skip: !DUCKDB_AVAILABLE, timeout: 60_000 }, async (t) => {
+    const status = getDuckDbStatus();
+    if (status.status !== "available" || !supportsSandbox(status.version)) {
+      t.skip("DuckDB too old for the sandbox settings (covered by the stand-in binary test)");
+      return;
+    }
     const savedWrites = config.sqlFileWrites;
     const dir = await createTestDir("duckdb-routing");
     try {
@@ -776,7 +782,9 @@ describe("DuckDB sandbox", { concurrency: false }, () => {
       // sandboxable: runs on DuckDB
       const ok = await tryDuckDbExecution(sql, input, { format: "csv" }, undefined, [dir]);
       assert.ok(ok, "a plain query should run on DuckDB");
+      assert.ok(!("isError" in ok && ok.isError), `DuckDB query failed: ${ok.content[0].text}`);
       assert.ok(ok.content[0].text.includes("Engine: DuckDB"), ok.content[0].text);
+      assert.match(ok.content[0].text, /^100$/m, ok.content[0].text);
 
       // no allowed-directory list: sqlp
       assert.strictEqual(await tryDuckDbExecution(sql, input, { format: "csv" }, undefined, undefined), null);

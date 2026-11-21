@@ -20,6 +20,14 @@ import {
   AUTO_INDEX_SIZE_MB,
   FILE_PATH_INPUT_OPTIONS,
   FILE_PATH_OUTPUT_OPTIONS,
+  OTHER_PATH_OPTIONS,
+  PATH_LIST_OPTIONS,
+  PATH_OR_URL_OPTIONS,
+  COMMAND_PATH_OPTIONS,
+  FILENAME_PART_OPTIONS,
+  SHORT_PATH_FLAGS,
+  DIRECTORY_PATH_ARGS,
+  PATH_OR_URL_ARGS,
   FINAL_OUTPUT_FILE,
   isBinaryOutputFormat,
 } from "./tool-constants.js";
@@ -459,6 +467,21 @@ export function paramKeyToFlag(key: string): string {
 }
 
 /**
+ * Like paramKeyToFlag, but maps a command's short flag for a path option
+ * (e.g. dedup's "-D") to its long form, so path checks can't be skipped.
+ */
+export function canonicalFlag(key: string, command: string): string {
+  const flag = paramKeyToFlag(key);
+  if (flag === "-o") return "--output";
+  return SHORT_PATH_FLAGS[command]?.[flag] ?? flag;
+}
+
+/** True for a URL such as https://... or postgres://... (left for qsv to fetch or connect to). */
+function isUrl(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+}
+
+/**
  * Check whether a value looks like a file path (as opposed to inline script text).
  * Used for ambiguous options like luau --begin/--end that accept both scripts and file paths.
  *
@@ -508,46 +531,71 @@ export async function resolveFilePathParams(
   skill: QsvSkill,
   filesystemProvider: FilesystemProviderExtended,
 ): Promise<void> {
-  // 1. Resolve positional args with type "file" (excluding "input", already handled)
-  for (const arg of skill.command.args) {
-    if (arg.type === "file" && arg.name !== "input" && params[arg.name]) {
-      const rawValue = String(params[arg.name]);
-      try {
-        const resolved = await filesystemProvider.resolvePath(rawValue);
-        if (resolved !== rawValue) {
-          console.error(`[MCP Tools] Resolved arg '${arg.name}': ${rawValue} -> ${resolved}`);
-          params[arg.name] = resolved;
-        }
-      } catch (error: unknown) {
-        console.error(`[MCP Tools] Warning: failed to resolve arg '${arg.name}' path '${rawValue}':`, getErrorMessage(error));
+  const command = skill.command.subcommand;
+  // Fail closed: a path the provider refuses must never reach qsv unresolved
+  const resolveOrThrow = async (label: string, value: string): Promise<string> => {
+    // "-" is stdin/stdout, not a file
+    if (value === "-") return value;
+    try {
+      const resolved = await filesystemProvider.resolvePath(value);
+      if (resolved !== value) {
+        console.error(`[MCP Tools] Resolved ${label}: ${value} -> ${resolved}`);
       }
+      return resolved;
+    } catch (error: unknown) {
+      throw new Error(`Invalid path for ${label}: ${getErrorMessage(error)}`);
+    }
+  };
+
+  // 1. Positional args that name a local path (excluding "input", already handled)
+  const argNames = new Set<string>();
+  for (const arg of skill.command.args) {
+    argNames.add(arg.name);
+    const value = params[arg.name];
+    if (arg.name === "input" || typeof value !== "string" || !value) continue;
+    const isPathArg =
+      arg.type === "file" ||
+      DIRECTORY_PATH_ARGS.has(arg.name) ||
+      (PATH_OR_URL_ARGS.has(arg.name) && !isUrl(value));
+    if (isPathArg) {
+      params[arg.name] = await resolveOrThrow(`arg '${arg.name}'`, value);
     }
   }
 
-  // 2. Resolve option values that are file paths
+  // 2. Option values that are local paths
   for (const [key, value] of Object.entries(params)) {
-    if (!value || typeof value !== "string") continue;
+    if (argNames.has(key) || !value || typeof value !== "string") continue;
+    const flag = canonicalFlag(key, command);
 
-    // Convert param key to flag format (e.g. "dupes_output" -> "--dupes-output")
-    const flag = paramKeyToFlag(key);
+    if (FILENAME_PART_OPTIONS.has(flag)) {
+      if (/[\\/]|\.\./.test(value)) {
+        throw new Error(`Invalid value for ${flag}: it must not contain a path separator or '..'`);
+      }
+      continue;
+    }
 
-    const isFilePathOption = FILE_PATH_INPUT_OPTIONS.has(flag) || FILE_PATH_OUTPUT_OPTIONS.has(flag);
+    if (PATH_LIST_OPTIONS.has(flag)) {
+      const parts = value.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+      const resolved: string[] = [];
+      for (const part of parts) resolved.push(await resolveOrThrow(`option '${flag}'`, part));
+      params[key] = resolved.join(",");
+      continue;
+    }
 
-    // Special case: luau --begin/--end accept both inline scripts and file paths
-    const isAmbiguousFileOption = (flag === "--begin" || flag === "--end")
-      && skill.command.subcommand === "luau"
+    // luau --begin/--end accept both inline scripts and file paths
+    const isLuauScriptPath = (flag === "--begin" || flag === "--end")
+      && command === "luau"
       && looksLikeFilePath(value);
 
-    if (isFilePathOption || isAmbiguousFileOption) {
-      try {
-        const resolved = await filesystemProvider.resolvePath(value);
-        if (resolved !== value) {
-          console.error(`[MCP Tools] Resolved option '${flag}': ${value} -> ${resolved}`);
-          params[key] = resolved;
-        }
-      } catch (error: unknown) {
-        console.error(`[MCP Tools] Warning: failed to resolve option '${flag}' path '${value}':`, getErrorMessage(error));
-      }
+    const isPathOption =
+      FILE_PATH_INPUT_OPTIONS.has(flag) ||
+      FILE_PATH_OUTPUT_OPTIONS.has(flag) ||
+      OTHER_PATH_OPTIONS.has(flag) ||
+      (COMMAND_PATH_OPTIONS[command]?.has(flag) ?? false) ||
+      (PATH_OR_URL_OPTIONS.has(flag) && !isUrl(value)) ||
+      isLuauScriptPath;
+    if (isPathOption) {
+      params[key] = await resolveOrThrow(`option '${flag}'`, value);
     }
   }
 }
@@ -586,6 +634,9 @@ export function buildSkillExecParams(
     if (
       key === "input_file" ||
       key === "output_file" ||
+      // raw output flags: the validated outputFile replaces them below
+      key === "--output" ||
+      key === "-o" ||
       (key === "input" && !skillHasOption("input")) ||
       (key === "output" && !skillHasOption("output")) ||
       key === "help"
@@ -808,8 +859,12 @@ export function resolveParamAliases(params: Record<string, unknown>): {
   const inputFile =
     coerce(params.input_file, "input_file") ??
     coerce(params.input, "input");
+  // A raw "--output"/"-o" key is an output path too: treat it as an alias so it
+  // gets the same validation as output_file instead of reaching qsv unchecked
   const outputFile =
     coerce(params.output_file, "output_file") ??
-    coerce(params.output, "output");
+    coerce(params.output, "output") ??
+    coerce(params["--output"], "--output") ??
+    coerce(params["-o"], "-o");
   return { inputFile, outputFile };
 }

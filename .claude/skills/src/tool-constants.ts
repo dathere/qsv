@@ -96,10 +96,14 @@ export const BINARY_OUTPUT_FORMATS = new Set(["parquet", "arrow", "avro"]);
  * Values are resolved to absolute paths via filesystemProvider.resolvePath().
  */
 export const FILE_PATH_INPUT_OPTIONS = new Set([
+  "--context-file",
+  "--dictionary-context",
+  "--globals-json",
+  "--markdown-template",
   "--prompt-file",
+  "--sas7bcat",
   "--tag-vocab",
   "--template-file",
-  "--globals-json",
 ]);
 
 /**
@@ -109,11 +113,69 @@ export const FILE_PATH_INPUT_OPTIONS = new Set([
  */
 export const FILE_PATH_OUTPUT_OPTIONS = new Set([
   "--dupes-output",
-  "--keys-output",
-  "--unmatched-output",
-  "--sql-results",
   "--export-prompt",
+  "--keys-output",
+  "--report",
+  "--sarif",
+  "--save-model",
+  "--save-urlsample",
+  "--sketch-out",
+  "--sql-results",
+  "--stats-csv",
+  "--unmatched-output",
+  "--valid-output",
 ]);
+
+/**
+ * Other options whose value is a local path (a directory, or a file that some
+ * commands read and others write). Resolved like the two sets above.
+ */
+export const OTHER_PATH_OPTIONS = new Set([
+  "--cache-dir",
+  "--dictionary",
+  "--disk-cache-dir",
+  "--temp-dir",
+  "--tmp-dir",
+]);
+
+/** Options holding a comma-separated list of local file paths. */
+export const PATH_LIST_OPTIONS = new Set(["--join-inputs", "--sketch-in"]);
+
+/** Options that take either a local path (resolved) or a URL (left as is). */
+export const PATH_OR_URL_OPTIONS = new Set(["--geojson"]);
+
+/** Path options that only one command has; the same flag means something else elsewhere. */
+export const COMMAND_PATH_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  synthesize: new Set(["--model"]),
+};
+
+/**
+ * Options whose value becomes part of an output filename inside a directory
+ * the server has resolved, so it must not contain a path separator or `..`.
+ */
+export const FILENAME_PART_OPTIONS = new Set([
+  "--filename",
+  "--invalid",
+  "--outfilename",
+  "--table",
+  "--valid",
+]);
+
+/** Short flags of path options, per command (`-o` is `--output` everywhere). */
+export const SHORT_PATH_FLAGS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  dedup: { "-D": "--dupes-output" },
+  extdedup: { "-D": "--dupes-output" },
+  luau: { "-B": "--begin", "-E": "--end" },
+  moarstats: { "-J": "--join-inputs" },
+  template: { "-J": "--globals-json", "-t": "--template-file" },
+  to: { "-c": "--stats-csv" },
+};
+
+/** Positional args (not typed "file" in the skill JSONs) that name a local directory. */
+export const DIRECTORY_PATH_ARGS = new Set(["outdir"]);
+
+/** Positional args that take either a local path (resolved) or a URL (left as is). */
+export const PATH_OR_URL_ARGS = new Set(["destination", "json-schema"]);
 
 /**
  * Check if the command+params produce binary output (not tabular text).

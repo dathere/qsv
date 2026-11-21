@@ -34,9 +34,9 @@ const SAMPLE_ROWS: u64 = 100_000;
 const MAX_REVERSED_PCT: usize = 1;
 /// Share of rows a `joint` group's tuples must keep at `--min-count`.
 const MIN_JOINT_SURVIVAL: f64 = 0.8;
-/// An `ordered` chain writes its anchor's blank rate in every member, so its
-/// members' blank rates may differ by at most this many percentage points.
-const MAX_NULL_GAP_PCT: u64 = 5;
+/// An `ordered` chain blanks all its members together, so they may disagree
+/// on which rows are blank in at most this share (percent) of rows.
+const MAX_BLANK_MISMATCH_PCT: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Domain {
@@ -210,12 +210,27 @@ pub(crate) fn discover(
         return Ok(Vec::new());
     }
 
-    // Blank rates within MAX_NULL_GAP_PCT points, in whole counts so a gap of
-    // exactly that many points passes.
+    let mut numeric_pos: Vec<Option<usize>> = vec![None; stats.len()];
+    for (k, &(col, _)) in numeric.iter().enumerate() {
+        numeric_pos[col] = Some(k);
+    }
+    // An ordered chain blanks every member when its anchor is blank, and
+    // none otherwise, so its members must be blank in the same sampled rows
+    // but for at most MAX_BLANK_MISMATCH_PCT of them. (Equal blank rates in
+    // different rows would pass a rate check.) Whole counts, so exactly that
+    // share passes.
     let blanks_close = |cols: &[usize]| {
-        let counts = cols.iter().map(|&c| stats[c].nullcount);
-        let spread = counts.clone().max().unwrap_or(0) - counts.min().unwrap_or(0);
-        spread.saturating_mul(100) <= params.total_rows.saturating_mul(MAX_NULL_GAP_PCT)
+        let cols: Vec<&[Option<f64>]> = cols
+            .iter()
+            .filter_map(|&c| numeric_pos[c].map(|k| values[k].as_slice()))
+            .collect();
+        let mismatched = (0..sampled)
+            .filter(|&r| {
+                let blank = cols[0][r].is_none();
+                cols[1..].iter().any(|c| c[r].is_none() != blank)
+            })
+            .count();
+        mismatched * 100 <= sampled * MAX_BLANK_MISMATCH_PCT
     };
     // An ordered chain writes every member in its anchor's date format.
     let date_format = |col: usize| {
@@ -299,10 +314,6 @@ pub(crate) fn discover(
             },
             _ => {},
         }
-    }
-    let mut numeric_pos: Vec<Option<usize>> = vec![None; stats.len()];
-    for (k, &(col, _)) in numeric.iter().enumerate() {
-        numeric_pos[col] = Some(k);
     }
     let complete_rows = |members: &[usize]| {
         let cols: Vec<&[Option<f64>]> = members
@@ -410,8 +421,8 @@ fn extend(owner: &mut [Option<usize>], group: &mut Found, g: usize, col: usize, 
     group.score = group.score.min(score);
 }
 
-/// Whether `col` can join an ordered chain: room left, and blank rates close
-/// enough to the chain's that the anchor's rate can stand for all of them.
+/// Whether `col` can join an ordered chain: room left, and blank in nearly
+/// the same rows as the chain, since the chain blanks its members together.
 fn chain_fits(members: &[usize], col: usize, blanks_close: &dyn Fn(&[usize]) -> bool) -> bool {
     if members.len() >= MAX_GROUP {
         return false;

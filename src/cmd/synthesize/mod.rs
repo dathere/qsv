@@ -368,9 +368,10 @@ synthesize options:
                            `correlated` (numeric) and `ordered` (dates with the
                            same dictionary date format, or none, where the
                            later comes first in at most 1% of the sampled rows
-                           holding both, their ranges overlap, and blank rates
-                           differ by at most 5 points). Groups don't share
-                           columns and hold up to 8 each. Columns with a faker content type,
+                           holding both, their ranges overlap, and they are
+                           blank in the same rows but for at most 5% of the
+                           sampled rows). Groups don't share columns and hold
+                           up to 8 each. Columns with a faker content type,
                            and free-text, constant and all-unique integer
                            columns are never proposed, nor is the target.
                            Scores read up to 100,000 rows (at a fixed stride
@@ -1145,7 +1146,9 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
     // alone, which no draw changes. The probe gets its own RNG, so the fit
     // below draws exactly what a rerun with the written dictionary draws.
     let found = if args.flag_discover_relationships.is_some() {
-        let probe = build_emit_schedule(&probe_params, &mut StdRng::seed_from_u64(0))?;
+        // Not a security use: the probe's draws are discarded.
+        let mut probe_rng = StdRng::seed_from_u64(0); // DevSkim: ignore DS148264
+        let probe = build_emit_schedule(&probe_params, &mut probe_rng)?;
         let excluded: HashSet<usize> = stats_records
             .iter()
             .enumerate()

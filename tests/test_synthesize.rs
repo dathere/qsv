@@ -6133,7 +6133,8 @@ fn synthesize_discover_date_pair_edge_cases() {
     }
     assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
 
-    // Blank in 50% and 55% of rows: exactly 5 points apart, which passes.
+    // Blank in 50% and 55% of rows, in the same rows but for 5% of them:
+    // exactly the limit, which passes.
     let mut csv = String::from("a,b\n");
     for i in 0..200 {
         let a = if i % 20 < 10 {
@@ -6149,6 +6150,24 @@ fn synthesize_discover_date_pair_edge_cases() {
         csv.push_str(&format!("{a},{b}\n"));
     }
     assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
+
+    // Each blank in 20% of rows, but in different ones: the chain would blank
+    // them together, so the pair stays independent.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        let a = if i % 5 == 0 {
+            String::new()
+        } else {
+            day(i).to_string()
+        };
+        let b = if i % 5 == 1 {
+            String::new()
+        } else {
+            (day(i) + chrono::Duration::days(i % 4)).to_string()
+        };
+        csv.push_str(&format!("{a},{b}\n"));
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
 
     // Different dictionary date formats: a chain writes every member in its
     // anchor's format, so the pair stays independent.

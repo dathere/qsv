@@ -7,8 +7,9 @@
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { writeFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { writeFile, stat, mkdir, symlink, realpath } from "node:fs/promises";
+import { FilesystemResourceProvider } from "../src/mcp-filesystem.js";
+import { dirname, join, resolve, sep } from "node:path";
 import {
   buildConversionArgs,
   mapSchemaType,
@@ -19,7 +20,22 @@ import {
   paramKeyToFlag,
   looksLikeFilePath,
   collectAdditionalInputFiles,
+  resolveFilePathParams,
+  canonicalFlag,
 } from "../src/file-operations.js";
+import {
+  FILE_PATH_INPUT_OPTIONS,
+  FILE_PATH_OUTPUT_OPTIONS,
+  OTHER_PATH_OPTIONS,
+  PATH_LIST_OPTIONS,
+  FILE_PREFIX_OPTIONS,
+  PATH_OR_REMOTE,
+  COMMAND_PATH_OPTIONS,
+  FILENAME_PART_OPTIONS,
+  DIRECTORY_PATH_ARGS,
+} from "../src/tool-constants.js";
+import { SkillLoader } from "../src/loader.js";
+import type { FilesystemProviderExtended } from "../src/types.js";
 import { createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE } from "./test-helpers.js";
 import type { QsvSkill } from "../src/types.js";
 
@@ -434,5 +450,277 @@ describe("collectAdditionalInputFiles", () => {
 
     const files = collectAdditionalInputFiles(skill, { input: "data.csv" });
     assert.strictEqual(files.length, 0);
+  });
+});
+
+// ============================================================================
+// Path confinement: every path a call names must pass the filesystem provider
+// ============================================================================
+
+describe("path confinement", () => {
+  const ALLOWED = resolve(sep, "allowed");
+  const OUTSIDE = resolve(sep, "elsewhere", "x.csv");
+  // Mimics FilesystemResourceProvider: the path or its parent must exist, and be allowed
+  const EXISTING = new Set([resolve(sep), ALLOWED, resolve(sep, "elsewhere")]);
+  const provider = {
+    getWorkingDirectory: () => ALLOWED,
+    resolvePath: async (p: string) => {
+      const r = resolve(ALLOWED, p);
+      if (!EXISTING.has(r) && !EXISTING.has(dirname(r))) {
+        throw new Error(`Path does not exist and parent directory is inaccessible: ${p}`);
+      }
+      if (r !== ALLOWED && !r.startsWith(ALLOWED + sep)) {
+        throw new Error(`Access denied: ${p} is outside allowed directories`);
+      }
+      return r;
+    },
+  } as unknown as FilesystemProviderExtended;
+  const skill = (
+    subcommand: string,
+    args: QsvSkill["command"]["args"] = [],
+  ): QsvSkill => ({
+    name: `qsv-${subcommand}`,
+    version: "29.0.0",
+    description: subcommand,
+    category: "test",
+    command: { subcommand, args, options: [] },
+  });
+  const refused = (params: Record<string, unknown>, s: QsvSkill) =>
+    assert.rejects(resolveFilePathParams(params, s, provider), /Invalid (path|value) for/);
+
+  test("raw --output and -o keys are output_file aliases, never forwarded as is", () => {
+    assert.strictEqual(resolveParamAliases({ "--output": "a.csv" }).outputFile, "a.csv");
+    assert.strictEqual(resolveParamAliases({ "-o": "b.csv" }).outputFile, "b.csv");
+    assert.strictEqual(resolveParamAliases({ output_file: "c.csv", "-o": "b.csv" }).outputFile, "c.csv");
+    const { options } = buildSkillExecParams(
+      skill("select"),
+      { "--output": OUTSIDE, "-o": OUTSIDE },
+      "/in.csv",
+      "/allowed/out.csv",
+      false,
+    );
+    assert.strictEqual(options["-o"], undefined);
+    assert.strictEqual(options["--output"], "/allowed/out.csv");
+  });
+
+  test("a refused option path is an error, not passed through", async () => {
+    await refused({ dupes_output: OUTSIDE }, skill("dedup"));
+    await refused({ sarif: OUTSIDE }, skill("validate"));
+    await refused({ cache_dir: OUTSIDE }, skill("geocode"));
+  });
+
+  test("short flags of path options are checked", async () => {
+    assert.strictEqual(canonicalFlag("-D", "dedup"), "--dupes-output");
+    assert.strictEqual(canonicalFlag("-o", "select"), "--output");
+    await refused({ "-D": OUTSIDE }, skill("dedup"));
+    await refused({ "-t": OUTSIDE }, skill("template"));
+  });
+
+  test("positional path args are checked; URLs are left alone", async () => {
+    await refused({ input2: OUTSIDE }, skill("join", [
+      { name: "input2", type: "file", required: true, description: "right" },
+    ]));
+    const outdir = skill("split", [{ name: "outdir", type: "string", required: true, description: "dir" }]);
+    await refused({ outdir: resolve(sep, "elsewhere") }, outdir);
+    const params: Record<string, unknown> = { outdir: "parts" };
+    await resolveFilePathParams(params, outdir, provider);
+    assert.strictEqual(params.outdir, join(ALLOWED, "parts"));
+
+    const to = skill("to", [{ name: "destination", type: "string", required: true, description: "dest" }]);
+    const url: Record<string, unknown> = { subcommand: "postgres", destination: "postgres://localhost/db" };
+    await resolveFilePathParams(url, to, provider);
+    assert.strictEqual(url.destination, "postgres://localhost/db");
+    await refused({ destination: OUTSIDE }, to);
+  });
+
+  test("path lists, path-or-URL options and per-command path options", async () => {
+    const list: Record<string, unknown> = { join_inputs: "a.csv, b.csv" };
+    await resolveFilePathParams(list, skill("moarstats"), provider);
+    assert.strictEqual(list.join_inputs, `${join(ALLOWED, "a.csv")},${join(ALLOWED, "b.csv")}`);
+    await refused({ join_inputs: `a.csv,${OUTSIDE}` }, skill("moarstats"));
+
+    await refused({ geojson: OUTSIDE }, skill("viz"));
+    // a comma in a resolved path (here, the working directory's name) would split
+    // one checked path into others
+    const commaDir = {
+      getWorkingDirectory: () => resolve(sep, "al,lowed"),
+      resolvePath: async (p: string) => resolve(sep, "al,lowed", p),
+    } as unknown as FilesystemProviderExtended;
+    await assert.rejects(
+      resolveFilePathParams({ sketch_in: "s.bin" }, skill("sample"), commaDir),
+      /can't contain a comma/,
+    );
+
+    await refused({ model: OUTSIDE }, skill("synthesize"));
+    // describegpt's --model is an LLM name, not a path
+    const llm: Record<string, unknown> = { model: "gpt-4o" };
+    await resolveFilePathParams(llm, skill("describegpt"), provider);
+    assert.strictEqual(llm.model, "gpt-4o");
+  });
+
+  test("filename parts can't leave their directory; '-' and inline luau stay as is", async () => {
+    await refused({ filename: "../{}.csv" }, skill("split"));
+    await refused({ invalid: "x/../../y" }, skill("validate"));
+    await refused({ outfilename: "a\\b.txt" }, skill("template"));
+    const ok: Record<string, unknown> = { filename: "part-{}.csv", valid_output: "-" };
+    await resolveFilePathParams(ok, skill("split"), provider);
+    assert.deepStrictEqual(ok, { filename: "part-{}.csv", valid_output: "-" });
+
+    await refused({ begin: OUTSIDE.replace(/\.csv$/, ".luau") }, skill("luau"));
+    const inline: Record<string, unknown> = { begin: "tot = 0" };
+    await resolveFilePathParams(inline, skill("luau"), provider);
+    assert.strictEqual(inline.begin, "tot = 0");
+  });
+
+  test("documented remote forms and selectors stay as is; other values are local paths", async () => {
+    const keep: Array<[string, Record<string, unknown>, QsvSkill]> = [
+      ["viz", { geojson: "https://example.com/r.geojson", dictionary: "infer" }, skill("viz")],
+      ["viz census", { geojson: "census:county@2021" }, skill("viz")],
+      ["viz shortcut", { geojson: "nyc_boroughs" }, skill("viz")],
+      ["tag-vocab", { tag_vocab: "ckan://resource-id" }, skill("describegpt")],
+      ["stats-options", { stats_options: "--everything --infer-dates" }, skill("describegpt")],
+    ];
+    for (const [what, params, s] of keep) {
+      const before = { ...params };
+      await resolveFilePathParams(params, s, provider);
+      assert.deepStrictEqual(params, before, what);
+    }
+    const to = skill("to", [{ name: "destination", type: "string", required: true, description: "dest" }]);
+    for (const destination of ["postgres://localhost/db", "env=PG_URL"]) {
+      const p: Record<string, unknown> = { subcommand: "postgres", destination };
+      await resolveFilePathParams(p, to, provider);
+      assert.strictEqual(p.destination, destination);
+    }
+    // the connection-string forms are local file names in every other mode
+    for (const p of [
+      { subcommand: "sqlite", destination: "env=PG_URL" },
+      { subcommand: "postgres", dump: true, destination: "env=PG_URL" },
+      { subcommand: "postgres", "-u": true, destination: "env=PG_URL" },
+    ] as Array<Record<string, unknown>>) {
+      await resolveFilePathParams(p, to, provider);
+      assert.strictEqual(p.destination, join(ALLOWED, "env=PG_URL"), JSON.stringify(p));
+    }
+
+    // a Windows drive path is never a URL, and file: options name a local file
+    await refused({ geojson: "C://elsewhere/r.geojson" }, skill("viz"));
+    // (drive-relative resolution depends on the runner's drive, so only check it is resolved)
+    const seen: string[] = [];
+    const spy = {
+      ...provider,
+      resolvePath: async (p: string) => {
+        seen.push(p);
+        return `resolved:${p}`;
+      },
+    };
+    const drive: Record<string, unknown> = { geojson: "C:regions" };
+    await resolveFilePathParams(drive, skill("viz"), spy as FilesystemProviderExtended);
+    assert.deepStrictEqual(seen, ["C:regions"], "a drive-relative path is not a selector");
+    assert.strictEqual(drive.geojson, "resolved:C:regions");
+    await refused({ stats_options: `file:${OUTSIDE}` }, skill("describegpt"));
+    const fileOpt: Record<string, unknown> = { freq_options: "file:freq.csv" };
+    await resolveFilePathParams(fileOpt, skill("describegpt"), provider);
+    assert.strictEqual(fileOpt.freq_options, `file:${join(ALLOWED, "freq.csv")}`);
+    // sqlp runs a lone .sql argument as a script file
+    const sqlp = skill("sqlp", [{ name: "sql", type: "string", required: true, description: "sql" }]);
+    await refused({ sql: OUTSIDE.replace(/\.csv$/, ".sql") }, sqlp);
+    // sqlp only looks at the extension, so spaces and punctuation don't make it inline SQL
+    await refused({ sql: OUTSIDE.replace(/x\.csv$/, "a b;'c.sql") }, sqlp);
+    // describegpt reads --stats_options as --stats-options, and file:- is a file named "-"
+    await refused({ "--stats_options": `file:${OUTSIDE}` }, skill("describegpt"));
+    const dash: Record<string, unknown> = { freq_options: "file:-" };
+    await resolveFilePathParams(dash, skill("describegpt"), provider);
+    assert.strictEqual(dash.freq_options, `file:${join(ALLOWED, "-")}`);
+    const inlineSql: Record<string, unknown> = { sql: "SELECT * FROM _t_1" };
+    await resolveFilePathParams(inlineSql, sqlp, provider);
+    assert.strictEqual(inlineSql.sql, "SELECT * FROM _t_1");
+  });
+
+  test("a path can't be smuggled in an array, and short flags are passed on in long form", async () => {
+    await assert.rejects(
+      resolveFilePathParams({ dupes_output: [OUTSIDE] }, skill("dedup"), provider),
+      /must be a string/,
+    );
+    const short: Record<string, unknown> = { "-D": "dupes.csv" };
+    await resolveFilePathParams(short, skill("dedup"), provider);
+    assert.deepStrictEqual(short, { "--dupes-output": join(ALLOWED, "dupes.csv") });
+  });
+
+  test("a bare-word selector that names an existing file is checked as that file", {
+    skip: process.platform === "win32" ? "symlinks need extra privileges on Windows" : false,
+  }, async () => {
+    const root = await createTestDir("selector-file");
+    try {
+      const allowed = join(root, "allowed");
+      const outside = join(root, "outside");
+      await mkdir(allowed);
+      await mkdir(outside);
+      await writeFile(join(outside, "dict.json"), "{}");
+      await writeFile(join(allowed, "regions"), "{}");
+      await symlink(join(outside, "dict.json"), join(allowed, "dictlink"));
+      const real = new FilesystemResourceProvider({ workingDirectory: allowed, allowedDirectories: [allowed] });
+      const viz = skill("viz");
+      await assert.rejects(resolveFilePathParams({ dictionary: "dictlink" }, viz, real), /Invalid path for/);
+      const local: Record<string, unknown> = { geojson: "regions", dictionary: "infer" };
+      await resolveFilePathParams(local, viz, real);
+      assert.strictEqual(local.geojson, await realpath(join(allowed, "regions")));
+      assert.strictEqual(local.dictionary, "infer");
+    } finally {
+      await cleanupTestDir(root);
+    }
+  });
+
+  test("a directory the command creates may have several missing levels", async () => {
+    const outdir = skill("split", [{ name: "outdir", type: "string", required: true, description: "dir" }]);
+    const p: Record<string, unknown> = { outdir: "out/parts/2026" };
+    await resolveFilePathParams(p, outdir, provider);
+    assert.strictEqual(p.outdir, join(ALLOWED, "out", "parts", "2026"));
+    await refused({ outdir: resolve(sep, "elsewhere", "new", "parts") }, outdir);
+  });
+
+  test("a positional output arg receives the validated output file", () => {
+    const extsort = skill("extsort", [
+      { name: "input", type: "file", required: true, description: "in" },
+      { name: "output", type: "string", required: false, description: "Output file." },
+    ]);
+    const { args, options } = buildSkillExecParams(extsort, {}, "/in.csv", "/allowed/out.csv", false);
+    assert.strictEqual(args.output, "/allowed/out.csv");
+    assert.strictEqual(options["--output"], undefined);
+  });
+
+  test("every skill option or arg that looks like a path is classified", async () => {
+    // Options/args whose description mentions files or paths but whose value isn't one
+    const NOT_A_PATH = new Set([
+      "--agg", "--align", "--cities-url", "--compression", "--delimiter", "--denominator-key",
+      "--denominator-unit", "--feature-id-key", "--feature-name-key", "--filter",
+      "--group", "--languages", "--rnull-values", "--select", "--sentinels-as", "--shard",
+      "--table-name", "--template",
+      // handled elsewhere: the output_file alias, and luau's inline-or-path scripts
+      "--output", "--begin", "--end",
+      // extdedup/extsort's positional output is the output_file alias
+      "output",
+    ]);
+    const classified = (name: string, command: string) =>
+      NOT_A_PATH.has(name) ||
+      FILE_PATH_INPUT_OPTIONS.has(name) || FILE_PATH_OUTPUT_OPTIONS.has(name) ||
+      OTHER_PATH_OPTIONS.has(name) || PATH_LIST_OPTIONS.has(name) || FILE_PREFIX_OPTIONS.has(name) ||
+      name in PATH_OR_REMOTE || FILENAME_PART_OPTIONS.has(name) || DIRECTORY_PATH_ARGS.has(name) ||
+      (command === "sqlp" && name === "sql") ||
+      (COMMAND_PATH_OPTIONS[command]?.has(name) ?? false);
+    const looksLikePath = /\b(file|files|path|directory|dir)\b/i;
+    const missing: string[] = [];
+    for (const s of (await new SkillLoader().loadAll()).values()) {
+      const cmd = s.command.subcommand;
+      for (const o of s.command.options) {
+        if (o.type === "string" && looksLikePath.test(o.description) && !classified(o.flag, cmd)) {
+          missing.push(`${cmd} ${o.flag}`);
+        }
+      }
+      for (const a of s.command.args) {
+        if (a.type === "string" && /dir|path|file|output|dest/i.test(a.description) && !classified(a.name, cmd)) {
+          missing.push(`${cmd} <${a.name}>`);
+        }
+      }
+    }
+    assert.deepStrictEqual(missing, [], "classify these in tool-constants.ts (path kind) or NOT_A_PATH here");
   });
 });

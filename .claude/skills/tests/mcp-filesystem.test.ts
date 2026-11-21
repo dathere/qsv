@@ -745,3 +745,18 @@ test('constructor resolves symlinks in allowedDirectories', async () => {
     }
   }
 });
+
+test('resolvePath refuses a broken symlink, which a write would follow', {
+  skip: process.platform === 'win32' ? 'symlinks need extra privileges on Windows' : false,
+}, async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'qsv-test-')));
+  const allowed = join(root, 'allowed');
+  await mkdir(allowed);
+  await mkdir(join(root, 'outside'));
+  await symlink(join(root, 'outside', 'new.csv'), join(allowed, 'link.csv'));
+  await symlink(join(root, 'outside', 'newdir'), join(allowed, 'linkdir'));
+  const provider = new FilesystemResourceProvider({ workingDirectory: allowed, allowedDirectories: [allowed] });
+  await assert.rejects(provider.resolvePath('link.csv'), /broken symbolic link/);
+  await assert.rejects(provider.resolvePath('linkdir/x.csv'), /parent directory is inaccessible/);
+  assert.strictEqual(await provider.resolvePath('new.csv'), join(allowed, 'new.csv'));
+});

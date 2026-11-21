@@ -44,7 +44,7 @@ import {
   formatToolResult,
   resolveParamAliases,
   shouldUseTempFile,
-  paramKeyToFlag,
+  canonicalFlag,
 } from "./file-operations.js";
 import {
   ensureParquet,
@@ -404,6 +404,7 @@ async function runSqlpParquetInterception(
   params: Record<string, unknown>,
   inputFile: string,
   outputFile: string | undefined,
+  filesystemProvider?: FilesystemProviderExtended,
 ): Promise<SqlpInterceptionResult> {
   const rawSql = params.sql as string | undefined;
   if (!rawSql) {
@@ -432,7 +433,20 @@ async function runSqlpParquetInterception(
 
     // Try DuckDB execution (single-table path)
     const duckDbStart = Date.now();
-    const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
+    // The DuckDB sandbox (used when SQL file writes are off) allows these directories
+    const allowedDirectories = filesystemProvider?.getAllowedDirectories
+      ? [
+        ...filesystemProvider.getAllowedDirectories(),
+        filesystemProvider.getWorkingDirectory(),
+      ]
+      : undefined;
+    const duckDbResult = await tryDuckDbExecution(
+      sql,
+      parquetFile,
+      params,
+      outputFile,
+      allowedDirectories,
+    );
     if (duckDbResult !== null) {
       // Attach pipeline metadata for parity with the sqlp path
       const duckDbSuccess = !("isError" in duckDbResult && duckDbResult.isError === true);
@@ -734,6 +748,12 @@ export async function handleToolCall(
     const { inputFile: rawInputFile, outputFile: rawOutputFile } = resolveParamAliases(params);
     let inputFile = rawInputFile;
     let outputFile = rawOutputFile;
+    // A raw "--format" is the same option as format; normalize it so the binary-output
+    // check and engine routing see it
+    if (params["--format"] !== undefined && params.format === undefined) {
+      params.format = params["--format"];
+      delete params["--format"];
+    }
     const isHelpRequest = params.help === true || params["--help"] === true;
 
     // Normalize help flags: once we've interpreted "--help", remove it so it
@@ -749,11 +769,14 @@ export async function handleToolCall(
     // Resolve file paths using filesystem provider if available (skip for help requests)
     if (filesystemProvider && inputFile) {
       try {
-        inputFile = await resolveAndConvertInputFile(inputFile, filesystemProvider);
+        // sqlp's SKIP_INPUT is a sentinel (the SQL names its own files), not a path
+        if (!(commandName === "sqlp" && inputFile === "SKIP_INPUT")) {
+          inputFile = await resolveAndConvertInputFile(inputFile, filesystemProvider);
 
-        // Auto-index native CSV files (skip for help requests)
-        if (!isHelpRequest) {
-          await autoIndexIfNeeded(inputFile);
+          // Auto-index native CSV files (skip for help requests)
+          if (!isHelpRequest) {
+            await autoIndexIfNeeded(inputFile);
+          }
         }
 
         if (outputFile) {
@@ -776,7 +799,11 @@ export async function handleToolCall(
 
     // Resolve additional file-path parameters (positional args and options beyond input/output)
     if (filesystemProvider && !isHelpRequest) {
-      await resolveFilePathParams(params, skill, filesystemProvider);
+      try {
+        await resolveFilePathParams(params, skill, filesystemProvider);
+      } catch (error: unknown) {
+        return errorResult(`Error: ${maybeSanitize(getErrorMessage(error))}`);
+      }
     }
 
     // viz is HTML-only over MCP. viz infers its output format from the -o
@@ -813,10 +840,17 @@ export async function handleToolCall(
     }
     for (const [key, value] of Object.entries(params)) {
       if (!value || typeof value !== "string") continue;
-      const flag = paramKeyToFlag(key);
+      const flag = canonicalFlag(key, commandName);
       if (FILE_PATH_OUTPUT_OPTIONS.has(flag) && isReservedCachePath(value)) {
         return errorResult(reservedCachePathError(value));
       }
+    }
+
+    // Binary results can't come back as text, so they need a validated destination
+    if (commandName === "sqlp" && !isHelpRequest && !outputFile && isBinaryOutputFormat(commandName, params)) {
+      return errorResult(
+        "Error: output_file is required for parquet, arrow and avro output (binary results can't be returned as text).",
+      );
     }
 
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration
@@ -825,7 +859,12 @@ export async function handleToolCall(
     // this function stays free of command-specific logic.
     let parquetConversionWarning = "";
     if (commandName === "sqlp" && !isHelpRequest && inputFile) {
-      const interception = await runSqlpParquetInterception(params, inputFile, outputFile);
+      const interception = await runSqlpParquetInterception(
+        params,
+        inputFile,
+        outputFile,
+        filesystemProvider,
+      );
       if (interception.earlyResult) {
         return interception.earlyResult;
       }

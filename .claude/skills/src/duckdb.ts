@@ -54,10 +54,69 @@ export interface DuckDbExecutionOptions {
   compression?: string;
   /** Timeout in milliseconds */
   timeoutMs?: number;
+  /** Restrict DuckDB's file access to these directories and files (see buildSandboxPrelude) */
+  sandbox?: DuckDbSandbox;
   /** Callback when process spawns (for shutdown tracking) */
   onSpawn?: (proc: ChildProcess) => void;
   /** Callback when process exits */
   onExit?: (proc: ChildProcess) => void;
+}
+
+/**
+ * The only directories and files DuckDB may read or write. DuckDB's allowlist grants both,
+ * so a write is still possible inside these; outside them every file access fails.
+ */
+export interface DuckDbSandbox {
+  allowedDirectories: readonly string[];
+  allowedPaths: readonly string[];
+}
+
+/** First DuckDB release with the allowed_directories / allowed_paths settings. */
+/**
+ * A path as DuckDB SQL should name it. Windows separators become '/', but only on Windows:
+ * elsewhere a backslash is an ordinary filename character, and rewriting it would point
+ * DuckDB at a different file than the one the server approved (`a\..\b` → `a/../b`).
+ */
+export function duckDbPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? p.replace(/\\/g, "/") : p;
+}
+
+export const MIN_SANDBOX_DUCKDB_VERSION = "1.2.0";
+
+/** Whether a DuckDB version (x.y.z) supports the sandbox settings. */
+export function supportsSandbox(version: string): boolean {
+  const have = version.split(".").map((n) => parseInt(n, 10));
+  const need = MIN_SANDBOX_DUCKDB_VERSION.split(".").map((n) => parseInt(n, 10));
+  for (let i = 0; i < 3; i++) {
+    const h = have[i] ?? 0;
+    if (Number.isNaN(h)) return false;
+    if (h !== need[i]) return h > need[i];
+  }
+  return true;
+}
+
+/**
+ * SET statements that confine DuckDB to the sandbox, then lock its configuration so the
+ * query can't change them back (or point temp_directory and the like elsewhere).
+ */
+export function buildSandboxPrelude(
+  sandbox: DuckDbSandbox,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const quote = (p: string) => `'${p.replace(/'/g, "''")}'`;
+  const dirs = sandbox.allowedDirectories
+    .filter((d) => d.length > 0)
+    .map((d) => duckDbPath(d, platform))
+    .map((d) => quote(d.endsWith("/") ? d : `${d}/`));
+  const paths = sandbox.allowedPaths
+    .filter((p) => p.length > 0)
+    .map((p) => quote(duckDbPath(p, platform)));
+  return (
+    `SET allowed_directories = [${dirs.join(", ")}];\n` +
+    `SET allowed_paths = [${paths.join(", ")}];\n` +
+    "SET enable_external_access = false;\n" +
+    "SET lock_configuration = true;\n"
+  );
 }
 
 /**
@@ -256,7 +315,7 @@ export function translateSql(
   options?: TranslateSqlOptions,
 ): string {
   // Normalize path separators for SQL (Windows backslashes → forward slashes)
-  const normalizedPath = inputFile.replace(/\\/g, "/");
+  const normalizedPath = duckDbPath(inputFile);
   // Escape single quotes in path
   const escapedPath = normalizedPath.replace(/'/g, "''");
 
@@ -395,10 +454,12 @@ export function findFileWritingStatement(sql: string): string | null {
   // Deliberately scans the raw text, strings and comments included. Blanking them first
   // needs DuckDB's own lexer (nested block comments, $tag$ strings, E'' escapes), and any
   // mismatch would hide a real statement. These keywords can't be spelled any other way,
-  // so a raw match can only err toward refusing; a refused query can drop the word from
-  // its literals or comments, or the server can be run with QSV_MCP_SQL_FILE_WRITES=true.
+  // so a raw match can only err toward refusing; a flagged query runs on Polars sqlp
+  // instead. This is the first layer; the DuckDB sandbox (buildSandboxPrelude) enforces.
   if (/\bEXPORT\b/i.test(sql)) return "EXPORT DATABASE";
   if (/\bCOPY\b/i.test(sql) && /\bTO\b/i.test(sql)) return "COPY ... TO";
+  // ATTACH creates the database file if it doesn't exist (#5082)
+  if (/\bATTACH\b/i.test(sql)) return "ATTACH";
   return null;
 }
 
@@ -432,12 +493,18 @@ export async function executeDuckDbQuery(
   const timeoutMs = options?.timeoutMs ?? config.operationTimeoutMs;
   const maxOutputSize = config.maxOutputSize;
 
-  // Build the SQL to execute
-  let fullSql = "";
+  // Build the SQL to execute. The duckdb CLI reads a -c script that begins with '.' as a
+  // CLI meta-command rather than SQL, so the script always begins with this server
+  // statement and the caller's SQL is never first.
+  let fullSql = "SET enable_progress_bar = false;\n";
 
-  // Decimal comma setting
+  // Decimal comma setting (before the sandbox locks the configuration)
   if (options?.decimalComma) {
     fullSql += "SET decimal_separator = ',';\n";
+  }
+
+  if (options?.sandbox) {
+    fullSql += buildSandboxPrelude(options.sandbox);
   }
 
   if (format === "parquet") {
@@ -446,7 +513,7 @@ export async function executeDuckDbQuery(
     if (!outputFile) {
       throw new Error("output_file is required for parquet format output with DuckDB");
     }
-    const normalizedOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+    const normalizedOutput = duckDbPath(outputFile).replace(/'/g, "''");
     const codec = (options?.compression ?? "zstd").toLowerCase();
     if (!VALID_PARQUET_CODECS.has(codec)) {
       throw new Error(`Invalid parquet codec '${codec}'. Valid codecs: ${[...VALID_PARQUET_CODECS].join(", ")}`);

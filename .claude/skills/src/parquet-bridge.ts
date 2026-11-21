@@ -12,7 +12,11 @@ import {
   translateSql,
   findFileWritingStatement,
   executeDuckDbQuery,
+  supportsSandbox,
+  duckDbPath,
+  MIN_SANDBOX_DUCKDB_VERSION,
   CSV_LIKE_EXTENSIONS,
+  type DuckDbSandbox,
 } from "./duckdb.js";
 import { config } from "./config.js";
 import { getErrorMessage, errorResult, successResult } from "./utils.js";
@@ -163,8 +167,8 @@ async function buildDuckDbParquetSql(
 
   // Normalize paths for SQL: backslash to forward slash (Windows compat),
   // then single-quote escaping for SQL string literals.
-  const normInput = inputFile.replace(/\\/g, "/").replace(/'/g, "''");
-  const normOutput = outputFile.replace(/\\/g, "/").replace(/'/g, "''");
+  const normInput = duckDbPath(inputFile).replace(/'/g, "''");
+  const normOutput = duckDbPath(outputFile).replace(/'/g, "''");
 
   const selectClause = selectParts.length > 0 ? selectParts.join(", ") : "*";
 
@@ -810,6 +814,7 @@ export async function tryDuckDbExecution(
   parquetFile: string,
   params: Record<string, unknown>,
   outputFile: string | undefined,
+  allowedDirectories?: readonly string[],
 ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean } | null> {
   // Detect DuckDB (lazy, first-call-only)
   const state = detectDuckDb();
@@ -817,10 +822,26 @@ export async function tryDuckDbExecution(
     return null; // Fall through to sqlp
   }
 
+  // Not SQL: the duckdb CLI would read it as a meta-command. Let sqlp reject it.
+  if (sql.trimStart().startsWith(".")) {
+    return null;
+  }
+
   // With SQL file writes off (plugin mode), SQL that may write files never reaches DuckDB.
   // The check over-matches (a column named "export" trips it), so fall back to sqlp rather
   // than fail: Polars runs under QSV_SQL_DISABLE_FILE_WRITES=1 and refuses a real COPY TO.
+  // DuckDB itself then runs sandboxed to the MCP allowed directories plus the input file
+  // (#5082), which also confines what the keyword check can't see.
+  const format = String(params.format ?? "csv").toLowerCase();
+  let sandbox: DuckDbSandbox | undefined;
   if (!config.sqlFileWrites) {
+    // Parquet output wraps the caller's SQL in the server's own COPY ... TO, which the SQL
+    // could close early to redirect the write. sqlp writes parquet output instead, so
+    // DuckDB never writes a file in this mode.
+    if (format === "parquet") {
+      console.error("[MCP Tools] DuckDB: SQL file writes are disabled; parquet output runs with sqlp");
+      return null;
+    }
     const kind = findFileWritingStatement(sql);
     if (kind) {
       console.error(
@@ -829,9 +850,18 @@ export async function tryDuckDbExecution(
       );
       return null;
     }
+    if (!allowedDirectories || !supportsSandbox(state.version)) {
+      console.error(
+        `[MCP Tools] DuckDB: SQL file writes are disabled and DuckDB v${state.version} can't be ` +
+        `sandboxed (needs v${MIN_SANDBOX_DUCKDB_VERSION}+ and the allowed directories); running with sqlp`,
+      );
+      return null;
+    }
+    sandbox = {
+      allowedDirectories,
+      allowedPaths: parquetFile === "SKIP_INPUT" ? [] : [parquetFile],
+    };
   }
-
-  const format = String(params.format ?? "csv").toLowerCase();
 
   // Unsupported formats fall back to sqlp
   if (format === "arrow" || format === "avro") {
@@ -854,6 +884,7 @@ export async function tryDuckDbExecution(
       decimalComma: params["decimal-comma"] === true,
       compression: params.compression as string | undefined,
       timeoutMs: config.operationTimeoutMs,
+      sandbox,
       onSpawn: (proc) => activeProcesses.add(proc),
       onExit: (proc) => activeProcesses.delete(proc),
     });

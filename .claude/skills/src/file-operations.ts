@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { stat, access, readFile, unlink, rename, copyFile, readdir, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import type {
   QsvSkill,
@@ -20,6 +20,15 @@ import {
   AUTO_INDEX_SIZE_MB,
   FILE_PATH_INPUT_OPTIONS,
   FILE_PATH_OUTPUT_OPTIONS,
+  OTHER_PATH_OPTIONS,
+  PATH_LIST_OPTIONS,
+  FILE_PREFIX_OPTIONS,
+  PATH_OR_REMOTE,
+  SELECTOR_OPTIONS,
+  COMMAND_PATH_OPTIONS,
+  FILENAME_PART_OPTIONS,
+  SHORT_PATH_FLAGS,
+  DIRECTORY_PATH_ARGS,
   FINAL_OUTPUT_FILE,
   isBinaryOutputFormat,
 } from "./tool-constants.js";
@@ -459,6 +468,18 @@ export function paramKeyToFlag(key: string): string {
 }
 
 /**
+ * Like paramKeyToFlag, but maps a command's short flag for a path option
+ * (e.g. dedup's "-D") to its long form, so path checks can't be skipped.
+ */
+export function canonicalFlag(key: string, command: string): string {
+  let flag = paramKeyToFlag(key);
+  // describegpt reads "--stats_options" as --stats-options, so check it as that
+  if (flag.startsWith("--")) flag = flag.replace(/_/g, "-");
+  if (flag === "-o") return "--output";
+  return SHORT_PATH_FLAGS[command]?.[flag] ?? flag;
+}
+
+/**
  * Check whether a value looks like a file path (as opposed to inline script text).
  * Used for ambiguous options like luau --begin/--end that accept both scripts and file paths.
  *
@@ -508,46 +529,159 @@ export async function resolveFilePathParams(
   skill: QsvSkill,
   filesystemProvider: FilesystemProviderExtended,
 ): Promise<void> {
-  // 1. Resolve positional args with type "file" (excluding "input", already handled)
-  for (const arg of skill.command.args) {
-    if (arg.type === "file" && arg.name !== "input" && params[arg.name]) {
-      const rawValue = String(params[arg.name]);
-      try {
-        const resolved = await filesystemProvider.resolvePath(rawValue);
-        if (resolved !== rawValue) {
-          console.error(`[MCP Tools] Resolved arg '${arg.name}': ${rawValue} -> ${resolved}`);
-          params[arg.name] = resolved;
-        }
-      } catch (error: unknown) {
-        console.error(`[MCP Tools] Warning: failed to resolve arg '${arg.name}' path '${rawValue}':`, getErrorMessage(error));
+  const command = skill.command.subcommand;
+  const invalid = (label: string, error: unknown) =>
+    new Error(`Invalid path for ${label}: ${getErrorMessage(error)}`);
+  // Fail closed: a path the provider refuses must never reach qsv unresolved
+  const resolveOrThrow = async (label: string, value: string, stdio = true): Promise<string> => {
+    // "-" is stdin/stdout, not a file
+    if (stdio && value === "-") return value;
+    try {
+      const resolved = await filesystemProvider.resolvePath(value);
+      if (resolved !== value) {
+        console.error(`[MCP Tools] Resolved ${label}: ${value} -> ${resolved}`);
       }
+      return resolved;
+    } catch (error: unknown) {
+      throw invalid(label, error);
+    }
+  };
+  // A directory the command creates: only its nearest existing ancestor must exist
+  const resolveDir = async (label: string, value: string): Promise<string> => {
+    try {
+      return await filesystemProvider.resolvePath(value);
+    } catch (error: unknown) {
+      if (!/does not exist/i.test(getErrorMessage(error)) || value.startsWith("~")) {
+        throw invalid(label, error);
+      }
+    }
+    let ancestor = resolve(filesystemProvider.getWorkingDirectory(), value);
+    const missing: string[] = [];
+    while (dirname(ancestor) !== ancestor) {
+      missing.unshift(basename(ancestor));
+      ancestor = dirname(ancestor);
+      try {
+        return join(await filesystemProvider.resolvePath(ancestor), ...missing);
+      } catch (error: unknown) {
+        if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
+      }
+    }
+    throw invalid(label, new Error("no existing parent directory"));
+  };
+  // The executor stringifies whatever it gets (["/x"] becomes "/x"), so an
+  // array or object can't stand in for a path; booleans are flags, not paths
+  const asString = (label: string, value: unknown): string | undefined => {
+    if (typeof value === "object" && value !== null) {
+      throw new Error(`Invalid value for ${label}: a path must be a string`);
+    }
+    if (typeof value === "number") return String(value);
+    return typeof value === "string" && value !== "" ? value : undefined;
+  };
+  // to's connection-string forms apply only to `to postgres` without --dump
+  const remoteForm = (name: string): RegExp | undefined => {
+    if (command !== "to" || name !== "destination") return PATH_OR_REMOTE[name];
+    const dump = params.dump ?? params["--dump"] ?? params["-u"];
+    return params.subcommand === "postgres" && !dump ? PATH_OR_REMOTE[name] : undefined;
+  };
+  const resolveRemoteOrPath = async (name: string, label: string, value: string): Promise<string> => {
+    if (remoteForm(name)?.test(value)) return value;
+    if (!SELECTOR_OPTIONS.has(name) || !/^[\w@:-]+$/.test(value) || /^[A-Za-z]:/.test(value)) {
+      return resolveOrThrow(label, value);
+    }
+    // a bare word is a selector, unless a file by that name exists: qsv prefers the file
+    let resolved: string;
+    try {
+      resolved = await filesystemProvider.resolvePath(value);
+    } catch (error: unknown) {
+      if (/does not exist/i.test(getErrorMessage(error))) return value;
+      throw invalid(label, error);
+    }
+    return (await stat(resolved).then(() => true, () => false)) ? resolved : value;
+  };
+
+  // 1. Positional args that name a local path (excluding "input", already handled)
+  const argNames = new Set<string>();
+  for (const arg of skill.command.args) {
+    argNames.add(arg.name);
+    if (arg.name === "input") continue;
+    const isSqlScript = command === "sqlp" && arg.name === "sql";
+    const isPathArg = arg.type === "file" || DIRECTORY_PATH_ARGS.has(arg.name) ||
+      arg.name in PATH_OR_REMOTE || isSqlScript;
+    if (!isPathArg) continue;
+    const value = asString(`arg '${arg.name}'`, params[arg.name]);
+    if (value === undefined) continue;
+    const label = `arg '${arg.name}'`;
+    if (DIRECTORY_PATH_ARGS.has(arg.name)) {
+      params[arg.name] = await resolveDir(label, value);
+    } else if (arg.name in PATH_OR_REMOTE) {
+      params[arg.name] = await resolveRemoteOrPath(arg.name, label, value);
+    } else if (isSqlScript) {
+      // like sqlp, treat any value with a .sql extension as a script file
+      if (/\.sql[\\/]*$/i.test(value)) params[arg.name] = await resolveOrThrow(label, value);
+    } else {
+      params[arg.name] = await resolveOrThrow(label, value);
     }
   }
 
-  // 2. Resolve option values that are file paths
-  for (const [key, value] of Object.entries(params)) {
-    if (!value || typeof value !== "string") continue;
+  // 2. Option values that are local paths
+  for (const key of Object.keys(params)) {
+    if (argNames.has(key)) continue;
+    const flag = canonicalFlag(key, command);
+    const label = `option '${flag}'`;
 
-    // Convert param key to flag format (e.g. "dupes_output" -> "--dupes-output")
-    const flag = paramKeyToFlag(key);
+    const isLuauScript = (flag === "--begin" || flag === "--end") && command === "luau";
+    const isPathOption =
+      FILE_PATH_INPUT_OPTIONS.has(flag) ||
+      FILE_PATH_OUTPUT_OPTIONS.has(flag) ||
+      OTHER_PATH_OPTIONS.has(flag) ||
+      PATH_LIST_OPTIONS.has(flag) ||
+      FILE_PREFIX_OPTIONS.has(flag) ||
+      FILENAME_PART_OPTIONS.has(flag) ||
+      flag in PATH_OR_REMOTE ||
+      (COMMAND_PATH_OPTIONS[command]?.has(flag) ?? false) ||
+      isLuauScript;
+    if (!isPathOption) continue;
+    const value = asString(label, params[key]);
+    if (value === undefined) continue;
 
-    const isFilePathOption = FILE_PATH_INPUT_OPTIONS.has(flag) || FILE_PATH_OUTPUT_OPTIONS.has(flag);
-
-    // Special case: luau --begin/--end accept both inline scripts and file paths
-    const isAmbiguousFileOption = (flag === "--begin" || flag === "--end")
-      && skill.command.subcommand === "luau"
-      && looksLikeFilePath(value);
-
-    if (isFilePathOption || isAmbiguousFileOption) {
-      try {
-        const resolved = await filesystemProvider.resolvePath(value);
-        if (resolved !== value) {
-          console.error(`[MCP Tools] Resolved option '${flag}': ${value} -> ${resolved}`);
-          params[key] = resolved;
-        }
-      } catch (error: unknown) {
-        console.error(`[MCP Tools] Warning: failed to resolve option '${flag}' path '${value}':`, getErrorMessage(error));
+    let resolved: string;
+    if (FILENAME_PART_OPTIONS.has(flag)) {
+      if (/[\\/]|\.\./.test(value)) {
+        throw new Error(`Invalid value for ${flag}: it must not contain a path separator or '..'`);
       }
+      continue;
+    } else if (PATH_LIST_OPTIONS.has(flag)) {
+      const parts: string[] = [];
+      for (const part of value.split(",").map((p) => p.trim()).filter((p) => p.length > 0)) {
+        const r = await resolveOrThrow(label, part);
+        // the list is comma-separated, so a comma would split one checked path into others
+        if (r.includes(",")) throw new Error(`Invalid path for ${label}: a listed path can't contain a comma`);
+        parts.push(r);
+      }
+      resolved = parts.join(",");
+    } else if (FILE_PREFIX_OPTIONS.has(flag) || isLuauScript) {
+      // a plain string here is an option string or inline script; only `file:<path>` names a file
+      if (/^file:/i.test(value)) {
+        resolved = `file:${await resolveOrThrow(label, value.slice(5), false)}`;
+      } else if (isLuauScript && looksLikeFilePath(value)) {
+        resolved = await resolveOrThrow(label, value);
+      } else {
+        continue;
+      }
+    } else if (flag in PATH_OR_REMOTE) {
+      resolved = await resolveRemoteOrPath(flag, label, value);
+    } else if (OTHER_PATH_OPTIONS.has(flag)) {
+      resolved = await resolveDir(label, value);
+    } else {
+      resolved = await resolveOrThrow(label, value);
+    }
+
+    // pass a short flag on as its long form, which the skill declares
+    if (flag !== paramKeyToFlag(key) && flag.startsWith("--")) {
+      delete params[key];
+      params[flag] = resolved;
+    } else {
+      params[key] = resolved;
     }
   }
 }
@@ -586,6 +720,9 @@ export function buildSkillExecParams(
     if (
       key === "input_file" ||
       key === "output_file" ||
+      // raw output flags: the validated outputFile replaces them below
+      key === "--output" ||
+      key === "-o" ||
       (key === "input" && !skillHasOption("input")) ||
       (key === "output" && !skillHasOption("output")) ||
       key === "help"
@@ -605,7 +742,12 @@ export function buildSkillExecParams(
   }
 
   if (outputFile) {
-    options["--output"] = outputFile;
+    // extsort/extdedup take their output as a positional arg, not --output
+    if (skill.command.args.some((a) => a.name === "output") && !skillHasOption("output")) {
+      args.output = outputFile;
+    } else {
+      options["--output"] = outputFile;
+    }
   }
 
   if (isHelpRequest) {
@@ -808,8 +950,12 @@ export function resolveParamAliases(params: Record<string, unknown>): {
   const inputFile =
     coerce(params.input_file, "input_file") ??
     coerce(params.input, "input");
+  // A raw "--output"/"-o" key is an output path too: treat it as an alias so it
+  // gets the same validation as output_file instead of reaching qsv unchecked
   const outputFile =
     coerce(params.output_file, "output_file") ??
-    coerce(params.output, "output");
+    coerce(params.output, "output") ??
+    coerce(params["--output"], "--output") ??
+    coerce(params["-o"], "-o");
   return { inputFile, outputFile };
 }

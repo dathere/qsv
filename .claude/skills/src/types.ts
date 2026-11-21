@@ -196,6 +196,8 @@ export interface FilesystemProviderExtended {
   needsConversion: (path: string) => boolean;
   getConversionCommand: (path: string) => string | null;
   getWorkingDirectory: () => string;
+  /** Directories the server may read and write (grows at runtime in plugin mode) */
+  getAllowedDirectories?: () => readonly string[];
   listFiles: (
     directory?: string,
     recursive?: boolean,

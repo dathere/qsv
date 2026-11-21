@@ -29,6 +29,9 @@ const MAX_CANDIDATES: usize = 64;
 const MAX_GROUP: usize = 8;
 /// Rows read for the measures; larger inputs are read at a fixed stride.
 const SAMPLE_ROWS: u64 = 100_000;
+/// Most rows, in percent, where an `ordered` pair may run backwards: the fit
+/// warns above this share, and clamps the gaps either way.
+const MAX_REVERSED_PCT: usize = 1;
 /// Share of rows a `joint` group's tuples must keep at `--min-count`.
 const MIN_JOINT_SURVIVAL: f64 = 0.8;
 /// An `ordered` chain writes its anchor's blank rate in every member, so its
@@ -246,14 +249,19 @@ pub(crate) fn discover(
             // other: a copula keeps their correlation, while an ordered chain
             // draws each gap apart from its anchor and weakens it.
             if dom_a != Domain::Numeric && pair.rho >= THRESHOLD {
-                // A pair is ordered when one never exceeds the other and their
-                // ranges overlap (one wholly below the other is ordered
-                // trivially). Two columns equal in every row are ordered too,
-                // the earlier column first, so the chain keeps them equal.
-                let edge = if pair.a_le_b && (pair.any_lt || pair.b_le_a) && pair.max_a > pair.min_b
+                // A pair is ordered when the later date comes first in at most
+                // MAX_REVERSED_PCT of the rows holding both (the fit clamps
+                // those) and their ranges overlap (one wholly below the other
+                // is ordered trivially). Two columns equal in every row are
+                // ordered too, the earlier column first, so the chain keeps
+                // them equal.
+                let few = |reversed: usize| reversed * 100 <= pair.n * MAX_REVERSED_PCT;
+                let edge = if few(pair.n_gt)
+                    && (pair.n_lt > pair.n_gt || pair.n_lt + pair.n_gt == 0)
+                    && pair.max_a > pair.min_b
                 {
                     Some((col_a, col_b))
-                } else if pair.b_le_a && pair.any_gt && pair.max_b > pair.min_a {
+                } else if few(pair.n_lt) && pair.n_gt > pair.n_lt && pair.max_b > pair.min_a {
                     Some((col_b, col_a))
                 } else {
                     None
@@ -429,17 +437,16 @@ fn sorted_present(values: &[Option<f64>]) -> Vec<usize> {
 
 struct PairStats {
     /// Rows where both columns hold a value.
-    n:      usize,
+    n:     usize,
     /// Spearman's rho over those rows.
-    rho:    f64,
-    a_le_b: bool,
-    b_le_a: bool,
-    any_lt: bool,
-    any_gt: bool,
-    min_a:  f64,
-    max_a:  f64,
-    min_b:  f64,
-    max_b:  f64,
+    rho:   f64,
+    /// Rows where a < b, and where a > b.
+    n_lt:  usize,
+    n_gt:  usize,
+    min_a: f64,
+    max_a: f64,
+    min_b: f64,
+    max_b: f64,
 }
 
 fn pair_stats(
@@ -451,16 +458,14 @@ fn pair_stats(
     let ranks_a = masked_ranks(order_a, a, b);
     let ranks_b = masked_ranks(order_b, b, a);
     let mut stats = PairStats {
-        n:      0,
-        rho:    0.0,
-        a_le_b: true,
-        b_le_a: true,
-        any_lt: false,
-        any_gt: false,
-        min_a:  f64::INFINITY,
-        max_a:  f64::NEG_INFINITY,
-        min_b:  f64::INFINITY,
-        max_b:  f64::NEG_INFINITY,
+        n:     0,
+        rho:   0.0,
+        n_lt:  0,
+        n_gt:  0,
+        min_a: f64::INFINITY,
+        max_a: f64::NEG_INFINITY,
+        min_b: f64::INFINITY,
+        max_b: f64::NEG_INFINITY,
     };
     let mut ra = Vec::new();
     let mut rb = Vec::new();
@@ -469,10 +474,8 @@ fn pair_stats(
             continue;
         };
         stats.n += 1;
-        stats.a_le_b &= x <= y;
-        stats.b_le_a &= y <= x;
-        stats.any_lt |= x < y;
-        stats.any_gt |= x > y;
+        stats.n_lt += usize::from(x < y);
+        stats.n_gt += usize::from(x > y);
         stats.min_a = stats.min_a.min(x);
         stats.max_a = stats.max_a.max(x);
         stats.min_b = stats.min_b.min(y);

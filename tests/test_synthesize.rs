@@ -6192,3 +6192,28 @@ fn synthesize_discover_keeps_a_correlated_pair_its_extension_would_sink() {
         vec![("correlated".to_string(), svec!["x", "y"])]
     );
 }
+
+#[test]
+fn synthesize_discover_tolerates_a_few_reversed_date_rows() {
+    let wrk = Workdir::new("synthesize_discover_reversed");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    // `reversed` of 300 rows close before they open: 3 (1%) is within what
+    // the fit clamps, 4 isn't.
+    let fixture = |reversed: i64| {
+        let mut csv = String::from("opened,closed\n");
+        for i in 0..300_i64 {
+            let opened = base + chrono::Duration::days((i * 7) % 200);
+            let gap = if i < reversed { -2 } else { 1 + i % 9 };
+            csv.push_str(&format!(
+                "{opened},{}\n",
+                opened + chrono::Duration::days(gap)
+            ));
+        }
+        csv
+    };
+    assert_eq!(
+        discover_on(&wrk, &fixture(3), None),
+        vec![("ordered".to_string(), svec!["opened", "closed"])]
+    );
+    assert!(discover_on(&wrk, &fixture(4), None).is_empty());
+}

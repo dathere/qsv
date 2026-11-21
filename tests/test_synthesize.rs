@@ -5515,3 +5515,783 @@ fn synthesize_target_rows_per_file_join_to_the_single_file() {
         .collect();
     assert_eq!(single + "\n", joined);
 }
+
+/// Planted relationships for `--discover-relationships`: `city`/`state` are
+/// joint, `x`/`y` correlate negatively, `created <= closed <= archived` are
+/// ordered ISO dates. `color` and `noise` are independent of everything, and
+/// `id` is all-unique.
+fn discovery_fixture() -> String {
+    let cities = [
+        ("Boston", "MA"),
+        ("Worcester", "MA"),
+        ("Albany", "NY"),
+        ("Buffalo", "NY"),
+        ("Austin", "TX"),
+        ("Dallas", "TX"),
+    ];
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("id,city,state,x,y,created,closed,archived,color,noise\n");
+    for i in 0..600_i64 {
+        let (city, state) = cities[(i % 6) as usize];
+        let x = (i * 37) % 101;
+        let y = 200 - x + (i * 13) % 7;
+        let created = base + chrono::Duration::days((i * 7) % 300);
+        let closed = created + chrono::Duration::days((i * 11) % 20);
+        let archived = closed + chrono::Duration::days(i % 5);
+        let color = ["red", "green", "blue"][((i / 6) % 3) as usize];
+        csv.push_str(&format!(
+            "{},{city},{state},{x},{y},{created},{closed},{archived},{color},{}\n",
+            i + 1,
+            (i * 53) % 97
+        ));
+    }
+    csv
+}
+
+/// (kind, members) of each relationship in a dictionary file.
+fn relationships_in(wrk: &Workdir, file: &str) -> Vec<(String, Vec<String>)> {
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path(file)).unwrap()).unwrap();
+    let payload = doc
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .unwrap_or(&doc);
+    payload["relationships"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            let members = r["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m.as_str().unwrap().to_string())
+                .collect();
+            (r["kind"].as_str().unwrap().to_string(), members)
+        })
+        .collect()
+}
+
+#[test]
+fn synthesize_discover_finds_planted_relationships() {
+    let wrk = Workdir::new("synthesize_discover_planted");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![
+            (
+                "ordered".to_string(),
+                svec!["created", "closed", "archived"]
+            ),
+            ("correlated".to_string(), svec!["x", "y"]),
+            ("joint".to_string(), svec!["city", "state"]),
+        ]
+    );
+    // The groups are used in this run: every row is a real city/state pair
+    // and keeps its dates in order.
+    let states: std::collections::HashMap<&str, &str> = [
+        ("Boston", "MA"),
+        ("Worcester", "MA"),
+        ("Albany", "NY"),
+        ("Buffalo", "NY"),
+        ("Austin", "TX"),
+        ("Dallas", "TX"),
+    ]
+    .into_iter()
+    .collect();
+    for r in &got[1..] {
+        assert_eq!(states[r[1].as_str()], r[2], "{r:?}");
+        assert!(r[5] <= r[6] && r[6] <= r[7], "{r:?}");
+    }
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("found.json")).unwrap()).unwrap();
+    assert_eq!(doc["fields"], serde_json::json!([]));
+    assert_eq!(doc["relationships"][0]["anchor"], "created");
+    assert!(doc["relationships"][2]["score"].as_f64().unwrap() >= 0.7);
+}
+
+#[test]
+fn synthesize_discover_matches_a_rerun_with_its_file_and_model() {
+    let wrk = Workdir::new("synthesize_discover_rerun");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    // --consistent-fakes pairs each color with a fake name when the fit
+    // builds its generator, which draws from the fit's RNG.
+    let dict = serde_json::json!({"fields": [{"name": "color", "content_type": "first_name"}]});
+    wrk.create_from_string("dict.json", &dict.to_string());
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "20000", "--seed", "7"]).args(extra);
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out.stdout
+    };
+    let fit = ["--dictionary", "dict.json", "--consistent-fakes"];
+    let found = run(&[
+        &fit[..],
+        &[
+            "--discover-relationships",
+            "found.json",
+            "--save-model",
+            "model.json",
+            "data.csv",
+        ],
+    ]
+    .concat());
+    let found_j1 = run(&[
+        &fit[..],
+        &[
+            "--discover-relationships",
+            "found_j1.json",
+            "-j",
+            "1",
+            "data.csv",
+        ],
+    ]
+    .concat());
+    let rerun = run(&[
+        "--dictionary",
+        "found.json",
+        "--consistent-fakes",
+        "data.csv",
+    ]);
+    let from_model = run(&["--model", "model.json"]);
+    let plain = run(&[&fit[..], &["data.csv"]].concat());
+    assert!(found == rerun, "rerun with the written dictionary differs");
+    assert!(found == from_model, "run from the saved model differs");
+    assert!(found == found_j1, "-j 1 differs");
+    assert_eq!(
+        std::fs::read(wrk.path("found.json")).unwrap(),
+        std::fs::read(wrk.path("found_j1.json")).unwrap()
+    );
+    assert!(found != plain, "the discovered groups changed nothing");
+}
+
+#[test]
+fn synthesize_discover_proposes_nothing_among_independent_columns() {
+    let wrk = Workdir::new("synthesize_discover_negative");
+    let mut csv = String::from("a,b,n,m\n");
+    for i in 0..400 {
+        // Every combination of a and b equally often; n and m unrelated.
+        csv.push_str(&format!(
+            "{},{},{},{}\n",
+            i % 5,
+            (i / 5) % 4,
+            (i * 53) % 97,
+            (i * 31) % 89
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert!(relationships_in(&wrk, "found.json").is_empty());
+}
+
+#[test]
+fn synthesize_discover_skips_ordered_pairs_with_unlike_blanks_or_apart_ranges() {
+    let wrk = Workdir::new("synthesize_discover_ordered_gates");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("opened,closed,start,renewal,low,high\n");
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        // closed is blank in 30% of rows, opened never: as a chain, closed
+        // would take opened's blank rate.
+        let closed = if i % 10 < 3 {
+            String::new()
+        } else {
+            (opened + chrono::Duration::days(i % 9)).to_string()
+        };
+        // renewal is always after start, but only because its range starts
+        // where start's ends: that order says nothing, so it isn't `ordered`.
+        let start = base + chrono::Duration::days((i * 11) % 150);
+        let renewal = start + chrono::Duration::days(1000);
+        // high never falls below low and their ranges overlap, but numeric
+        // pairs go to `correlated`, which keeps their correlation.
+        let low = (i * 37) % 101;
+        let high = low + i % 3;
+        csv.push_str(&format!(
+            "{opened},{closed},{start},{renewal},{low},{high}\n"
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![("correlated".to_string(), svec!["low", "high"])]
+    );
+}
+
+#[test]
+fn synthesize_discover_keeps_the_dictionary_and_its_declared_columns() {
+    let wrk = Workdir::new("synthesize_discover_declared");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    // Wrapped like describegpt output, with a declared group on city/state.
+    let dict = serde_json::json!({
+        "Dictionary": {
+            "response": {
+                "fields": [{"name": "color", "content_type": "unknown"}],
+                "relationships": [{"kind": "joint", "members": ["city", "state"]}],
+                "note": "kept"
+            },
+            "model": "kept too"
+        }
+    });
+    wrk.create_from_string("dict.json", &dict.to_string());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1", "--dictionary", "dict.json"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![
+            ("joint".to_string(), svec!["city", "state"]),
+            (
+                "ordered".to_string(),
+                svec!["created", "closed", "archived"]
+            ),
+            ("correlated".to_string(), svec!["x", "y"]),
+        ]
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("found.json")).unwrap()).unwrap();
+    assert_eq!(doc["Dictionary"]["response"]["note"], "kept");
+    assert_eq!(doc["Dictionary"]["model"], "kept too");
+    assert!(doc.get("relationships").is_none());
+    // The input dictionary is untouched.
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&wrk.read_to_string("dict.json").unwrap())
+            .unwrap(),
+        dict
+    );
+}
+
+#[test]
+fn synthesize_discover_leaves_out_the_target_and_fake_value_columns() {
+    let wrk = Workdir::new("synthesize_discover_exclusions");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1", "--target", "state"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let found = relationships_in(&wrk, "found.json");
+    assert!(
+        found.iter().all(|(_, m)| !m.contains(&"state".to_string())),
+        "{found:?}"
+    );
+
+    // A faker-typed column is left out with or without --consistent-fakes:
+    // enumerated, it writes real values, and a joint group would link them
+    // into real tuples.
+    let dict = serde_json::json!({"fields": [{"name": "city", "content_type": "city"}]});
+    wrk.create_from_string("dict.json", &dict.to_string());
+    for (fakes, file) in [(true, "found2.json"), (false, "found3.json")] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "50", "--seed", "1", "--dictionary", "dict.json"])
+            .args(["--discover-relationships", file])
+            .arg("data.csv");
+        if fakes {
+            cmd.arg("--consistent-fakes");
+        }
+        wrk.assert_success(&mut cmd);
+        let found = relationships_in(&wrk, file);
+        assert!(
+            found.iter().all(|(_, m)| !m.contains(&"city".to_string())),
+            "--consistent-fakes {fakes}: {found:?}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_discover_lists_groups_in_the_report() {
+    let wrk = Workdir::new("synthesize_discover_report");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1", "--report", "with.json"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let report: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("with.json").unwrap()).unwrap();
+    assert_eq!(
+        report["discovered_relationships"].as_array().unwrap().len(),
+        3
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1", "--report", "without.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let report: serde_json::Value =
+        serde_json::from_str(&wrk.read_to_string("without.json").unwrap()).unwrap();
+    assert!(report.get("discovered_relationships").is_none());
+}
+
+#[test]
+fn synthesize_discover_refuses_conflicting_options() {
+    let wrk = Workdir::new("synthesize_discover_refusals");
+    wrk.create_from_string("data.csv", &discovery_fixture());
+    for (extra, msg) in [
+        (vec!["--no-relationships", "data.csv"], "--no-relationships"),
+        (
+            vec!["--strict-relationships", "data.csv"],
+            "--strict-relationships",
+        ),
+        (vec!["-o", "found.json", "data.csv"], "must not be"),
+    ] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["--discover-relationships", "found.json"])
+            .args(&extra);
+        let out = wrk.output(&mut cmd);
+        assert!(!out.status.success(), "{extra:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(msg),
+            "{extra:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["--seed", "1", "--save-model", "model.json", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "--model",
+        "model.json",
+        "--discover-relationships",
+        "found.json",
+    ]);
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("found.json").exists());
+}
+
+#[test]
+fn synthesize_discover_joint_needs_most_rows_in_kept_tuples() {
+    let wrk = Workdir::new("synthesize_discover_joint_survival");
+    // p and q agree in 77% of rows (bias-corrected V 0.74); the other rows
+    // spread over 90 tuples, each seen fewer than 5 times.
+    let mut csv = String::from("p,q\n");
+    for i in 0..600 {
+        let (p, blk) = (i % 10, i / 10);
+        let q = if blk % 25 < 18 {
+            p
+        } else {
+            (p + 1 + blk % 9) % 10
+        };
+        csv.push_str(&format!("{p},{q}\n"));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    for (min_count, want) in [
+        ("5", vec![]),
+        ("1", vec![("joint".to_string(), svec!["p", "q"])]),
+    ] {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "10", "--seed", "1", "--min-count", min_count])
+            .args(["--discover-relationships", "found.json"])
+            .arg("data.csv");
+        wrk.assert_success(&mut cmd);
+        assert_eq!(
+            relationships_in(&wrk, "found.json"),
+            want,
+            "--min-count {min_count}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_discover_samples_large_inputs_and_drops_groups_the_fit_drops() {
+    let wrk = Workdir::new("synthesize_discover_large");
+    // 150,000 rows are read at a stride of 2. In even rows a == b; odd rows
+    // hold 1,600 other pairs, so the sample sees a perfect joint pair that
+    // the whole input puts over a --joint-cardinality-cap of 100.
+    let mut csv = String::with_capacity(2_000_000);
+    csv.push_str("a,b,c,d\n");
+    for i in 0..150_000_u32 {
+        let a = (i / 2) % 40;
+        let b = if i % 2 == 0 { a } else { (i / 80) % 40 };
+        let c = i % 7;
+        let d = if i % 2 == 0 { c } else { (c + 1) % 7 };
+        csv.push_str(&format!("{a},{b},{c},{d}\n"));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let run = |file: &str, jobs: &str| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "1000", "--seed", "3", "-j", jobs])
+            .args(["--joint-cardinality-cap", "100"])
+            .args(["--discover-relationships", file])
+            .arg("data.csv");
+        let out = wrk.output(&mut cmd);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out.stdout
+    };
+    let first = run("found.json", "4");
+    // c/d has 14 tuples, all common: it stays. a/b is dropped by the fit, so
+    // the file leaves it out.
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![("joint".to_string(), svec!["c", "d"])]
+    );
+    assert!(first == run("again.json", "1"));
+    assert_eq!(
+        std::fs::read(wrk.path("found.json")).unwrap(),
+        std::fs::read(wrk.path("again.json")).unwrap()
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "1000", "--seed", "3"])
+        .args([
+            "--joint-cardinality-cap",
+            "100",
+            "--dictionary",
+            "found.json",
+        ])
+        .arg("data.csv");
+    assert!(wrk.output(&mut cmd).stdout == first);
+}
+
+#[test]
+fn synthesize_discover_grows_correlated_groups_and_caps_candidates() {
+    let wrk = Workdir::new("synthesize_discover_growth");
+    // x, y and z all track each other; z's range is apart from both, so no
+    // pair of them is `ordered`.
+    let mut csv = String::from("x,y,z\n");
+    for i in 0..300_i64 {
+        let x = (i * 37) % 101;
+        csv.push_str(&format!(
+            "{x},{},{}\n",
+            200 - x + (i * 13) % 7,
+            1000 + x + (i * 11) % 5
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![("correlated".to_string(), svec!["x", "y", "z"])]
+    );
+
+    // 66 enumerated columns: the last two are past the 64-column cap.
+    let names: Vec<String> = (0..66).map(|k| format!("c{k}")).collect();
+    let mut csv = names.join(",") + "\n";
+    for i in 0..60 {
+        let row: Vec<String> = (0..66)
+            .map(|k| ((i / (k % 5 + 1)) % 3).to_string())
+            .collect();
+        csv.push_str(&(row.join(",") + "\n"));
+    }
+    wrk.create_from_string("wide.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "wide.json"])
+        .arg("wide.csv");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(r#"checks the first 64 joint columns; skipped ["c64", "c65"]"#),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn synthesize_ordered_learns_gaps_from_dates_stats_reads() {
+    // `2024-01-05 10:00:00` isn't RFC 3339, but `stats` types the column
+    // DateTime. The group used to find no rows with both dates, drop itself
+    // and leave the columns independent, out of order.
+    let wrk = Workdir::new("synthesize_ordered_non_iso_dates");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    let mut csv = String::from("created,closed\n");
+    for i in 0..300_i64 {
+        let created = base + chrono::Duration::hours((i * 37) % 2000);
+        let closed = created + chrono::Duration::hours(1 + (i * 7) % 48);
+        csv.push_str(&format!(
+            "{},{}\n",
+            created.format("%Y-%m-%d %H:%M:%S"),
+            closed.format("%Y-%m-%d %H:%M:%S")
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let dict = serde_json::json!({
+        "fields": [],
+        "relationships": [{"kind": "ordered", "members": ["created", "closed"]}]
+    });
+    wrk.create_from_string("dict.json", &dict.to_string());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "1", "--dictionary", "dict.json"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let created = chrono::DateTime::parse_from_rfc3339(&r[0]).unwrap();
+        let closed = chrono::DateTime::parse_from_rfc3339(&r[1]).unwrap();
+        assert!(created <= closed, "{r:?}");
+    }
+}
+
+#[test]
+fn synthesize_discover_reads_day_first_dates_as_stats_does() {
+    // Day-first dates: read month-first, `05/02/2024` (5 February) would be
+    // May 2 and `13/02/2024` wouldn't parse, so the pair is only ordered
+    // when discovery reads dates the way `stats --prefer-dmy` does.
+    let wrk = Workdir::new("synthesize_discover_dmy");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("opened,closed\n");
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        let closed = opened + chrono::Duration::days(1 + i % 9);
+        csv.push_str(&format!(
+            "{},{}\n",
+            opened.format("%d/%m/%Y"),
+            closed.format("%d/%m/%Y")
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1"])
+        .args(["--stats-options", "--prefer-dmy"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![("ordered".to_string(), svec!["opened", "closed"])]
+    );
+}
+
+/// Run discovery on `csv` (and `dict`, if any) and return what it found.
+fn discover_on(
+    wrk: &Workdir,
+    csv: &str,
+    dict: Option<serde_json::Value>,
+) -> Vec<(String, Vec<String>)> {
+    wrk.create_from_string("data.csv", csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"]);
+    if let Some(dict) = dict {
+        wrk.create_from_string("dict.json", &dict.to_string());
+        cmd.args(["--dictionary", "dict.json"]);
+    }
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    relationships_in(wrk, "found.json")
+}
+
+#[test]
+fn synthesize_discover_leaves_out_an_id_with_blanks() {
+    let wrk = Workdir::new("synthesize_discover_id_blanks");
+    // Every filled id is distinct, but 10% are blank, so the id's
+    // cardinality is below the row count. It still tracks `amount`.
+    let mut csv = String::from("id,amount\n");
+    for i in 0..300_i64 {
+        let id = if i % 10 == 0 {
+            String::new()
+        } else {
+            (i + 1).to_string()
+        };
+        // Each amount appears twice, so it isn't an identifier itself.
+        csv.push_str(&format!("{id},{}\n", (i / 2) * 3));
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
+}
+
+#[test]
+fn synthesize_discover_date_pair_edge_cases() {
+    let wrk = Workdir::new("synthesize_discover_date_edges");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let day = |i: i64| base + chrono::Duration::days((i * 7) % 200);
+    let ordered = |a: &'static str, b: &'static str| vec![("ordered".to_string(), svec![a, b])];
+
+    // Equal in every row: ordered, so the output keeps them equal.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        csv.push_str(&format!("{},{}\n", day(i), day(i)));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
+
+    // Blank in 50% and 55% of rows, in the same rows but for 5% of them:
+    // exactly the limit, which passes.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        let a = if i % 20 < 10 {
+            String::new()
+        } else {
+            day(i).to_string()
+        };
+        let b = if i % 20 < 11 {
+            String::new()
+        } else {
+            (day(i) + chrono::Duration::days(i % 4)).to_string()
+        };
+        csv.push_str(&format!("{a},{b}\n"));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
+
+    // Each blank in 20% of rows, but in different ones: the chain would blank
+    // them together, so the pair stays independent.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        let a = if i % 5 == 0 {
+            String::new()
+        } else {
+            day(i).to_string()
+        };
+        let b = if i % 5 == 1 {
+            String::new()
+        } else {
+            (day(i) + chrono::Duration::days(i % 4)).to_string()
+        };
+        csv.push_str(&format!("{a},{b}\n"));
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
+
+    // Different dictionary date formats: a chain writes every member in its
+    // anchor's format, so the pair stays independent.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "{},{}\n",
+            day(i),
+            day(i) + chrono::Duration::days(i % 4)
+        ));
+    }
+    let formats = |b: &str| {
+        serde_json::json!({"fields": [
+            {"name": "a", "content_type": "date:%Y-%m-%d"},
+            {"name": "b", "content_type": b},
+        ]})
+    };
+    assert!(discover_on(&wrk, &csv, Some(formats("date:%d/%m/%Y"))).is_empty());
+    assert_eq!(
+        discover_on(&wrk, &csv, Some(formats("date:%Y-%m-%d"))),
+        ordered("a", "b")
+    );
+}
+
+#[test]
+fn synthesize_discover_keeps_a_correlated_pair_its_extension_would_sink() {
+    let wrk = Workdir::new("synthesize_discover_correlated_support");
+    // x and y correlate where z is blank, y and z where x is blank: no row
+    // holds all three, so adding z to x/y would leave the fit nothing.
+    let mut csv = String::from("x,y,z\n");
+    for i in 0..300_i64 {
+        let v = (i * 37) % 101;
+        if i % 2 == 0 {
+            csv.push_str(&format!("{v},{},\n", v + (i * 3) % 4));
+        } else {
+            csv.push_str(&format!(",{v},{}\n", 500 + v + (i * 3) % 4));
+        }
+    }
+    assert_eq!(
+        discover_on(&wrk, &csv, None),
+        vec![("correlated".to_string(), svec!["x", "y"])]
+    );
+}
+
+#[test]
+fn synthesize_discover_tolerates_a_few_reversed_date_rows() {
+    let wrk = Workdir::new("synthesize_discover_reversed");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    // `reversed` of 300 rows close before they open: 3 (1%) is within what
+    // the fit clamps, 4 isn't.
+    let fixture = |reversed: i64| {
+        let mut csv = String::from("opened,closed\n");
+        for i in 0..300_i64 {
+            let opened = base + chrono::Duration::days((i * 7) % 200);
+            let gap = if i < reversed { -2 } else { 1 + i % 9 };
+            csv.push_str(&format!(
+                "{opened},{}\n",
+                opened + chrono::Duration::days(gap)
+            ));
+        }
+        csv
+    };
+    let ordered = vec![("ordered".to_string(), svec!["opened", "closed"])];
+    assert_eq!(discover_on(&wrk, &fixture(3), None), ordered);
+    assert!(discover_on(&wrk, &fixture(4), None).is_empty());
+
+    // Equal but for one row each way: a tie, which goes to the earlier
+    // column.
+    let mut csv = String::from("opened,closed\n");
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        let gap = [-1, 1].get(i as usize).copied().unwrap_or(0);
+        csv.push_str(&format!(
+            "{opened},{}\n",
+            opened + chrono::Duration::days(gap)
+        ));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered);
+}
+
+#[test]
+fn synthesize_discover_checks_blanks_in_the_rows_the_sample_skips() {
+    let wrk = Workdir::new("synthesize_discover_blanks_skipped");
+    // 150,000 rows are read at a stride of 2. closed is blank in every odd
+    // row, which the sample never sees; the whole input's blank counts do.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::with_capacity(4_000_000);
+    csv.push_str("opened,closed\n");
+    for i in 0..150_000_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        if i % 2 == 0 {
+            csv.push_str(&format!(
+                "{opened},{}\n",
+                opened + chrono::Duration::days(1 + i % 9)
+            ));
+        } else {
+            csv.push_str(&format!("{opened},\n"));
+        }
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
+}
+
+#[test]
+fn synthesize_discover_checks_blanks_across_a_whole_chain() {
+    let wrk = Workdir::new("synthesize_discover_chain_blanks");
+    // a <= b <= c, each blank in its own 2% of rows: any two disagree on 4%,
+    // within the limit, but all three on 6%, so only a pair is grouped.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("a,b,c\n");
+    for i in 0..300_i64 {
+        let a = base + chrono::Duration::days((i * 7) % 200);
+        let b = a + chrono::Duration::days(1 + i % 5);
+        let c = b + chrono::Duration::days(1 + i % 3);
+        let cell = |d: chrono::NaiveDate, k: i64| {
+            if i % 50 == k {
+                String::new()
+            } else {
+                d.to_string()
+            }
+        };
+        csv.push_str(&format!("{},{},{}\n", cell(a, 0), cell(b, 1), cell(c, 2)));
+    }
+    let found = discover_on(&wrk, &csv, None);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "ordered");
+    assert_eq!(found[0].1.len(), 2, "{found:?}");
+}

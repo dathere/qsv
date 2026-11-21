@@ -29,14 +29,67 @@ struct DictionaryFile {
 /// [...], ...}, ...}}`, so peel that wrapper when present. Also accept a raw
 /// `{"fields": [...]}` payload so users can hand-author / pre-extract a
 /// dictionary file without going through describegpt.
+#[cfg(test)]
 fn parse_dictionary_payload(raw: &str) -> Result<DictionaryFile, serde_json::Error> {
+    parse_dictionary_doc(raw).map(|(dict, _)| dict)
+}
+
+/// `parse_dictionary_payload`, also returning the whole parsed document.
+fn parse_dictionary_doc(
+    raw: &str,
+) -> Result<(DictionaryFile, serde_json::Value), serde_json::Error> {
     let value: serde_json::Value = serde_json::from_str(raw)?;
     let inner = value
         .get("Dictionary")
         .and_then(|d| d.get("response"))
-        .cloned()
-        .unwrap_or(value);
-    serde_json::from_value(inner)
+        .unwrap_or(&value)
+        .clone();
+    Ok((serde_json::from_value(inner)?, value))
+}
+
+/// Content types, declared relationships, and the whole parsed document (for
+/// `--discover-relationships` to extend).
+pub(crate) type LoadedDictionary = (
+    HashMap<String, String>,
+    Vec<SynthRelationship>,
+    serde_json::Value,
+);
+
+/// Write `doc` (a loaded dictionary, or `None` for none) to `path` with
+/// `found` appended to its `relationships`, in the payload a reload reads.
+pub(crate) fn write_with_relationships(
+    doc: Option<serde_json::Value>,
+    found: Vec<serde_json::Value>,
+    path: &str,
+) -> CliResult<()> {
+    let mut doc = doc.unwrap_or_else(|| serde_json::json!({ "fields": [] }));
+    let wrapped = doc
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .is_some_and(serde_json::Value::is_object);
+    let payload = if wrapped {
+        &mut doc["Dictionary"]["response"]
+    } else {
+        &mut doc
+    };
+    let Some(payload) = payload.as_object_mut() else {
+        return Err(CliError::Other(
+            "synthesize: the dictionary is not a JSON object".to_string(),
+        ));
+    };
+    let relationships = payload
+        .entry("relationships")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    match relationships.as_array_mut() {
+        Some(list) => list.extend(found),
+        // A `relationships` key that isn't a list doesn't load either.
+        None => *relationships = serde_json::Value::Array(found),
+    }
+    fs::write(path, serde_json::to_string_pretty(&doc)? + "\n").map_err(|e| {
+        CliError::Other(format!(
+            "Failed to write --discover-relationships file '{path}': {e}"
+        ))
+    })
 }
 
 /// One field entry in the dictionary. Deliberately lenient: `content_type` is
@@ -82,12 +135,10 @@ fn fields_to_map(fields: Vec<SynthDictField>) -> HashMap<String, String> {
 
 /// Load the field-name → `content_type` map and the declared inter-column
 /// relationships from a dictionary file on disk.
-pub(crate) fn load_dictionary(
-    path: &str,
-) -> CliResult<(HashMap<String, String>, Vec<SynthRelationship>)> {
+pub(crate) fn load_dictionary(path: &str) -> CliResult<LoadedDictionary> {
     let contents = fs::read_to_string(path)
         .map_err(|e| CliError::Other(format!("Failed to read dictionary file '{path}': {e}")))?;
-    let dict = parse_dictionary_payload(&contents).map_err(|e| {
+    let (dict, doc) = parse_dictionary_doc(&contents).map_err(|e| {
         CliError::Other(format!(
             "Failed to parse dictionary file '{path}' as JSON. `synthesize` expects a dictionary \
              produced with `describegpt --dictionary --infer-content-type --format JSON` (the \
@@ -95,22 +146,20 @@ pub(crate) fn load_dictionary(
              `{{\"fields\": [...]}}` payload). Parser error: {e}"
         ))
     })?;
-    Ok((fields_to_map(dict.fields), dict.relationships))
+    Ok((fields_to_map(dict.fields), dict.relationships, doc))
 }
 
 /// Infer the field-name → `content_type` map and inter-column relationships by
 /// invoking `describegpt` on the input. Relationships are only populated when
 /// `describegpt` emits a `relationships` array (two-pass dictionary mode).
-pub(crate) fn infer_dictionary(
-    input_path: &str,
-) -> CliResult<(HashMap<String, String>, Vec<SynthRelationship>)> {
+pub(crate) fn infer_dictionary(input_path: &str) -> CliResult<LoadedDictionary> {
     let (stdout, _stderr) = util::run_qsv_cmd(
         "describegpt",
         &["--dictionary", "--infer-content-type", "--format", "JSON"],
         input_path,
         "  Inferred Content Types via describegpt",
     )?;
-    let dict = parse_dictionary_payload(&stdout).map_err(|e| {
+    let (dict, doc) = parse_dictionary_doc(&stdout).map_err(|e| {
         CliError::Other(format!(
             "Failed to parse describegpt dictionary output as JSON: {e}. Make sure an LLM is \
              configured — either set `QSV_LLM_APIKEY` (or `--api-key`) for a hosted provider, or \
@@ -118,7 +167,7 @@ pub(crate) fn infer_dictionary(
              (e.g. LM Studio, Ollama)."
         ))
     })?;
-    Ok((fields_to_map(dict.fields), dict.relationships))
+    Ok((fields_to_map(dict.fields), dict.relationships, doc))
 }
 
 #[cfg(test)]

@@ -6211,9 +6211,20 @@ fn synthesize_discover_tolerates_a_few_reversed_date_rows() {
         }
         csv
     };
-    assert_eq!(
-        discover_on(&wrk, &fixture(3), None),
-        vec![("ordered".to_string(), svec!["opened", "closed"])]
-    );
+    let ordered = vec![("ordered".to_string(), svec!["opened", "closed"])];
+    assert_eq!(discover_on(&wrk, &fixture(3), None), ordered);
     assert!(discover_on(&wrk, &fixture(4), None).is_empty());
+
+    // Equal but for one row each way: a tie, which goes to the earlier
+    // column.
+    let mut csv = String::from("opened,closed\n");
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        let gap = [-1, 1].get(i as usize).copied().unwrap_or(0);
+        csv.push_str(&format!(
+            "{opened},{}\n",
+            opened + chrono::Duration::days(gap)
+        ));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered);
 }

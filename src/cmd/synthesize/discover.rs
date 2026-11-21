@@ -252,14 +252,11 @@ pub(crate) fn discover(
                 // A pair is ordered when the later date comes first in at most
                 // MAX_REVERSED_PCT of the rows holding both (the fit clamps
                 // those) and their ranges overlap (one wholly below the other
-                // is ordered trivially). Two columns equal in every row are
-                // ordered too, the earlier column first, so the chain keeps
-                // them equal.
+                // is ordered trivially). A tie, as for two columns equal in
+                // every row, goes to the earlier column first, so the chain
+                // keeps them equal.
                 let few = |reversed: usize| reversed * 100 <= pair.n * MAX_REVERSED_PCT;
-                let edge = if few(pair.n_gt)
-                    && (pair.n_lt > pair.n_gt || pair.n_lt + pair.n_gt == 0)
-                    && pair.max_a > pair.min_b
-                {
+                let edge = if few(pair.n_gt) && pair.n_lt >= pair.n_gt && pair.max_a > pair.min_b {
                     Some((col_a, col_b))
                 } else if few(pair.n_lt) && pair.n_gt > pair.n_lt && pair.max_b > pair.min_a {
                     Some((col_b, col_a))

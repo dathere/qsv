@@ -366,9 +366,10 @@ synthesize options:
                            group must keep 80% of rows in tuples seen at least
                            the --min-count times), or by |Spearman| for
                            `correlated` (numeric) and `ordered` (dates, where
-                           the later comes first in at most 1% of rows, their
-                           ranges overlap, and blank rates differ by at most 5
-                           points). Groups don't share columns and hold up to
+                           the later comes first in at most 1% of the sampled
+                           rows holding both, their ranges overlap, and blank
+                           rates differ by at most 5 points). Groups don't
+                           share columns and hold up to
                            8 each. Columns with a faker content type, and
                            free-text, constant and all-unique integer columns
                            are never proposed, nor is the target. Scores read

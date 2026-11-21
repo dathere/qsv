@@ -231,6 +231,8 @@ export async function autoIndexIfNeeded(
  * positional `output` arg). Commands like `split` and `to` write their own files, so a
  * temp output file would never be created.
  */
+const MAX_STDERR_SUMMARY_CHARS = 4000;
+
 export function skillTakesOutputFile(skill: QsvSkill): boolean {
   return (
     skill.command.options.some((o) => o.flag === "--output") ||
@@ -825,6 +827,18 @@ export async function formatToolResult(
   // (or undefined if the temp file was small enough to return inline and deleted).
   let finalOutputFile: string | undefined = outputFile;
 
+  // Some modes never write the temp file (extdedup --no-output, schema --stdout):
+  // their result is on stdout/stderr instead
+  if (outputFile && autoCreatedTempFile) {
+    try {
+      await stat(outputFile);
+    } catch (err: unknown) {
+      if (!(isNodeError(err) && err.code === "ENOENT")) throw err;
+      outputFile = undefined;
+      finalOutputFile = undefined;
+    }
+  }
+
   if (outputFile) {
     if (autoCreatedTempFile) {
       try {
@@ -921,7 +935,11 @@ export async function formatToolResult(
     // e.g. split or `to` write their own files and print only a summary on stderr
     const summary = result.stderr.trim();
     responseText = `✅ qsv ${commandName} completed; it printed no output.`;
-    if (summary) responseText += `\n\n${summary}`;
+    if (summary.length > MAX_STDERR_SUMMARY_CHARS) {
+      responseText += `\n\n${summary.slice(0, MAX_STDERR_SUMMARY_CHARS)}\n[stderr truncated]`;
+    } else if (summary) {
+      responseText += `\n\n${summary}`;
+    }
   } else {
     responseText = result.output;
   }

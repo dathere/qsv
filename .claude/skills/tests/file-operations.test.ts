@@ -791,4 +791,31 @@ describe("commands that write their own files", () => {
     assert.match(text, /qsv to completed; it printed no output/);
     assert.match(text, /Wrote 'in\.parquet' \(1 rows\)/);
   });
+
+  test("an auto temp file the command never wrote falls back to its stdout", async () => {
+    const base = {
+      success: true,
+      stderr: "2 duplicates\n",
+      metadata: { command: "qsv x", duration: 5, exitCode: 0 },
+    };
+    const missing = join(homedir(), `qsv-never-written-${Date.now()}.tsv`);
+    const json = await formatToolResult({ ...base, output: '{"a":1}' }, "schema", "/in.csv", missing, true, {});
+    assert.ok(!json.isError, json.content[0].text);
+    assert.strictEqual(json.content[0].text, '{"a":1}');
+    const empty = await formatToolResult({ ...base, output: "" }, "extdedup", "/in.csv", missing, true, {});
+    assert.ok(!empty.isError, empty.content[0].text);
+    assert.match(empty.content[0].text ?? "", /qsv extdedup completed[^]*2 duplicates/);
+  });
+
+  test("a long stderr summary is truncated", async () => {
+    const result = {
+      success: true,
+      output: "",
+      stderr: "x".repeat(100_000),
+      metadata: { command: "qsv split", duration: 5, exitCode: 0 },
+    };
+    const text = (await formatToolResult(result, "split", "/in.csv", undefined, false, {})).content[0].text ?? "";
+    assert.ok(text.length < 5000, String(text.length));
+    assert.match(text, /\[stderr truncated\]$/);
+  });
 });

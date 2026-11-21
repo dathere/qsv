@@ -1129,3 +1129,29 @@ test('qsv split succeeds although it writes only its own files', { skip: !QSV_AV
     await cleanupTestDir(testDir);
   }
 });
+
+test('output_file is refused for a command that has no output file option', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+    const csvPath = await createTestCSV(testDir, 'test.csv', 'id,name\n1,a\n2,b\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: testDir, allowedDirectories: [testDir] });
+
+    const result = await handleToolCall(
+      'qsv_split',
+      { input_file: csvPath, outdir: join(testDir, 'parts'), size: 1, output_file: join(testDir, 'out.csv') },
+      executor,
+      loader,
+      provider,
+    );
+
+    assert.ok(result.isError);
+    assert.match(result.content[0].text ?? '', /has no output file option/);
+    await assert.rejects(stat(join(testDir, 'parts')));
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});

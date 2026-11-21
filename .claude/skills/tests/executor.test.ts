@@ -555,3 +555,10 @@ test('buildCommand does not add --frequency-jsonl when option definition is miss
     config.qsvValidation.version = originalVersion;
   }
 });
+
+test('a qsv binary that fails to start is a failure, not a success', async () => {
+  const executor = new SkillExecutor('/nonexistent/qsv-binary-for-test');
+  const result = await executor.execute(countSkill, { args: { input: 'x.csv' } } as SkillParams);
+  assert.strictEqual(result.success, false);
+  assert.match(result.stderr, /SPAWN ERROR/);
+});

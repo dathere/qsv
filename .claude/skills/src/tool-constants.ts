@@ -102,7 +102,6 @@ export const FILE_PATH_INPUT_OPTIONS = new Set([
   "--markdown-template",
   "--prompt-file",
   "--sas7bcat",
-  "--tag-vocab",
   "--template-file",
 ]);
 
@@ -127,12 +126,11 @@ export const FILE_PATH_OUTPUT_OPTIONS = new Set([
 ]);
 
 /**
- * Other options whose value is a local path (a directory, or a file that some
- * commands read and others write). Resolved like the two sets above.
+ * Options naming a directory, which the command creates if needed (so only the
+ * nearest existing ancestor has to exist). Resolved like the two sets above.
  */
 export const OTHER_PATH_OPTIONS = new Set([
   "--cache-dir",
-  "--dictionary",
   "--disk-cache-dir",
   "--temp-dir",
   "--tmp-dir",
@@ -141,8 +139,23 @@ export const OTHER_PATH_OPTIONS = new Set([
 /** Options holding a comma-separated list of local file paths. */
 export const PATH_LIST_OPTIONS = new Set(["--join-inputs", "--sketch-in"]);
 
-/** Options that take either a local path (resolved) or a URL (left as is). */
-export const PATH_OR_URL_OPTIONS = new Set(["--geojson"]);
+/** Options whose value is an ordinary string, or a local file path after a `file:` prefix. */
+export const FILE_PREFIX_OPTIONS = new Set(["--freq-options", "--stats-options"]);
+
+/**
+ * Options and positional args that take a local path or one of the remote or
+ * selector forms the command documents (left as is). Any other value is
+ * resolved as a local path. A bare word (no `.`, `/` or `\`, and not a Windows
+ * drive) is a selector such as viz's `auto`/`infer`/`census:county@2021` or a
+ * shortcut name, which can't leave the working directory anyway.
+ */
+export const PATH_OR_REMOTE: Readonly<Record<string, RegExp>> = {
+  "--dictionary": /^$/,
+  "--geojson": /^https?:\/\//i,
+  "--tag-vocab": /^(https?|ckan|dathere):\/\//i,
+  "destination": /^(postgres(ql)?:\/\/|env=)/i,
+  "json-schema": /^https?:\/\//i,
+};
 
 /** Path options that only one command has; the same flag means something else elsewhere. */
 export const COMMAND_PATH_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -171,11 +184,8 @@ export const SHORT_PATH_FLAGS: Readonly<Record<string, Readonly<Record<string, s
   to: { "-c": "--stats-csv" },
 };
 
-/** Positional args (not typed "file" in the skill JSONs) that name a local directory. */
+/** Positional args (not typed "file" in the skill JSONs) that name a directory the command creates. */
 export const DIRECTORY_PATH_ARGS = new Set(["outdir"]);
-
-/** Positional args that take either a local path (resolved) or a URL (left as is). */
-export const PATH_OR_URL_ARGS = new Set(["destination", "json-schema"]);
 
 /**
  * Check if the command+params produce binary output (not tabular text).

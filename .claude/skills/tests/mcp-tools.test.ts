@@ -394,6 +394,16 @@ test('handleToolCall needs a destination for binary sqlp output and keeps SKIP_I
   assert.strictEqual(result.isError, true);
   assert.ok(result.content[0].text?.includes("binary results can't be returned as text"), result.content[0].text);
   assert.ok(!resolved.includes('SKIP_INPUT'), `SKIP_INPUT was resolved as a path: ${resolved}`);
+
+  // a raw --format is the same option
+  const raw = await handleToolCall(
+    'qsv_sqlp',
+    { input_file: 'SKIP_INPUT', sql: 'SELECT 1', '--format': 'parquet' },
+    executor,
+    loader,
+    provider,
+  );
+  assert.ok(raw.content[0].text?.includes("binary results can't be returned as text"), raw.content[0].text);
 });
 
 test('handleToParquetCall rejects reserved cache file as output', async () => {

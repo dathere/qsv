@@ -748,6 +748,12 @@ export async function handleToolCall(
     const { inputFile: rawInputFile, outputFile: rawOutputFile } = resolveParamAliases(params);
     let inputFile = rawInputFile;
     let outputFile = rawOutputFile;
+    // A raw "--format" is the same option as format; normalize it so the binary-output
+    // check and engine routing see it
+    if (params["--format"] !== undefined && params.format === undefined) {
+      params.format = params["--format"];
+      delete params["--format"];
+    }
     const isHelpRequest = params.help === true || params["--help"] === true;
 
     // Normalize help flags: once we've interpreted "--help", remove it so it

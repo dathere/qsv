@@ -365,20 +365,22 @@ synthesize options:
                            `joint` (columns with 2 to 50 enumerated values; a
                            group must keep 80% of rows in tuples seen at least
                            the --min-count times), or by |Spearman| for
-                           `correlated` (numeric) and `ordered` (dates, where
-                           the later comes first in at most 1% of the sampled
-                           rows holding both, their ranges overlap, and blank
-                           rates differ by at most 5 points). Groups don't
-                           share columns and hold up to
-                           8 each. Columns with a faker content type, and
-                           free-text, constant and all-unique integer columns
-                           are never proposed, nor is the target. Scores read
-                           up to 100,000 rows (at a fixed stride beyond) and
-                           up to 64 columns of each family. With --shard,
-                           every slice finds the same groups and writes the
-                           same <file>. Not allowed with --no-relationships,
-                           nor with --strict-relationships, which would abort
-                           on a found group the source only nearly satisfies.
+                           `correlated` (numeric) and `ordered` (dates of one
+                           dictionary date format, where the later comes first
+                           in at most 1% of the sampled rows holding both,
+                           their ranges overlap, and blank rates differ by at
+                           most 5 points). Groups don't share columns and hold
+                           up to 8 each. Columns with a faker content type,
+                           and free-text, constant and all-unique integer
+                           columns are never proposed, nor is the target.
+                           Scores read up to 100,000 rows (at a fixed stride
+                           beyond) and up to 64 columns of each family. With
+                           the --shard option, every slice finds the same
+                           groups and writes the same <file>. Not allowed
+                           with --no-relationships, nor with
+                           the --strict-relationships option, which would
+                           abort on a found group the source only nearly
+                           satisfies.
     --joint-cardinality-cap <n>  Maximum number of distinct value-tuples a
                            `joint` relationship may have. A joint group above
                            this cap falls back to independent generation (or

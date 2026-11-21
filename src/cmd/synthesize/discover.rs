@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use super::{
     dictionary::SynthRelationship,
     faker_map,
-    generator::{ColumnGenerator, compute_null_ratio, parse_epoch, parse_f64},
+    generator::{ColumnGenerator, compute_null_ratio, parse_f64, parse_source_epoch},
     relationships::{EmitUnit, ScheduleParams, pearson, source_cell},
 };
 use crate::{CliResult, config::Config};
@@ -189,8 +189,12 @@ pub(crate) fn discover(
                 #[allow(clippy::cast_precision_loss)]
                 col_values.push(match domain {
                     Domain::Numeric => parse_f64(&cell),
-                    Domain::Date => parse_epoch(&cell, false).map(|e| e as f64),
-                    Domain::DateTime => parse_epoch(&cell, true).map(|e| e as f64),
+                    Domain::Date => {
+                        parse_source_epoch(&cell, false, params.prefer_dmy).map(|e| e as f64)
+                    },
+                    Domain::DateTime => {
+                        parse_source_epoch(&cell, true, params.prefer_dmy).map(|e| e as f64)
+                    },
                 });
             }
         }

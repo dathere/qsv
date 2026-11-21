@@ -6014,3 +6014,70 @@ fn synthesize_discover_grows_correlated_groups_and_caps_candidates() {
         "{stderr}"
     );
 }
+
+#[test]
+fn synthesize_ordered_learns_gaps_from_dates_stats_reads() {
+    // `2024-01-05 10:00:00` isn't RFC 3339, but `stats` types the column
+    // DateTime. The group used to find no rows with both dates, drop itself
+    // and leave the columns independent, out of order.
+    let wrk = Workdir::new("synthesize_ordered_non_iso_dates");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    let mut csv = String::from("created,closed\n");
+    for i in 0..300_i64 {
+        let created = base + chrono::Duration::hours((i * 37) % 2000);
+        let closed = created + chrono::Duration::hours(1 + (i * 7) % 48);
+        csv.push_str(&format!(
+            "{},{}\n",
+            created.format("%Y-%m-%d %H:%M:%S"),
+            closed.format("%Y-%m-%d %H:%M:%S")
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let dict = serde_json::json!({
+        "fields": [],
+        "relationships": [{"kind": "ordered", "members": ["created", "closed"]}]
+    });
+    wrk.create_from_string("dict.json", &dict.to_string());
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "1", "--dictionary", "dict.json"])
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    for r in &got[1..] {
+        let created = chrono::DateTime::parse_from_rfc3339(&r[0]).unwrap();
+        let closed = chrono::DateTime::parse_from_rfc3339(&r[1]).unwrap();
+        assert!(created <= closed, "{r:?}");
+    }
+}
+
+#[test]
+fn synthesize_discover_reads_day_first_dates_as_stats_does() {
+    // Day-first dates: read month-first, `05/02/2024` (5 February) would be
+    // May 2 and `13/02/2024` wouldn't parse, so the pair is only ordered
+    // when discovery reads dates the way `stats --prefer-dmy` does.
+    let wrk = Workdir::new("synthesize_discover_dmy");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut csv = String::from("opened,closed\n");
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days((i * 7) % 200);
+        let closed = opened + chrono::Duration::days(1 + i % 9);
+        csv.push_str(&format!(
+            "{},{}\n",
+            opened.format("%d/%m/%Y"),
+            closed.format("%d/%m/%Y")
+        ));
+    }
+    wrk.create_from_string("data.csv", &csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "50", "--seed", "1"])
+        .args(["--stats-options", "--prefer-dmy"])
+        .args(["--discover-relationships", "found.json"])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        relationships_in(&wrk, "found.json"),
+        vec![("ordered".to_string(), svec!["opened", "closed"])]
+    );
+}

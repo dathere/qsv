@@ -27,7 +27,7 @@ use super::{
     faker_map::{self, Locale},
     generator::{
         ColumnGenerator, compute_null_ratio, date_buckets, effective_quantiles, float_decimals,
-        floor_to, numeric_buckets, parse_epoch, parse_f64,
+        floor_to, numeric_buckets, parse_f64, parse_source_epoch,
     },
     group_generator::{GroupGenerator, OrderedKind, member_grid},
     report::Suppression,
@@ -81,6 +81,8 @@ pub(crate) struct ScheduleParams<'a> {
     pub strict:                bool,
     pub input_path:            &'a str,
     pub delimiter:             Option<Delimiter>,
+    /// Day-first reading of ambiguous source dates, as `stats` read them.
+    pub prefer_dmy:            bool,
     /// What `min_count` dropped, per column or joint group, for `--report`.
     pub suppressions:          &'a RefCell<Vec<Suppression>>,
     /// Keep per-column warnings off stderr (the discovery probe, whose
@@ -734,7 +736,7 @@ fn learn_ordered_gaps(
             let cell = source_cell(&record, params, col);
             *slot = if is_date {
                 #[allow(clippy::cast_precision_loss)]
-                parse_epoch(&cell, is_datetime).map(|e| e as f64)
+                parse_source_epoch(&cell, is_datetime, params.prefer_dmy).map(|e| e as f64)
             } else {
                 parse_f64(&cell)
             };

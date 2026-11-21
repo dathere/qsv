@@ -1134,6 +1134,7 @@ fn fit(args: &Args, base_seed: u64) -> CliResult<(model::Model, Fitted)> {
         strict: args.flag_strict_relationships && args.flag_target.is_none(),
         input_path,
         delimiter: args.flag_delimiter,
+        prefer_dmy,
         suppressions: &probe_suppressions,
         quiet: true,
     };
@@ -1533,6 +1534,7 @@ fn fit_target(tf: &TargetFit) -> CliResult<target::Target> {
             strict: tf.strict,
             input_path: &path,
             delimiter: comma,
+            prefer_dmy: tf.prefer_dmy,
             suppressions: &suppressions,
             quiet: false,
         };

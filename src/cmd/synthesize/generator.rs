@@ -1125,6 +1125,26 @@ pub(crate) fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
     })
 }
 
+/// Parse a source cell as `parse_epoch` does, falling back to the date parser
+/// `stats` types the column with (`04/18/2019 09:55:45 PM`,
+/// `2022-01-21 13:47:00`), so every cell `stats` counted as a date reads.
+pub(crate) fn parse_source_epoch(s: &str, is_datetime: bool, prefer_dmy: bool) -> Option<i64> {
+    parse_epoch(s, is_datetime).or_else(|| {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let seconds = qsv_dateparser::parse_with_preference(trimmed, prefer_dmy)
+            .ok()?
+            .timestamp();
+        Some(if is_datetime {
+            seconds
+        } else {
+            seconds.div_euclid(86_400)
+        })
+    })
+}
+
 /// Sample a target character length for unstructured-string generation.
 ///
 /// When `stats.stddev > 0`, draws from `Normal(stats.avg, stats.stddev)` using

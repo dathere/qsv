@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { readFile, stat, access, chmod, mkdir } from 'node:fs/promises';
+import { readFile, readdir, stat, access, chmod, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { handleToolCall, handleToParquetCall } from '../src/mcp-tools.js';
 import { config } from '../src/config.js';
@@ -1098,6 +1098,33 @@ test('qsv_sqlp runs a .sql script file, also when DuckDB is available', { skip: 
 
     assert.ok(!result.isError, result.content[0].text);
     assert.match(result.content[0].text ?? '', /Alice\s+Bob/);
+  } finally {
+    await cleanupTestDir(testDir);
+  }
+});
+
+test('qsv split succeeds although it writes only its own files', { skip: !QSV_AVAILABLE }, async () => {
+  const testDir = await createTestDir();
+  const loader = new SkillLoader();
+  const executor = new SkillExecutor();
+
+  try {
+    await loader.loadAll();
+    const csvPath = await createTestCSV(testDir, 'test.csv', 'id,name\n1,a\n2,b\n3,c\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: testDir, allowedDirectories: [testDir] });
+    const outdir = join(testDir, 'parts');
+
+    const result = await handleToolCall(
+      'qsv_split',
+      { input_file: csvPath, outdir, size: 1 },
+      executor,
+      loader,
+      provider,
+    );
+
+    assert.ok(!result.isError, result.content[0].text);
+    assert.match(result.content[0].text ?? '', /qsv split completed; it printed no output/);
+    assert.strictEqual((await readdir(outdir)).length, 3);
   } finally {
     await cleanupTestDir(testDir);
   }

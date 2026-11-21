@@ -226,6 +226,18 @@ export async function autoIndexIfNeeded(
  * @param inputFile - Path to the input file
  * @returns Promise<boolean> - true if temp file should be used
  */
+/**
+ * Whether a skill can write its output to a file the server names (`--output` or a
+ * positional `output` arg). Commands like `split` and `to` write their own files, so a
+ * temp output file would never be created.
+ */
+export function skillTakesOutputFile(skill: QsvSkill): boolean {
+  return (
+    skill.command.options.some((o) => o.flag === "--output") ||
+    skill.command.args.some((a) => a.name === "output")
+  );
+}
+
 export async function shouldUseTempFile(
   command: string,
   inputFile: string,
@@ -905,6 +917,11 @@ export async function formatToolResult(
         responseText += `- Rows processed: ${result.metadata.rowsProcessed}\n`;
       }
     }
+  } else if (result.output.trim() === "") {
+    // e.g. split or `to` write their own files and print only a summary on stderr
+    const summary = result.stderr.trim();
+    responseText = `✅ qsv ${commandName} completed; it printed no output.`;
+    if (summary) responseText += `\n\n${summary}`;
   } else {
     responseText = result.output;
   }

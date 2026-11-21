@@ -45,6 +45,7 @@ import {
   formatToolResult,
   resolveParamAliases,
   shouldUseTempFile,
+  skillTakesOutputFile,
   canonicalFlag,
   isSqlScriptArg,
 } from "./file-operations.js";
@@ -894,6 +895,7 @@ export async function handleToolCall(
       inputFile &&
       commandName !== "describegpt" &&
       !isBinaryOutputFormat(commandName, params) &&
+      skillTakesOutputFile(skill) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
       // viz emits a self-contained interactive HTML artifact; its output format is

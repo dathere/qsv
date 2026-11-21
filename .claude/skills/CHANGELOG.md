@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`qsv-synthesize --seed` is the same at any `--jobs`**: rows are now generated in parallel, in fixed 8,192-row blocks, so a seed gives the same rows whatever `--jobs` is (unless `stats` uses approximate estimators, whether requested via `--stats-options` or switched on automatically when the input won't fit in memory), though different rows than qsv 29.0.0. Skill regenerated from the USAGE text. ([#5069](https://github.com/dathere/qsv/pull/5069))
 - **`qsv-synthesize` warns that its output is not anonymized** ([#5064](https://github.com/dathere/qsv/pull/5064)): synthetic output can contain real source values. The skill description was regenerated from the README command table.
 
+### Fixed
+- **Commands that write only their own files no longer report an error.** `split`, `partition`, `to`, `validate` and `index` have no `--output`, but in TSV output mode (the default) or on large inputs the server still gave them a temp output file, then failed reading it back (`Error processing output from temp file: ENOENT`) although the command had succeeded. The server now uses a temp file only for skills with `--output` or a positional output, and a successful command with no stdout reports that it completed, with qsv's own summary (for example `Wrote 2 chunk/s to …`).
+
 ## [29.0.1] - 2026-11-21
 Patch release of the MCP server and the Claude Cowork / Claude Code plugin, for use with qsv 29.0.0 (`minimum_qsv_version` stays 29.0.0). It carries the security fixes below, published as advisory [GHSA-vm54-v922-fpq5](https://github.com/dathere/qsv/security/advisories/GHSA-vm54-v922-fpq5); update now. The bundled skill files also describe `qsv-synthesize` options from the next qsv release (listed under [Unreleased]); with qsv 29.0.0 those options are rejected as unknown flags.
 

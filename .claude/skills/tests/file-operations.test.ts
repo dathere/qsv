@@ -23,6 +23,8 @@ import {
   collectAdditionalInputFiles,
   resolveFilePathParams,
   canonicalFlag,
+  skillTakesOutputFile,
+  formatToolResult,
 } from "../src/file-operations.js";
 import {
   FILE_PATH_INPUT_OPTIONS,
@@ -757,5 +759,36 @@ describe("path confinement", () => {
       }
     }
     assert.deepStrictEqual(missing, [], "classify these in tool-constants.ts (path kind) or NOT_A_PATH here");
+  });
+});
+
+describe("commands that write their own files", () => {
+  test("only a skill with --output or a positional output gets a temp output file", async () => {
+    const loader = new SkillLoader();
+    await loader.loadAll();
+    for (const name of ["split", "partition", "to", "validate", "index"]) {
+      const s = await loader.load(`qsv-${name}`);
+      assert.ok(s, name);
+      assert.strictEqual(skillTakesOutputFile(s), false, name);
+    }
+    for (const name of ["select", "sort", "extsort"]) {
+      const s = await loader.load(`qsv-${name}`);
+      assert.ok(s, name);
+      assert.strictEqual(skillTakesOutputFile(s), true, name);
+    }
+  });
+
+  test("a successful command with no stdout reports completion and its stderr summary", async () => {
+    const result = {
+      success: true,
+      output: "",
+      stderr: "Wrote 'in.parquet' (1 rows)\n",
+      metadata: { command: "qsv to parquet out in.csv", duration: 5, exitCode: 0 },
+    };
+    const formatted = await formatToolResult(result, "to", "/in.csv", undefined, false, {});
+    assert.ok(!formatted.isError);
+    const text = formatted.content[0].text ?? "";
+    assert.match(text, /qsv to completed; it printed no output/);
+    assert.match(text, /Wrote 'in\.parquet' \(1 rows\)/);
   });
 });

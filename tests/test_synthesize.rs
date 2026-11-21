@@ -2322,8 +2322,12 @@ fn synthesize_ordered_follower_cap_holds_against_order_floor() {
             r[1] == "11" || r[1].is_empty(),
             "end escaped its trimmed range: {r:?}"
         );
+        // A blank end caps nothing: the source has start 100 with end blank.
         let start: i64 = r[0].parse().unwrap();
-        assert!(start <= 11, "start {start} exceeds the follower cap: {r:?}");
+        assert!(
+            start <= 11 || r[1].is_empty(),
+            "start {start} exceeds the follower cap: {r:?}"
+        );
     }
     assert!(got[1..].iter().any(|r| r[1].is_empty()));
 }
@@ -6345,4 +6349,92 @@ fn synthesize_ordered_keeps_each_members_blanks() {
     let mut cmd = wrk.command("synthesize");
     cmd.args(["-n", "10000", "--seed", "3", "--model", "model.json"]);
     assert_eq!(wrk.stdout::<String>(&mut cmd), out);
+}
+
+#[test]
+fn synthesize_ordered_caps_only_by_the_members_left_filled() {
+    let wrk = Workdir::new("synthesize_ordered_caps_per_blanks");
+    // 150 closed cases a day apart, then 150 newer open cases, blank closed:
+    // a blank closed date must not cap the open cases' opened dates.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut rows = vec![svec!["opened", "closed"]];
+    for i in 0..300_i64 {
+        let opened = base + chrono::Duration::days(i);
+        let closed = if i < 150 {
+            (opened + chrono::Duration::days(1)).to_string()
+        } else {
+            String::new()
+        };
+        rows.push(vec![opened.to_string(), closed]);
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "ordered", "members": ["opened", "closed"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "4", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let last_closed = (base + chrono::Duration::days(150)).to_string();
+    let mut open_after_last_close = 0;
+    for r in &got[1..] {
+        if r[1].is_empty() {
+            open_after_last_close += usize::from(r[0] > last_closed);
+        } else {
+            assert!(r[0] <= r[1] && r[1] <= last_closed, "{r:?}");
+        }
+    }
+    // About half the rows are open. Their opened dates span the whole range
+    // (blanks don't depend on the dates), so about half of those opened after
+    // the last close; capped by it, none would.
+    assert!(open_after_last_close > 300, "{open_after_last_close}");
+}
+
+#[test]
+fn synthesize_ordered_blank_member_doesnt_round_the_cap() {
+    let wrk = Workdir::new("synthesize_ordered_blank_member_grid");
+    // `b` is an Integer. Where it's blank, its whole-number grid must not
+    // floor the cap `c` passes back to `a`: `a` reaches 10.4 in the source.
+    let mut rows = vec![svec!["a", "b", "c"]];
+    for i in 0..100 {
+        let tenth = f64::from(i % 5) / 10.0;
+        if i % 2 == 0 {
+            rows.push(vec![
+                format!("{:.1}", 9.0 + tenth),
+                "10".to_string(),
+                "10.25".to_string(),
+            ]);
+        } else {
+            rows.push(vec![
+                format!("{:.1}", 10.0 + tenth),
+                String::new(),
+                "10.75".to_string(),
+            ]);
+        }
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "ordered", "members": ["a", "b", "c"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "5", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let num = |s: &str| s.parse::<f64>().unwrap();
+    let mut a_above_10 = 0;
+    for r in &got[1..] {
+        let filled: Vec<f64> = r.iter().filter(|s| !s.is_empty()).map(|s| num(s)).collect();
+        assert!(filled.windows(2).all(|w| w[0] <= w[1]), "{r:?}");
+        // Rounding a blank `b` up to a whole number would push `c` past its
+        // source maximum.
+        assert!(r[2].is_empty() || num(&r[2]) <= 10.75, "{r:?}");
+        if r[1].is_empty() && !r[0].is_empty() {
+            a_above_10 += usize::from(num(&r[0]) > 10.0);
+        }
+    }
+    assert!(a_above_10 > 100, "{a_above_10}");
 }

@@ -524,6 +524,7 @@ fn resolve_ordered(
         return Ok(None);
     }
     let mut member_ranges: Vec<(f64, f64)> = ranges.into_iter().flatten().collect();
+    let own_ranges = member_ranges.clone();
     // Members are non-decreasing, so no member may exceed any later member's
     // upper bound. Cap each upper bound by the ones after it; otherwise the
     // order floor (`max(prev)`) would push a follower past its trimmed range.
@@ -666,6 +667,28 @@ fn resolve_ordered(
     if let Some(last) = blank_cumulative.last_mut() {
         *last = 1.0;
     }
+    // Each pattern caps a member only by the members it leaves filled after
+    // it: a blank close date must not hold back the open dates of open cases.
+    // A blank member has no range or grid of its own (it prints nothing, so
+    // the generator doesn't round it): it only carries the next filled
+    // member's cap back through the chain.
+    let pattern_ranges: Vec<Vec<(f64, f64)>> = blank_patterns
+        .iter()
+        .map(|blanks| {
+            let mut caps = own_ranges.clone();
+            let mut later = f64::MAX;
+            for i in (0..caps.len()).rev() {
+                if blanks[i] {
+                    caps[i] = (f64::MIN, later);
+                } else {
+                    let hi = caps[i].1.min(later);
+                    caps[i].1 = if hi < f64::MAX { floor_grid(i, hi) } else { hi };
+                    later = caps[i].1;
+                }
+            }
+            caps
+        })
+        .collect();
     let date_format = ordered_date_format(&member_cols, params, kind);
 
     log::info!(
@@ -680,7 +703,7 @@ fn resolve_ordered(
         date_format,
         anchor_buckets,
         gap_buckets,
-        member_ranges,
+        pattern_ranges,
         null_ratio,
         blank_patterns,
         blank_cumulative,

@@ -866,12 +866,14 @@ export async function handleToolCall(
       return errorResult(`Error: output_file can't be the input file for ${commandName}; it would be emptied.`);
     }
 
-    // qsv would never write it, yet the result would claim it was written
+    // qsv would never write it, and the result would claim it was written and
+    // drop what qsv printed; return the printed result instead
+    let ignoredOutputNote = "";
     if (outputFile && !isHelpRequest && !skillTakesOutputFile(skill)) {
-      return errorResult(
-        `Error: qsv ${commandName} has no output file option, so output_file can't be used. ` +
-          `It writes its own files; set its destination parameter instead (see help=true).`,
-      );
+      ignoredOutputNote =
+        `\n\nNote: qsv ${commandName} has no output file option, so output_file was ignored ` +
+        `and nothing was written to it. Commands that write their own files take a destination parameter (see help=true).`;
+      outputFile = undefined;
     }
 
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration
@@ -999,6 +1001,9 @@ export async function handleToolCall(
         } else {
           console.error(`[MCP Tools] Could not append moarstats note to result: unexpected content structure`);
         }
+      }
+      if (ignoredOutputNote && textContent) {
+        textContent.text += ignoredOutputNote;
       }
       // Attach pipeline metadata for reproducibility manifest.
       // Note: formatToolResult can return isError (e.g., temp file I/O failure)

@@ -45,6 +45,7 @@ import {
   formatToolResult,
   resolveParamAliases,
   shouldUseTempFile,
+  skillTakesOutputFile,
   canonicalFlag,
   isSqlScriptArg,
 } from "./file-operations.js";
@@ -865,6 +866,14 @@ export async function handleToolCall(
       return errorResult(`Error: output_file can't be the input file for ${commandName}; it would be emptied.`);
     }
 
+    // qsv would never write it, yet the result would claim it was written
+    if (outputFile && !isHelpRequest && !skillTakesOutputFile(skill)) {
+      return errorResult(
+        `Error: qsv ${commandName} has no output file option, so output_file can't be used. ` +
+          `It writes its own files; set its destination parameter instead (see help=true).`,
+      );
+    }
+
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration
     // (multi-table detection, Parquet conversion, DuckDB attempt, fallback
     // SQL rewrite, warning capture) lives in runSqlpParquetInterception so
@@ -894,6 +903,7 @@ export async function handleToolCall(
       inputFile &&
       commandName !== "describegpt" &&
       !isBinaryOutputFormat(commandName, params) &&
+      skillTakesOutputFile(skill) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
       // viz emits a self-contained interactive HTML artifact; its output format is

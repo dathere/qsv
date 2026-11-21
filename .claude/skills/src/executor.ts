@@ -439,7 +439,8 @@ export class SkillExecutor {
     }
 
     return {
-      exitCode: result.exitCode ?? 0,
+      // null with no signal: the process never started (spawn error)
+      exitCode: result.exitCode ?? 127,
       stdout: result.stdout,
       stderr: result.stderr,
     };

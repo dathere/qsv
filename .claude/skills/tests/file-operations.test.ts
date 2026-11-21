@@ -605,7 +605,13 @@ describe("path confinement", () => {
     await refused({ geojson: "C://elsewhere/r.geojson" }, skill("viz"));
     // (drive-relative resolution depends on the runner's drive, so only check it is resolved)
     const seen: string[] = [];
-    const spy = { ...provider, resolvePath: async (p: string) => (seen.push(p), `resolved:${p}`) };
+    const spy = {
+      ...provider,
+      resolvePath: async (p: string) => {
+        seen.push(p);
+        return `resolved:${p}`;
+      },
+    };
     const drive: Record<string, unknown> = { geojson: "C:regions" };
     await resolveFilePathParams(drive, skill("viz"), spy as FilesystemProviderExtended);
     assert.deepStrictEqual(seen, ["C:regions"], "a drive-relative path is not a selector");

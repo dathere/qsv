@@ -1,6 +1,6 @@
 # synthesize
 
-> Generate a synthetic CSV that is statistically faithful to a source CSV, from its `stats` and `frequency`. A Data Dictionary adds realistic fake values by Content Type, and relationships between columns it declares, or that `--discover-relationships` finds, are kept (`joint`, `ordered`, `correlated`). Reproducible with `--seed`. Output is not anonymized: it can contain real source values (see `--min-count`).
+> Generate a synthetic CSV that is statistically faithful to a source CSV, from its `stats` and `frequency`. A Data Dictionary adds realistic fake values by Content Type, and keeps the relationships between columns it declares (`joint`, `ordered`, `correlated`). Reproducible with `--seed`. Output is not anonymized: it can contain real source values (see `--min-count`).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/synthesize/mod.rs](https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/mod.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🎲](TableOfContents.md#legend "randomly generated or randomized output with a --seed option for reproducibility.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")
 

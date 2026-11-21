@@ -1,7 +1,7 @@
 {
   "name": "qsv-synthesize",
   "version": "29.0.0",
-  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV, from its `stats` and `frequency`. A Data Dictionary adds realistic fake values by Content Type, and relationships between columns it declares, or that `--discover-relationships` finds, are kept (`joint`, `ordered`, `correlated`). Reproducible with `--seed`. Output is not anonymized: it can contain real source values (see `--min-count`).",
+  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV, from its `stats` and `frequency`. A Data Dictionary adds realistic fake values by Content Type, and keeps the relationships between columns it declares (`joint`, `ordered`, `correlated`). Reproducible with `--seed`. Output is not anonymized: it can contain real source values (see `--min-count`).",
   "category": "generation",
   "command": {
     "subcommand": "synthesize",

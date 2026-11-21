@@ -115,7 +115,7 @@ fn is_unstructured(content_type: &str) -> bool {
     UNSTRUCTURED_CONTENT_TYPES.contains(&content_type)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) enum ColumnGenerator {
     /// Sample real values with real frequency weights.
     FrequencyWeighted {

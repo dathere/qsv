@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     generator::ColumnGenerator, group_generator::GroupGenerator, output::OutType,
-    relationships::EmitUnit,
+    relationships::EmitUnit, target::Target,
 };
 use crate::{CliError, CliResult, cmd::describegpt::dictionary::is_valid_strftime};
 
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: u32 = 4;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Model {
@@ -26,6 +26,9 @@ pub(crate) struct Model {
     /// The source's day-first preference, for reading sampled real dates.
     pub(crate) prefer_dmy: bool,
     pub(crate) schedule:   Vec<EmitUnit>,
+    /// With `--target`: one schedule per class, which rows use instead of
+    /// `schedule` (still the whole-input fit, for types and `--report`).
+    pub(crate) target:     Option<Target>,
 }
 
 /// How the model was fitted. Informational only: generation never reads it.
@@ -43,6 +46,7 @@ impl Model {
         types: Vec<OutType>,
         prefer_dmy: bool,
         schedule: Vec<EmitUnit>,
+        target: Option<Target>,
         fit: FitInfo,
     ) -> Self {
         Self {
@@ -53,6 +57,7 @@ impl Model {
             types,
             prefer_dmy,
             schedule,
+            target,
         }
     }
 
@@ -109,30 +114,64 @@ impl Model {
         for ty in &self.types {
             check_date_format(ty.date_format())?;
         }
-        let mut filled = vec![false; ncols];
-        for unit in &self.schedule {
-            let cols: &[usize] = match unit {
-                EmitUnit::Independent { col_idx, generator } => {
-                    check_column(generator)?;
-                    std::slice::from_ref(col_idx)
-                },
-                EmitUnit::Group(group) => {
-                    check_group(group)?;
-                    group.col_indices()
-                },
-            };
-            for &col in cols {
-                match filled.get_mut(col) {
-                    Some(seen) if !*seen => *seen = true,
-                    Some(_) => return Err(format!("column {col} is generated twice.")),
-                    None => return Err(format!("column {col} is out of range.")),
-                }
+        check_schedule(&self.schedule, ncols, None)?;
+        let Some(target) = &self.target else {
+            return Ok(());
+        };
+        if target.col_idx >= ncols {
+            return Err(format!(
+                "its target column {} is out of range.",
+                target.col_idx
+            ));
+        }
+        if target.classes.is_empty() || target.classes.iter().all(|c| c.rows == 0) {
+            return bad("a target with no classes");
+        }
+        for class in &target.classes {
+            if class
+                .bucket
+                .is_some_and(|(lo, hi)| lo.partial_cmp(&hi).is_none_or(std::cmp::Ordering::is_gt))
+            {
+                return bad("a target class whose low end is above its high end");
+            }
+            if class.grid.is_some_and(|(a, b)| a > b) {
+                return bad("a target class with an empty value range");
+            }
+            check_schedule(&class.schedule, ncols, Some(target.col_idx))?;
+        }
+        Ok(())
+    }
+}
+
+/// Checks that `schedule` fills every column (except `skip`, the target)
+/// exactly once, and that nothing it holds can panic when sampled.
+fn check_schedule(schedule: &[EmitUnit], ncols: usize, skip: Option<usize>) -> Result<(), String> {
+    let mut filled = vec![false; ncols];
+    if let Some(skip) = skip {
+        filled[skip] = true;
+    }
+    for unit in schedule {
+        let cols: &[usize] = match unit {
+            EmitUnit::Independent { col_idx, generator } => {
+                check_column(generator)?;
+                std::slice::from_ref(col_idx)
+            },
+            EmitUnit::Group(group) => {
+                check_group(group)?;
+                group.col_indices()
+            },
+        };
+        for &col in cols {
+            match filled.get_mut(col) {
+                Some(seen) if !*seen => *seen = true,
+                Some(_) => return Err(format!("column {col} is generated twice.")),
+                None => return Err(format!("column {col} is out of range.")),
             }
         }
-        match filled.iter().position(|seen| !seen) {
-            Some(col) => Err(format!("column {col} is never generated.")),
-            None => Ok(()),
-        }
+    }
+    match filled.iter().position(|seen| !seen) {
+        Some(col) => Err(format!("column {col} is never generated.")),
+        None => Ok(()),
     }
 }
 

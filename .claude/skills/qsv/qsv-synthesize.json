@@ -125,6 +125,11 @@
         "flag": "--strict-relationships",
         "type": "flag",
         "description": "Abort instead of warning-and-degrading when a declared relationship fails validation."
+      },
+      {
+        "flag": "--target",
+        "type": "string",
+        "description": "Generate the other columns conditionally on the class of column <col> (a column name; with no headers, its 0-based index), e.g. a label to train a classifier on. Each row first draws a class by its share of the rows of <input>, then fills every other column from that class's own profile, so each column keeps its distribution within each class. A column with at most 50 distinct (trimmed) values is split by value, an empty value being a class of its own; a numeric column with more is split by its quantile buckets (see --quantiles), each class drawn at the share of rows its bucket holds (with tied bucket edges, not the shares of an ordinary fit), and any other column is refused. A class seen in fewer than <k> rows (<k> is set by the --min-count option) is dropped and its share redistributed. Fake-value columns, and columns a class has too few values to profile, use the generator fitted on the whole input, blank rate included (a column blank throughout a class stays blank). A numeric or date column needs at least 2k-1 values in a class, so with the default <k> of 5 a class of fewer than 9 rows takes all of them from the whole input; lower the --min-count to profile small classes, if that is acceptable for privacy. Relationships that name <col> drop it from their members, as do fake-value columns in the classes, and each class fits (and with --strict-relationships, enforces) them on its own rows. Dropping <col> can make a group eligible that an ordinary fit skips (it overlapped an earlier one only on <col>); it still yields to earlier groups, and a `joint` one writes real value-tuples, so a column an ordinary fit fakes can then write real values. `stats` and `frequency` run once more per class, on a temporary copy of <input> split by class."
       }
     ]
   },

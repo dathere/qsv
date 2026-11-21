@@ -187,7 +187,8 @@ pub(crate) fn source_column_indices(
 /// Trim every numeric/date column's `[min, max]` to its k-th smallest and
 /// k-th largest values (k = `min_count`) with one streaming pass over `input`.
 /// A column with fewer than 2k-1 non-null values gets an empty range, so its
-/// type-based generator emits nothing (with a warning).
+/// type-based generator emits nothing (with a warning, unless `quiet`: a
+/// `--target` class fills such a column from the whole input instead).
 pub(crate) fn trim_range_bounds(
     stats_records: &mut [StatsRecord],
     source_cols: &[Option<usize>],
@@ -195,6 +196,7 @@ pub(crate) fn trim_range_bounds(
     delimiter: Option<Delimiter>,
     min_count: u64,
     prefer_dmy: bool,
+    quiet: bool,
 ) -> CliResult<()> {
     if min_count <= 1 {
         return Ok(());
@@ -232,11 +234,14 @@ pub(crate) fn trim_range_bounds(
     let k = usize::try_from(min_count).unwrap_or(usize::MAX);
     let mut extremes: Vec<Extremes> = targets.iter().map(|_| Extremes::new(k)).collect();
 
-    let mut record = csv::StringRecord::new();
-    while rdr.read_record(&mut record)? {
+    // Byte records: a non-UTF8 cell elsewhere in the row mustn't fail the pass,
+    // and one in a trimmed column is no number or date.
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
         for ((_, src_idx, kind), ext) in targets.iter().zip(extremes.iter_mut()) {
             if let Some(v) = record
                 .get(*src_idx)
+                .and_then(|raw| std::str::from_utf8(raw).ok())
                 .and_then(|raw| kind.key(raw, prefer_dmy))
             {
                 ext.add(v);
@@ -262,14 +267,16 @@ pub(crate) fn trim_range_bounds(
             sr.min = kind.format(lo);
             sr.max = kind.format(hi);
         } else {
-            wwarn!(
-                "synthesize: column '{}' has only {} non-null value(s); trimming its range by \
-                 --min-count ({min_count}) needs at least {}, so it will be left empty unless its \
-                 real values are sampled",
-                sr.field,
-                ext.count,
-                min_count.saturating_mul(2).saturating_sub(1)
-            );
+            if !quiet {
+                wwarn!(
+                    "synthesize: column '{}' has only {} non-null value(s); trimming its range by \
+                     --min-count ({min_count}) needs at least {}, so it will be left empty unless \
+                     its real values are sampled",
+                    sr.field,
+                    ext.count,
+                    min_count.saturating_mul(2).saturating_sub(1)
+                );
+            }
             sr.min = String::new();
             sr.max = String::new();
         }

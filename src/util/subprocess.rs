@@ -96,15 +96,7 @@ pub fn run_qsv_cmd(
     input_path: &str,
     status_msg: &str,
 ) -> CliResult<(String, String)> {
-    let start_time = Instant::now();
-    let output = run_qsv_cmd_output(command, args, input_path)?;
-    log::debug!("qsv command {command} output: {output:?}");
-
-    if !output.status.success() {
-        return fail_clierror!("Command {command} failed: {output:?}");
-    }
-
-    print_status(status_msg, Some(start_time.elapsed()));
+    let output = run_qsv_cmd_checked(command, args, input_path, status_msg)?;
 
     let stdout_str = std::str::from_utf8(&output.stdout).map_err(|e| {
         CliError::Other(format!(
@@ -118,6 +110,40 @@ pub fn run_qsv_cmd(
     })?;
 
     Ok((stdout_str.to_string(), stderr_str.to_string()))
+}
+
+/// `run_qsv_cmd` for commands that echo input values (e.g. `frequency`), so their
+/// output is only as valid UTF-8 as the input: invalid bytes become U+FFFD.
+#[cfg(feature = "synthesize")]
+pub fn run_qsv_cmd_lossy(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<(String, String)> {
+    let output = run_qsv_cmd_checked(command, args, input_path, status_msg)?;
+    Ok((
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    ))
+}
+
+fn run_qsv_cmd_checked(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<std::process::Output> {
+    let start_time = Instant::now();
+    let output = run_qsv_cmd_output(command, args, input_path)?;
+    log::debug!("qsv command {command} output: {output:?}");
+
+    if !output.status.success() {
+        return fail_clierror!("Command {command} failed: {output:?}");
+    }
+
+    print_status(status_msg, Some(start_time.elapsed()));
+    Ok(output)
 }
 
 /// Like `run_qsv_cmd`, but *streams* the child's live progress to the terminal instead of capturing

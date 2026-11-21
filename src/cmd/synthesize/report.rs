@@ -27,6 +27,10 @@ pub(crate) struct Suppression {
     pub(crate) distinct: usize,
     /// Source rows holding a dropped value (or tuple).
     pub(crate) rows:     u64,
+    /// With `--target`, the class whose profile dropped them; `None` for the
+    /// whole-input profile and for dropped classes themselves.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) class:    Option<String>,
 }
 
 /// Hashes a row by value, so the same value printed differently (`10.50` vs
@@ -94,13 +98,18 @@ impl RowKeyer {
     fn key<'a>(&self, cell: impl Fn(&KeyedCol) -> &'a [u8]) -> u128 {
         let mut h = Xxh3::new();
         for col in &self.cols {
-            let raw = cell(col);
-            let parsed = col
-                .kind
-                .zip(std::str::from_utf8(raw).ok())
-                .and_then(|(kind, s)| {
-                    value_key(kind, s.trim(), col.date_format.as_deref(), self.prefer_dmy)
-                });
+            // Lossily, as synthetic values copied from a non-UTF8 source cell
+            // are written (U+FFFD for each invalid sequence).
+            let text = String::from_utf8_lossy(cell(col));
+            let raw = text.as_bytes();
+            let parsed = col.kind.and_then(|kind| {
+                value_key(
+                    kind,
+                    text.trim(),
+                    col.date_format.as_deref(),
+                    self.prefer_dmy,
+                )
+            });
             match parsed {
                 Some((tag, a, b)) => {
                     h.update(&[tag]);
@@ -185,7 +194,7 @@ pub(crate) fn parse_date(
 }
 
 /// One pass over the source: the set of row keys. Reads bytes, so a cell that
-/// is not UTF-8 is hashed as-is instead of failing the run.
+/// is not UTF-8 is keyed lossily instead of failing the run.
 pub(crate) fn source_row_keys(
     keyer: &RowKeyer,
     input_path: &str,

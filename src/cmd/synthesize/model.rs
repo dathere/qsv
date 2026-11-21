@@ -241,7 +241,7 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             date_format,
             anchor_buckets,
             gap_buckets,
-            member_ranges,
+            pattern_ranges,
             null_ratio,
             blank_patterns,
             blank_cumulative,
@@ -258,14 +258,18 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             if n == 0
                 || is_int.len() != n
                 || decimals.len() != n
-                || member_ranges.len() != n
                 || gap_buckets.len() != n - 1
                 || anchor_buckets.is_empty()
                 || gap_buckets.iter().any(Vec::is_empty)
             {
                 return bad("an ordered group with inconsistent members");
             }
-            if member_ranges.iter().any(|(lo, hi)| lo > hi) {
+            if pattern_ranges.len() != blank_patterns.len()
+                || pattern_ranges.iter().any(|r| r.len() != n)
+            {
+                return bad("an ordered group with inconsistent members");
+            }
+            if pattern_ranges.iter().flatten().any(|(lo, hi)| lo > hi) {
                 return bad("an ordered range whose low end is above its high end");
             }
             check_date_format(date_format.as_ref())

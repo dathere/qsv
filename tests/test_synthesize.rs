@@ -5057,6 +5057,8 @@ fn synthesize_target_keeps_a_fake_value_column_empty_in_a_class_null() {
         if r[0] == "b" {
             assert!(r[1].is_empty(), "{r:?}");
         } else {
+            // Class a reuses the whole-input faker, and with it the whole
+            // input's null rate, so some of its names are blank.
             assert!(!r[1].starts_with("SRC_"), "{r:?}");
         }
     }

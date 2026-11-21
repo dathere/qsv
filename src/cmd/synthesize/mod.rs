@@ -274,7 +274,8 @@ synthesize options:
                            option) is dropped and its share redistributed.
                            Fake-value columns, and columns a class has too
                            few values to profile, use the generator fitted
-                           on the whole input. A numeric or date column
+                           on the whole input, blank rate included (a
+                           column blank throughout a class stays blank). A numeric or date column
                            needs at least 2k-1 values in a class, so with
                            the default <k> of 5 a class of fewer than 9 rows
                            takes all of them from the whole input; lower
@@ -283,10 +284,11 @@ synthesize options:
                            name <col> drop it from their members, as do
                            fake-value columns in the classes, and each class
                            fits (and with --strict-relationships, enforces)
-                           them on its own rows. A group an ordinary fit
-                           skips (it overlapped an earlier one only on
-                           <col>) is fitted too, and like any `joint`
-                           group writes real value-tuples, so a column an
+                           them on its own rows. Dropping <col> can make a
+                           group eligible that an ordinary fit skips (it
+                           overlapped an earlier one only on <col>); it
+                           still yields to earlier groups, and a `joint`
+                           one writes real value-tuples, so a column an
                            ordinary fit fakes can then write real values.
                            `stats` and `frequency` run once more per
                            class, on a

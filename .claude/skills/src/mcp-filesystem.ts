@@ -5,7 +5,7 @@
  * Claude Desktop to work with local files without uploading them.
  */
 
-import { readdir, stat, realpath, access } from "node:fs/promises";
+import { readdir, stat, lstat, realpath, access } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "node:path";
 import { homedir } from "node:os";
@@ -344,6 +344,10 @@ export class FilesystemResourceProvider {
     try {
       canonical = await realpath(resolved);
     } catch {
+      // A broken symlink would be followed on write, creating its target anywhere
+      if (await lstat(resolved).then((s) => s.isSymbolicLink(), () => false)) {
+        throw new Error(`Access denied: ${path} is a broken symbolic link`);
+      }
       // If file doesn't exist yet (e.g., output file), use resolved path
       // but still validate the parent directory exists and is allowed
       const parentDir = join(resolved, "..");

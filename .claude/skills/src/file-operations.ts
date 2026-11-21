@@ -24,6 +24,7 @@ import {
   PATH_LIST_OPTIONS,
   FILE_PREFIX_OPTIONS,
   PATH_OR_REMOTE,
+  SELECTOR_OPTIONS,
   COMMAND_PATH_OPTIONS,
   FILENAME_PART_OPTIONS,
   SHORT_PATH_FLAGS,
@@ -471,18 +472,11 @@ export function paramKeyToFlag(key: string): string {
  * (e.g. dedup's "-D") to its long form, so path checks can't be skipped.
  */
 export function canonicalFlag(key: string, command: string): string {
-  const flag = paramKeyToFlag(key);
+  let flag = paramKeyToFlag(key);
+  // describegpt reads "--stats_options" as --stats-options, so check it as that
+  if (flag.startsWith("--")) flag = flag.replace(/_/g, "-");
   if (flag === "-o") return "--output";
   return SHORT_PATH_FLAGS[command]?.[flag] ?? flag;
-}
-
-/**
- * True when a PATH_OR_REMOTE value is one of the command's documented remote
- * forms or a bare selector word, so it is left for qsv rather than resolved.
- */
-function isRemoteOrSelector(name: string, value: string): boolean {
-  const bareWord = /^[\w@:-]+$/.test(value) && !/^[A-Za-z]:/.test(value);
-  return bareWord || (PATH_OR_REMOTE[name]?.test(value) ?? false);
 }
 
 /**
@@ -539,9 +533,9 @@ export async function resolveFilePathParams(
   const invalid = (label: string, error: unknown) =>
     new Error(`Invalid path for ${label}: ${getErrorMessage(error)}`);
   // Fail closed: a path the provider refuses must never reach qsv unresolved
-  const resolveOrThrow = async (label: string, value: string): Promise<string> => {
+  const resolveOrThrow = async (label: string, value: string, stdio = true): Promise<string> => {
     // "-" is stdin/stdout, not a file
-    if (value === "-") return value;
+    if (stdio && value === "-") return value;
     try {
       const resolved = await filesystemProvider.resolvePath(value);
       if (resolved !== value) {
@@ -583,6 +577,27 @@ export async function resolveFilePathParams(
     if (typeof value === "number") return String(value);
     return typeof value === "string" && value !== "" ? value : undefined;
   };
+  // to's connection-string forms apply only to `to postgres` without --dump
+  const remoteForm = (name: string): RegExp | undefined => {
+    if (command !== "to" || name !== "destination") return PATH_OR_REMOTE[name];
+    const dump = params.dump ?? params["--dump"] ?? params["-u"];
+    return params.subcommand === "postgres" && !dump ? PATH_OR_REMOTE[name] : undefined;
+  };
+  const resolveRemoteOrPath = async (name: string, label: string, value: string): Promise<string> => {
+    if (remoteForm(name)?.test(value)) return value;
+    if (!SELECTOR_OPTIONS.has(name) || !/^[\w@:-]+$/.test(value) || /^[A-Za-z]:/.test(value)) {
+      return resolveOrThrow(label, value);
+    }
+    // a bare word is a selector, unless a file by that name exists: qsv prefers the file
+    let resolved: string;
+    try {
+      resolved = await filesystemProvider.resolvePath(value);
+    } catch (error: unknown) {
+      if (/does not exist/i.test(getErrorMessage(error))) return value;
+      throw invalid(label, error);
+    }
+    return (await stat(resolved).then(() => true, () => false)) ? resolved : value;
+  };
 
   // 1. Positional args that name a local path (excluding "input", already handled)
   const argNames = new Set<string>();
@@ -599,10 +614,10 @@ export async function resolveFilePathParams(
     if (DIRECTORY_PATH_ARGS.has(arg.name)) {
       params[arg.name] = await resolveDir(label, value);
     } else if (arg.name in PATH_OR_REMOTE) {
-      if (!isRemoteOrSelector(arg.name, value)) params[arg.name] = await resolveOrThrow(label, value);
+      params[arg.name] = await resolveRemoteOrPath(arg.name, label, value);
     } else if (isSqlScript) {
-      // sqlp runs a lone `<name>.sql` argument as a script file
-      if (/^[^\s;'"]+\.sql$/i.test(value.trim())) params[arg.name] = await resolveOrThrow(label, value.trim());
+      // like sqlp, treat any value with a .sql extension as a script file
+      if (/\.sql[\\/]*$/i.test(value)) params[arg.name] = await resolveOrThrow(label, value);
     } else {
       params[arg.name] = await resolveOrThrow(label, value);
     }
@@ -647,15 +662,14 @@ export async function resolveFilePathParams(
     } else if (FILE_PREFIX_OPTIONS.has(flag) || isLuauScript) {
       // a plain string here is an option string or inline script; only `file:<path>` names a file
       if (/^file:/i.test(value)) {
-        resolved = `file:${await resolveOrThrow(label, value.slice(5))}`;
+        resolved = `file:${await resolveOrThrow(label, value.slice(5), false)}`;
       } else if (isLuauScript && looksLikeFilePath(value)) {
         resolved = await resolveOrThrow(label, value);
       } else {
         continue;
       }
     } else if (flag in PATH_OR_REMOTE) {
-      if (isRemoteOrSelector(flag, value)) continue;
-      resolved = await resolveOrThrow(label, value);
+      resolved = await resolveRemoteOrPath(flag, label, value);
     } else if (OTHER_PATH_OPTIONS.has(flag)) {
       resolved = await resolveDir(label, value);
     } else {

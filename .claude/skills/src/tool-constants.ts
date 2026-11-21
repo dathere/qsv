@@ -144,10 +144,8 @@ export const FILE_PREFIX_OPTIONS = new Set(["--freq-options", "--stats-options"]
 
 /**
  * Options and positional args that take a local path or one of the remote or
- * selector forms the command documents (left as is). Any other value is
- * resolved as a local path. A bare word (no `.`, `/` or `\`, and not a Windows
- * drive) is a selector such as viz's `auto`/`infer`/`census:county@2021` or a
- * shortcut name, which can't leave the working directory anyway.
+ * remote forms the command documents (left as is). Any other value is
+ * resolved as a local path.
  */
 export const PATH_OR_REMOTE: Readonly<Record<string, RegExp>> = {
   "--dictionary": /^$/,
@@ -156,6 +154,14 @@ export const PATH_OR_REMOTE: Readonly<Record<string, RegExp>> = {
   "destination": /^(postgres(ql)?:\/\/|env=)/i,
   "json-schema": /^https?:\/\//i,
 };
+
+/**
+ * PATH_OR_REMOTE options that also take a bare-word selector, such as viz's
+ * `auto`, `infer`, `census:county@2021` or a shortcut name. A bare word (no
+ * `.`, `/` or `\`, and not a Windows drive) stays a selector unless a file by
+ * that name exists, since qsv opens the file first.
+ */
+export const SELECTOR_OPTIONS = new Set(["--dictionary", "--geojson"]);
 
 /** Path options that only one command has; the same flag means something else elsewhere. */
 export const COMMAND_PATH_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {

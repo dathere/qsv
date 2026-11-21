@@ -7,7 +7,8 @@
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { writeFile, stat } from "node:fs/promises";
+import { writeFile, stat, mkdir, symlink, realpath } from "node:fs/promises";
+import { FilesystemResourceProvider } from "../src/mcp-filesystem.js";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   buildConversionArgs,
@@ -526,7 +527,7 @@ describe("path confinement", () => {
     assert.strictEqual(params.outdir, join(ALLOWED, "parts"));
 
     const to = skill("to", [{ name: "destination", type: "string", required: true, description: "dest" }]);
-    const url: Record<string, unknown> = { destination: "postgres://localhost/db" };
+    const url: Record<string, unknown> = { subcommand: "postgres", destination: "postgres://localhost/db" };
     await resolveFilePathParams(url, to, provider);
     assert.strictEqual(url.destination, "postgres://localhost/db");
     await refused({ destination: OUTSIDE }, to);
@@ -586,16 +587,29 @@ describe("path confinement", () => {
     }
     const to = skill("to", [{ name: "destination", type: "string", required: true, description: "dest" }]);
     for (const destination of ["postgres://localhost/db", "env=PG_URL"]) {
-      const p: Record<string, unknown> = { destination };
+      const p: Record<string, unknown> = { subcommand: "postgres", destination };
       await resolveFilePathParams(p, to, provider);
       assert.strictEqual(p.destination, destination);
+    }
+    // the connection-string forms are local file names in every other mode
+    for (const p of [
+      { subcommand: "sqlite", destination: "env=PG_URL" },
+      { subcommand: "postgres", dump: true, destination: "env=PG_URL" },
+      { subcommand: "postgres", "-u": true, destination: "env=PG_URL" },
+    ] as Array<Record<string, unknown>>) {
+      await resolveFilePathParams(p, to, provider);
+      assert.strictEqual(p.destination, join(ALLOWED, "env=PG_URL"), JSON.stringify(p));
     }
 
     // a Windows drive path is never a URL, and file: options name a local file
     await refused({ geojson: "C://elsewhere/r.geojson" }, skill("viz"));
+    // (drive-relative resolution depends on the runner's drive, so only check it is resolved)
+    const seen: string[] = [];
+    const spy = { ...provider, resolvePath: async (p: string) => (seen.push(p), `resolved:${p}`) };
     const drive: Record<string, unknown> = { geojson: "C:regions" };
-    await resolveFilePathParams(drive, skill("viz"), provider);
-    assert.strictEqual(drive.geojson, join(ALLOWED, "C:regions"), "a drive-relative path is not a selector");
+    await resolveFilePathParams(drive, skill("viz"), spy as FilesystemProviderExtended);
+    assert.deepStrictEqual(seen, ["C:regions"], "a drive-relative path is not a selector");
+    assert.strictEqual(drive.geojson, "resolved:C:regions");
     await refused({ stats_options: `file:${OUTSIDE}` }, skill("describegpt"));
     const fileOpt: Record<string, unknown> = { freq_options: "file:freq.csv" };
     await resolveFilePathParams(fileOpt, skill("describegpt"), provider);
@@ -603,6 +617,13 @@ describe("path confinement", () => {
     // sqlp runs a lone .sql argument as a script file
     const sqlp = skill("sqlp", [{ name: "sql", type: "string", required: true, description: "sql" }]);
     await refused({ sql: OUTSIDE.replace(/\.csv$/, ".sql") }, sqlp);
+    // sqlp only looks at the extension, so spaces and punctuation don't make it inline SQL
+    await refused({ sql: OUTSIDE.replace(/x\.csv$/, "a b;'c.sql") }, sqlp);
+    // describegpt reads --stats_options as --stats-options, and file:- is a file named "-"
+    await refused({ "--stats_options": `file:${OUTSIDE}` }, skill("describegpt"));
+    const dash: Record<string, unknown> = { freq_options: "file:-" };
+    await resolveFilePathParams(dash, skill("describegpt"), provider);
+    assert.strictEqual(dash.freq_options, `file:${join(ALLOWED, "-")}`);
     const inlineSql: Record<string, unknown> = { sql: "SELECT * FROM _t_1" };
     await resolveFilePathParams(inlineSql, sqlp, provider);
     assert.strictEqual(inlineSql.sql, "SELECT * FROM _t_1");
@@ -616,6 +637,30 @@ describe("path confinement", () => {
     const short: Record<string, unknown> = { "-D": "dupes.csv" };
     await resolveFilePathParams(short, skill("dedup"), provider);
     assert.deepStrictEqual(short, { "--dupes-output": join(ALLOWED, "dupes.csv") });
+  });
+
+  test("a bare-word selector that names an existing file is checked as that file", {
+    skip: process.platform === "win32" ? "symlinks need extra privileges on Windows" : false,
+  }, async () => {
+    const root = await createTestDir("selector-file");
+    try {
+      const allowed = join(root, "allowed");
+      const outside = join(root, "outside");
+      await mkdir(allowed);
+      await mkdir(outside);
+      await writeFile(join(outside, "dict.json"), "{}");
+      await writeFile(join(allowed, "regions"), "{}");
+      await symlink(join(outside, "dict.json"), join(allowed, "dictlink"));
+      const real = new FilesystemResourceProvider({ workingDirectory: allowed, allowedDirectories: [allowed] });
+      const viz = skill("viz");
+      await assert.rejects(resolveFilePathParams({ dictionary: "dictlink" }, viz, real), /Invalid path for/);
+      const local: Record<string, unknown> = { geojson: "regions", dictionary: "infer" };
+      await resolveFilePathParams(local, viz, real);
+      assert.strictEqual(local.geojson, await realpath(join(allowed, "regions")));
+      assert.strictEqual(local.dictionary, "infer");
+    } finally {
+      await cleanupTestDir(root);
+    }
   });
 
   test("a directory the command creates may have several missing levels", async () => {

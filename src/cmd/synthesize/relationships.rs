@@ -669,27 +669,22 @@ fn resolve_ordered(
     }
     // Each pattern caps a member only by the members it leaves filled after
     // it: a blank close date must not hold back the open dates of open cases.
-    // A blank member keeps the chain in order but has no range of its own,
-    // and is floored to its grid like a filled one, so its rounding can't
-    // push the next filled member past that member's cap.
+    // A blank member has no range or grid of its own (it prints nothing, so
+    // the generator doesn't round it): it only carries the next filled
+    // member's cap back through the chain.
     let pattern_ranges: Vec<Vec<(f64, f64)>> = blank_patterns
         .iter()
         .map(|blanks| {
             let mut caps = own_ranges.clone();
             let mut later = f64::MAX;
             for i in (0..caps.len()).rev() {
-                let hi = if blanks[i] {
-                    later
-                } else {
-                    caps[i].1.min(later)
-                };
-                let hi = if hi < f64::MAX { floor_grid(i, hi) } else { hi };
                 if blanks[i] {
-                    caps[i] = (f64::MIN, hi);
+                    caps[i] = (f64::MIN, later);
                 } else {
-                    caps[i].1 = hi;
+                    let hi = caps[i].1.min(later);
+                    caps[i].1 = if hi < f64::MAX { floor_grid(i, hi) } else { hi };
+                    later = caps[i].1;
                 }
-                later = hi;
             }
             caps
         })

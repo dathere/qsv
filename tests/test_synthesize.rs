@@ -6391,3 +6391,50 @@ fn synthesize_ordered_caps_only_by_the_members_left_filled() {
     // the last close; capped by it, none would.
     assert!(open_after_last_close > 300, "{open_after_last_close}");
 }
+
+#[test]
+fn synthesize_ordered_blank_member_doesnt_round_the_cap() {
+    let wrk = Workdir::new("synthesize_ordered_blank_member_grid");
+    // `b` is an Integer. Where it's blank, its whole-number grid must not
+    // floor the cap `c` passes back to `a`: `a` reaches 10.4 in the source.
+    let mut rows = vec![svec!["a", "b", "c"]];
+    for i in 0..100 {
+        let tenth = f64::from(i % 5) / 10.0;
+        if i % 2 == 0 {
+            rows.push(vec![
+                format!("{:.1}", 9.0 + tenth),
+                "10".to_string(),
+                "10.25".to_string(),
+            ]);
+        } else {
+            rows.push(vec![
+                format!("{:.1}", 10.0 + tenth),
+                String::new(),
+                "10.75".to_string(),
+            ]);
+        }
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "ordered", "members": ["a", "b", "c"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "2000", "--seed", "5", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let num = |s: &str| s.parse::<f64>().unwrap();
+    let mut a_above_10 = 0;
+    for r in &got[1..] {
+        let filled: Vec<f64> = r.iter().filter(|s| !s.is_empty()).map(|s| num(s)).collect();
+        assert!(filled.windows(2).all(|w| w[0] <= w[1]), "{r:?}");
+        // Rounding a blank `b` up to a whole number would push `c` past its
+        // source maximum.
+        assert!(r[2].is_empty() || num(&r[2]) <= 10.75, "{r:?}");
+        if r[1].is_empty() && !r[0].is_empty() {
+            a_above_10 += usize::from(num(&r[0]) > 10.0);
+        }
+    }
+    assert!(a_above_10 > 100, "{a_above_10}");
+}

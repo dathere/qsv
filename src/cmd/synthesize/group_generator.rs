@@ -189,9 +189,15 @@ impl GroupGenerator {
                 // lower than its predecessor, or a coarser grid can print it
                 // below a finer one (1.24 at one decimal is 1.2). That stays
                 // within range: the predecessor's cap is at most this
-                // member's grid-floored cap.
+                // member's grid-floored cap. A blank member prints nothing,
+                // so it isn't rounded: its grid must not move the members
+                // after it.
                 let quantize = |v: f64, i: usize, floor: f64| {
-                    round_at_least(v, floor, member_grid(*kind, is_int[i], decimals[i]))
+                    if blanks[i] {
+                        v
+                    } else {
+                        round_at_least(v, floor, member_grid(*kind, is_int[i], decimals[i]))
+                    }
                 };
                 value = quantize(value, 0, f64::NEG_INFINITY);
                 let mut out = Vec::with_capacity(member_cols.len());

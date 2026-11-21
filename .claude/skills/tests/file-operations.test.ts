@@ -702,6 +702,10 @@ describe("path confinement", () => {
     const p: Record<string, unknown> = { outdir: "~/out/parts/2026" };
     await resolveFilePathParams(p, outdir, homeProvider);
     assert.strictEqual(p.outdir, join(home, "out", "parts", "2026"));
+    // `~\` is home too, as the provider expands it, even where `\` isn't a separator
+    const back: Record<string, unknown> = { outdir: "~\\out" };
+    await resolveFilePathParams(back, outdir, homeProvider);
+    assert.strictEqual(back.outdir, join(home, "out"));
   });
 
   test("a positional output arg receives the validated output file", () => {

@@ -6,7 +6,6 @@ import { randomUUID } from "node:crypto";
 import { stat, access, readFile, unlink, rename, copyFile, readdir, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
-import { homedir } from "node:os";
 import { ConvertedFileManager } from "./converted-file-manager.js";
 import type {
   QsvSkill,
@@ -36,7 +35,7 @@ import {
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
 import { runQsvSimple } from "./executor.js";
 import { config } from "./config.js";
-import { formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
+import { expandTilde, formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
 
 /**
  * Stat a path, returning null for ENOENT (file not found) and rethrowing
@@ -560,7 +559,7 @@ export async function resolveFilePathParams(
       if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
     }
     // expand ~ as the provider does; each ancestor is still checked by the provider
-    const expanded = value.replace(/^~(?=$|[\\/])/, homedir());
+    const expanded = expandTilde(value);
     let ancestor = resolve(filesystemProvider.getWorkingDirectory(), expanded);
     const missing: string[] = [];
     while (dirname(ancestor) !== ancestor) {

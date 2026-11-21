@@ -685,6 +685,10 @@ describe("path confinement", () => {
     const { args, options } = buildSkillExecParams(extsort, {}, "/in.csv", "/allowed/out.csv", false);
     assert.strictEqual(args.output, "/allowed/out.csv");
     assert.strictEqual(options["--output"], undefined);
+
+    // extdedup --no-output writes nothing there, but opening the file would empty it
+    const quiet = buildSkillExecParams(extsort, { no_output: true }, "/in.csv", "/allowed/out.csv", false);
+    assert.strictEqual(quiet.args.output, undefined);
   });
 
   test("every skill option or arg that looks like a path is classified", async () => {

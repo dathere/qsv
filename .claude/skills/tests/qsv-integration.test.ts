@@ -1130,7 +1130,7 @@ test('qsv split succeeds although it writes only its own files', { skip: !QSV_AV
   }
 });
 
-test('output_file is refused for a command that has no output file option', { skip: !QSV_AVAILABLE }, async () => {
+test('output_file is ignored, with a note, for a command that has no output file option', { skip: !QSV_AVAILABLE }, async () => {
   const testDir = await createTestDir();
   const loader = new SkillLoader();
   const executor = new SkillExecutor();
@@ -1139,18 +1139,33 @@ test('output_file is refused for a command that has no output file option', { sk
     await loader.loadAll();
     const csvPath = await createTestCSV(testDir, 'test.csv', 'id,name\n1,a\n2,b\n');
     const provider = new FilesystemResourceProvider({ workingDirectory: testDir, allowedDirectories: [testDir] });
+    const ignored = join(testDir, 'out.csv');
 
-    const result = await handleToolCall(
-      'qsv_split',
-      { input_file: csvPath, outdir: join(testDir, 'parts'), size: 1, output_file: join(testDir, 'out.csv') },
+    // a missing parent dir in the ignored path must not fail the call
+    const count = await handleToolCall(
+      'qsv_count',
+      { input_file: csvPath, json: true, output_file: join(testDir, 'nope', 'out.csv') },
       executor,
       loader,
       provider,
     );
+    assert.ok(!count.isError, count.content[0].text);
+    assert.strictEqual(JSON.parse(count.content[0].text ?? '').count, 2);
+    assert.match(count.content[1]?.text ?? '', /output_file parameter was ignored/);
 
-    assert.ok(result.isError);
-    assert.match(result.content[0].text ?? '', /has no output file option/);
-    await assert.rejects(stat(join(testDir, 'parts')));
+    const outdir = join(testDir, 'parts');
+    const split = await handleToolCall(
+      'qsv_split',
+      { input_file: csvPath, outdir, size: 1, output_file: ignored },
+      executor,
+      loader,
+      provider,
+    );
+    assert.ok(!split.isError, split.content[0].text);
+    assert.match(split.content[0].text ?? '', /qsv split completed/);
+    assert.match(split.content[1]?.text ?? '', /output_file parameter was ignored/);
+    assert.strictEqual((await readdir(outdir)).length, 2);
+    await assert.rejects(stat(ignored));
   } finally {
     await cleanupTestDir(testDir);
   }

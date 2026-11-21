@@ -368,9 +368,11 @@ synthesize options:
                            `correlated` (numeric) and `ordered` (dates with the
                            same dictionary date format, or none, where the
                            later comes first in at most 1% of the sampled rows
-                           holding both, their ranges overlap, and they are
-                           blank in the same rows but for at most 5% of
-                           rows). Groups don't share columns and hold
+                           holding both, their ranges overlap, at most 5% of
+                           the sampled rows have one blank and not the other,
+                           and their blank rates over all of <input> differ
+                           by at most 5 points). Groups don't share columns
+                           and hold
                            up to 8 each. Columns with a faker content type,
                            and free-text, constant and all-unique integer
                            columns are never proposed, nor is the target.

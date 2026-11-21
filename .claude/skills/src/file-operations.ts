@@ -744,7 +744,8 @@ export function buildSkillExecParams(
   if (outputFile) {
     // extsort/extdedup take their output as a positional arg, not --output
     if (skill.command.args.some((a) => a.name === "output") && !skillHasOption("output")) {
-      args.output = outputFile;
+      // extdedup --no-output writes nothing there, but would still empty a named file
+      if (!options["--no-output"]) args.output = outputFile;
     } else {
       options["--output"] = outputFile;
     }

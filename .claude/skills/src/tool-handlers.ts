@@ -30,6 +30,7 @@ import {
   MAX_LOG_MESSAGE_LEN,
   LOG_ENTRY_TYPES,
   isBinaryOutputFormat,
+  normalizeForCaseFs,
 } from "./tool-constants.js";
 import type { PipelineMetadata } from "./tool-constants.js";
 import { acquireSlot, releaseSlot, getActiveOperationCount, getQueueStatus } from "./concurrency.js";
@@ -851,6 +852,16 @@ export async function handleToolCall(
       return errorResult(
         "Error: output_file is required for parquet, arrow and avro output (binary results can't be returned as text).",
       );
+    }
+
+    // extsort/extdedup open their output before reading the input, so the same file would be emptied
+    if (
+      (commandName === "extsort" || commandName === "extdedup") &&
+      outputFile &&
+      inputFile &&
+      normalizeForCaseFs(outputFile) === normalizeForCaseFs(inputFile)
+    ) {
+      return errorResult(`Error: output_file can't be the input file for ${commandName}; it would be emptied.`);
     }
 
     // DuckDB/Parquet-first interception for sqlp queries. The orchestration

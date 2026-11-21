@@ -1099,3 +1099,27 @@ test('looksLikeFilePath handles whitespace-padded values', () => {
   assert.strictEqual(looksLikeFilePath('  script.lua  '), true);
   assert.strictEqual(looksLikeFilePath('  myscript  '), false);
 });
+
+test('handleToolCall refuses an extsort/extdedup output_file that is the input file', async () => {
+  const loader = new SkillLoader();
+  await loader.loadAll();
+  const executor = new SkillExecutor();
+  const provider = {
+    resolvePath: async (p: string) => p,
+    needsConversion: () => false,
+    getConversionCommand: () => null,
+    getWorkingDirectory: () => '/data',
+  } as unknown as Parameters<typeof handleToolCall>[4];
+
+  for (const command of ['extsort', 'extdedup']) {
+    const result = await handleToolCall(
+      `qsv_${command}`,
+      { input_file: '/data/in.csv', output_file: '/data/in.csv' },
+      executor,
+      loader,
+      provider,
+    );
+    assert.strictEqual(result.isError, true, command);
+    assert.ok(result.content[0].text?.includes("can't be the input file"), result.content[0].text);
+  }
+});

@@ -6081,3 +6081,114 @@ fn synthesize_discover_reads_day_first_dates_as_stats_does() {
         vec![("ordered".to_string(), svec!["opened", "closed"])]
     );
 }
+
+/// Run discovery on `csv` (and `dict`, if any) and return what it found.
+fn discover_on(
+    wrk: &Workdir,
+    csv: &str,
+    dict: Option<serde_json::Value>,
+) -> Vec<(String, Vec<String>)> {
+    wrk.create_from_string("data.csv", csv);
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10", "--seed", "1"])
+        .args(["--discover-relationships", "found.json"]);
+    if let Some(dict) = dict {
+        wrk.create_from_string("dict.json", &dict.to_string());
+        cmd.args(["--dictionary", "dict.json"]);
+    }
+    cmd.arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    relationships_in(wrk, "found.json")
+}
+
+#[test]
+fn synthesize_discover_leaves_out_an_id_with_blanks() {
+    let wrk = Workdir::new("synthesize_discover_id_blanks");
+    // Every filled id is distinct, but 10% are blank, so the id's
+    // cardinality is below the row count. It still tracks `amount`.
+    let mut csv = String::from("id,amount\n");
+    for i in 0..300_i64 {
+        let id = if i % 10 == 0 {
+            String::new()
+        } else {
+            (i + 1).to_string()
+        };
+        // Each amount appears twice, so it isn't an identifier itself.
+        csv.push_str(&format!("{id},{}\n", (i / 2) * 3));
+    }
+    assert!(discover_on(&wrk, &csv, None).is_empty());
+}
+
+#[test]
+fn synthesize_discover_date_pair_edge_cases() {
+    let wrk = Workdir::new("synthesize_discover_date_edges");
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let day = |i: i64| base + chrono::Duration::days((i * 7) % 200);
+    let ordered = |a: &'static str, b: &'static str| vec![("ordered".to_string(), svec![a, b])];
+
+    // Equal in every row: ordered, so the output keeps them equal.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        csv.push_str(&format!("{},{}\n", day(i), day(i)));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
+
+    // Blank in 50% and 55% of rows: exactly 5 points apart, which passes.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        let a = if i % 20 < 10 {
+            String::new()
+        } else {
+            day(i).to_string()
+        };
+        let b = if i % 20 < 11 {
+            String::new()
+        } else {
+            (day(i) + chrono::Duration::days(i % 4)).to_string()
+        };
+        csv.push_str(&format!("{a},{b}\n"));
+    }
+    assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
+
+    // Different dictionary date formats: a chain writes every member in its
+    // anchor's format, so the pair stays independent.
+    let mut csv = String::from("a,b\n");
+    for i in 0..200 {
+        csv.push_str(&format!(
+            "{},{}\n",
+            day(i),
+            day(i) + chrono::Duration::days(i % 4)
+        ));
+    }
+    let formats = |b: &str| {
+        serde_json::json!({"fields": [
+            {"name": "a", "content_type": "date:%Y-%m-%d"},
+            {"name": "b", "content_type": b},
+        ]})
+    };
+    assert!(discover_on(&wrk, &csv, Some(formats("date:%d/%m/%Y"))).is_empty());
+    assert_eq!(
+        discover_on(&wrk, &csv, Some(formats("date:%Y-%m-%d"))),
+        ordered("a", "b")
+    );
+}
+
+#[test]
+fn synthesize_discover_keeps_a_correlated_pair_its_extension_would_sink() {
+    let wrk = Workdir::new("synthesize_discover_correlated_support");
+    // x and y correlate where z is blank, y and z where x is blank: no row
+    // holds all three, so adding z to x/y would leave the fit nothing.
+    let mut csv = String::from("x,y,z\n");
+    for i in 0..300_i64 {
+        let v = (i * 37) % 101;
+        if i % 2 == 0 {
+            csv.push_str(&format!("{v},{},\n", v + (i * 3) % 4));
+        } else {
+            csv.push_str(&format!(",{v},{}\n", 500 + v + (i * 3) % 4));
+        }
+    }
+    assert_eq!(
+        discover_on(&wrk, &csv, None),
+        vec![("correlated".to_string(), svec!["x", "y"])]
+    );
+}

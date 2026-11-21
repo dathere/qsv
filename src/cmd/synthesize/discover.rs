@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use super::{
     dictionary::SynthRelationship,
     faker_map,
-    generator::{ColumnGenerator, compute_null_ratio, parse_f64, parse_source_epoch},
+    generator::{ColumnGenerator, parse_f64, parse_source_epoch},
     relationships::{EmitUnit, ScheduleParams, pearson, source_cell},
 };
 use crate::{CliResult, config::Config};
@@ -32,8 +32,8 @@ const SAMPLE_ROWS: u64 = 100_000;
 /// Share of rows a `joint` group's tuples must keep at `--min-count`.
 const MIN_JOINT_SURVIVAL: f64 = 0.8;
 /// An `ordered` chain writes its anchor's blank rate in every member, so its
-/// members' blank rates may differ by at most this much.
-const MAX_NULL_GAP: f64 = 0.05;
+/// members' blank rates may differ by at most this many percentage points.
+const MAX_NULL_GAP_PCT: u64 = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Domain {
@@ -121,11 +121,14 @@ pub(crate) fn discover(
             {
                 joint.push(col);
             },
-            // An all-unique integer is an identifier, ordered and correlated
-            // with anything else that grows over time.
+            // An integer unique in every filled row is an identifier, ordered
+            // and correlated with anything else that grows over time.
+            // (`cardinality` counts blank as one value.)
             (ColumnGenerator::NumericQuantile { .. }, ty @ ("Integer" | "Float"))
                 if sr.cardinality >= 2
-                    && !(ty == "Integer" && sr.cardinality >= params.total_rows) =>
+                    && !(ty == "Integer"
+                        && sr.cardinality - u64::from(sr.nullcount > 0)
+                            >= params.total_rows.saturating_sub(sr.nullcount)) =>
             {
                 numeric.push((col, Domain::Numeric));
             },
@@ -204,7 +207,20 @@ pub(crate) fn discover(
         return Ok(Vec::new());
     }
 
-    let null_ratio = |col: usize| compute_null_ratio(stats[col].nullcount, params.total_rows);
+    // Blank rates within MAX_NULL_GAP_PCT points, in whole counts so a gap of
+    // exactly that many points passes.
+    let blanks_close = |cols: &[usize]| {
+        let counts = cols.iter().map(|&c| stats[c].nullcount);
+        let spread = counts.clone().max().unwrap_or(0) - counts.min().unwrap_or(0);
+        spread.saturating_mul(100) <= params.total_rows.saturating_mul(MAX_NULL_GAP_PCT)
+    };
+    // An ordered chain writes every member in its anchor's date format.
+    let date_format = |col: usize| {
+        params
+            .content_types
+            .get(&stats[col].field)
+            .and_then(|ct| faker_map::parse_date_format(ct))
+    };
     let mut owner: Vec<Option<usize>> = vec![None; stats.len()];
     let mut groups: Vec<Found> = Vec::new();
 
@@ -215,20 +231,27 @@ pub(crate) fn discover(
     let mut correlated_edges: Vec<(f64, usize, usize)> = Vec::new();
     for a in 0..numeric.len() {
         for b in (a + 1)..numeric.len() {
+            let (col_a, dom_a) = numeric[a];
+            let (col_b, dom_b) = numeric[b];
+            // Only like domains pair: numbers for `correlated`, dates of one
+            // kind for `ordered`.
+            if dom_a != dom_b {
+                continue;
+            }
             let pair = pair_stats(&values[a], &values[b], &orders[a], &orders[b]);
             if (pair.n as u64) < min_pairs {
                 continue;
             }
-            let (col_a, dom_a) = numeric[a];
-            let (col_b, dom_b) = numeric[b];
             // Numeric pairs go to `correlated` even when one never exceeds the
             // other: a copula keeps their correlation, while an ordered chain
             // draws each gap apart from its anchor and weakens it.
-            if dom_a == dom_b && dom_a != Domain::Numeric && pair.rho >= THRESHOLD {
-                // A pair is ordered when one never exceeds the other, sometimes
-                // falls below it, and their ranges overlap (one wholly below
-                // the other is ordered trivially).
-                let edge = if pair.a_le_b && pair.any_lt && pair.max_a > pair.min_b {
+            if dom_a != Domain::Numeric && pair.rho >= THRESHOLD {
+                // A pair is ordered when one never exceeds the other and their
+                // ranges overlap (one wholly below the other is ordered
+                // trivially). Two columns equal in every row are ordered too,
+                // the earlier column first, so the chain keeps them equal.
+                let edge = if pair.a_le_b && (pair.any_lt || pair.b_le_a) && pair.max_a > pair.min_b
+                {
                     Some((col_a, col_b))
                 } else if pair.b_le_a && pair.any_gt && pair.max_b > pair.min_a {
                     Some((col_b, col_a))
@@ -236,12 +259,13 @@ pub(crate) fn discover(
                     None
                 };
                 if let Some((lo, hi)) = edge
-                    && (null_ratio(lo) - null_ratio(hi)).abs() <= MAX_NULL_GAP
+                    && blanks_close(&[lo, hi])
+                    && date_format(lo) == date_format(hi)
                 {
                     ordered_edges.push((pair.rho, lo, hi));
                 }
             }
-            if dom_a == Domain::Numeric && dom_b == Domain::Numeric && pair.rho.abs() >= THRESHOLD {
+            if dom_a == Domain::Numeric && pair.rho.abs() >= THRESHOLD {
                 correlated_edges.push((pair.rho.abs(), col_a, col_b));
             }
         }
@@ -255,7 +279,7 @@ pub(crate) fn discover(
             (Some(g), None)
                 if groups[g].kind == "ordered"
                     && groups[g].members.last() == Some(&lo)
-                    && chain_fits(&groups[g].members, hi, &null_ratio) =>
+                    && chain_fits(&groups[g].members, hi, &blanks_close) =>
             {
                 groups[g].members.push(hi);
                 extend(&mut owner, &mut groups[g], g, hi, score);
@@ -263,7 +287,7 @@ pub(crate) fn discover(
             (None, Some(g))
                 if groups[g].kind == "ordered"
                     && groups[g].members.first() == Some(&hi)
-                    && chain_fits(&groups[g].members, lo, &null_ratio) =>
+                    && chain_fits(&groups[g].members, lo, &blanks_close) =>
             {
                 groups[g].members.insert(0, lo);
                 extend(&mut owner, &mut groups[g], g, lo, score);
@@ -271,6 +295,19 @@ pub(crate) fn discover(
             _ => {},
         }
     }
+    let mut numeric_pos: Vec<Option<usize>> = vec![None; stats.len()];
+    for (k, &(col, _)) in numeric.iter().enumerate() {
+        numeric_pos[col] = Some(k);
+    }
+    let complete_rows = |members: &[usize]| {
+        let cols: Vec<&[Option<f64>]> = members
+            .iter()
+            .filter_map(|&c| numeric_pos[c].map(|k| values[k].as_slice()))
+            .collect();
+        (0..sampled)
+            .filter(|&r| cols.iter().all(|c| c[r].is_some()))
+            .count() as u64
+    };
     sort_edges(&mut correlated_edges);
     for (score, a, b) in correlated_edges {
         match (owner[a], owner[b]) {
@@ -279,9 +316,15 @@ pub(crate) fn discover(
                 if groups[g].kind == "correlated" && groups[g].members.len() < MAX_GROUP =>
             {
                 let new = if owner[a].is_none() { a } else { b };
-                groups[g].members.push(new);
-                groups[g].members.sort_unstable();
-                extend(&mut owner, &mut groups[g], g, new, score);
+                // The fit correlates rows where every member holds a value; a
+                // member that leaves too few would sink the whole group.
+                let mut members = groups[g].members.clone();
+                members.push(new);
+                members.sort_unstable();
+                if complete_rows(&members) >= min_pairs {
+                    groups[g].members = members;
+                    extend(&mut owner, &mut groups[g], g, new, score);
+                }
             },
             _ => {},
         }
@@ -364,18 +407,13 @@ fn extend(owner: &mut [Option<usize>], group: &mut Found, g: usize, col: usize, 
 
 /// Whether `col` can join an ordered chain: room left, and blank rates close
 /// enough to the chain's that the anchor's rate can stand for all of them.
-fn chain_fits(members: &[usize], col: usize, null_ratio: &dyn Fn(usize) -> f64) -> bool {
+fn chain_fits(members: &[usize], col: usize, blanks_close: &dyn Fn(&[usize]) -> bool) -> bool {
     if members.len() >= MAX_GROUP {
         return false;
     }
-    let (lo, hi) = members
-        .iter()
-        .chain(std::iter::once(&col))
-        .map(|&c| null_ratio(c))
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), r| {
-            (lo.min(r), hi.max(r))
-        });
-    hi - lo <= MAX_NULL_GAP
+    let mut all = members.to_vec();
+    all.push(col);
+    blanks_close(&all)
 }
 
 /// Row positions holding a value, in ascending value order.

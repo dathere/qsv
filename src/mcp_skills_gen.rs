@@ -1749,7 +1749,9 @@ fn mcp_skip_options(command: &str) -> &'static [&'static str] {
         "index" => &["--output"],
         // The MCP server checks only the literal `{}` template against its
         // allowed directories, and would report it as the written file.
-        "synthesize" => &["--rows-per-file"],
+        // It doesn't check the --discover-relationships path at all, so the
+        // file could land outside them.
+        "synthesize" => &["--rows-per-file", "--discover-relationships"],
         _ => &[],
     }
 }
@@ -2731,13 +2733,10 @@ mod tests {
             &std::fs::read_to_string(root.join("src/util.rs")).unwrap_or_default(),
         )
         .unwrap();
-        assert!(
-            skill
-                .command
-                .options
-                .iter()
-                .all(|o| o.flag != "--rows-per-file")
-        );
+        for skipped in ["--rows-per-file", "--discover-relationships"] {
+            assert!(usage.contains(skipped));
+            assert!(skill.command.options.iter().all(|o| o.flag != skipped));
+        }
         assert!(!skill.examples.is_empty());
         assert!(
             skill

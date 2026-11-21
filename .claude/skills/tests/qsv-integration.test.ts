@@ -1141,9 +1141,17 @@ test('output_file is ignored, with a note, for a command that has no output file
     const provider = new FilesystemResourceProvider({ workingDirectory: testDir, allowedDirectories: [testDir] });
     const ignored = join(testDir, 'out.csv');
 
-    const count = await handleToolCall('qsv_count', { input_file: csvPath, output_file: ignored }, executor, loader, provider);
+    // a missing parent dir in the ignored path must not fail the call
+    const count = await handleToolCall(
+      'qsv_count',
+      { input_file: csvPath, json: true, output_file: join(testDir, 'nope', 'out.csv') },
+      executor,
+      loader,
+      provider,
+    );
     assert.ok(!count.isError, count.content[0].text);
-    assert.match(count.content[0].text ?? '', /^2\b[^]*output_file was ignored/);
+    assert.strictEqual(JSON.parse(count.content[0].text ?? '').count, 2);
+    assert.match(count.content[1]?.text ?? '', /output_file parameter was ignored/);
 
     const outdir = join(testDir, 'parts');
     const split = await handleToolCall(
@@ -1154,7 +1162,8 @@ test('output_file is ignored, with a note, for a command that has no output file
       provider,
     );
     assert.ok(!split.isError, split.content[0].text);
-    assert.match(split.content[0].text ?? '', /qsv split completed[^]*output_file was ignored/);
+    assert.match(split.content[0].text ?? '', /qsv split completed/);
+    assert.match(split.content[1]?.text ?? '', /output_file parameter was ignored/);
     assert.strictEqual((await readdir(outdir)).length, 2);
     await assert.rejects(stat(ignored));
   } finally {

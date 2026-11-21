@@ -15,7 +15,9 @@ use super::{
     dictionary::SynthRelationship,
     faker_map,
     generator::{ColumnGenerator, parse_f64, parse_source_epoch},
-    relationships::{EmitUnit, ScheduleParams, pearson, source_cell},
+    relationships::{
+        EmitUnit, ScheduleParams, correlation_ratio, is_stratum_candidate, pearson, source_cell,
+    },
 };
 use crate::{CliResult, config::Config};
 
@@ -369,7 +371,131 @@ pub(crate) fn discover(
             _ => {},
         }
     }
-    Ok(groups)
+
+    // --- categorical members of correlated groups ----------------------------
+    // A categorical column whose values explain a numeric column's (η) joins
+    // that column's `correlated` group as a stratum. One already in a `joint`
+    // group stays there too: the fit takes the whole `joint` group into the
+    // strata, so each of its tuples keeps its own numeric distributions.
+    let mut mixed_edges: Vec<(f64, usize, usize)> = Vec::new();
+    for (a, &cat) in joint.iter().enumerate() {
+        if !is_stratum_candidate(cat, params) {
+            continue;
+        }
+        for (k, &(num, domain)) in numeric.iter().enumerate() {
+            if domain != Domain::Numeric {
+                continue;
+            }
+            let (groups_of, present): (Vec<u32>, Vec<f64>) = codes[a]
+                .iter()
+                .zip(&values[k])
+                .filter_map(|(&code, v)| Some((code, (*v)?)))
+                .unzip();
+            if (present.len() as u64) < min_pairs {
+                continue;
+            }
+            let eta = correlation_ratio(&groups_of, codebooks[a].len(), &present);
+            if eta >= THRESHOLD {
+                mixed_edges.push((eta, cat, num));
+            }
+        }
+    }
+    sort_edges(&mut mixed_edges);
+    // The correlated group a `joint` group's columns are strata of.
+    let mut attached: Vec<Option<usize>> = vec![None; groups.len()];
+    let mut dead = vec![false; groups.len()];
+    // `joint` groups are settled by now, so each column's stays fixed below.
+    let joint_owner: Vec<Option<usize>> = owner
+        .iter()
+        .map(|o| o.filter(|&g| groups[g].kind == "joint"))
+        .collect();
+    let joint_of = |c: usize| joint_owner[c];
+    for (score, cat, num) in mixed_edges {
+        let group_of_cat = match owner[cat] {
+            Some(g) if groups[g].kind == "correlated" => Some(g),
+            Some(g) if groups[g].kind == "joint" => attached[g],
+            _ => None,
+        };
+        let group_of_num = owner[num];
+        if group_of_num.is_some() && group_of_num == group_of_cat {
+            continue;
+        }
+        // The group's members after this edge, and any group it swallows.
+        let (target, mut members, swallowed) = match (group_of_cat, group_of_num) {
+            (None, None) => (None, vec![cat, num], None),
+            (None, Some(h)) => (
+                Some(h),
+                [groups[h].members.as_slice(), &[cat]].concat(),
+                None,
+            ),
+            (Some(h), None) => (
+                Some(h),
+                [groups[h].members.as_slice(), &[num]].concat(),
+                None,
+            ),
+            (Some(h1), Some(h2)) => (
+                Some(h1),
+                [groups[h1].members.as_slice(), groups[h2].members.as_slice()].concat(),
+                Some(h2),
+            ),
+        };
+        members.sort_unstable();
+        members.dedup();
+        // Strata: the group's categorical members plus every `joint` group
+        // attached to it, or about to be.
+        let mut strata: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&c| numeric_pos[c].is_none())
+            .collect();
+        for g in 0..groups.len() {
+            let joins = attached[g].is_some_and(|h| Some(h) == target || Some(h) == swallowed)
+                || members.iter().any(|&c| joint_of(c) == Some(g));
+            if joins {
+                strata.extend(&groups[g].members);
+            }
+        }
+        strata.sort_unstable();
+        strata.dedup();
+        // The cap counts the group's own members; the `joint` columns its
+        // strata take in are capped by their own group.
+        if members.len() > MAX_GROUP || complete_rows(&members) < min_pairs || !fits(&strata) {
+            continue;
+        }
+        let h = target.unwrap_or_else(|| {
+            groups.push(Found {
+                kind: "correlated",
+                members: Vec::new(),
+                score,
+            });
+            attached.push(None);
+            dead.push(false);
+            groups.len() - 1
+        });
+        if let Some(h2) = swallowed {
+            dead[h2] = true;
+            groups[h].score = groups[h].score.min(groups[h2].score);
+            groups[h2].members.clear();
+            for a in &mut attached {
+                if *a == Some(h2) {
+                    *a = Some(h);
+                }
+            }
+        }
+        for &c in &members {
+            match joint_of(c) {
+                Some(g) if numeric_pos[c].is_none() => attached[g] = Some(h),
+                _ => owner[c] = Some(h),
+            }
+        }
+        groups[h].members = members;
+        groups[h].score = groups[h].score.min(score);
+    }
+    Ok(groups
+        .into_iter()
+        .zip(dead)
+        .filter_map(|(g, dead)| (!dead).then_some(g))
+        .collect())
 }
 
 /// Strongest first, then by column position.

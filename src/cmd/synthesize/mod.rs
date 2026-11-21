@@ -52,7 +52,12 @@ generated *jointly* so inter-column structure survives into each output row:
                  those left filled stay in order.
   * correlated — numeric columns whose correlation should be preserved. A
                  Gaussian copula couples the columns while leaving each
-                 column's own distribution unchanged.
+                 column's own distribution unchanged. Categorical members
+                 (up to 50 values; not dates or fakers) split the rows into
+                 strata, one per source combination of their values seen at
+                 least the --min-count times: each keeps its share of rows,
+                 and the numeric members their distributions within it. A
+                 `joint` group sharing a categorical member joins the strata.
 
 Relationships are read from the dictionary's `relationships` array — inferred
 by `describegpt`, hand-authored, or found in <input> with the option
@@ -61,10 +66,10 @@ still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
 Privacy note: synthetic output is not anonymized. It can contain real values
-and real value combinations copied from <input>. By default, values and
-`joint` tuples seen fewer than 5 times in <input> are dropped from the real
-values that columns and joint groups sample from (see the --min-count
-option). The count is of rows, not people, so in data with many rows per
+and real value combinations copied from <input>. By default, values,
+`joint` tuples and `correlated` strata seen fewer than 5 times in <input>
+are dropped from the real values that columns and groups sample from (see
+the --min-count option). The count is of rows, not people, so in data with many rows per
 person one person's value can still pass it. That limits copying but does
 not stop it:
 
@@ -370,8 +375,13 @@ synthesize options:
                            `correlated` (numeric) and `ordered` (dates with the
                            same dictionary date format, or none, where the
                            later comes first in at most 1% of the sampled rows
-                           holding both, and their ranges overlap). Groups
-                           don't share columns and hold up to 8 each. Columns with a faker content type,
+                           holding both, and their ranges overlap). A `joint`
+                           candidate joins a `correlated` group as a stratum
+                           when its values explain a member's by a rank-based
+                           correlation ratio of 0.7 or more, and stays in its
+                           own `joint` group too. Otherwise groups don't share
+                           columns. Each holds up to 8 of its own members.
+                           Columns with a faker content type,
                            and free-text, constant and all-unique integer
                            columns are never proposed, nor is the target.
                            Scores read up to 100,000 rows (at a fixed stride
@@ -390,6 +400,9 @@ synthesize options:
     --correlation-threshold <f>  Minimum absolute Spearman correlation for a
                            pair of columns to stay in a `correlated`
                            relationship. Weakly-correlated members are dropped.
+                           Categorical members are kept when the strata explain
+                           some numeric member by a rank-based correlation
+                           ratio at least this high.
                            [default: 0.3]
     --strict-relationships  Abort instead of warning-and-degrading when a
                            declared relationship fails validation.

@@ -64,7 +64,12 @@ combinations, and at the rates, the source shows them;
 those left filled stay in order.
 * correlated — numeric columns whose correlation should be preserved. A
 Gaussian copula couples the columns while leaving each
-column's own distribution unchanged.
+column's own distribution unchanged. Categorical members
+(up to 50 values; not dates or fakers) split the rows into
+strata, one per source combination of their values seen at
+least the --min-count times: each keeps its share of rows,
+and the numeric members their distributions within it. A
+`joint` group sharing a categorical member joins the strata.
 
 Relationships are read from the dictionary's `relationships` array — inferred
 by `describegpt`, hand-authored, or found in <input> with the option
@@ -73,10 +78,10 @@ still generated independently. Pass --no-relationships to disable relationship
 modeling entirely.
 
 Privacy note: synthetic output is not anonymized. It can contain real values
-and real value combinations copied from <input>. By default, values and
-`joint` tuples seen fewer than 5 times in <input> are dropped from the real
-values that columns and joint groups sample from (see the --min-count
-option). The count is of rows, not people, so in data with many rows per
+and real value combinations copied from <input>. By default, values,
+`joint` tuples and `correlated` strata seen fewer than 5 times in <input>
+are dropped from the real values that columns and groups sample from (see
+the --min-count option). The count is of rows, not people, so in data with many rows per
 person one person's value can still pass it. That limits copying but does
 not stop it:  
 
@@ -236,9 +241,9 @@ qsv synthesize --help
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. Column selection (--select/-s) and --weight are rejected; run `qsv select` on <input> first. |  |
 | &nbsp;`‑‑consistent‑fakes`&nbsp; | flag | For structured-faker columns with bounded cardinality (cardinality fully captured by `frequency`), build a stable source-value -> fake-value mapping so the same source value always produces the same fake in the output. Preserves the source frequency distribution and overrides the default "emit real values when frequency-enumerated" behavior for structured fakers (names, emails, addresses, etc.). Has no effect on unstructured columns (lorem_*, free_text, unknown), all-unique columns, or non-faker columns. Useful for deidentified synthesis where you want stable joins on the faked columns. |  |
 | &nbsp;`‑‑no‑relationships`&nbsp; | flag | Disable inter-column relationship modeling. Every column is generated independently even when the dictionary declares a `relationships` array. |  |
-| &nbsp;`‑‑discover‑relationships`&nbsp; | string | Find relationships in <input>, use them in this run, and write them to <file> for review. <file> holds the dictionary (from --dictionary, or from --infer-content-type) with the found groups appended to its `relationships`, each with a score; without a dictionary, it holds only those groups. Rerunning with <file> as the dictionary gives the same output. Declared relationships keep their columns, which discovery leaves out. A pair scores 0.7 or more by bias-corrected Cramer's V for `joint` (columns with 2 to 50 enumerated values; a group must keep 80% of rows in tuples seen at least the --min-count times), or by \|Spearman\| for `correlated` (numeric) and `ordered` (dates with the same dictionary date format, or none, where the later comes first in at most 1% of the sampled rows holding both, and their ranges overlap). Groups don't share columns and hold up to 8 each. Columns with a faker content type, and free-text, constant and all-unique integer columns are never proposed, nor is the target. Scores read up to 100,000 rows (at a fixed stride beyond) and up to 64 columns of each family. With the --shard option, every slice finds the same groups and writes the same <file>. Not allowed with --no-relationships, nor with the --strict-relationships option, which would abort on a found group the source only nearly satisfies. |  |
+| &nbsp;`‑‑discover‑relationships`&nbsp; | string | Find relationships in <input>, use them in this run, and write them to <file> for review. <file> holds the dictionary (from --dictionary, or from --infer-content-type) with the found groups appended to its `relationships`, each with a score; without a dictionary, it holds only those groups. Rerunning with <file> as the dictionary gives the same output. Declared relationships keep their columns, which discovery leaves out. A pair scores 0.7 or more by bias-corrected Cramer's V for `joint` (columns with 2 to 50 enumerated values; a group must keep 80% of rows in tuples seen at least the --min-count times), or by \|Spearman\| for `correlated` (numeric) and `ordered` (dates with the same dictionary date format, or none, where the later comes first in at most 1% of the sampled rows holding both, and their ranges overlap). A `joint` candidate joins a `correlated` group as a stratum when its values explain a member's by a rank-based correlation ratio of 0.7 or more, and stays in its own `joint` group too. Otherwise groups don't share columns. Each holds up to 8 of its own members. Columns with a faker content type, and free-text, constant and all-unique integer columns are never proposed, nor is the target. Scores read up to 100,000 rows (at a fixed stride beyond) and up to 64 columns of each family. With the --shard option, every slice finds the same groups and writes the same <file>. Not allowed with --no-relationships, nor with the --strict-relationships option, which would abort on a found group the source only nearly satisfies. |  |
 | &nbsp;`‑‑joint‑cardinality‑cap`&nbsp; | integer | Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited. | `100000` |
-| &nbsp;`‑‑correlation‑threshold`&nbsp; | float | Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped. | `0.3` |
+| &nbsp;`‑‑correlation‑threshold`&nbsp; | float | Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped. Categorical members are kept when the strata explain some numeric member by a rank-based correlation ratio at least this high. | `0.3` |
 | &nbsp;`‑‑strict‑relationships`&nbsp; | flag | Abort instead of warning-and-degrading when a declared relationship fails validation. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of jobs to use for the internal `stats` and `frequency` runs and for generating rows. |  |
 

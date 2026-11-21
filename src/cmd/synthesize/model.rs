@@ -281,15 +281,37 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             is_int,
             decimals,
             null_ratios,
+            strata,
+            strata_cumulative,
         } => {
-            let k = col_indices.len();
-            if cholesky_l.len() != k
+            let k = cholesky_l.len();
+            let inconsistent = k == 0
                 || cholesky_l.iter().enumerate().any(|(i, row)| row.len() <= i)
-                || marginals.len() != k
-                || marginals.iter().any(Vec::is_empty)
                 || is_int.len() != k
-                || decimals.len() != k
-                || null_ratios.len() != k
+                || decimals.len() != k;
+            if strata.is_empty() {
+                if inconsistent
+                    || col_indices.len() != k
+                    || marginals.len() != k
+                    || marginals.iter().any(Vec::is_empty)
+                    || null_ratios.len() != k
+                {
+                    return bad("a correlated group with inconsistent members");
+                }
+                return Ok(());
+            }
+            check_weighted(strata, strata_cumulative)?;
+            let m = col_indices.len().saturating_sub(k);
+            if inconsistent
+                || m == 0
+                || !marginals.is_empty()
+                || !null_ratios.is_empty()
+                || strata.iter().any(|s| {
+                    s.values.len() != m
+                        || s.marginals.len() != k
+                        || s.marginals.iter().any(Vec::is_empty)
+                        || s.null_ratios.len() != k
+                })
             {
                 return bad("a correlated group with inconsistent members");
             }

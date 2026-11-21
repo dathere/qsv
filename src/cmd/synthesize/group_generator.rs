@@ -88,24 +88,52 @@ pub(crate) enum GroupGenerator {
     /// Gaussian-copula generation for a set of correlated numeric columns. Each
     /// column keeps its own quartile-bucket marginal exactly; the copula only
     /// couples them, reproducing the source's rank (Spearman) correlation.
+    ///
+    /// With categorical members, each row first draws a stratum (one source
+    /// combination of their values) by its share of the source rows, then
+    /// draws the numeric members from that stratum's own buckets, so each
+    /// category keeps its own numeric distributions.
     Correlated {
-        /// Output column index per member, in member declared order.
-        col_indices: Vec<usize>,
+        /// Output column index per member: the numeric members, in member
+        /// declared order, then the categorical (stratum) members.
+        col_indices:       Vec<usize>,
         /// Row-normalized lower-triangular Cholesky factor of the correlation
-        /// matrix; `cholesky_l[i][j]` is used for `j <= i`.
-        cholesky_l:  Vec<Vec<f64>>,
+        /// matrix of the numeric members (within strata, when there are
+        /// any); `cholesky_l[i][j]` is used for `j <= i`.
+        cholesky_l:        Vec<Vec<f64>>,
         /// Per-member quantile buckets — a piecewise-uniform inverse CDF that
         /// maps a uniform draw back onto the column's own distribution.
-        marginals:   Vec<Vec<(f64, f64)>>,
-        /// Per-member flag: round the emitted value to an integer.
-        is_int:      Vec<bool>,
-        /// Per-member decimal places a Float member is rounded to; `None`
-        /// for Integer and unrounded members.
-        decimals:    Vec<Option<u32>>,
+        /// Empty when the group has strata, which carry their own.
+        marginals:         Vec<Vec<(f64, f64)>>,
+        /// Per numeric member flag: round the emitted value to an integer.
+        is_int:            Vec<bool>,
+        /// Per numeric member decimal places a Float member is rounded to;
+        /// `None` for Integer and unrounded members.
+        decimals:          Vec<Option<u32>>,
         /// Per-member null ratio. Each member draws null independently, so its
         /// marginal null ratio is preserved and nulls do not all co-occur.
-        null_ratios: Vec<f64>,
+        /// Empty when the group has strata, which carry their own.
+        null_ratios:       Vec<f64>,
+        /// The source combinations of the categorical members, sorted.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        strata:            Vec<Stratum>,
+        /// Normalized cumulative weights of `strata`, ascending, last element
+        /// == 1.0.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        strata_cumulative: Vec<f64>,
     },
+}
+
+/// One combination of a `Correlated` group's categorical members, with the
+/// numeric members' distributions in the source rows holding it.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct Stratum {
+    /// The categorical members' values, in `col_indices` order.
+    pub(crate) values:      Vec<String>,
+    /// Per numeric member quantile buckets within this stratum.
+    pub(crate) marginals:   Vec<Vec<(f64, f64)>>,
+    /// Per numeric member share of this stratum's rows left blank.
+    pub(crate) null_ratios: Vec<f64>,
 }
 
 impl GroupGenerator {
@@ -225,8 +253,20 @@ impl GroupGenerator {
                 is_int,
                 decimals,
                 null_ratios,
+                strata,
+                strata_cumulative,
             } => {
-                let k = col_indices.len();
+                // A group with no categorical members draws only the copula,
+                // as it always has.
+                let stratum = (!strata.is_empty()).then(|| {
+                    let r = rng.random_range(0.0..1.0);
+                    &strata[strata_cumulative
+                        .partition_point(|&c| c < r)
+                        .min(strata.len() - 1)]
+                });
+                let (marginals, null_ratios) =
+                    stratum.map_or((marginals, null_ratios), |s| (&s.marginals, &s.null_ratios));
+                let k = cholesky_l.len();
                 // k iid standard normals.
                 let z: Vec<f64> = (0..k).map(|_| standard_normal(rng)).collect();
                 // x = L z gives correlated standard normals; mapping each
@@ -249,6 +289,14 @@ impl GroupGenerator {
                         format_number(value, is_int[i], decimals[i])
                     };
                     out.push((col_indices[i], text));
+                }
+                if let Some(s) = stratum {
+                    out.extend(
+                        col_indices[k..]
+                            .iter()
+                            .copied()
+                            .zip(s.values.iter().cloned()),
+                    );
                 }
                 out
             },

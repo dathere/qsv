@@ -120,10 +120,19 @@ pub(crate) fn resolve_types(
             EmitUnit::Group(GroupGenerator::Correlated {
                 col_indices,
                 is_int,
+                strata,
                 ..
             }) => {
-                for (k, &col) in col_indices.iter().enumerate() {
+                let (numeric, categorical) = col_indices.split_at(is_int.len());
+                for (k, &col) in numeric.iter().enumerate() {
                     types[col] = number_type(is_int[k]);
+                }
+                for (k, &col) in categorical.iter().enumerate() {
+                    types[col] = pooled_type(
+                        stats_types[col],
+                        strata.iter().map(|s| s.values[k].as_str()),
+                        prefer_dmy,
+                    );
                 }
             },
         }

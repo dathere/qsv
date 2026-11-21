@@ -22,7 +22,7 @@
       {
         "flag": "--correlation-threshold",
         "type": "number",
-        "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped.",
+        "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped. Categorical members are kept when the strata explain some numeric member by a rank-based correlation ratio at least this high.",
         "default": 0.3
       },
       {

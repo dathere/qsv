@@ -69,7 +69,10 @@ column's own distribution unchanged. Categorical members
 strata, one per source combination of their values seen at
 least the --min-count times: each keeps its share of rows,
 and the numeric members their distributions within it. A
-`joint` group sharing a categorical member joins the strata.
+`joint` group sharing a categorical member joins the strata:  
+its values stay real, but its numbers follow the member it
+shares (a city's, its borough's). Name a column as a member
+for numbers of its own.
 
 Relationships are read from the dictionary's `relationships` array — inferred
 by `describegpt`, hand-authored, or found in <input> with the option

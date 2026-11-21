@@ -47,7 +47,9 @@ generated *jointly* so inter-column structure survives into each output row:
                  created_date <= closed_date). The anchor column is generated
                  from its own distribution; each later column is the anchor
                  plus a non-negative gap drawn from the gap distribution
-                 learned from the source.
+                 learned from the source. Members are blank in the
+                 combinations, and at the rates, the source shows them;
+                 those left filled stay in order.
   * correlated — numeric columns whose correlation should be preserved. A
                  Gaussian copula couples the columns while leaving each
                  column's own distribution unchanged.
@@ -368,12 +370,8 @@ synthesize options:
                            `correlated` (numeric) and `ordered` (dates with the
                            same dictionary date format, or none, where the
                            later comes first in at most 1% of the sampled rows
-                           holding both, their ranges overlap, at most 5% of
-                           the sampled rows have one blank and not the other,
-                           and their blank rates over all of <input> differ
-                           by at most 5 points). Groups don't share columns
-                           and hold
-                           up to 8 each. Columns with a faker content type,
+                           holding both, and their ranges overlap). Groups
+                           don't share columns and hold up to 8 each. Columns with a faker content type,
                            and free-text, constant and all-unique integer
                            columns are never proposed, nor is the target.
                            Scores read up to 100,000 rows (at a fixed stride

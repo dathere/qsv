@@ -34,9 +34,6 @@ const SAMPLE_ROWS: u64 = 100_000;
 const MAX_REVERSED_PCT: usize = 1;
 /// Share of rows a `joint` group's tuples must keep at `--min-count`.
 const MIN_JOINT_SURVIVAL: f64 = 0.8;
-/// An `ordered` chain blanks all its members together, so they may disagree
-/// on which rows are blank in at most this share (percent) of rows.
-const MAX_BLANK_MISMATCH_PCT: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Domain {
@@ -214,35 +211,6 @@ pub(crate) fn discover(
     for (k, &(col, _)) in numeric.iter().enumerate() {
         numeric_pos[col] = Some(k);
     }
-    // An ordered chain blanks every member when its anchor is blank, and
-    // none otherwise, so its members must be blank in the same sampled rows
-    // but for at most MAX_BLANK_MISMATCH_PCT of them. (Equal blank rates in
-    // different rows would pass a rate check.) Whole counts, so exactly that
-    // share passes.
-    let blanks_close = |cols: &[usize]| {
-        // The whole input's blank counts, too: the sample can miss blanks in
-        // the rows it skips.
-        let counts = cols.iter().map(|&c| stats[c].nullcount);
-        let spread = counts.clone().max().unwrap_or(0) - counts.min().unwrap_or(0);
-        if spread.saturating_mul(100)
-            > params
-                .total_rows
-                .saturating_mul(MAX_BLANK_MISMATCH_PCT as u64)
-        {
-            return false;
-        }
-        let cols: Vec<&[Option<f64>]> = cols
-            .iter()
-            .filter_map(|&c| numeric_pos[c].map(|k| values[k].as_slice()))
-            .collect();
-        let mismatched = (0..sampled)
-            .filter(|&r| {
-                let blank = cols[0][r].is_none();
-                cols[1..].iter().any(|c| c[r].is_none() != blank)
-            })
-            .count();
-        mismatched * 100 <= sampled * MAX_BLANK_MISMATCH_PCT
-    };
     // An ordered chain writes every member in its anchor's date format.
     let date_format = |col: usize| {
         params
@@ -290,7 +258,6 @@ pub(crate) fn discover(
                     None
                 };
                 if let Some((lo, hi)) = edge
-                    && blanks_close(&[lo, hi])
                     && date_format(lo) == date_format(hi)
                 {
                     ordered_edges.push((pair.rho, lo, hi));
@@ -310,7 +277,7 @@ pub(crate) fn discover(
             (Some(g), None)
                 if groups[g].kind == "ordered"
                     && groups[g].members.last() == Some(&lo)
-                    && chain_fits(&groups[g].members, hi, &blanks_close) =>
+                    && groups[g].members.len() < MAX_GROUP =>
             {
                 groups[g].members.push(hi);
                 extend(&mut owner, &mut groups[g], g, hi, score);
@@ -318,7 +285,7 @@ pub(crate) fn discover(
             (None, Some(g))
                 if groups[g].kind == "ordered"
                     && groups[g].members.first() == Some(&hi)
-                    && chain_fits(&groups[g].members, lo, &blanks_close) =>
+                    && groups[g].members.len() < MAX_GROUP =>
             {
                 groups[g].members.insert(0, lo);
                 extend(&mut owner, &mut groups[g], g, lo, score);
@@ -430,17 +397,6 @@ fn claim(
 fn extend(owner: &mut [Option<usize>], group: &mut Found, g: usize, col: usize, score: f64) {
     owner[col] = Some(g);
     group.score = group.score.min(score);
-}
-
-/// Whether `col` can join an ordered chain: room left, and blank in nearly
-/// the same rows as the chain, since the chain blanks its members together.
-fn chain_fits(members: &[usize], col: usize, blanks_close: &dyn Fn(&[usize]) -> bool) -> bool {
-    if members.len() >= MAX_GROUP {
-        return false;
-    }
-    let mut all = members.to_vec();
-    all.push(col);
-    blanks_close(&all)
 }
 
 /// Row positions holding a value, in ascending value order.

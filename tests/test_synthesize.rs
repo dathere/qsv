@@ -2316,11 +2316,16 @@ fn synthesize_ordered_follower_cap_holds_against_order_floor() {
         .arg("data.csv");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // end trims to [11, 11]; start is capped by it, so the chain stays in range.
+    // end is blank in 9 of 19 source rows, and keeps its own blanks.
     for r in &got[1..] {
-        assert_eq!(r[1], "11", "end escaped its trimmed range: {r:?}");
+        assert!(
+            r[1] == "11" || r[1].is_empty(),
+            "end escaped its trimmed range: {r:?}"
+        );
         let start: i64 = r[0].parse().unwrap();
         assert!(start <= 11, "start {start} exceeds the follower cap: {r:?}");
     }
+    assert!(got[1..].iter().any(|r| r[1].is_empty()));
 }
 
 /// An ordered pair with zero co-present rows aborts under --strict-relationships
@@ -2385,7 +2390,9 @@ fn synthesize_ordered_mixed_int_float_keeps_order_after_rounding() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-    for r in &got[1..] {
+    // end is blank in 9 of 19 source rows, and keeps its own blanks.
+    assert!(got[1..].iter().any(|r| r[1].is_empty()));
+    for r in got[1..].iter().filter(|r| !r[1].is_empty()) {
         let start: f64 = r[0].parse().unwrap();
         let end: f64 = r[1].parse().unwrap();
         assert!(start <= end, "order broken after rounding: {r:?}");
@@ -5699,14 +5706,14 @@ fn synthesize_discover_proposes_nothing_among_independent_columns() {
 }
 
 #[test]
-fn synthesize_discover_skips_ordered_pairs_with_unlike_blanks_or_apart_ranges() {
+fn synthesize_discover_groups_dates_with_unlike_blanks_but_not_apart_ranges() {
     let wrk = Workdir::new("synthesize_discover_ordered_gates");
     let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let mut csv = String::from("opened,closed,start,renewal,low,high\n");
     for i in 0..300_i64 {
         let opened = base + chrono::Duration::days((i * 7) % 200);
-        // closed is blank in 30% of rows, opened never: as a chain, closed
-        // would take opened's blank rate.
+        // closed is blank in 30% of rows, opened never: the chain keeps
+        // each member's own blanks.
         let closed = if i % 10 < 3 {
             String::new()
         } else {
@@ -5732,7 +5739,10 @@ fn synthesize_discover_skips_ordered_pairs_with_unlike_blanks_or_apart_ranges() 
     wrk.assert_success(&mut cmd);
     assert_eq!(
         relationships_in(&wrk, "found.json"),
-        vec![("correlated".to_string(), svec!["low", "high"])]
+        vec![
+            ("ordered".to_string(), svec!["opened", "closed"]),
+            ("correlated".to_string(), svec!["low", "high"])
+        ]
     );
 }
 
@@ -6151,8 +6161,8 @@ fn synthesize_discover_date_pair_edge_cases() {
     }
     assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
 
-    // Each blank in 20% of rows, but in different ones: the chain would blank
-    // them together, so the pair stays independent.
+    // Each blank in 20% of rows, but in different ones: the chain keeps each
+    // member's blanks, so they don't need to match.
     let mut csv = String::from("a,b\n");
     for i in 0..200 {
         let a = if i % 5 == 0 {
@@ -6167,7 +6177,7 @@ fn synthesize_discover_date_pair_edge_cases() {
         };
         csv.push_str(&format!("{a},{b}\n"));
     }
-    assert!(discover_on(&wrk, &csv, None).is_empty());
+    assert_eq!(discover_on(&wrk, &csv, None), ordered("a", "b"));
 
     // Different dictionary date formats: a chain writes every member in its
     // anchor's format, so the pair stays independent.
@@ -6249,32 +6259,10 @@ fn synthesize_discover_tolerates_a_few_reversed_date_rows() {
 }
 
 #[test]
-fn synthesize_discover_checks_blanks_in_the_rows_the_sample_skips() {
-    let wrk = Workdir::new("synthesize_discover_blanks_skipped");
-    // 150,000 rows are read at a stride of 2. closed is blank in every odd
-    // row, which the sample never sees; the whole input's blank counts do.
-    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
-    let mut csv = String::with_capacity(4_000_000);
-    csv.push_str("opened,closed\n");
-    for i in 0..150_000_i64 {
-        let opened = base + chrono::Duration::days((i * 7) % 200);
-        if i % 2 == 0 {
-            csv.push_str(&format!(
-                "{opened},{}\n",
-                opened + chrono::Duration::days(1 + i % 9)
-            ));
-        } else {
-            csv.push_str(&format!("{opened},\n"));
-        }
-    }
-    assert!(discover_on(&wrk, &csv, None).is_empty());
-}
-
-#[test]
-fn synthesize_discover_checks_blanks_across_a_whole_chain() {
+fn synthesize_discover_chains_dates_blank_in_different_rows() {
     let wrk = Workdir::new("synthesize_discover_chain_blanks");
-    // a <= b <= c, each blank in its own 2% of rows: any two disagree on 4%,
-    // within the limit, but all three on 6%, so only a pair is grouped.
+    // a <= b <= c, each blank in its own 2% of rows: the chain keeps each
+    // member's blanks, so all three are grouped.
     let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let mut csv = String::from("a,b,c\n");
     for i in 0..300_i64 {
@@ -6293,5 +6281,68 @@ fn synthesize_discover_checks_blanks_across_a_whole_chain() {
     let found = discover_on(&wrk, &csv, None);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].0, "ordered");
-    assert_eq!(found[0].1.len(), 2, "{found:?}");
+    assert_eq!(found[0].1, svec!["a", "b", "c"], "{found:?}");
+}
+
+#[test]
+fn synthesize_ordered_keeps_each_members_blanks() {
+    let wrk = Workdir::new("synthesize_ordered_member_blanks");
+    // a <= b <= c. In every 10 rows: one blank in all three, two blank in c
+    // only, one blank in b only, six filled.
+    let base = chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+    let mut rows = vec![svec!["a", "b", "c"]];
+    for i in 0..1000_i64 {
+        let a = base + chrono::Duration::days((i * 7) % 200);
+        let b = a + chrono::Duration::days(1 + i % 5);
+        let c = b + chrono::Duration::days(1 + i % 3);
+        let (a, b, c) = (a.to_string(), b.to_string(), c.to_string());
+        rows.push(match i % 10 {
+            0 => svec!["", "", ""],
+            1 | 2 => vec![a, b, String::new()],
+            3 => vec![a, String::new(), c],
+            _ => vec![a, b, c],
+        });
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "ordered", "members": ["a", "b", "c"]}]}"#,
+    );
+    let run = |extra: &[&str]| {
+        let mut cmd = wrk.command("synthesize");
+        cmd.args(["-n", "10000", "--seed", "3", "--dictionary"])
+            .arg(wrk.path("dict.json"))
+            .args(extra)
+            .arg("data.csv");
+        wrk.stdout::<String>(&mut cmd)
+    };
+    let out = run(&["--save-model", "model.json"]);
+    let mut counts = std::collections::BTreeMap::new();
+    for line in out.lines().skip(1) {
+        let cells: Vec<&str> = line.split(',').collect();
+        let blanks: String = cells
+            .iter()
+            .map(|c| if c.is_empty() { 'x' } else { '.' })
+            .collect();
+        *counts.entry(blanks).or_insert(0_u32) += 1;
+        // Filled members stay in order, around a blank one too.
+        let filled: Vec<&str> = cells.into_iter().filter(|c| !c.is_empty()).collect();
+        assert!(filled.windows(2).all(|w| w[0] <= w[1]), "{line}");
+    }
+    // Only the source's patterns, at about their source shares.
+    assert_eq!(
+        counts.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["...", "..x", ".x.", "xxx"]
+    );
+    for (pattern, share) in [("...", 6000), ("..x", 2000), (".x.", 1000), ("xxx", 1000)] {
+        let n = counts[pattern];
+        assert!(
+            n.abs_diff(share) < 250,
+            "{pattern}: {n} rows, expected about {share}"
+        );
+    }
+    // A run from the saved model writes the same bytes.
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "10000", "--seed", "3", "--model", "model.json"]);
+    assert_eq!(wrk.stdout::<String>(&mut cmd), out);
 }

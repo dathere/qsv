@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{CliError, CliResult, cmd::describegpt::dictionary::is_valid_strftime};
 
-const FORMAT_VERSION: u32 = 4;
+const FORMAT_VERSION: u32 = 5;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct Model {
@@ -242,9 +242,19 @@ fn check_group(group: &GroupGenerator) -> Result<(), String> {
             anchor_buckets,
             gap_buckets,
             member_ranges,
+            null_ratio,
+            blank_patterns,
+            blank_cumulative,
             ..
         } => {
             let n = member_cols.len();
+            // Only a chain blank in every row may have no other patterns.
+            if *null_ratio < 1.0 || !blank_patterns.is_empty() {
+                check_weighted(blank_patterns, blank_cumulative)?;
+            }
+            if blank_patterns.iter().any(|p| p.len() != n) {
+                return bad("an ordered blank pattern of the wrong width");
+            }
             if n == 0
                 || is_int.len() != n
                 || decimals.len() != n

@@ -15,7 +15,10 @@ use super::{
     dictionary::SynthRelationship,
     faker_map,
     generator::{ColumnGenerator, parse_f64, parse_source_epoch},
-    relationships::{EmitUnit, ScheduleParams, pearson, source_cell},
+    relationships::{
+        EmitUnit, ScheduleParams, correlation_ratio_of_ranks, is_stratum_candidate, pearson,
+        ranks_of, source_cell,
+    },
 };
 use crate::{CliResult, config::Config};
 
@@ -162,7 +165,12 @@ pub(crate) fn discover(
     }
     joint.truncate(MAX_CANDIDATES);
     numeric.truncate(MAX_CANDIDATES);
-    if joint.len() < 2 && numeric.len() < 2 {
+    // Nothing to pair: no two columns of one family, and no categorical and
+    // numeric column to pair across them.
+    if joint.len() < 2
+        && numeric.len() < 2
+        && (joint.is_empty() || !numeric.iter().any(|&(_, d)| d == Domain::Numeric))
+    {
         return Ok(Vec::new());
     }
 
@@ -369,7 +377,139 @@ pub(crate) fn discover(
             _ => {},
         }
     }
-    Ok(groups)
+
+    // --- categorical members of correlated groups ----------------------------
+    // A categorical column whose values explain a numeric column's (η) joins
+    // that column's `correlated` group as a stratum. One already in a `joint`
+    // group stays there too: the fit takes the whole `joint` group into the
+    // strata, so each of its tuples keeps its own numeric distributions.
+    let mut mixed_edges: Vec<(f64, usize, usize)> = Vec::new();
+    let candidates: Vec<(usize, usize)> = joint
+        .iter()
+        .enumerate()
+        .filter(|&(_, &cat)| is_stratum_candidate(cat, params))
+        .map(|(a, &cat)| (a, cat))
+        .collect();
+    // Each numeric column is ranked once, over the sampled rows holding a
+    // value, and scored against every categorical candidate (blank is a
+    // category) before the next; with no candidate, nothing is ranked.
+    for (k, &(num, domain)) in numeric.iter().enumerate() {
+        if candidates.is_empty() || domain != Domain::Numeric {
+            continue;
+        }
+        let rows: Vec<usize> = (0..sampled).filter(|&r| values[k][r].is_some()).collect();
+        if (rows.len() as u64) < min_pairs {
+            continue;
+        }
+        let present: Vec<f64> = rows
+            .iter()
+            .map(|&r| values[k][r].unwrap_or_default())
+            .collect();
+        let ranks = ranks_of(&present);
+        for &(a, cat) in &candidates {
+            let groups_of: Vec<u32> = rows.iter().map(|&r| codes[a][r]).collect();
+            let eta = correlation_ratio_of_ranks(&groups_of, codebooks[a].len(), &ranks);
+            if eta >= THRESHOLD {
+                mixed_edges.push((eta, cat, num));
+            }
+        }
+    }
+    sort_edges(&mut mixed_edges);
+    // The correlated group a `joint` group's columns are strata of.
+    let mut attached: Vec<Option<usize>> = vec![None; groups.len()];
+    let mut dead = vec![false; groups.len()];
+    // `joint` groups are settled by now, so each column's stays fixed below.
+    let joint_owner: Vec<Option<usize>> = owner
+        .iter()
+        .map(|o| o.filter(|&g| groups[g].kind == "joint"))
+        .collect();
+    let joint_of = |c: usize| joint_owner[c];
+    for (score, cat, num) in mixed_edges {
+        let group_of_cat = match owner[cat] {
+            Some(g) if groups[g].kind == "correlated" => Some(g),
+            Some(g) if groups[g].kind == "joint" => attached[g],
+            _ => None,
+        };
+        let group_of_num = owner[num];
+        if group_of_num.is_some() && group_of_num == group_of_cat {
+            continue;
+        }
+        // The group's members after this edge, and any group it swallows.
+        let (target, mut members, swallowed) = match (group_of_cat, group_of_num) {
+            (None, None) => (None, vec![cat, num], None),
+            (None, Some(h)) => (
+                Some(h),
+                [groups[h].members.as_slice(), &[cat]].concat(),
+                None,
+            ),
+            (Some(h), None) => (
+                Some(h),
+                [groups[h].members.as_slice(), &[num]].concat(),
+                None,
+            ),
+            (Some(h1), Some(h2)) => (
+                Some(h1),
+                [groups[h1].members.as_slice(), groups[h2].members.as_slice()].concat(),
+                Some(h2),
+            ),
+        };
+        members.sort_unstable();
+        members.dedup();
+        // Strata: the group's categorical members plus every `joint` group
+        // attached to it, or about to be.
+        let mut strata: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&c| numeric_pos[c].is_none())
+            .collect();
+        for g in 0..groups.len() {
+            let joins = attached[g].is_some_and(|h| Some(h) == target || Some(h) == swallowed)
+                || members.iter().any(|&c| joint_of(c) == Some(g));
+            if joins {
+                strata.extend(&groups[g].members);
+            }
+        }
+        strata.sort_unstable();
+        strata.dedup();
+        // The cap counts the group's own members; the `joint` columns its
+        // strata take in are capped by their own group.
+        if members.len() > MAX_GROUP || complete_rows(&members) < min_pairs || !fits(&strata) {
+            continue;
+        }
+        let h = target.unwrap_or_else(|| {
+            groups.push(Found {
+                kind: "correlated",
+                members: Vec::new(),
+                score,
+            });
+            attached.push(None);
+            dead.push(false);
+            groups.len() - 1
+        });
+        if let Some(h2) = swallowed {
+            dead[h2] = true;
+            groups[h].score = groups[h].score.min(groups[h2].score);
+            groups[h2].members.clear();
+            for a in &mut attached {
+                if *a == Some(h2) {
+                    *a = Some(h);
+                }
+            }
+        }
+        for &c in &members {
+            match joint_of(c) {
+                Some(g) if numeric_pos[c].is_none() => attached[g] = Some(h),
+                _ => owner[c] = Some(h),
+            }
+        }
+        groups[h].members = members;
+        groups[h].score = groups[h].score.min(score);
+    }
+    Ok(groups
+        .into_iter()
+        .zip(dead)
+        .filter_map(|(g, dead)| (!dead).then_some(g))
+        .collect())
 }
 
 /// Strongest first, then by column position.

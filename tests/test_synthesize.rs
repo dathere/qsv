@@ -7036,3 +7036,153 @@ fn synthesize_correlated_strata_drop_a_member_with_no_range() {
     let err = wrk.stderr_on_error(&mut strict);
     assert!(err.contains("has no usable numeric range"), "{err}");
 }
+
+#[test]
+fn synthesize_correlated_strata_keep_a_member_correlated_only_pooled() {
+    let wrk = Workdir::new("synthesize_correlated_strata_pooled");
+    // Pooled rho(x, y) is about 0.79, within regions 0.6, and region explains
+    // y by about 0.66: at a 0.7 threshold only the pooled measure keeps y.
+    let mut rows = vec![svec!["region", "x", "y"]];
+    for _ in 0..5 {
+        for (region, xs, ys) in [
+            ("a", [1, 2, 3, 4], [2, 1, 5, 4]),
+            ("b", [5, 6, 7, 8], [6, 3, 8, 7]),
+        ] {
+            for (x, y) in xs.iter().zip(ys) {
+                rows.push(vec![region.to_string(), x.to_string(), y.to_string()]);
+            }
+        }
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "correlated", "members": ["region", "x", "y"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "20",
+        "--seed",
+        "1",
+        "--min-count",
+        "1",
+        "--correlation-threshold",
+        "0.7",
+        "--strict-relationships",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn synthesize_correlated_strata_fit_each_pair_on_its_own_rows() {
+    let wrk = Workdir::new("synthesize_correlated_strata_pairwise");
+    // x = y + the region's offset where both are filled; z is filled only
+    // where they are blank. Fitted on rows filling all three, x and y would
+    // share no rows and y (which region doesn't explain) would be dropped.
+    let mut rows = vec![svec!["region", "x", "y", "z"]];
+    for (r, region) in ["a", "b", "c", "d"].iter().enumerate() {
+        let r = i64::try_from(r).unwrap();
+        for i in 0..60_i64 {
+            let y = (i * 37) % 100;
+            rows.push(if i < 50 {
+                vec![
+                    (*region).to_string(),
+                    (y + 1000 * r).to_string(),
+                    y.to_string(),
+                    String::new(),
+                ]
+            } else {
+                vec![
+                    (*region).to_string(),
+                    String::new(),
+                    String::new(),
+                    (5000 + 100 * r + i % 10).to_string(),
+                ]
+            });
+        }
+    }
+    wrk.create("data.csv", rows);
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "correlated", "members": ["region", "x", "y", "z"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "2000",
+        "--seed",
+        "3",
+        "--strict-relationships",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let offset = |region: &str| 1000.0 * f64::from(region.as_bytes()[0] - b'a');
+    let gaps: Vec<f64> = got[1..]
+        .iter()
+        .filter(|r| !r[1].is_empty() && !r[2].is_empty())
+        .map(|r| {
+            let (x, y): (f64, f64) = (r[1].parse().unwrap(), r[2].parse().unwrap());
+            (x - offset(&r[0]) - y).abs()
+        })
+        .collect();
+    assert!(
+        median(gaps.clone()) < 5.0,
+        "median |x - offset - y| {}",
+        median(gaps)
+    );
+}
+
+#[test]
+fn synthesize_correlated_strata_with_a_taken_column_are_dropped_whole() {
+    let wrk = Workdir::new("synthesize_correlated_strata_taken");
+    let mut rows = vec![svec!["region", "x", "y", "w", "v"]];
+    for i in 0..120_i64 {
+        let (region, base) = if i % 2 == 0 { ("a", 0) } else { ("b", 1000) };
+        let w = (i * 7) % 100;
+        rows.push(vec![
+            region.to_string(),
+            (base + i % 50).to_string(),
+            (w + 2).to_string(),
+            w.to_string(),
+            (w + 1).to_string(),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+    // The second relationship's region is taken by the first, so it is
+    // dropped whole and the third keeps w, as any later relationship would.
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"fields": [], "relationships": [{"kind": "correlated", "members": ["region", "x"]}, {"kind": "correlated", "members": ["region", "y", "w"]}, {"kind": "correlated", "members": ["w", "v"]}]}"#,
+    );
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "10",
+        "--seed",
+        "1",
+        "--save-model",
+        "model.json",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+    let model: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(wrk.path("model.json")).unwrap()).unwrap();
+    let groups: Vec<serde_json::Value> = model["schedule"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|u| u["Group"]["Correlated"]["col_indices"].as_array().cloned())
+        .map(serde_json::Value::Array)
+        .collect();
+    assert_eq!(
+        groups,
+        [serde_json::json!([1, 0]), serde_json::json!([3, 4])]
+    );
+}

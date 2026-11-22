@@ -314,9 +314,11 @@ fn plan_stratified(
     (plans, absorbed)
 }
 
-/// Resolve a planned stratified group. When it can't be built, its numeric
-/// members fall back to a plain `correlated` group (with at least two) and the
-/// `joint` relationships it took in resolve on their own.
+/// Resolve a planned stratified group. When its fit fails, its numeric members
+/// fall back to a plain `correlated` group (with at least two). When it can't
+/// be formed at all (a column another group owns), it is dropped whole, as any
+/// relationship is. Either way the `joint` relationships it took in then
+/// resolve on their own.
 fn resolve_planned(
     plan: &StratifiedPlan,
     name_to_idx: &HashMap<&str, usize>,
@@ -327,21 +329,16 @@ fn resolve_planned(
     let names =
         |cols: &[usize]| -> Vec<String> { cols.iter().map(|&c| stats[c].field.clone()).collect() };
     let all: Vec<usize> = plan.numeric.iter().chain(&plan.strata).copied().collect();
-    if members_usable("correlated", &names(&all), &all, claimed, params)
+    let usable = members_usable("correlated", &names(&all), &all, claimed, params);
+    if usable
         && let Some(group) = resolve_stratified(&plan.numeric, &plan.strata, &plan.core, params)?
     {
         return Ok(vec![group]);
     }
     let mut taken = claimed.clone();
     let mut out = Vec::new();
-    if plan.numeric.len() >= 2
-        && members_usable(
-            "correlated",
-            &names(&plan.numeric),
-            &plan.numeric,
-            &taken,
-            params,
-        )
+    if usable
+        && plan.numeric.len() >= 2
         && let Some(group) = resolve_correlated(&plan.numeric, params)?
     {
         taken.extend(group.col_indices());
@@ -1350,55 +1347,77 @@ fn resolve_stratified(
             by_stratum[*s as usize].push(r);
         }
     }
-    // Spearman within strata: ranks taken in each stratum, over its rows that
-    // fill every one of `members`. Pooled across strata, a pair that moves
-    // together inside each region can look unrelated.
-    let within_corr = |members: &[usize]| -> Vec<Vec<f64>> {
-        let mut within: Vec<Vec<f64>> = vec![Vec::new(); members.len()];
+    // Spearman for each pair of members, over the rows filling both (so a
+    // sparse member can't hide another pair's rows): within strata, with
+    // ranks taken in each stratum, since a pair that moves together inside
+    // each region can look unrelated pooled; and pooled, over the kept
+    // strata's rows.
+    let pair_within = |a: usize, b: usize| -> f64 {
+        let (mut ra, mut rb) = (Vec::new(), Vec::new());
         for rows in &by_stratum {
-            let full: Vec<usize> = rows
+            let both: Vec<usize> = rows
                 .iter()
                 .copied()
-                .filter(|&r| members.iter().all(|&j| row_values[j][r].is_some()))
+                .filter(|&r| row_values[a][r].is_some() && row_values[b][r].is_some())
                 .collect();
-            if full.len() < 2 {
+            if both.len() < 2 {
                 continue;
             }
             #[allow(clippy::cast_precision_loss)]
-            let n = full.len() as f64 + 1.0;
-            for (col, &j) in within.iter_mut().zip(members) {
-                let values: Vec<f64> = full
+            let n = both.len() as f64 + 1.0;
+            for (out, j) in [(&mut ra, a), (&mut rb, b)] {
+                let values: Vec<f64> = both
                     .iter()
                     .map(|&r| row_values[j][r].unwrap_or_default())
                     .collect();
-                col.extend(fractional_ranks(&values).iter().map(|rank| rank / n - 0.5));
+                out.extend(fractional_ranks(&values).iter().map(|rank| rank / n - 0.5));
             }
         }
-        if within.first().is_some_and(|c| c.len() >= 2) {
-            (0..members.len())
-                .map(|a| {
-                    (0..members.len())
-                        .map(|b| {
-                            if a == b {
-                                1.0
-                            } else {
-                                pearson(&within[a], &within[b])
-                            }
-                        })
-                        .collect()
-                })
-                .collect()
+        if ra.len() >= 2 {
+            pearson(&ra, &rb)
         } else {
-            identity_matrix(members.len())
+            0.0
         }
     };
-    let usable_corr = within_corr(&usable);
-    let keep: Vec<usize> = (0..usable.len())
+    let pair_pooled = |a: usize, b: usize| -> f64 {
+        let (va, vb): (Vec<f64>, Vec<f64>) = (0..row_strata.len())
+            .filter(|&r| row_strata[r].is_some())
+            .filter_map(|r| Some((row_values[a][r]?, row_values[b][r]?)))
+            .unzip();
+        if va.len() >= 2 {
+            pearson(&fractional_ranks(&va), &fractional_ranks(&vb))
+        } else {
+            0.0
+        }
+    };
+    let within_corr = |members: &[usize]| -> Vec<Vec<f64>> {
+        (0..members.len())
+            .map(|a| {
+                (0..members.len())
+                    .map(|b| {
+                        if a == b {
+                            1.0
+                        } else {
+                            pair_within(members[a], members[b])
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    // A member stays when the strata explain it, or it correlates with another
+    // member within strata or pooled.
+    let keep: Vec<usize> = usable
+        .iter()
+        .copied()
         .filter(|&a| {
-            eta[usable[a]] >= threshold
-                || (0..usable.len()).any(|b| b != a && usable_corr[a][b].abs() >= threshold)
+            eta[a] >= threshold
+                || usable.iter().any(|&b| {
+                    b != a
+                        && (pair_within(a, b).abs() >= threshold
+                            || pair_pooled(a, b).abs() >= threshold)
+                })
         })
-        .map(|a| usable[a])
         .collect();
     if keep.len() < usable.len() {
         let dropped: Vec<&str> = usable
@@ -1466,6 +1485,31 @@ fn resolve_stratified(
             )
         })
         .collect();
+    // Each categorical value's rare rows, fitted once and shared by every kept
+    // combination holding that value.
+    let rest_profiles: BTreeMap<&Vec<String>, StratumRest> = rare_rows
+        .iter()
+        .map(|(key, rare)| {
+            let coarser = core_buckets.get(key);
+            #[allow(clippy::cast_precision_loss)]
+            let share = rare.len() as f64 / core_rows[key].len() as f64;
+            let profile = StratumRest {
+                share,
+                marginals: keep
+                    .iter()
+                    .enumerate()
+                    .map(|(pos, &j)| {
+                        buckets_of(rare, j)
+                            .or_else(|| coarser.and_then(|b| b[pos].clone()))
+                            .or_else(|| column_buckets[j].clone())
+                            .unwrap_or_default()
+                    })
+                    .collect(),
+                null_ratios: keep.iter().map(|&j| blank_share(rare, j)).collect(),
+            };
+            (key, profile)
+        })
+        .collect();
     let mut weights: Vec<f64> = Vec::with_capacity(kept.len());
     let mut strata = Vec::with_capacity(kept.len());
     for ((values, id), rows) in kept.into_iter().zip(&by_stratum) {
@@ -1485,22 +1529,16 @@ fn resolve_stratified(
         let null_ratios = keep.iter().map(|&j| blank_share(rows, j)).collect();
         #[allow(clippy::cast_precision_loss)]
         let count = counts[id as usize] as f64;
-        let rest = match (rare_rows.get(&key), core_rows.get(&key)) {
-            (Some(rare), Some(all)) => {
-                #[allow(clippy::cast_precision_loss)]
-                let share = rare.len() as f64 / all.len() as f64;
-                weights.push(count / (1.0 - share));
+        let rest = match rest_profiles.get(&key) {
+            Some(profile) => {
+                weights.push(count / (1.0 - profile.share));
                 Some(StratumRest {
-                    share,
-                    marginals: keep
-                        .iter()
-                        .enumerate()
-                        .map(|(pos, &j)| pick(rare, pos, j))
-                        .collect(),
-                    null_ratios: keep.iter().map(|&j| blank_share(rare, j)).collect(),
+                    share:       profile.share,
+                    marginals:   profile.marginals.clone(),
+                    null_ratios: profile.null_ratios.clone(),
                 })
             },
-            _ => {
+            None => {
                 weights.push(count);
                 None
             },

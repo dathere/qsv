@@ -384,36 +384,31 @@ pub(crate) fn discover(
     // group stays there too: the fit takes the whole `joint` group into the
     // strata, so each of its tuples keeps its own numeric distributions.
     let mut mixed_edges: Vec<(f64, usize, usize)> = Vec::new();
-    // Each numeric column is ranked once, over the sampled rows holding a
-    // value; every categorical candidate (blank is a category) is scored
-    // against those same rows.
-    let ranked: Vec<Option<(Vec<usize>, Vec<f64>)>> = numeric
+    let candidates: Vec<(usize, usize)> = joint
         .iter()
         .enumerate()
-        .map(|(k, &(_, domain))| {
-            (domain == Domain::Numeric).then(|| {
-                let rows: Vec<usize> = (0..sampled).filter(|&r| values[k][r].is_some()).collect();
-                let present: Vec<f64> = rows
-                    .iter()
-                    .map(|&r| values[k][r].unwrap_or_default())
-                    .collect();
-                (rows, ranks_of(&present))
-            })
-        })
+        .filter(|&(_, &cat)| is_stratum_candidate(cat, params))
+        .map(|(a, &cat)| (a, cat))
         .collect();
-    for (a, &cat) in joint.iter().enumerate() {
-        if !is_stratum_candidate(cat, params) {
+    // Each numeric column is ranked once, over the sampled rows holding a
+    // value, and scored against every categorical candidate (blank is a
+    // category) before the next; with no candidate, nothing is ranked.
+    for (k, &(num, domain)) in numeric.iter().enumerate() {
+        if candidates.is_empty() || domain != Domain::Numeric {
             continue;
         }
-        for (k, &(num, _)) in numeric.iter().enumerate() {
-            let Some((rows, ranks)) = &ranked[k] else {
-                continue;
-            };
-            if (rows.len() as u64) < min_pairs {
-                continue;
-            }
+        let rows: Vec<usize> = (0..sampled).filter(|&r| values[k][r].is_some()).collect();
+        if (rows.len() as u64) < min_pairs {
+            continue;
+        }
+        let present: Vec<f64> = rows
+            .iter()
+            .map(|&r| values[k][r].unwrap_or_default())
+            .collect();
+        let ranks = ranks_of(&present);
+        for &(a, cat) in &candidates {
             let groups_of: Vec<u32> = rows.iter().map(|&r| codes[a][r]).collect();
-            let eta = correlation_ratio_of_ranks(&groups_of, codebooks[a].len(), ranks);
+            let eta = correlation_ratio_of_ranks(&groups_of, codebooks[a].len(), &ranks);
             if eta >= THRESHOLD {
                 mixed_edges.push((eta, cat, num));
             }

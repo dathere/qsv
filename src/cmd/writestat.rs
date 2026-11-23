@@ -36,8 +36,9 @@ value labels & missing values in SAS transport & SPSS portable files, missing
 values & file labels in Stata files, labels too long for SAS transport files,
 column names Stata would have to change, and so on. So are data it would lose,
 such as numbers beyond ±7.2e75 or, other than 0, closer to 0 than ±5.4e-79 in a
-SAS transport file, which it writes as missing. With --lossy, the file is
-written anyway, and a warning names everything left out. Display settings
+SAS transport file, which it writes as missing (or, below ±2.2e-308, as 0).
+With --lossy, the file is written anyway, and a warning names everything left
+out. Display settings
 (measure, alignment, width & format) are written where the format has them and
 left out where it doesn't.
 

@@ -810,3 +810,14 @@ test('setWorkingDirectory still rejects sensitive home dirs', async () => {
     assert.throws(() => provider.setWorkingDirectory('~/.ssh'), /"\.ssh" is a protected directory/);
   });
 });
+
+test('resolvePath rejects a missing protected dir under a symlinked parent', { skip: process.platform === 'win32' }, async () => {
+  await withFakeHome(async (home) => {
+    // dotfile-manager layout: ~/.config is a symlink, autostart doesn't exist yet
+    const dotfiles = join(home, 'dotfiles-config');
+    await mkdir(dotfiles);
+    await symlink(dotfiles, join(home, '.config'));
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    await assert.rejects(provider.resolvePath('~/.config/autostart'), /"\.config\/autostart", which is protected/);
+  });
+});

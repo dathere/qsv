@@ -4,7 +4,7 @@
 
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   SENSITIVE_HOME_DIRS,
   SENSITIVE_HOME_FILES,
@@ -285,11 +285,22 @@ export function findSensitiveHomeEntry(target: string): string | undefined {
   const sep = process.platform === "win32" ? "\\" : "/";
   const blockedForms = (entry: string): Set<string> => {
     const logical = resolve(canonHome, entry);
+    // A missing entry still has a canonical form via its nearest existing
+    // ancestor: with ~/.config -> /dotfiles/config and no ~/.config/autostart
+    // yet, a write lands in /dotfiles/config/autostart.
+    let ancestor = logical;
+    const missing: string[] = [];
     let canonical = logical;
-    try {
-      canonical = realpathSync.native(logical);
-    } catch {
-      // Doesn't exist on this host — only the logical form is meaningful.
+    for (;;) {
+      try {
+        canonical = join(realpathSync.native(ancestor), ...missing);
+        break;
+      } catch {
+        const parent = dirname(ancestor);
+        if (parent === ancestor) break;
+        missing.unshift(basename(ancestor));
+        ancestor = parent;
+      }
     }
     return new Set([normalizeForCaseFs(logical), normalizeForCaseFs(canonical)]);
   };

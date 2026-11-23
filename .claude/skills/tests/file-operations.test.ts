@@ -846,3 +846,25 @@ test("a created output dir under a missing sensitive home dir is refused", async
     assert.strictEqual(ok.outdir, join(home, "data", "new", "parts"));
   });
 });
+
+test("a refused output dir whose name says 'does not exist' is not treated as missing", { skip: process.platform === "win32" }, async () => {
+  await withFakeHome(async (home) => {
+    await symlink(join(home, ".ssh"), join(home, "data", "Path does not exist"));
+    const provider = new FilesystemResourceProvider({ workingDirectory: join(home, "data"), allowedDirectories: [home] });
+    const split = {
+      name: "qsv-split",
+      version: "29.0.0",
+      description: "split",
+      category: "test",
+      command: {
+        subcommand: "split",
+        args: [{ name: "outdir", type: "string", required: true, description: "dir" }],
+        options: [],
+      },
+    } as QsvSkill;
+    await assert.rejects(
+      resolveFilePathParams({ outdir: "Path does not exist" }, split, provider),
+      /"\.ssh", which is protected/,
+    );
+  });
+});

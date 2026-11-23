@@ -2789,15 +2789,15 @@ dependencies = [
 
 [[package]]
 name = "flexi_logger"
-version = "0.31.10"
+version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4945fa9cdfd7571192cf559c186d45ab36c8034482a2d217a19bdc566f190cc"
+checksum = "5e87b74024da93123949cca26cb6e366744234fdd4d7914eb3dfeab0baa82d51"
 dependencies = [
- "chrono",
  "core_affinity",
  "crossbeam-channel",
  "crossbeam-queue",
  "flate2",
+ "jiff 1.0.2",
  "log",
  "thiserror 2.0.21",
 ]
@@ -9093,7 +9093,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

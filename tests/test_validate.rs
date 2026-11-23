@@ -4350,7 +4350,10 @@ fn validate_unknown_format_warns() {
         got.contains("Unknown format \"emial\" is not checked"),
         "unexpected stderr: {got}"
     );
-    assert!(!got.contains("\"email\""), "known format warned: {got}");
+    assert!(
+        !got.contains("Unknown format \"email\""),
+        "known format warned: {got}"
+    );
     assert!(
         got.contains("All 1 records valid."),
         "unexpected stderr: {got}"
@@ -4368,6 +4371,64 @@ fn validate_unknown_format_warns() {
         .arg("schema.json");
     let got: String = wrk.stderr_on_success(&mut cmd);
     assert!(!got.contains("Unknown format"), "unexpected stderr: {got}");
+}
+
+#[test]
+fn validate_unknown_format_did_you_mean() {
+    // A typo'd format gets the closest known name as a hint, in both row validation's warning
+    // and `validate schema`'s error. `curency` must find qsv's own `currency`, which is only
+    // registered when a schema names it exactly; a name close to nothing gets no hint.
+    let wrk = Workdir::new("validate_unknown_format_did_you_mean").flexible(true);
+    wrk.create("data.csv", vec![svec!["a"], svec!["x"]]);
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "a": { "type": "string", "format": "emial" },
+                "b": { "type": "string", "format": "curency" },
+                "c": { "type": "string", "format": "DATE-TIME" },
+                "d": { "type": "string", "format": "zzqqxx" }
+            }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("schema.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    for (typo, known) in [
+        ("emial", "email"),
+        ("curency", "currency"),
+        ("DATE-TIME", "date-time"),
+    ] {
+        assert!(
+            got.contains(&format!(
+                "Unknown format \"{typo}\" is not checked (did you mean \"{known}\"?)."
+            )),
+            "no hint for {typo}: {got}"
+        );
+    }
+    assert!(
+        got.contains("Unknown format \"zzqqxx\" is not checked. Run"),
+        "unexpected hint for zzqqxx: {got}"
+    );
+
+    // `validate schema` stops at the first unknown format it builds, with the same hint
+    wrk.create_from_string(
+        "one.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": { "a": { "type": "string", "format": "emial" } }
+        }"#,
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("schema").arg("one.json");
+    let got: String = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        got.contains("Unknown format: 'emial'") && got.contains(". Did you mean \"email\"?"),
+        "unexpected stderr: {got}"
+    );
 }
 
 #[test]

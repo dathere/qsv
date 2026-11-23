@@ -1825,14 +1825,95 @@ fn warn_unknown_formats<F: Json>(
 ) {
     let mut names = BTreeSet::new();
     collect_format_names(schema, &mut names);
+    let draft = validator.draft();
+    let mut known: Option<Vec<&str>> = None;
     for name in names {
-        if !options.is_known_format(validator.draft(), name) {
+        if !options.is_known_format(draft, name) {
+            let known = known.get_or_insert_with(|| known_format_candidates(options, draft));
+            let hint = format_suggestion(name, known)
+                .map(|s| format!(" (did you mean \"{s}\"?)"))
+                .unwrap_or_default();
             wwarn!(
-                "Unknown format \"{name}\" is not checked. Run `qsv validate schema` to check the \
-                 JSON Schema, or use --no-format-validation to ignore formats."
+                "Unknown format \"{name}\" is not checked{hint}. Run `qsv validate schema` to \
+                 check the JSON Schema, or use --no-format-validation to ignore formats."
             );
         }
     }
+}
+
+/// The format names a "did you mean" hint may suggest: those `options` checks under `draft`,
+/// plus qsv's own `currency`, which is registered only when a schema names it exactly — so a
+/// misspelled `curency` would otherwise have nothing to match.
+fn known_format_candidates<'o, F: Json>(
+    options: &'o ValidationOptions<'_, Arc<dyn Retrieve>, F>,
+    draft: jsonschema::Draft,
+) -> Vec<&'o str> {
+    let mut known = options.known_formats(draft);
+    if !known.contains(&"currency") {
+        known.push("currency");
+    }
+    known
+}
+
+/// The known format closest to the unknown `name`, if one is close enough to be a likely typo:
+/// within a third of `name`'s length (at least one edit), compared case-insensitively. Ties go to
+/// the first in `known`'s order.
+fn format_suggestion<'k>(name: &str, known: &[&'k str]) -> Option<&'k str> {
+    let name_lc = name.to_lowercase();
+    let max_distance = (name_lc.chars().count() / 3).max(1);
+    known
+        .iter()
+        .map(|&k| (k, osa_distance(&name_lc, &k.to_lowercase())))
+        .filter(|&(_, d)| d <= max_distance)
+        .min_by_key(|&(_, d)| d)
+        .map(|(k, _)| k)
+}
+
+/// A " Did you mean ...?" suffix for a build error `e` that reports an unknown `format`, else
+/// empty. jsonschema reports it as a compile error at a `.../format` schema path whose instance
+/// is the format name; it has no dedicated error kind to match on.
+fn unknown_format_hint<F: Json>(
+    e: &ValidationError,
+    options: &ValidationOptions<'_, Arc<dyn Retrieve>, F>,
+    schema: &Value,
+) -> String {
+    let Some(name) = e.instance().as_str() else {
+        return String::new();
+    };
+    let draft = jsonschema::Draft::default().detect(schema);
+    if !e.schema_path().as_str().ends_with("/format") || options.is_known_format(draft, name) {
+        return String::new();
+    }
+    format_suggestion(name, &known_format_candidates(options, draft))
+        .map(|s| format!(". Did you mean \"{s}\"?"))
+        .unwrap_or_default()
+}
+
+/// Optimal string alignment distance: Levenshtein plus adjacent transpositions as one edit, so
+/// `emial` is one edit from `email`.
+fn osa_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut d = vec![vec![0_usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            let mut best = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                best = best.min(d[i - 2][j - 2] + 1);
+            }
+            d[i][j] = best;
+        }
+    }
+    d[a.len()][b.len()]
 }
 
 fn collect_format_names<'a>(v: &'a Value, names: &mut BTreeSet<&'a str>) {
@@ -1927,12 +2008,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // here also builds there (and qsv's own `currency` format is known).
             let (has_currency_format, has_email_format, ..) =
                 detect_custom_schema_features(&schema_json);
-            let test_validator =
+            let options =
                 validator_options::<SerdeJson>(&args, has_currency_format, has_email_format)
-                    .should_ignore_unknown_formats(args.flag_no_format_validation)
-                    .build(&schema_json);
-            if let Err(e) = test_validator {
-                return fail_clierror!("JSON Schema Format Validation Error: {e}");
+                    .should_ignore_unknown_formats(args.flag_no_format_validation);
+            if let Err(e) = options.build(&schema_json) {
+                return fail_clierror!(
+                    "JSON Schema Format Validation Error: {e}{}",
+                    unknown_format_hint(&e, &options, &schema_json)
+                );
             }
             if !args.flag_quiet {
                 winfo!("Valid JSON Schema.");

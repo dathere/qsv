@@ -374,6 +374,105 @@ fn validate_split_ragged_schema() {
     );
 }
 
+// Read with `"`, `'x,1'` is two fields, so a good row is quarantined as ragged (#4610).
+#[test]
+fn validate_quote_split_ragged() {
+    let wrk = Workdir::new("validate_quote_split_ragged").flexible(true);
+    wrk.create_from_string("data.csv", "a,b,c\n'x,1',2,3\n'y',5\n7,8,9\n");
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--quote", "'", "--split-ragged", "data.csv"]);
+    wrk.assert_err(&mut cmd);
+
+    // the split files are written with standard quoting
+    assert_eq!(
+        wrk.read_to_string("data.csv.valid").unwrap(),
+        "a,b,c\n\"x,1\",2,3\n7,8,9\n"
+    );
+    assert_eq!(
+        wrk.read_to_string("data.csv.invalid").unwrap(),
+        "a,b,c\ny,5\n"
+    );
+    assert_eq!(
+        wrk.read_to_string("data.csv.validation-errors.tsv")
+            .unwrap(),
+        "row_number\tfield\terror\n2\t<RECORD>\tfound 2 fields, but expected 3\n"
+    );
+}
+
+// `"p,1` / `q",2` is two records read with `"`, but one record read with `'`: an index made
+// for the default reading must not be used to count or split the other.
+#[test]
+fn validate_quote_schema_ignores_a_default_quoting_index() {
+    let wrk = Workdir::new("validate_quote_schema_ignores_a_default_quoting_index");
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "a": { "type": "string" },
+                "b": { "type": "integer" }
+            }
+        }"#,
+    );
+    wrk.create_from_string("data.csv", "a,b\n'p,1\nq',2\n'r',x\n's',4\n");
+    let mut index = wrk.command("index");
+    index.arg("data.csv");
+    wrk.assert_success(&mut index);
+    assert!(wrk.path("data.csv.idx").exists());
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--quote", "'", "data.csv", "schema.json"]);
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(
+        wrk.read_to_string("data.csv.valid").unwrap(),
+        "a,b\n\"p,1\nq\",2\ns,4\n"
+    );
+    assert_eq!(
+        wrk.read_to_string("data.csv.invalid").unwrap(),
+        "a,b\nr,x\n"
+    );
+}
+
+#[test]
+fn validate_escape() {
+    let wrk = Workdir::new("validate_escape");
+    wrk.create_from_string("data.csv", "a,b\n\"say \\\"hi\\\", ok\",2\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--escape", "\\", "data.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got,
+        r#"Valid: 2 Columns: ("a", "b"); Records: 1; Delimiter: ,"#
+    );
+
+    // without it, the escaped quote ends the field early
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn validate_no_quoting() {
+    let wrk = Workdir::new("validate_no_quoting");
+    // a stray quote: read with quoting, it swallows the rest of the file into one field
+    wrk.create_from_string("data.csv", "a,b\n\"x,1\n7,8\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--no-quoting", "data.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(
+        got,
+        r#"Valid: 2 Columns: ("a", "b"); Records: 2; Delimiter: ,"#
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv");
+    wrk.assert_err(&mut cmd);
+}
+
 /// (ruleId, startLine, message) of each result in a `--sarif` log
 fn sarif_results(wrk: &Workdir, path: &str) -> Vec<(String, u64, String)> {
     let log: serde_json::Value = serde_json::from_str(&wrk.read_to_string(path).unwrap()).unwrap();

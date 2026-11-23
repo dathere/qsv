@@ -9837,6 +9837,139 @@ fn stats_strict_does_not_reuse_a_flexible_everything_cache() {
     assert_ragged_diagnostic(&wrk, &mut strict_everything);
 }
 
+// ---------------------------------------------------------------------------
+// --quote / --escape / --no-quoting (issue #4610)
+// ---------------------------------------------------------------------------
+
+/// `stats` output (header row first) -> the named statistics of `field`
+fn stat_values(got: &[Vec<String>], field: &str, stats: &[&str]) -> Vec<String> {
+    let header = &got[0];
+    let row = got
+        .iter()
+        .find(|r| r[0] == field)
+        .unwrap_or_else(|| panic!("no stats row for {field}: {got:?}"));
+    stats
+        .iter()
+        .map(|s| {
+            let i = header
+                .iter()
+                .position(|h| h == s)
+                .unwrap_or_else(|| panic!("no {s} column"));
+            row[i].clone()
+        })
+        .collect()
+}
+
+/// Quoted with `'`: read with `"`, the first record has 4 fields, so it is ragged.
+fn single_quoted_workdir(name: &str) -> Workdir {
+    let wrk = Workdir::new(name);
+    wrk.create_from_string("data.csv", "a,b,c\n'x,1',2,3\n'multi\nline',5,6\n7,8,9\n");
+    wrk
+}
+
+#[test]
+fn stats_quote() {
+    let wrk = single_quoted_workdir("stats_quote");
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--force", "--quote", "'", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        stat_values(&got, "a", &["type", "min", "max"]),
+        svec!["String", "7", "x,1"]
+    );
+    assert_eq!(
+        stat_values(&got, "b", &["type", "min", "max"]),
+        svec!["Integer", "2", "8"]
+    );
+}
+
+// `"p,1` / `q",2` is two records read with `"`, but one 2-field record read with `'`. An
+// index made for the default reading must not be used to seek, or count, the other.
+#[test]
+fn stats_quote_ignores_a_default_quoting_index() {
+    let wrk = Workdir::new("stats_quote_ignores_a_default_quoting_index");
+    wrk.create_from_string("data.csv", "a,b\n'p,1\nq',2\nr,3\n");
+    let mut index = wrk.command("index");
+    index.arg("data.csv");
+    wrk.assert_success(&mut index);
+    assert!(wrk.path("data.csv.idx").exists());
+
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--force", "--quote", "'", "-j", "2", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        stat_values(&got, "a", &["min", "max"]),
+        svec!["p,1\nq", "r"]
+    );
+    // seeking by the index's offsets reads `r,3` twice: min & max are unchanged, the sum isn't
+    assert_eq!(
+        stat_values(&got, "b", &["sum", "min", "max"]),
+        svec!["5", "2", "3"]
+    );
+}
+
+#[test]
+fn stats_escape_and_no_quoting() {
+    let wrk = Workdir::new("stats_escape_and_no_quoting");
+    wrk.create_from_string("esc.csv", "a,b\n\"say \\\"hi\\\", ok\",2\n");
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--force", "--escape", "\\", "esc.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stat_values(&got, "a", &["min"]), svec!["say \"hi\", ok"]);
+
+    // a stray quote: read with quoting, it swallows the rest of the file into one field
+    wrk.create_from_string("stray.csv", "a,b\n\"x,1\n7,8\n");
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--force", "--no-quoting", "stray.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stat_values(&got, "a", &["min", "max"]), svec!["\"x", "7"]);
+    assert_eq!(stat_values(&got, "b", &["min", "max"]), svec!["1", "8"]);
+}
+
+// The quoting decides where fields and records end, so a cache computed under one quoting
+// must not answer a run under another - here, a default run on a file that is ragged when
+// read with `"` must still refuse it.
+#[test]
+fn stats_default_quoting_does_not_reuse_a_quote_cache() {
+    let wrk = single_quoted_workdir("stats_default_quoting_does_not_reuse_a_quote_cache");
+    let mut quoted = wrk.command("stats");
+    quoted.args(["--quote", "'", "--cache-threshold", "1", "data.csv"]);
+    wrk.assert_success(&mut quoted);
+    assert!(wrk.path("data.stats.csv").exists());
+
+    let mut default = wrk.command("stats");
+    default.args(["--cache-threshold", "1", "data.csv"]);
+    wrk.assert_err(&mut default);
+}
+
+// the --everything branch of the cache check lists its own flags (see above)
+#[test]
+fn stats_default_quoting_does_not_reuse_a_quote_everything_cache() {
+    let wrk =
+        single_quoted_workdir("stats_default_quoting_does_not_reuse_a_quote_everything_cache");
+    let mut quoted = wrk.command("stats");
+    quoted.args([
+        "--everything",
+        "--quote",
+        "'",
+        "--cache-threshold",
+        "1",
+        "data.csv",
+    ]);
+    wrk.assert_success(&mut quoted);
+    assert!(wrk.path("data.stats.csv").exists());
+
+    let mut default = wrk.command("stats");
+    default.args(["--cache-threshold", "1", "data.csv"]);
+    wrk.assert_err(&mut default);
+
+    // ... and the quoted run itself still reuses it
+    let mut again = wrk.command("stats");
+    again.args(["--quote", "'", "--cache-threshold", "1", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut again);
+    assert_eq!(stat_values(&got, "a", &["max"]), svec!["x,1"]);
+}
+
 // --flexible semantics for SHORT records, pinning what the USAGE text promises.
 #[test]
 fn stats_flexible_short_record_contributes_nothing() {

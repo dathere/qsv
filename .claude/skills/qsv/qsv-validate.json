@@ -86,6 +86,11 @@
         "description": "Require the email to have a valid Top-Level Domain (TLD) (e.g. .com, .org, .net, etc.). e.g. \"john.doe@example\" is VALID if this option is NOT set."
       },
       {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character for reading CSV data, for data that escapes quotes as \\\" instead of \"\". When not set, quotes are escaped by doubling them."
+      },
+      {
         "flag": "--fail-fast",
         "type": "flag",
         "description": "Stops on first error."
@@ -117,6 +122,11 @@
         "description": "When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers."
       },
       {
+        "flag": "--no-quoting",
+        "type": "flag",
+        "description": "Read quote characters as ordinary data."
+      },
+      {
         "flag": "--offline",
         "type": "flag",
         "description": "Do not resolve \"$ref\"s to schemas outside the JSON Schema file, whether they are URLs or local files; a schema that has them fails to compile. Use this with JSON Schemas you do not trust. The JSON Schema file itself and dynamicEnum lookups are still loaded as usual."
@@ -125,6 +135,12 @@
         "flag": "--pretty-json",
         "type": "flag",
         "description": "Same as --json, but pretty printed."
+      },
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character for reading CSV data. When this, --escape or --no-quoting is set to other than its default, an index is not used. Whatever the quoting read, the valid and invalid split files are written quoted with \", escaped by doubling it.",
+        "default": "\""
       },
       {
         "flag": "--sarif",

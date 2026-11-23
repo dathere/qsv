@@ -49,6 +49,11 @@
         "description": "The field delimiter for READING CSV data. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--escape",
+        "type": "string",
+        "description": "The escape character for READING CSV data, for data that escapes quotes as \\\" instead of \"\". When not set, quotes are escaped by doubling them."
+      },
+      {
         "flag": "--everything",
         "type": "flag",
         "description": "Compute all statistics available. On large files, mode & cardinality tracking dominates memory use. See --mode-cardinality-cap for how to bound it."
@@ -110,6 +115,11 @@
         "description": "When set, the first row will NOT be interpreted as column names. i.e., They will be included in statistics."
       },
       {
+        "flag": "--no-quoting",
+        "type": "flag",
+        "description": "Read quote characters as ordinary data."
+      },
+      {
         "flag": "--nulls",
         "type": "flag",
         "description": "Include NULLs in the population size for computing mean and standard deviation."
@@ -150,6 +160,12 @@
         "flag": "--quartiles",
         "type": "flag",
         "description": "Compute the quartiles (using method 3), the IQR, the lower/upper, inner/outer fences and skewness. https://en.wikipedia.org/wiki/Quartile#Method_3"
+      },
+      {
+        "flag": "--quote",
+        "type": "string",
+        "description": "The quote character for READING CSV data. When this, --escape or --no-quoting is set to other than its default, an index is not used, so stats are computed sequentially, on one core: slower on a large file.",
+        "default": "\""
       },
       {
         "flag": "--round",

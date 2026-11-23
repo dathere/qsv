@@ -683,6 +683,13 @@ impl Config {
         self
     }
 
+    /// Whether CSV data is read with the default quoting: `"`, escaped by doubling it. An index
+    /// records where each record starts under that reading, and Polars knows no other, so
+    /// neither can be used to read data quoted any other way.
+    pub const fn has_default_quoting(&self) -> bool {
+        self.quote == b'"' && self.quoting && self.escape.is_none() && self.double_quote
+    }
+
     pub const fn trim(mut self, trim_type: csv::Trim) -> Config {
         self.trim = trim_type;
         self
@@ -1090,6 +1097,12 @@ impl Config {
                 "not using an index: {} preamble rows are skipped",
                 self.preamble_rows
             );
+            return Ok(None);
+        }
+        // Likewise, an index built under the default quoting splits records elsewhere than a
+        // reader with another quote/escape character (or none) does.
+        if !self.has_default_quoting() {
+            debug!("not using an index: the data is read with non-default quoting");
             return Ok(None);
         }
         // Track the data file's mtime and the resolved index path *only* on the

@@ -53,7 +53,8 @@ pub fn count_rows(conf: &Config) -> Result<u64, CliError> {
 
 #[cfg(feature = "polars")]
 fn count_rows_with_best_method(conf: &Config) -> Option<u64> {
-    if !conf.no_headers {
+    // polars only reads `"`-quoted data, so another quoting would count other records
+    if !conf.no_headers && conf.has_default_quoting() {
         // Try polars first for files with headers
         if let Ok(polars_count) = polars_count_input(conf) {
             // If count is greater than 0, return the polars accelerated count
@@ -155,5 +156,23 @@ pub fn finish_progress(progress: &ProgressBar) {
     } else {
         progress.abandon();
         log::info!("Progress abandoned... {}", progress.message());
+    }
+}
+
+#[cfg(all(test, feature = "polars"))]
+mod tests {
+    use std::io::Write;
+
+    use super::count_rows_with_best_method;
+    use crate::config::Config;
+
+    // read with `'`, this is 2 records; polars reads it with `"`, as 3
+    #[test]
+    fn count_with_non_default_quoting_skips_polars() {
+        let mut file = tempfile::Builder::new().suffix(".csv").tempfile().unwrap();
+        file.write_all(b"a,b\n'x\ny',1\n'z',2\n").unwrap();
+        let path = file.path().to_string_lossy().to_string();
+        let conf = Config::new(Some(&path)).quote(b'\'');
+        assert_eq!(count_rows_with_best_method(&conf), Some(2));
     }
 }

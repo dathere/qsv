@@ -13,8 +13,8 @@ It has a built-in self-update engine that makes it very convenient to upgrade to
 
 ## Reporting a Vulnerability
 
-If you've found a vulnerability, please [create an issue](https://github.com/dathere/qsv/issues/new/choose) in GitHub.
+Please report vulnerabilities privately through GitHub's [private vulnerability reporting](https://github.com/dathere/qsv/security/advisories/new) (Security tab → "Report a vulnerability"). This applies to the qsv binaries and to the qsv MCP server / Claude plugin in `.claude/skills`.
 
-However, if a vulnerability is severe and could lead to zero-day exploits, please send an email to [qsv-severe@datHere.com](mailto:qsv-severe@datHere.com) instead.
+Please do **not** open a public issue for a vulnerability. Public [issues](https://github.com/dathere/qsv/issues/new/choose) are for ordinary bugs.
 
 The vulnerability report will be addressed within one business day. A  mitigation/workaround, if available, will be included in the next release and mentioned in the changelog, with zero-day mitigations only being mentioned only when it's been fully fixed.

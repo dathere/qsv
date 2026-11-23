@@ -35,8 +35,8 @@ Metadata the output format can't hold is refused rather than dropped silently:
 value labels & missing values in SAS transport & SPSS portable files, missing
 values & file labels in Stata files, labels too long for SAS transport files,
 column names Stata would have to change, and so on. So are data it would lose,
-such as numbers beyond ±7.2e75 in a SAS transport file, which it writes as
-missing. With --lossy, the file is
+such as numbers beyond ±7.2e75 or, other than 0, closer to 0 than ±5.4e-79 in a
+SAS transport file, which it writes as missing. With --lossy, the file is
 written anyway, and a warning names everything left out. Display settings
 (measure, alignment, width & format) are written where the format has them and
 left out where it doesn't.
@@ -1017,29 +1017,46 @@ fn fit_temporal(mut df: DataFrame, format: Format, losses: &mut Losses) -> CliRe
     Ok(df)
 }
 
-/// SAS transport files store numbers as IBM floats, which reach about 7.2e75:
-/// the writer stores a larger number as missing. (One too small to hold is
-/// stored as zero, which isn't counted: such values are rounding noise far
-/// more often than data.)
+/// SAS transport files store numbers as IBM floats, which reach about 7.2e75
+/// and, other than 0, no closer to 0 than about 5.4e-79: the writer stores a
+/// number beyond either as missing (or, if it is a subnormal f64, as 0).
 fn xpt_out_of_range(df: &DataFrame, losses: &mut Losses) -> CliResult<()> {
     // The largest IBM float, (1 - 16^-14) * 16^63 = 2^252 - 2^196, rounds up to
     // 2^252 as an f64, and 2^252 itself is out of range: the f64s that fit are
     // those below it.
     const TOO_LARGE: f64 = f64::from_bits((1023 + 252) << 52); // 2^252
+    // The smallest normalized IBM float, 16^-65 = 2^-260, is an f64 too.
+    const SMALLEST: f64 = f64::from_bits((1023 - 260) << 52); // 2^-260
     for col in df.columns() {
         if !matches!(col.dtype(), DataType::Float32 | DataType::Float64) {
             continue;
         }
         let values = col.cast(&DataType::Float64)?;
-        if let Some(v) = values
-            .f64()?
-            .iter()
-            .flatten()
-            .find(|v| v.is_finite() && v.abs() >= TOO_LARGE)
-        {
+        let (mut large, mut small) = (None, None);
+        for v in values.f64()?.iter().flatten() {
+            if !v.is_finite() || v == 0.0 {
+                continue;
+            }
+            if large.is_none() && v.abs() >= TOO_LARGE {
+                large = Some(v);
+            } else if small.is_none() && v.abs() < SMALLEST {
+                small = Some(v);
+            }
+            if large.is_some() && small.is_some() {
+                break;
+            }
+        }
+        if let Some(v) = large {
             losses.add(format!(
                 "the numbers in \"{}\" beyond ±7.2e75, such as {v:e}: a SAS transport file writes \
                  them as missing",
+                col.name()
+            ));
+        }
+        if let Some(v) = small {
+            losses.add(format!(
+                "the numbers in \"{}\" closer to 0 than ±5.4e-79, such as {v:e}: a SAS transport \
+                 file writes them as missing (or, below ±2.2e-308, as 0)",
                 col.name()
             ));
         }

@@ -823,14 +823,16 @@ test('resolvePath rejects a missing protected dir under a symlinked parent', { s
 });
 
 test('a directory named like ..archive inside an allowed dir is not a parent escape', async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), 'qsv-dotdot-')));
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'qsv-dotdot-')));
+  const root = join(base, 'allowed');
   try {
-    await mkdir(join(root, '..archive'));
+    await mkdir(join(root, '..archive'), { recursive: true });
     await writeFile(join(root, '..archive', 'data.csv'), 'a\n1\n');
+    await writeFile(join(base, 'outside.csv'), 'a\n1\n');
     const provider = new FilesystemResourceProvider({ workingDirectory: root, allowedDirectories: [root] });
     assert.strictEqual(await provider.resolvePath('..archive/data.csv'), join(root, '..archive', 'data.csv'));
-    await assert.rejects(provider.resolvePath(join(root, '..', 'x.csv')), /outside allowed directories|inaccessible/);
+    await assert.rejects(provider.resolvePath('../outside.csv'), /outside allowed directories/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(base, { recursive: true, force: true });
   }
 });

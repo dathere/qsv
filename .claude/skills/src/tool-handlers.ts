@@ -1247,7 +1247,7 @@ export async function handleConfigTool(
   if (config.pluginAutoAddDirs) {
     configText += `\n📌 _Plugin mode: additional directories are auto-added as needed at runtime._\n`;
   } else if (config.isPluginMode) {
-    configText += `\n📌 _Plugin mode: QSV_MCP_ALLOWED_DIRS is set, so paths outside these directories are refused._\n`;
+    configText += `\n📌 _Plugin mode: QSV_MCP_ALLOWED_DIRS is set, so paths outside these directories and the working directory are refused._\n`;
   }
 
   // Performance Settings

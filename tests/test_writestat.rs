@@ -523,6 +523,99 @@ fn writestat_xpt_number_range_boundary() {
     );
 }
 
+// Other than 0, IBM floats come no closer to 0 than about 5.4e-79: the writer
+// would store a number closer to 0 as missing (or, a subnormal double, as 0).
+// (#5094)
+#[test]
+fn writestat_xpt_number_too_small() {
+    let wrk = Workdir::new("writestat_xpt_number_too_small");
+    wrk.create_from_string(
+        "in.csv",
+        "id,dose\n1,0.5\n2,1e-78\n3,1e-80\n4,2.5e-300\n5,-3e-90\n6,0\n7,12.75\n",
+    );
+    for format in ["xpt", "xpt5"] {
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["in.csv", "--format", format, "-o", "out.xpt"]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            err.contains("the numbers in \"dose\" closer to 0 than ±5.4e-79, such as 1e-80"),
+            "{format}: {err}"
+        );
+        assert!(!err.contains("\"id\""), "{format}: {err}");
+        assert!(!wrk.path("out.xpt").exists());
+    }
+
+    // one column can be out of range on both sides: each is named
+    wrk.create_from_string("in.csv", "x,y\n1e76,1e-90\n1e-80,2\n");
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["--lossy", "in.csv", "-o", "out.xpt"]);
+    let err = wrk.stderr_on_success(&mut cmd);
+    for loss in [
+        "the numbers in \"x\" beyond ±7.2e75, such as 1e76",
+        "the numbers in \"x\" closer to 0 than ±5.4e-79, such as 1e-80",
+        "the numbers in \"y\" closer to 0 than ±5.4e-79, such as 1e-90",
+    ] {
+        assert!(err.contains(loss), "{loss}: {err}");
+    }
+    assert_eq!(read_back(&wrk, "out.xpt", &[]), "x,y\n,\n,2.0\n");
+}
+
+// The boundary: 2^-260, the smallest normalized IBM float, fits, as do 0 & -0;
+// the double just closer to 0 & a subnormal don't.
+#[test]
+fn writestat_xpt_number_too_small_boundary() {
+    let wrk = Workdir::new("writestat_xpt_number_too_small_boundary");
+    for v in ["5.397605346934027e-79", "-5.397605346934027e-79", "1e-310"] {
+        wrk.create_from_string("in.csv", &format!("x\n{v}\n1\n"));
+        let mut cmd = wrk.command("writestat");
+        cmd.args(["in.csv", "-o", "out.xpt"]);
+        let err = wrk.stderr_on_error(&mut cmd);
+        assert!(err.contains(&format!("such as {v}")), "{v}: {err}");
+    }
+    wrk.create_from_string(
+        "in.csv",
+        "x\n5.397605346934028e-79\n-5.397605346934028e-79\n0\n-0.0\n",
+    );
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.xpt"]);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        read_back(&wrk, "out.xpt", &[]),
+        "x\n5.397605346934028e-79\n-5.397605346934028e-79\n0.0\n0.0\n"
+    );
+}
+
+// A portable file holds numbers far closer to 0 than SAS transport files do;
+// they come back as written, not as 0 (#5094). The reader rebuilds them with
+// float arithmetic, so within a few ulps.
+#[test]
+fn writestat_por_small_numbers() {
+    let wrk = Workdir::new("writestat_por_small_numbers");
+    let values: [f64; 9] = [
+        0.5, 1e-50, 1e-60, 1e-70, 1e-78, 1e-80, -3e-90, 2.5e-300, 1e-310,
+    ];
+    let csv: String = values.iter().map(|v| format!("{v:e}\n")).collect();
+    wrk.create_from_string("in.csv", &format!("x\n{csv}"));
+    let mut cmd = wrk.command("writestat");
+    cmd.args(["in.csv", "-o", "out.por"]);
+    wrk.assert_success(&mut cmd);
+    let back = read_back(&wrk, "out.por", &[]);
+    let got: Vec<f64> = back
+        .lines()
+        .skip(1)
+        .map(|l| l.parse().unwrap_or_else(|_| panic!("{l:?} in {back}")))
+        .collect();
+    assert_eq!(got.len(), values.len(), "{back}");
+    for (want, got) in values.iter().zip(got) {
+        // a subnormal holds fewer digits
+        let tolerance = (4.0 * f64::from_bits(1) / want.abs()).max(1e-15);
+        assert!(
+            got != 0.0 && ((got - want) / want).abs() <= tolerance,
+            "{want:e} read back as {got:e}"
+        );
+    }
+}
+
 // A 60-byte SPSS name is valid, though its <name>_null column's 65 bytes
 // aren't: that column becomes the variable's missing values, not a variable.
 #[test]

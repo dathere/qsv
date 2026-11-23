@@ -6541,7 +6541,7 @@ dependencies = [
 [[package]]
 name = "polars-readstat-rs"
 version = "0.27.0"
-source = "git+https://github.com/dathere/polars_readstat?rev=2714269c43532016b2da72839269ff3015a31f20#2714269c43532016b2da72839269ff3015a31f20"
+source = "git+https://github.com/dathere/polars_readstat?rev=18551f90697b23e677c5e17a0fe8f03ad710d90b#18551f90697b23e677c5e17a0fe8f03ad710d90b"
 dependencies = [
  "byteorder",
  "chrono",

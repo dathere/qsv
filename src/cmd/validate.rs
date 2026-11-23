@@ -529,7 +529,8 @@ impl JSONtypes {
 struct RFC4180Struct {
     delimiter_char: char,
     header_row:     bool,
-    quote_char:     char,
+    // null under --no-quoting
+    quote_char:     Option<char>,
     num_records:    u64,
     num_fields:     u64,
     fields:         Vec<String>,
@@ -3312,7 +3313,7 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."
         let rfc4180 = RFC4180Struct {
             delimiter_char: rconfig.get_delimiter() as char,
             header_row:     !rconfig.no_headers,
-            quote_char:     rconfig.quote as char,
+            quote_char:     rconfig.is_quoting().then_some(rconfig.quote as char),
             num_records:    record_idx,
             num_fields:     header_len as u64,
             fields:         field_vec,

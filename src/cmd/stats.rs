@@ -412,9 +412,9 @@ Common options:
                            record skip columns that ARE present.
     --quote <arg>          The quote character for READING CSV data. When
                            this, --escape or --no-quoting is set to other
-                           than its default, an index is not used, so stats
-                           are computed sequentially, on one core: slower on
-                           a large file. [default: "]
+                           than its default, an index is not used, so the
+                           file is not split into chunks computed in
+                           parallel: slower on a large file. [default: "]
     --escape <arg>         The escape character for READING CSV data, for data
                            that escapes quotes as \" instead of "". When not
                            set, quotes are escaped by doubling them.
@@ -431,7 +431,8 @@ Common options:
                            check runs whenever stats takes the non-parallel
                            path with non-streaming columns. On OOM (in either
                            NORMAL or CONSERVATIVE mode), qsv auto-creates an
-                           index when no index exists (skipped for stdin) AND
+                           index when no index exists (skipped for stdin and
+                           for non-default quoting) AND
                            switches to approx quantile + approx cardinality
                            methods (DataSketches t-digest and HyperLogLog)
                            where compatible. The sketch fallback can also

@@ -291,6 +291,8 @@ pub struct Config {
     double_quote:          bool,
     escape:                Option<u8>,
     quoting:               bool,
+    // use an index even under non-default quoting (see `index_with_any_quoting`)
+    index_any_quoting:     bool,
     pub preamble_rows:     u64,
     trim:                  csv::Trim,
     pub autoindex_size:    u64,
@@ -554,6 +556,7 @@ impl Config {
             double_quote: true,
             escape: None,
             quoting: true,
+            index_any_quoting: false,
             preamble_rows: preamble,
             trim: csv::Trim::None,
             autoindex_size: parse_env_or_warn("QSV_AUTOINDEX_SIZE", 0_u64),
@@ -688,6 +691,18 @@ impl Config {
     /// neither can be used to read data quoted any other way.
     pub const fn has_default_quoting(&self) -> bool {
         self.quote == b'"' && self.quoting && self.escape.is_none() && self.double_quote
+    }
+
+    /// Whether quote characters delimit fields, rather than being read as ordinary data.
+    pub const fn is_quoting(&self) -> bool {
+        self.quoting
+    }
+
+    /// Use an index even when reading with non-default quoting, whose records it may not line
+    /// up with. Only for a reader that can tolerate that, such as `sniff`'s sampling.
+    pub const fn index_with_any_quoting(mut self, yes: bool) -> Config {
+        self.index_any_quoting = yes;
+        self
     }
 
     pub const fn trim(mut self, trim_type: csv::Trim) -> Config {
@@ -881,6 +896,21 @@ impl Config {
         let mut c = self.clone();
         c.path = Some(temp);
         c.delimiter = delim;
+        // qsv writes the CSV it converts other formats to with the default quoting, so read
+        // it back that way; a compressed CSV's bytes are kept, so its quoting is the input's
+        if matches!(
+            self.special_format,
+            SpecialFormat::Avro
+                | SpecialFormat::Parquet
+                | SpecialFormat::Ipc
+                | SpecialFormat::Json
+                | SpecialFormat::Jsonl
+        ) {
+            c.quote = b'"';
+            c.escape = None;
+            c.double_quote = true;
+            c.quoting = true;
+        }
         c.special_format = SpecialFormat::Unknown;
         Ok(c)
     }
@@ -1101,7 +1131,7 @@ impl Config {
         }
         // Likewise, an index built under the default quoting splits records elsewhere than a
         // reader with another quote/escape character (or none) does.
-        if !self.has_default_quoting() {
+        if !self.index_any_quoting && !self.has_default_quoting() {
             debug!("not using an index: the data is read with non-default quoting");
             return Ok(None);
         }

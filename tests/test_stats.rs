@@ -9970,6 +9970,46 @@ fn stats_default_quoting_does_not_reuse_a_quote_everything_cache() {
     assert_eq!(stat_values(&got, "a", &["max"]), svec!["x,1"]);
 }
 
+// Other commands read a stats cache with the default quoting. Read with `'`, `b` is 1,2,3,4;
+// read with `"`, as sortcheck does, it is 9,1,2,3,4 - so a `--quote` cache must not tell
+// sortcheck the column is sorted.
+#[test]
+fn stats_quote_cache_is_not_served_to_other_commands() {
+    let wrk = Workdir::new("stats_quote_cache_is_not_served_to_other_commands");
+    wrk.create_from_string("data.csv", "a,b\n'p,9\nq',1\nr,2\ns,3\nt,4\n");
+    let mut stats = wrk.command("stats");
+    stats.args([
+        "--quote",
+        "'",
+        "--stats-jsonl",
+        "--cache-threshold",
+        "1",
+        "data.csv",
+    ]);
+    wrk.assert_success(&mut stats);
+    assert!(wrk.path("data.stats.csv.data.jsonl").exists());
+
+    let mut sortcheck = wrk.command("sortcheck");
+    sortcheck.args(["--numeric", "--select", "b", "data.csv"]);
+    wrk.assert_err(&mut sortcheck);
+}
+
+// qsv converts JSONL to a CSV it writes with the default quoting, so the quoting options,
+// meant for the input's own CSV, must not be used to read that back
+#[cfg(feature = "polars")]
+#[test]
+fn stats_no_quoting_on_converted_jsonl() {
+    let wrk = Workdir::new("stats_no_quoting_on_converted_jsonl");
+    wrk.create_from_string(
+        "data.jsonl",
+        "{\"a\":\"x,y\",\"b\":1}\n{\"a\":\"z\",\"b\":2}\n",
+    );
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--force", "--no-quoting", "data.jsonl"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(stat_values(&got, "a", &["min", "max"]), svec!["x,y", "z"]);
+}
+
 // --flexible semantics for SHORT records, pinning what the USAGE text promises.
 #[test]
 fn stats_flexible_short_record_contributes_nothing() {

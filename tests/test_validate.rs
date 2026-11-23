@@ -468,6 +468,12 @@ fn validate_no_quoting() {
         r#"Valid: 2 Columns: ("a", "b"); Records: 2; Delimiter: ,"#
     );
 
+    // with no quoting, there is no quote character to report
+    let mut cmd = wrk.command("validate");
+    cmd.args(["--no-quoting", "--json", "data.csv"]);
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains(r#""quote_char":null"#), "{got}");
+
     let mut cmd = wrk.command("validate");
     cmd.arg("data.csv");
     wrk.assert_err(&mut cmd);

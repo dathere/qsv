@@ -230,6 +230,29 @@ fn stats_cache_parsing_opts_match_rejects_mismatched_no_headers() {
     ));
 }
 
+// every consumer reads with the default quoting, so a cache of `stats --quote/--escape/
+// --no-quoting` describes other fields than the consumer sees (#4610)
+#[test]
+fn stats_cache_parsing_opts_match_rejects_non_default_quoting() {
+    let input = Path::new("data.csv");
+    let base = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ","});
+    let matches = |extra: serde_json::Value| {
+        let mut meta = base.clone();
+        meta.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        stats_cache_parsing_opts_match(&meta, input, false, None, None, false)
+    };
+    // caches written before the quoting was recorded, and default-quoting ones, still match
+    assert!(matches(serde_json::json!({})));
+    assert!(matches(serde_json::json!({
+        "flag_quote": "\"", "flag_escape": "", "flag_no_quoting": false
+    })));
+    assert!(!matches(serde_json::json!({"flag_quote": "'"})));
+    assert!(!matches(serde_json::json!({"flag_escape": "\\"})));
+    assert!(!matches(serde_json::json!({"flag_no_quoting": true})));
+}
+
 #[test]
 fn stats_cache_parsing_opts_match_rejects_mismatched_delimiter() {
     let input = Path::new("data.csv");

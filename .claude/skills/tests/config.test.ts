@@ -13,6 +13,7 @@ import {
   parseQsvCommandList,
   expandTemplateVars,
   isPluginMode,
+  hasExplicitAllowedDirs,
   applySqlFileWritePolicy,
 } from '../src/config.js';
 import { QSV_AVAILABLE } from './test-helpers.js';
@@ -609,4 +610,25 @@ test('applySqlFileWritePolicy sets QSV_SQL_DISABLE_FILE_WRITES only when writes 
   const userSet: NodeJS.ProcessEnv = { QSV_SQL_DISABLE_FILE_WRITES: '1' };
   applySqlFileWritePolicy(true, userSet);
   assert.strictEqual(userSet.QSV_SQL_DISABLE_FILE_WRITES, '1');
+});
+
+test('hasExplicitAllowedDirs is true only for a real QSV_MCP_ALLOWED_DIRS value', () => {
+  const saved = process.env.QSV_MCP_ALLOWED_DIRS;
+  try {
+    for (const [value, expected] of [
+      [undefined, false],
+      ['', false],
+      ['   ', false],
+      ['${user_config.allowed_dirs}', false],
+      ['/projects/a', true],
+      ['["/projects/a"]', true],
+    ] as const) {
+      if (value === undefined) delete process.env.QSV_MCP_ALLOWED_DIRS;
+      else process.env.QSV_MCP_ALLOWED_DIRS = value;
+      assert.strictEqual(hasExplicitAllowedDirs(), expected, `value: ${JSON.stringify(value)}`);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.QSV_MCP_ALLOWED_DIRS;
+    else process.env.QSV_MCP_ALLOWED_DIRS = saved;
+  }
 });

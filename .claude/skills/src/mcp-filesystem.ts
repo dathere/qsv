@@ -7,7 +7,7 @@
 
 import { readdir, stat, lstat, realpath, access } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "node:path";
+import { join, resolve, relative, basename, dirname, extname, isAbsolute, sep } from "node:path";
 import type {
   McpResource,
   FileMetadata,
@@ -192,7 +192,8 @@ export class FilesystemResourceProvider {
       // 3. Belt-and-suspenders: reject leading separators (already caught by isAbsolute)
       const isContainedSubpath =
         !isAbsolute(rel) &&
-        !rel.startsWith("..") &&
+        rel !== ".." &&
+        !rel.startsWith(".." + sep) &&
         !rel.startsWith("/") &&
         !rel.startsWith("\\");
 

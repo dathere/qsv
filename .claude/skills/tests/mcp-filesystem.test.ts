@@ -821,3 +821,16 @@ test('resolvePath rejects a missing protected dir under a symlinked parent', { s
     await assert.rejects(provider.resolvePath('~/.config/autostart'), /"\.config\/autostart", which is protected/);
   });
 });
+
+test('a directory named like ..archive inside an allowed dir is not a parent escape', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'qsv-dotdot-')));
+  try {
+    await mkdir(join(root, '..archive'));
+    await writeFile(join(root, '..archive', 'data.csv'), 'a\n1\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: root, allowedDirectories: [root] });
+    assert.strictEqual(await provider.resolvePath('..archive/data.csv'), join(root, '..archive', 'data.csv'));
+    await assert.rejects(provider.resolvePath(join(root, '..', 'x.csv')), /outside allowed directories|inaccessible/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

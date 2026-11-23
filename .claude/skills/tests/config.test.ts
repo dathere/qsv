@@ -14,6 +14,7 @@ import {
   expandTemplateVars,
   isPluginMode,
   hasExplicitAllowedDirs,
+  isPluginAutoAddDirs,
   applySqlFileWritePolicy,
 } from '../src/config.js';
 import { QSV_AVAILABLE } from './test-helpers.js';
@@ -630,5 +631,24 @@ test('hasExplicitAllowedDirs is true only for a real QSV_MCP_ALLOWED_DIRS value'
   } finally {
     if (saved === undefined) delete process.env.QSV_MCP_ALLOWED_DIRS;
     else process.env.QSV_MCP_ALLOWED_DIRS = saved;
+  }
+});
+
+test('plugin mode auto-adds dirs only when QSV_MCP_ALLOWED_DIRS is unset', () => {
+  const saved = { a: process.env.QSV_MCP_ALLOWED_DIRS, p: process.env.QSV_MCP_PLUGIN_MODE };
+  try {
+    process.env.QSV_MCP_PLUGIN_MODE = 'true';
+    delete process.env.QSV_MCP_ALLOWED_DIRS;
+    assert.strictEqual(isPluginAutoAddDirs(), true);
+    process.env.QSV_MCP_ALLOWED_DIRS = '/projects/a';
+    assert.strictEqual(isPluginAutoAddDirs(), false);
+    process.env.QSV_MCP_PLUGIN_MODE = 'false';
+    delete process.env.QSV_MCP_ALLOWED_DIRS;
+    assert.strictEqual(isPluginAutoAddDirs(), false);
+  } finally {
+    for (const [k, v] of [['QSV_MCP_ALLOWED_DIRS', saved.a], ['QSV_MCP_PLUGIN_MODE', saved.p]] as const) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });

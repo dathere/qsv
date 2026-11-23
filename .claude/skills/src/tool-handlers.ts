@@ -1244,8 +1244,10 @@ export async function handleConfigTool(
   } else {
     configText += `ℹ️ Only working directory is accessible\n`;
   }
-  if (config.isPluginMode) {
+  if (config.pluginAutoAddDirs) {
     configText += `\n📌 _Plugin mode: additional directories are auto-added as needed at runtime._\n`;
+  } else if (config.isPluginMode) {
+    configText += `\n📌 _Plugin mode: QSV_MCP_ALLOWED_DIRS is set, so paths outside these directories are refused._\n`;
   }
 
   // Performance Settings
@@ -1263,7 +1265,7 @@ export async function handleConfigTool(
   // Mode
   configText += `\n## Deployment Mode\n\n`;
   if (config.isPluginMode) {
-    configText += `🔌 **Claude Plugin Mode** (relaxed directory security)\n`;
+    configText += `🔌 **Claude Plugin Mode**${config.pluginAutoAddDirs ? " (relaxed directory security)" : ""}\n`;
   } else if (extensionMode) {
     configText += `🧩 **Desktop Extension Mode**\n`;
   } else {

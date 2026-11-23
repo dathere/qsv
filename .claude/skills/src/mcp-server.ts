@@ -188,7 +188,7 @@ class QsvMcpServer {
       allowedDirectories: config.allowedDirs,
       qsvBinPath: config.qsvBinPath,
       // the provider's pluginMode only means "auto-add requested dirs"
-      pluginMode: config.isPluginMode && !config.allowedDirsExplicit,
+      pluginMode: config.pluginAutoAddDirs,
     });
 
     // Initialize working directory manager (elicitation, roots sync)

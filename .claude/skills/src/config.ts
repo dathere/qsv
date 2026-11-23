@@ -676,6 +676,10 @@ export function hasExplicitAllowedDirs(): boolean {
   return !!envValue && envValue.trim() !== "" && !UNEXPANDED_TEMPLATE_REGEX.test(envValue);
 }
 
+export function isPluginAutoAddDirs(): boolean {
+  return isPluginMode() && !hasExplicitAllowedDirs();
+}
+
 /**
  * Pass the SQL file-write policy on to qsv child processes, which inherit process.env.
  * qsv's Polars SQL contexts (sqlp, joinp --sql-filter, profile, scoresql) honor
@@ -902,10 +906,10 @@ export const config = {
   isPluginMode: isPluginMode(),
 
   /**
-   * True when QSV_MCP_ALLOWED_DIRS is explicitly set. Turns off plugin mode's
-   * auto-adding of requested directories, so the list actually confines.
+   * Whether a path outside allowedDirs gets its directory auto-added instead
+   * of being refused: plugin mode, unless QSV_MCP_ALLOWED_DIRS is explicit.
    */
-  allowedDirsExplicit: hasExplicitAllowedDirs(),
+  pluginAutoAddDirs: isPluginAutoAddDirs(),
 
   /**
    * Whether SQL may write files itself (`COPY ... TO '<file>'`, DuckDB `EXPORT DATABASE`).

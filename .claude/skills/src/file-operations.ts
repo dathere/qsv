@@ -35,7 +35,7 @@ import {
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
 import { runQsvSimple } from "./executor.js";
 import { config } from "./config.js";
-import { expandTilde, formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
+import { expandTilde, findSensitiveHomeEntry, formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
 
 /**
  * Stat a path, returning null for ENOENT (file not found) and rethrowing
@@ -533,6 +533,10 @@ export function looksLikeFilePath(value: string): boolean {
   );
 }
 
+// Anchored: provider errors echo the requested path, so an unanchored match
+// would treat a refused path whose name contains "does not exist" as missing.
+const MISSING_PATH = /^Path does not exist\b/;
+
 /**
  * Resolve file-path parameters (positional args and options) to absolute paths.
  * This handles all file-type args beyond input/output which are already resolved.
@@ -570,7 +574,7 @@ export async function resolveFilePathParams(
     try {
       return await filesystemProvider.resolvePath(value);
     } catch (error: unknown) {
-      if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
+      if (!MISSING_PATH.test(getErrorMessage(error))) throw invalid(label, error);
     }
     // expand ~ as the provider does; each ancestor is still checked by the provider
     const expanded = expandTilde(value);
@@ -580,9 +584,16 @@ export async function resolveFilePathParams(
       missing.unshift(basename(ancestor));
       ancestor = dirname(ancestor);
       try {
-        return join(await filesystemProvider.resolvePath(ancestor), ...missing);
+        const dir = join(await filesystemProvider.resolvePath(ancestor), ...missing);
+        // the re-appended segments were never seen by the provider, so with no
+        // ~/.config, ~/.config/gh/x would otherwise pass via ancestor ~/.config
+        const sensitive = findSensitiveHomeEntry(dir);
+        if (sensitive !== undefined) {
+          throw invalid(label, new Error(`${value} is under "${sensitive}", which is protected.`));
+        }
+        return dir;
       } catch (error: unknown) {
-        if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
+        if (!MISSING_PATH.test(getErrorMessage(error))) throw invalid(label, error);
       }
     }
     throw invalid(label, new Error("no existing parent directory"));
@@ -612,7 +623,7 @@ export async function resolveFilePathParams(
     try {
       resolved = await filesystemProvider.resolvePath(value);
     } catch (error: unknown) {
-      if (/does not exist/i.test(getErrorMessage(error))) return value;
+      if (MISSING_PATH.test(getErrorMessage(error))) return value;
       throw invalid(label, error);
     }
     return (await stat(resolved).then(() => true, () => false)) ? resolved : value;

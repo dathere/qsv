@@ -6,10 +6,11 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { FilesystemResourceProvider } from '../src/mcp-filesystem.js';
 import { config } from '../src/config.js';
-import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink } from 'node:fs/promises';
+import { mkdtemp, writeFile, rmdir, unlink, mkdir, realpath, symlink, rm } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
+import { withFakeHome } from './test-helpers.js';
 
 test('listFiles enforces file limit', async () => {
   // Create temporary directory
@@ -759,4 +760,79 @@ test('resolvePath refuses a broken symlink, which a write would follow', {
   await assert.rejects(provider.resolvePath('link.csv'), /broken symbolic link/);
   await assert.rejects(provider.resolvePath('linkdir/x.csv'), /parent directory is inaccessible/);
   assert.strictEqual(await provider.resolvePath('new.csv'), join(allowed, 'new.csv'));
+});
+
+test('resolvePath rejects output paths under sensitive home dirs when home is allowed', async () => {
+  await withFakeHome(async (home) => {
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    await assert.rejects(provider.resolvePath('~/.ssh/authorized_keys'), /"\.ssh", which is protected/);
+    await assert.rejects(provider.resolvePath(join(home, '.ssh')), /"\.ssh", which is protected/);
+    // the boundary is a path segment, not a string prefix
+    assert.strictEqual(await provider.resolvePath('~/data/out.csv'), join(home, 'data', 'out.csv'));
+    await mkdir(join(home, '.sshfoo'));
+    assert.strictEqual(await provider.resolvePath('~/.sshfoo/out.csv'), join(home, '.sshfoo', 'out.csv'));
+  });
+});
+
+test('resolvePath rejects sensitive home dirs in plugin mode without auto-adding them', async () => {
+  await withFakeHome(async (home) => {
+    const provider = new FilesystemResourceProvider({ workingDirectory: join(home, 'data'), pluginMode: true });
+    await assert.rejects(provider.resolvePath(join(home, '.ssh', 'authorized_keys')), /protected/);
+    assert.ok(!provider.getAllowedDirectories().includes(join(home, '.ssh')));
+  });
+});
+
+test('resolvePath rejects sensitive home files but not look-alikes', async () => {
+  await withFakeHome(async (home) => {
+    await writeFile(join(home, '.netrc'), 'machine x login y password z\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    await assert.rejects(provider.resolvePath('~/.bashrc'), /"\.bashrc", which is protected/);
+    await assert.rejects(provider.resolvePath('~/.netrc'), /"\.netrc", which is protected/);
+    assert.strictEqual(await provider.resolvePath('~/.bashrc.csv'), join(home, '.bashrc.csv'));
+    assert.strictEqual(await provider.resolvePath('~/data/.bashrc'), join(home, 'data', '.bashrc'));
+  });
+});
+
+test('resolvePath rejects a symlinked sensitive home dir via its target', { skip: process.platform === 'win32' }, async () => {
+  await withFakeHome(async (home) => {
+    const secret = join(home, 'secret-store');
+    await mkdir(secret);
+    await rm(join(home, '.ssh'), { recursive: true });
+    await symlink(secret, join(home, '.ssh'));
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    await assert.rejects(provider.resolvePath(join(secret, 'authorized_keys')), /protected/);
+  });
+});
+
+test('setWorkingDirectory still rejects sensitive home dirs', async () => {
+  await withFakeHome(async (home) => {
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    assert.throws(() => provider.setWorkingDirectory('~/.ssh'), /"\.ssh" is a protected directory/);
+  });
+});
+
+test('resolvePath rejects a missing protected dir under a symlinked parent', { skip: process.platform === 'win32' }, async () => {
+  await withFakeHome(async (home) => {
+    // dotfile-manager layout: ~/.config is a symlink, autostart doesn't exist yet
+    const dotfiles = join(home, 'dotfiles-config');
+    await mkdir(dotfiles);
+    await symlink(dotfiles, join(home, '.config'));
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    await assert.rejects(provider.resolvePath('~/.config/autostart'), /"\.config\/autostart", which is protected/);
+  });
+});
+
+test('a directory named like ..archive inside an allowed dir is not a parent escape', async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'qsv-dotdot-')));
+  const root = join(base, 'allowed');
+  try {
+    await mkdir(join(root, '..archive'), { recursive: true });
+    await writeFile(join(root, '..archive', 'data.csv'), 'a\n1\n');
+    await writeFile(join(base, 'outside.csv'), 'a\n1\n');
+    const provider = new FilesystemResourceProvider({ workingDirectory: root, allowedDirectories: [root] });
+    assert.strictEqual(await provider.resolvePath('..archive/data.csv'), join(root, '..archive', 'data.csv'));
+    await assert.rejects(provider.resolvePath('../outside.csv'), /outside allowed directories/);
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
 });

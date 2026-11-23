@@ -4389,7 +4389,8 @@ fn validate_unknown_format_did_you_mean() {
                 "a": { "type": "string", "format": "emial" },
                 "b": { "type": "string", "format": "curency" },
                 "c": { "type": "string", "format": "DATE-TIME" },
-                "d": { "type": "string", "format": "zzqqxx" }
+                "d": { "type": "string", "format": "zzqqxx" },
+                "e": { "type": "string", "format": "emaİX" }
             }
         }"#,
     );
@@ -4412,6 +4413,26 @@ fn validate_unknown_format_did_you_mean() {
     assert!(
         got.contains("Unknown format \"zzqqxx\" is not checked. Run"),
         "unexpected hint for zzqqxx: {got}"
+    );
+    // the cutoff is a third of the name as written (5 chars: 1 edit), not of its lowercase
+    // form, which `İ` lengthens to 6 chars and 2 edits, enough to reach "email"
+    assert!(
+        got.contains("Unknown format \"emaİX\" is not checked. Run"),
+        "unexpected hint for emaİX: {got}"
+    );
+
+    // a long string in `format` is warned about without a hint
+    let long = "x".repeat(20_000);
+    wrk.create_from_string(
+        "long.json",
+        &format!(r#"{{ "properties": {{ "a": {{ "type": "string", "format": "{long}" }} }} }}"#),
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv").arg("long.json");
+    let got: String = wrk.stderr_on_success(&mut cmd);
+    assert!(
+        got.contains(&format!("Unknown format \"{long}\" is not checked. Run")),
+        "unexpected stderr for a long format"
     );
 
     // `validate schema` stops at the first unknown format it builds, with the same hint

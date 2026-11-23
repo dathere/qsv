@@ -1859,12 +1859,22 @@ fn known_format_candidates<'o, F: Json>(
 /// within a third of `name`'s length (at least one edit), compared case-insensitively. Ties go to
 /// the first in `known`'s order.
 fn format_suggestion<'k>(name: &str, known: &[&'k str]) -> Option<&'k str> {
+    // the cutoff comes from `name` itself: lowercasing can lengthen it (`İ` becomes two chars)
+    let max_distance = (name.chars().count() / 3).max(1);
     let name_lc = name.to_lowercase();
-    let max_distance = (name_lc.chars().count() / 3).max(1);
+    let name_len = name_lc.chars().count();
     known
         .iter()
-        .map(|&k| (k, osa_distance(&name_lc, &k.to_lowercase())))
-        .filter(|&(_, d)| d <= max_distance)
+        .filter_map(|&k| {
+            let k_lc = k.to_lowercase();
+            // the length difference alone bounds the distance from below, so this skips the
+            // distance matrix for candidates that can't match, e.g. a long string in `format`
+            if name_len.abs_diff(k_lc.chars().count()) > max_distance {
+                return None;
+            }
+            let d = osa_distance(&name_lc, &k_lc);
+            (d <= max_distance).then_some((k, d))
+        })
         .min_by_key(|&(_, d)| d)
         .map(|(k, _)| k)
 }

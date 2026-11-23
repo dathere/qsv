@@ -576,7 +576,7 @@ Same license as qsv: MIT OR Apache-2.0
 
 ---
 
-**Updated**: 2026-11-21
-**Version**: 29.0.1
+**Updated**: 2026-11-23
+**Version**: 29.0.2
 **Format**: MCP Bundle (MCPB) v0.3
 **Compatibility**: Claude Desktop 1.0+

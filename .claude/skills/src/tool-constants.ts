@@ -361,11 +361,14 @@ export const BINARY_VALIDATION_TIMEOUT_MS = 5000;
 /**
  * Home-relative directories that should never be browsed or used as the
  * working directory. Covers SSH/GPG/cloud-CLI credential stores, K8s configs,
- * password managers, and the Docker daemon socket directory.
+ * password managers, the Docker daemon socket directory, and login/agent
+ * autostart locations (LaunchAgents, systemd user units, XDG autostart, the
+ * Windows Startup folder, fish config, Claude Code's ~/.claude).
  *
- * Shared by `mcp-server.handleBrowseDirectory` and
- * `FilesystemResourceProvider.setWorkingDirectory` so both entry points
- * enforce the same denylist symmetrically.
+ * Enforced by `mcp-server.handleBrowseDirectory`,
+ * `FilesystemResourceProvider.setWorkingDirectory` and
+ * `FilesystemResourceProvider.resolvePath` (every input/output path), all via
+ * `findSensitiveHomeEntry` so the entry points can't drift apart.
  */
 export const SENSITIVE_HOME_DIRS = [
   ".ssh",
@@ -379,6 +382,39 @@ export const SENSITIVE_HOME_DIRS = [
   ".password-store",
   ".local/share/keyrings",
   ".docker",
+  ".config/gh",
+  // writing here runs code at login / on the next agent session
+  "Library/LaunchAgents",
+  ".config/systemd",
+  ".config/autostart",
+  ".config/fish",
+  "AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup",
+  ".claude",
+];
+
+/**
+ * Home-relative files that must never be read or written through an MCP path
+ * argument (`input_file`, `output_file`, ...). Shell startup files are code
+ * execution if overwritten; the rest hold credentials that a read would leak.
+ * Enforced by `FilesystemResourceProvider.resolvePath` alongside
+ * SENSITIVE_HOME_DIRS.
+ */
+export const SENSITIVE_HOME_FILES = [
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".bash_logout",
+  ".profile",
+  ".zshrc",
+  ".zshenv",
+  ".zprofile",
+  ".zlogin",
+  ".zlogout",
+  ".gitconfig",
+  ".git-credentials",
+  ".netrc",
+  ".npmrc",
+  ".pypirc",
 ];
 
 

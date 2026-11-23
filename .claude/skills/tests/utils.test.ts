@@ -4,7 +4,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError, sanitizeErrorForClient } from '../src/utils.js';
+import { formatBytes, compareVersions, isReservedCachePath, reservedCachePathError, sanitizeErrorForClient, findSensitiveHomeEntry } from '../src/utils.js';
+import { join } from 'node:path';
+import { withFakeHome } from './test-helpers.js';
 
 test('formatBytes formats bytes correctly', () => {
   assert.strictEqual(formatBytes(0), '0 Bytes');
@@ -146,4 +148,26 @@ test('reservedCachePathError includes the output path and all suffixes', () => {
   assert.ok(msg.includes('.stats.bivariate.joined.csv'));
   assert.ok(msg.includes('.freq.csv.data.jsonl'));
   assert.ok(msg.includes('.pschema.json'));
+});
+
+test('findSensitiveHomeEntry matches protected dirs and files by path segment', async () => {
+  await withFakeHome(async (home) => {
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.ssh')), '.ssh');
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.ssh', 'authorized_keys')), '.ssh');
+    // not created on disk: the logical form alone must still match
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.aws', 'credentials')), '.aws');
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.config', 'gh', 'hosts.yml')), '.config/gh');
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.zshrc')), '.zshrc');
+    assert.strictEqual(findSensitiveHomeEntry(join(home, 'Library', 'LaunchAgents', 'x.plist')), 'Library/LaunchAgents');
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.claude', 'settings.json')), '.claude');
+    assert.strictEqual(
+      findSensitiveHomeEntry(join(home, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'x.bat')),
+      'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup',
+    );
+    assert.strictEqual(findSensitiveHomeEntry(join(home, 'Library', 'Caches', 'x.csv')), undefined);
+    assert.strictEqual(findSensitiveHomeEntry(home), undefined);
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.sshfoo')), undefined);
+    assert.strictEqual(findSensitiveHomeEntry(join(home, '.zshrc.csv')), undefined);
+    assert.strictEqual(findSensitiveHomeEntry(join(home, 'data', '.zshrc')), undefined);
+  });
 });

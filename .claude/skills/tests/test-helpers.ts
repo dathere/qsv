@@ -8,7 +8,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { writeFile, mkdtemp, rm, realpath } from "node:fs/promises";
+import { writeFile, mkdtemp, mkdir, rm, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { config } from "../src/config.js";
@@ -97,4 +97,26 @@ export async function createTestCSV(
   const filepath = join(dir, filename);
   await writeFile(filepath, content, "utf8");
   return filepath;
+}
+
+/**
+ * Run `fn` with the home directory pointed at a fresh temp dir, so the
+ * sensitive-path tests never touch the real ~/.ssh.
+ */
+export async function withFakeHome(fn: (home: string) => Promise<void>): Promise<void> {
+  const home = await realpath(await mkdtemp(join(tmpdir(), "qsv-fakehome-")));
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    await mkdir(join(home, ".ssh"));
+    await mkdir(join(home, "data"));
+    await fn(home);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    await rm(home, { recursive: true, force: true });
+  }
 }

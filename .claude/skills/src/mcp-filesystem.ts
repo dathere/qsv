@@ -8,16 +8,14 @@
 import { readdir, stat, lstat, realpath, access } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { join, resolve, relative, basename, dirname, extname, isAbsolute } from "node:path";
-import { homedir } from "node:os";
 import type {
   McpResource,
   FileMetadata,
 } from "./types.js";
-import { expandTilde, formatBytes, getErrorMessage } from "./utils.js";
+import { expandTilde, findSensitiveHomeEntry, formatBytes, getErrorMessage } from "./utils.js";
 import { config as appConfig } from "./config.js";
 import { runQsvSimple } from "./executor.js";
 import { statsFilePath } from "./parquet-bridge.js";
-import { SENSITIVE_HOME_DIRS, normalizeForCaseFs } from "./tool-constants.js";
 
 /**
  * Cache expiration time in milliseconds (1 minute)
@@ -246,47 +244,13 @@ export class FilesystemResourceProvider {
     }
 
     // Defense-in-depth: refuse to point the working dir at well-known
-    // credential / secrets directories. Mirrors the SENSITIVE_HOME_DIRS check
-    // in mcp-server.handleBrowseDirectory so both entry points are symmetric.
-    // Without this, plugin mode could auto-add (e.g.) ~/.ssh to allowedDirs.
-    // Extension-based file listing still blocks reading non-tabular files,
-    // but pointing the working dir at a secrets dir is itself a smell.
-    //
-    // Symlink hardening: `newDir` was realpath'd above, so we must compare
-    // against BOTH the logical home-relative path AND its realpath'd target.
-    // Otherwise a symlinked `~/.ssh -> /private/secret` is bypassable:
-    // target resolves to /private/secret while the unresolved blocked path
-    // remains ~/.ssh, and the equality/prefix check misses. (roborev
-    // commit 49361f5 review)
-    const home = homedir();
-    let canonHome: string;
-    try {
-      canonHome = realpathSync(home);
-    } catch {
-      canonHome = home;
-    }
-    const target = normalizeForCaseFs(newDir);
-    const sep = process.platform === "win32" ? "\\" : "/";
-    for (const sensitive of SENSITIVE_HOME_DIRS) {
-      const blockedLogical = resolve(canonHome, sensitive);
-      let blockedCanonical = blockedLogical;
-      try {
-        blockedCanonical = realpathSync(blockedLogical);
-      } catch {
-        // Sensitive dir doesn't exist on this host — only the logical
-        // form is meaningful (no symlink to resolve through).
-      }
-      // De-dupe so we don't recheck the same path when there's no symlink.
-      for (const blocked of new Set([
-        normalizeForCaseFs(blockedLogical),
-        normalizeForCaseFs(blockedCanonical),
-      ])) {
-        if (target === blocked || target.startsWith(blocked + sep)) {
-          throw new Error(
-            `Cannot set working directory to ${dir}: "${sensitive}" is a protected directory.`,
-          );
-        }
-      }
+    // credential / secrets directories. Without this, plugin mode could
+    // auto-add (e.g.) ~/.ssh to allowedDirs.
+    const sensitive = findSensitiveHomeEntry(newDir);
+    if (sensitive !== undefined) {
+      throw new Error(
+        `Cannot set working directory to ${dir}: "${sensitive}" is a protected directory.`,
+      );
     }
 
     if (!this.isPathAllowed(newDir, true)) {
@@ -339,6 +303,17 @@ export class FilesystemResourceProvider {
           `Path does not exist and parent directory is inaccessible: ${path}`,
         );
       }
+    }
+
+    // Must run BEFORE isPathAllowed: in plugin mode that call auto-adds the
+    // parent dir to allowedDirs, so a home-wide allow (the default when
+    // QSV_MCP_ALLOWED_DIRS is unset) or plugin mode would otherwise let an
+    // output_file overwrite ~/.ssh/authorized_keys.
+    const sensitive = findSensitiveHomeEntry(canonical);
+    if (sensitive !== undefined) {
+      throw new Error(
+        `Access denied: ${path} is under "${sensitive}", which is protected.`,
+      );
     }
 
     // Security check: ensure canonical path is within allowed directories

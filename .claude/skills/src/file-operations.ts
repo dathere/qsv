@@ -35,7 +35,7 @@ import {
 import { isShuttingDown, activeProcesses } from "./concurrency.js";
 import { runQsvSimple } from "./executor.js";
 import { config } from "./config.js";
-import { expandTilde, formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
+import { expandTilde, findSensitiveHomeEntry, formatBytes, getErrorMessage, findSimilarFiles, errorResult, successResult, isNodeError } from "./utils.js";
 
 /**
  * Stat a path, returning null for ENOENT (file not found) and rethrowing
@@ -580,7 +580,14 @@ export async function resolveFilePathParams(
       missing.unshift(basename(ancestor));
       ancestor = dirname(ancestor);
       try {
-        return join(await filesystemProvider.resolvePath(ancestor), ...missing);
+        const dir = join(await filesystemProvider.resolvePath(ancestor), ...missing);
+        // the re-appended segments were never seen by the provider, so with no
+        // ~/.config, ~/.config/gh/x would otherwise pass via ancestor ~/.config
+        const sensitive = findSensitiveHomeEntry(dir);
+        if (sensitive !== undefined) {
+          throw invalid(label, new Error(`${value} is under "${sensitive}", which is protected.`));
+        }
+        return dir;
       } catch (error: unknown) {
         if (!/does not exist/i.test(getErrorMessage(error))) throw invalid(label, error);
       }

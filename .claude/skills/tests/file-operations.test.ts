@@ -38,6 +38,7 @@ import {
   DIRECTORY_PATH_ARGS,
 } from "../src/tool-constants.js";
 import { SkillLoader } from "../src/loader.js";
+import { withFakeHome } from "./test-helpers.js";
 import type { FilesystemProviderExtended } from "../src/types.js";
 import { createTestDir, cleanupTestDir, createTestCSV, QSV_AVAILABLE } from "./test-helpers.js";
 import type { QsvSkill } from "../src/types.js";
@@ -817,5 +818,31 @@ describe("commands that write their own files", () => {
     const text = (await formatToolResult(result, "split", "/in.csv", undefined, false, {})).content[0].text ?? "";
     assert.ok(text.length < 5000, String(text.length));
     assert.match(text, /\[stderr truncated\]$/);
+  });
+});
+
+test("a created output dir under a missing sensitive home dir is refused", async () => {
+  await withFakeHome(async (home) => {
+    const provider = new FilesystemResourceProvider({ workingDirectory: home, allowedDirectories: [home] });
+    const split = {
+      name: "qsv-split",
+      version: "29.0.0",
+      description: "split",
+      category: "test",
+      command: {
+        subcommand: "split",
+        args: [{ name: "outdir", type: "string", required: true, description: "dir" }],
+        options: [],
+      },
+    } as QsvSkill;
+    // ~/.config does not exist, so the provider only ever sees the ancestor
+    // ~/.config (not protected) and never the re-appended gh/parts
+    await assert.rejects(
+      resolveFilePathParams({ outdir: "~/.config/gh/parts" }, split, provider),
+      /"\.config\/gh", which is protected/,
+    );
+    const ok: Record<string, unknown> = { outdir: "~/data/new/parts" };
+    await resolveFilePathParams(ok, split, provider);
+    assert.strictEqual(ok.outdir, join(home, "data", "new", "parts"));
   });
 });

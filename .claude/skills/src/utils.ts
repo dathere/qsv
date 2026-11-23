@@ -2,8 +2,14 @@
  * Shared utility functions for QSV MCP Server
  */
 
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import {
+  SENSITIVE_HOME_DIRS,
+  SENSITIVE_HOME_FILES,
+  normalizeForCaseFs,
+} from "./tool-constants.js";
 
 /**
  * Expand tilde (~) in paths to the user's home directory
@@ -255,4 +261,49 @@ export function reservedCachePathError(outputPath: string): string {
     `Output path "${outputPath}" matches a reserved cache file pattern. ` +
     `Files ending in ${suffixList} are auto-managed by qsv. Use a different output path.`
   );
+}
+
+/**
+ * Return the SENSITIVE_HOME_DIRS / SENSITIVE_HOME_FILES entry that `target`
+ * falls under, or undefined if it is not protected. `target` must already be
+ * realpath'd.
+ *
+ * Each protected path is compared in BOTH its logical home-relative form and
+ * its realpath'd form: a symlinked `~/.ssh -> /private/secret` would otherwise
+ * slip through, since `target` resolves to /private/secret while the
+ * unresolved blocked path stays ~/.ssh. (roborev commit 49361f5 review)
+ */
+export function findSensitiveHomeEntry(target: string): string | undefined {
+  const home = homedir();
+  let canonHome: string;
+  try {
+    canonHome = realpathSync.native(home);
+  } catch {
+    canonHome = home;
+  }
+  const normTarget = normalizeForCaseFs(target);
+  const sep = process.platform === "win32" ? "\\" : "/";
+  const blockedForms = (entry: string): Set<string> => {
+    const logical = resolve(canonHome, entry);
+    let canonical = logical;
+    try {
+      canonical = realpathSync.native(logical);
+    } catch {
+      // Doesn't exist on this host — only the logical form is meaningful.
+    }
+    return new Set([normalizeForCaseFs(logical), normalizeForCaseFs(canonical)]);
+  };
+  for (const dir of SENSITIVE_HOME_DIRS) {
+    for (const blocked of blockedForms(dir)) {
+      if (normTarget === blocked || normTarget.startsWith(blocked + sep)) {
+        return dir;
+      }
+    }
+  }
+  for (const file of SENSITIVE_HOME_FILES) {
+    if (blockedForms(file).has(normTarget)) {
+      return file;
+    }
+  }
+  return undefined;
 }

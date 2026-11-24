@@ -199,13 +199,13 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.8.12"
+version = "0.8.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+checksum = "0fca89247609239eeb6915e6991111866b92d7b31025e69302bbf430cc4d2c38"
 dependencies = [
  "cfg-if",
  "const-random",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "serde",
  "version_check",
@@ -710,9 +710,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.52"
+version = "0.4.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ad47a740fb906fffdd891e8b6d5fde2511600f7bfaebd68939fa08a14999459"
+checksum = "7bde8322bfc31ade96978b8d3c06be0fd60401192e7ddb9a0b2de5e215d22e61"
 dependencies = [
  "compression-codecs",
  "compression-core",
@@ -1112,9 +1112,9 @@ dependencies = [
 
 [[package]]
 name = "brotli-decompressor"
-version = "6.3.2"
+version = "6.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc031cd87c6529082b0b65c604e86af0ed7744841b17ccfe60b1e31fa606179e"
+checksum = "664148598c930650998ef56df301329ffe7b4cdb02d49b2a3fca3bcaf2185bcb"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -1218,9 +1218,9 @@ dependencies = [
 
 [[package]]
 name = "bytestring"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca79160522b4aed4a69bab673bee78d3884d44240c78c96cb04b7557d532b4dc"
+checksum = "07acef387a61fe24ed2ee3924f1fe89ac9f4b862dfd72b110109133158d7f9f8"
 dependencies = [
  "bytes",
 ]
@@ -1559,21 +1559,20 @@ checksum = "be95d4a884358a21a199689323c29e9256b4a1b315e22f183d155422041d3a9a"
 
 [[package]]
 name = "const-random"
-version = "0.1.18"
+version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87e00182fe74b066627d63b85fd550ac2998d4b0bd86bfed477a0ae4c7c71359"
+checksum = "d38d4bb3e79c716fd0330d8da84171b0135e59e01076e99f22b75a64c56e952c"
 dependencies = [
  "const-random-macro",
 ]
 
 [[package]]
 name = "const-random-macro"
-version = "0.1.16"
+version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d839f2a20b0aee515dc581a6172f2321f96cab76c1a38a4c584a194955390e"
+checksum = "d66bb491e9fc48cb3fed9d57df886880a751d540d645ebc86b6d9d35b8fa8457"
 dependencies = [
- "getrandom 0.2.17",
- "once_cell",
+ "getrandom 0.4.3",
  "tiny-keccak",
 ]
 
@@ -1794,9 +1793,9 @@ dependencies = [
 
 [[package]]
 name = "crc32fast"
-version = "1.5.5"
+version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b929dd2a135771f40afabd1073f85eed59c800b7c61901e5c254270497dad64"
+checksum = "fd9ae8fcb3ea71b0b26338b4ffb13006bb175de8fd07921089a906ce7e5e6945"
 dependencies = [
  "cfg-if",
 ]
@@ -2797,7 +2796,7 @@ dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
  "flate2",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "log",
  "thiserror 2.0.21",
 ]
@@ -3582,9 +3581,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.12.0"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c3e324da4c95177d6291d4c8730197c0d1822f8a9766814a4a44fa5ab797c9c"
+checksum = "229c6ff5584df4c6becbfe00567128bac768c8cd32ebc8a8366bd81ed072e8f3"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4067,12 +4066,12 @@ dependencies = [
 
 [[package]]
 name = "jiff"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e77cbfb9fff4798e283c2d69dff39fc2c45e7da017e5ce95b654e46ea41236"
+checksum = "107f2e89536b6818514025f6787b0d94d819e54fe3b40365275fc753de485b3f"
 dependencies = [
- "jiff-core 1.0.1",
- "jiff-static 1.0.2",
+ "jiff-core 1.0.2",
+ "jiff-static 1.0.3",
  "jiff-tzdb-platform 1.0.0",
  "log",
  "portable-atomic",
@@ -4092,9 +4091,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b46a105a9874634dd96231021526bf24ca04955a5998c59a9c7666e634b7b8"
+checksum = "d44c923edf2bf456a982253f1a9ee1f6e89e421dffd0065d9b9a581da0def58f"
 dependencies = [
  "log",
 ]
@@ -4113,11 +4112,11 @@ dependencies = [
 
 [[package]]
 name = "jiff-static"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9067a0b23e5be3147d56b2dcf652b18e6b1364caca93fb157653b6fbcab23a9"
+checksum = "4996f71e569e3a3e32b925c28ef8f0027dc30bb1d594b33eeda409eea185f5c8"
 dependencies = [
- "jiff-core 1.0.1",
+ "jiff-core 1.0.2",
  "proc-macro2",
  "quote",
  "syn 3.0.10",
@@ -8492,7 +8491,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.14.2",
  "jiff 0.2.46",
- "jiff 1.0.2",
+ "jiff 1.0.3",
  "schemars 0.9.0",
  "schemars 1.2.3",
  "serde_core",
@@ -10925,9 +10924,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.6.8"
+version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
+checksum = "aa76918995d776d9dd34d371030be228d021137449771493d56e29f77e4148ac"
 
 [[package]]
 name = "zmij"

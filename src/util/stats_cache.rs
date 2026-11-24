@@ -371,7 +371,7 @@ pub fn stats_csv_separator_mismatch(stats_csv_path: &Path, separator: &str) -> b
 ///
 /// Both locations are checked for the same reason `stats_cache_parsing_opts_conflict` checks
 /// both: for a symlinked input they differ.
-pub(super) fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&Path; 2]) -> bool {
+pub(crate) fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&Path; 2]) -> bool {
     let Ok(jsonl_meta) = std::fs::metadata(statsdata_path) else {
         return false;
     };
@@ -396,7 +396,7 @@ pub(super) fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&P
 ///
 /// (`get_stats_records_readonly` still fails closed on missing metadata: it returns an `Option`
 /// its callers treat as a best-effort accelerator, so refusing costs nothing there.)
-pub(super) fn stats_cache_parsing_opts_conflict(
+pub(crate) fn stats_cache_parsing_opts_conflict(
     input_path: &Path,
     canonical_input_path: &Path,
     no_headers: bool,

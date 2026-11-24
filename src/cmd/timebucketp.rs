@@ -32,6 +32,11 @@ as dates; first, last and --by keep values as written (unless a pschema.json
 types them). Dates need 4-digit years unless --date-format is given. An index
 that does not parse as dates is an error, as is an empty index value.
 
+A pschema.json made by `qsv schema --polars` while QSV_PREFER_DMY was set
+marks day/month dates as already parsed, so they stay day-first in later
+runs even with QSV_PREFER_DMY unset. After changing QSV_PREFER_DMY, delete
+or regenerate the pschema.json, or pass --date-format, which overrides it.
+
 Examples:
 
   # hourly sales totals

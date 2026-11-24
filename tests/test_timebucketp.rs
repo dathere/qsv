@@ -359,6 +359,62 @@ fn timebucketp_integer_index_typed_by_pschema() {
 }
 
 #[test]
+fn timebucketp_dmy_pschema_outlives_qsv_prefer_dmy() {
+    // a pschema made under QSV_PREFER_DMY types the dates as Date, so they stay day-first
+    // after the variable is unset (documented in USAGE); --date-format overrides the pschema.
+    let wrk = Workdir::new("timebucketp_dmy_pschema_outlives_qsv_prefer_dmy");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["01/03/2024", "1"],
+            svec!["01/04/2024", "2"],
+        ],
+    );
+    let mut schema = wrk.command("schema");
+    schema
+        .env("QSV_PREFER_DMY", "1")
+        .args(["--polars", "d.csv"]);
+    wrk.assert_success(&mut schema);
+    let pschema = wrk.read_to_string("d.csv.pschema.json").unwrap();
+    assert!(pschema.contains("\"Date\""), "pschema: {pschema}");
+
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1d", "--agg", "sum:v", "d.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "v_sum"],
+        svec!["2024-03-01", "1"],
+        svec!["2024-04-01", "2"],
+    ];
+    assert_eq!(got, expected);
+
+    let mut with_format = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1d",
+            "--agg",
+            "sum:v",
+            "--date-format",
+            "%m/%d/%Y",
+            "d.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut with_format);
+    let expected = vec![
+        svec!["ts", "v_sum"],
+        svec!["2024-01-03", "1"],
+        svec!["2024-01-04", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn timebucketp_weekly_from_monday_fill_gaps() {
     let wrk = Workdir::new("timebucketp_weekly_from_monday_fill_gaps");
     wrk.create(

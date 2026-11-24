@@ -177,9 +177,6 @@ base64-simd = { version = "0.8", optional = true }
 bitvec = "1"
 blake3 = { version = "1.8", features = ["rayon", "mmap"] }
 bytecount = "0.6"
-bytemuck = { version = "1.24", features = [
-    "latest_stable_rust",
-], optional = true }
 byteorder = "1.5"
 bytes = "1"
 cached = { version = "4.1", features = ["ahash", "redb_store", "redis_store"] }
@@ -493,7 +490,6 @@ serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
 sha2 = { version = "0.11", optional = true }
 simdutf8 = "0.1"
-spreadsheet-ods = { version = "1", optional = true }
 toml = "1.2.1+spec-1.1.0"
 toon-format = { version = "0.7", default-features = false }
 smallvec = "1"
@@ -747,7 +743,6 @@ get = ["zstd", "flate2", "glob"]
 # `get` only (see the NOTE above distrib_features). See `qsv get --help`.
 get_cloud = ["get", "dep:object_store"]
 geocode = [
-    "bytemuck",
     "dns-lookup",
     "geosuggest-core",
     "geosuggest-utils",
@@ -763,7 +758,7 @@ geocode = [
 luau     = ["mlua", "sanitize-filename", "flate2", "zstd"]
 magika   = ["dep:magika", "dep:ort"]
 mcp      = []
-polars   = ["dep:polars", "dep:polars-arrow", "bytemuck", "flate2", "zstd"]
+polars   = ["dep:polars", "dep:polars-arrow", "flate2", "zstd"]
 readstat = ["dep:polars-readstat-rs", "polars"]
 
 prompt = ["rfd"]
@@ -783,7 +778,7 @@ profile = ["dep:sha2", "minijinja-contrib", "polars", "yaml_serde"]
 # (see the NOTE above distrib_features).
 geoconnex  = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
-to         = ["csvs_convert", "dep:spreadsheet-ods"]
+to         = ["csvs_convert"]
 # viz: generate charts (bar/line/scatter/histogram/box) and an auto-dashboard
 # (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
 # interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`

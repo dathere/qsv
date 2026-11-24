@@ -410,6 +410,15 @@ Common options:
                            stops at the first missing column, so an
                            out-of-order selection (e.g. `3,1`) makes a short
                            record skip columns that ARE present.
+    --quote <arg>          The quote character for READING CSV data. When
+                           this, --escape or --no-quoting is set to other
+                           than its default, an index is not used, so the
+                           file is not split into chunks computed in
+                           parallel: slower on a large file. [default: "]
+    --escape <arg>         The escape character for READING CSV data, for data
+                           that escapes quotes as \" instead of "". When not
+                           set, quotes are escaped by doubling them.
+    --no-quoting           Read quote characters as ordinary data.
     --memcheck             Use CONSERVATIVE heuristics for the in-memory load
                            check (file size vs. available + free_swap × platform
                            factor − headroom), instead of the default NORMAL
@@ -422,7 +431,8 @@ Common options:
                            check runs whenever stats takes the non-parallel
                            path with non-streaming columns. On OOM (in either
                            NORMAL or CONSERVATIVE mode), qsv auto-creates an
-                           index when no index exists (skipped for stdin) AND
+                           index when no index exists (skipped for stdin and
+                           for non-default quoting) AND
                            switches to approx quantile + approx cardinality
                            methods (DataSketches t-digest and HyperLogLog)
                            where compatible. The sketch fallback can also
@@ -531,6 +541,9 @@ pub struct Args {
     pub flag_no_headers:           bool,
     pub flag_delimiter:            Option<Delimiter>,
     pub flag_flexible:             bool,
+    pub flag_quote:                Delimiter,
+    pub flag_escape:               Option<Delimiter>,
+    pub flag_no_quoting:           bool,
     pub flag_memcheck:             bool,
     pub flag_vis_whitespace:       bool,
     pub flag_weight:               Option<String>,
@@ -576,6 +589,15 @@ struct StatsArgs {
     // run's stats (or vice versa) since raggedness changes the counts.
     #[serde(default)]
     flag_flexible: bool,
+    // the quoting the input was READ with: another quote/escape character splits the same
+    // bytes into other fields. Defaults match the flags' defaults, so a cache written before
+    // these fields existed still matches a run with the default quoting.
+    #[serde(default = "default_stats_quote")]
+    flag_quote: String,
+    #[serde(default)]
+    flag_escape: String,
+    #[serde(default)]
+    flag_no_quoting: bool,
     // the preamble rows QSV_SNIFF_PREAMBLE skipped: stats computed past them describe other
     // rows (and another header) than stats of the file as stored. serde(default) so an older
     // cache reads as 0 and still matches runs without the env var.
@@ -599,6 +621,10 @@ struct StatsArgs {
     field_count: u64,
     filesize_bytes: u64,
     hash: FileHash,
+}
+
+fn default_stats_quote() -> String {
+    "\"".to_string()
 }
 
 fn default_stats_separator() -> String {
@@ -688,6 +714,9 @@ impl StatsArgs {
             flag_no_headers: get_bool("flag_no_headers"),
             flag_delimiter: get_str("flag_delimiter"),
             flag_flexible: get_bool("flag_flexible"),
+            flag_quote: get_str_or("flag_quote", "\""),
+            flag_escape: get_str("flag_escape"),
+            flag_no_quoting: get_bool("flag_no_quoting"),
             preamble_rows: get_u64("preamble_rows"),
             stats_separator: get_str_or("stats_separator", DEFAULT_STATS_SEPARATOR),
             flag_output_snappy: get_bool("flag_output_snappy"),
@@ -1833,6 +1862,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .map(|d| (d.as_byte() as char).to_string())
             .unwrap_or_default(),
         flag_flexible: args.flag_flexible,
+        flag_quote: (args.flag_quote.as_byte() as char).to_string(),
+        flag_escape: args
+            .flag_escape
+            .as_ref()
+            .map(|d| (d.as_byte() as char).to_string())
+            .unwrap_or_default(),
+        flag_no_quoting: args.flag_no_quoting,
         // set from the resolved rconfig below
         preamble_rows: 0,
         stats_separator: stats_separator_from_env(),
@@ -2174,6 +2210,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             // narrower request, including a plain `qsv stats`.
                             && existing_stats_args_json.flag_flexible
                                 == current_stats_args.flag_flexible
+                            // so is the quoting: it decides where fields and records end
+                            && existing_stats_args_json.flag_quote
+                                == current_stats_args.flag_quote
+                            && existing_stats_args_json.flag_escape
+                                == current_stats_args.flag_escape
+                            && existing_stats_args_json.flag_no_quoting
+                                == current_stats_args.flag_no_quoting
                             // stats of the rows past a QSV_SNIFF_PREAMBLE-skipped preamble
                             // have another header than stats of the file as stored
                             && existing_stats_args_json.preamble_rows
@@ -2299,7 +2342,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         // since this fallback fires precisely when the input is too large to
                         // process sequentially, leaving a large compressed file with no index
                         // escape hatch at all.
-                        if indexed_result.is_none() && !rconfig.is_stdin() {
+                        // An index built for other quoting would mislead every later default
+                        // reader of the file, and Config won't use one under it anyway.
+                        if indexed_result.is_none()
+                            && !rconfig.is_stdin()
+                            && rconfig.has_default_quoting()
+                        {
                             log::info!(
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."
@@ -3672,11 +3720,17 @@ impl Args {
     /// * **Minimal Overhead**: Creates configuration without unnecessary allocations
     #[inline]
     fn rconfig(&self) -> Config {
-        Config::new(self.arg_input.as_ref())
+        let mut rconfig = Config::new(self.arg_input.as_ref())
             .delimiter(self.flag_delimiter)
             .no_headers_flag(self.flag_no_headers)
             .flexible(self.flag_flexible)
-            .select(self.flag_select.clone())
+            .quote(self.flag_quote.as_byte())
+            .quoting(!self.flag_no_quoting)
+            .select(self.flag_select.clone());
+        if let Some(escape) = self.flag_escape {
+            rconfig = rconfig.escape(Some(escape.as_byte())).double_quote(false);
+        }
+        rconfig
     }
 
     /// Creates a `WhichStats` configuration from the current arguments.

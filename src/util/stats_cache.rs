@@ -98,6 +98,25 @@ pub(super) fn stats_cache_parsing_opts_match(
         return false;
     }
 
+    // `stats --quote/--escape/--no-quoting` split the same bytes into other fields and records
+    // than the default quoting every consumer reads with. Caches written before these were
+    // recorded were all read with the default.
+    if metadata
+        .get("flag_quote")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|q| q != "\"")
+        || metadata
+            .get("flag_escape")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|e| !e.is_empty())
+        || metadata
+            .get("flag_no_quoting")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    {
+        return false;
+    }
+
     // A cache of the rows past a preamble QSV_SNIFF_PREAMBLE skipped has another header (and
     // rows) than one of the file as stored, so the skipped rows must match the consumer's.
     // Caches written before this was recorded read as 0.
@@ -803,6 +822,9 @@ pub fn get_stats_records_flexible(
             flag_no_headers:           args.flag_no_headers,
             flag_delimiter:            detected_delimiter,
             flag_flexible:             flexible,
+            flag_quote:                crate::config::Delimiter(b'"'),
+            flag_escape:               None,
+            flag_no_quoting:           false,
             flag_memcheck:             args.flag_memcheck,
             flag_vis_whitespace:       false,
             flag_weight:               None,

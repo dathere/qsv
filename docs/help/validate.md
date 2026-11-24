@@ -351,6 +351,9 @@ qsv validate --help
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. It will be validated with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. Note that this option is only valid when running in RFC 4180 validation mode as JSON Schema validation requires headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. |  |
+| &nbsp;`‑‑quote`&nbsp; | string | The quote character for reading CSV data. When this, --escape or --no-quoting is set to other than its default, an index is not used. Whatever the quoting read, the valid and invalid split files are written quoted with ", escaped by doubling it. | `"` |
+| &nbsp;`‑‑escape`&nbsp; | string | The escape character for reading CSV data, for data that escapes quotes as \" instead of "". When not set, quotes are escaped by doubling them. |  |
+| &nbsp;`‑‑no‑quoting`&nbsp; | flag | Read quote characters as ordinary data. |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not display validation summary message. |  |
 

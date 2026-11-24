@@ -1262,10 +1262,13 @@ fn distributed_types(
         // (and round-tripped to the PASS 2 temp file) consistently with how PASS 2
         // is sniffed below - including for non-comma/odd-quote dialects (TSV, SSV,
         // backtick-quoted, unquoted, etc.).
+        // sampling tolerates an index whose records the detected quoting splits otherwise,
+        // as it always has
         let mut idx_conf = conf
             .clone()
             .no_headers(!has_header)
-            .delimiter(Some(Delimiter(dialect_meta.dialect.delimiter)));
+            .delimiter(Some(Delimiter(dialect_meta.dialect.delimiter)))
+            .index_with_any_quoting(true);
         idx_conf = match dialect_meta.dialect.quote {
             csv_nose::Quote::Some(q) => idx_conf.quote(q),
             csv_nose::Quote::None => idx_conf.quoting(false),

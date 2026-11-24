@@ -361,6 +361,15 @@ Common options:
                                requires headers.
     -d, --delimiter <arg>      The field delimiter for reading CSV data.
                                Must be a single character.
+    --quote <arg>              The quote character for reading CSV data. When
+                               this, --escape or --no-quoting is set to other than
+                               its default, an index is not used. Whatever the
+                               quoting read, the valid and invalid split files are
+                               written quoted with ", escaped by doubling it. [default: "]
+    --escape <arg>             The escape character for reading CSV data, for data that
+                               escapes quotes as \" instead of "". When not set, quotes
+                               are escaped by doubling them.
+    --no-quoting               Read quote characters as ordinary data.
     -p, --progressbar          Show progress bars. Not valid for stdin.
     -q, --quiet                Do not display validation summary message.
 "#;
@@ -457,6 +466,9 @@ struct Args {
     flag_batch:                usize,
     flag_no_headers:           bool,
     flag_delimiter:            Option<Delimiter>,
+    flag_quote:                Delimiter,
+    flag_escape:               Option<Delimiter>,
+    flag_no_quoting:           bool,
     flag_progressbar:          bool,
     flag_quiet:                bool,
     arg_input:                 Vec<std::path::PathBuf>,
@@ -474,6 +486,19 @@ struct Args {
     flag_email_display_text:   bool,
     flag_email_min_subdomains: usize,
     flag_email_domain_literal: bool,
+}
+
+impl Args {
+    /// `rconfig` reading with the --quote, --escape and --no-quoting settings.
+    fn with_quoting(&self, rconfig: Config) -> Config {
+        let rconfig = rconfig
+            .quote(self.flag_quote.as_byte())
+            .quoting(!self.flag_no_quoting);
+        match self.flag_escape {
+            Some(escape) => rconfig.escape(Some(escape.as_byte())).double_quote(false),
+            None => rconfig,
+        }
+    }
 }
 
 /// The non-string JSON types a column's schema allows (its `type`, ignoring "null"). A cell
@@ -504,7 +529,8 @@ impl JSONtypes {
 struct RFC4180Struct {
     delimiter_char: char,
     header_row:     bool,
-    quote_char:     char,
+    // null under --no-quoting
+    quote_char:     Option<char>,
     num_records:    u64,
     num_fields:     u64,
     fields:         Vec<String>,
@@ -2179,6 +2205,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_delimiter.is_some() {
         rconfig = rconfig.delimiter(args.flag_delimiter);
     }
+    rconfig = args.with_quoting(rconfig);
     // ignore the "already set" error so re-entrant calls (e.g., qsv used as a library)
     // don't panic; first-call value wins, which is fine for a single-shot command.
     let _ = DELIMITER.set(args.flag_delimiter);
@@ -2715,6 +2742,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
         if args.flag_delimiter.is_some() {
             rconfig = rconfig.delimiter(args.flag_delimiter);
         }
+        rconfig = args.with_quoting(rconfig);
 
         // in --split-ragged mode, read flexibly so ragged rows are diverted rather than aborting
         if split_ragged {
@@ -3285,7 +3313,7 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."
         let rfc4180 = RFC4180Struct {
             delimiter_char: rconfig.get_delimiter() as char,
             header_row:     !rconfig.no_headers,
-            quote_char:     rconfig.quote as char,
+            quote_char:     rconfig.is_quoting().then_some(rconfig.quote as char),
             num_records:    record_idx,
             num_fields:     header_len as u64,
             fields:         field_vec,

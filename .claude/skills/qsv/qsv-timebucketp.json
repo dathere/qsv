@@ -58,7 +58,7 @@
       {
         "flag": "--fill-gaps",
         "type": "flag",
-        "description": "Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Cannot be combined with datapoint labels or starts, or with --boundaries."
+        "description": "Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Requires the default left labels, and cannot be combined with --start-by datapoint or --boundaries."
       },
       {
         "flag": "--ignore-errors",
@@ -114,7 +114,7 @@
     ]
   },
   "hints": {
-    "memory": "constant"
+    "memory": "full"
   },
   "examples": [
     {

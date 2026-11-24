@@ -14,7 +14,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 70 commands needed by the MCP server (vs 80 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 71 commands needed by the MCP server (vs 81 in the full qsv binary), resulting in a smaller, faster binary.
 
 **Features included in qsvmcp**: Polars, geocoding, profiling, data synthesis, `to` conversions, `viz` charting, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
@@ -24,8 +24,8 @@ The **qsvmcp** binary variant is purpose-built for MCP server use. It includes o
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 70 | Preferred | Optimized for MCP, smaller binary |
-| **qsv** | 80 | Supported | Full-featured, includes extra commands not used by MCP |
+| **qsvmcp** | 71 | Preferred | Optimized for MCP, smaller binary |
+| **qsv** | 81 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |
 
@@ -278,7 +278,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 58 tools immediately (no deferred loading)
 - `false`: Always use 10 core utility tools only (+1 app-only tool when MCP Apps available; disables both deferred loading and the 13 pre-registered common command tools)
-- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 42 command tools (recommended). The 42 counts COMMAND tools only: of the 58 command skills, 13 are pre-registered as common commands and `index` and `stats` are promoted into the core set, leaving 42 to be discovered via `qsv_search_tools`
+- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 43 command tools (recommended). The 43 counts COMMAND tools only: of the 58 command skills, 13 are pre-registered as common commands and `index` and `stats` are promoted into the core set, leaving 43 to be discovered via `qsv_search_tools`
 
 ### Built-in Tool Search (`qsv_search_tools`)
 

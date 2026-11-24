@@ -183,7 +183,7 @@ pivotp:
 timebucketp:
   whenToUse: "Polars-powered time bucketing: aggregate rows into time windows over a date/datetime/integer --index. WINDOW MODE: --every (e.g. 15m, 1h, 1d, 1w, 1mo) with optional --period for overlapping windows and --offset. ROLLING MODE: --rolling --period gives each row a trailing (index - period, index] window. For plain calendar buckets in a larger query, sqlp's DATE_TRUNC also works."
   commonPattern: "Hourly totals per group: qsv_timebucketp(input_file='data.csv', index='ts', every='1h', by='station', agg='sum:temp,mean:temp,len'). Add fill_gaps=true to emit empty windows (count/sum/len 0). --agg takes several func:column pairs (first, last, sum, min, max, mean, median, quantile@<p>, len) and names outputs <column>_<func>."
-  errorPrevention: "Durations are an integer plus a unit (ns, us, ms, s, m, h, d, w, mo, q, y; i for integer indexes). A text index with ambiguous dates like 01/03/2024 is read day-first unless --date-format (e.g. %m/%d/%Y) is set. Empty index values are an error. --fill-gaps cannot be combined with --rolling, --boundaries, --label datapoint or --start-by datapoint."
+  errorPrevention: "Durations are an integer plus a unit (ns, us, ms, s, m, h, d, w, mo, q, y; i for integer indexes). A text index with ambiguous dates like 01/03/2024 is read day-first unless --date-format (e.g. %m/%d/%Y) is set. Empty index values are an error. --fill-gaps needs the default --label left and cannot be combined with --rolling, --boundaries or --start-by datapoint."
   hasCommonMistakes: true
 
 excel:

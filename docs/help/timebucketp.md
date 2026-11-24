@@ -2,7 +2,7 @@
 
 > Bucket time-series data into time windows (e.g. 15-minute, overlapping, or weekly from Monday) and aggregate them, optionally per group. Also computes rolling look-back windows (e.g. a trailing 2-hour average at each row) and can fill empty windows. Complements `sqlp`'s `DATE_TRUNC`, which only buckets by calendar unit.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/timebucketp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/timebucketp.rs)** | [🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/timebucketp.rs](https://github.com/dathere/qsv/blob/master/src/cmd/timebucketp.rs)** | [🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🐻‍❄️](TableOfContents.md#legend "command powered/accelerated by  vectorized query engine.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Timebucketp Options](#timebucketp-options) | [Common Options](#common-options)
@@ -107,7 +107,7 @@ qsv timebucketp --help
 | &nbsp;`‑‑closed`&nbsp; | string | Which window boundaries are inclusive: left, right, both or none. Defaults to left in window mode and to right in rolling mode. |  |
 | &nbsp;`‑‑start‑by`&nbsp; | string | Where the first window starts. Window mode only. |  |
 | &nbsp;`‑‑boundaries`&nbsp; | flag | Add _lower_boundary and _upper_boundary columns before the index column. Window mode only. |  |
-| &nbsp;`‑‑fill‑gaps`&nbsp; | flag | Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Cannot be combined with datapoint labels or starts, or with --boundaries. |  |
+| &nbsp;`‑‑fill‑gaps`&nbsp; | flag | Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Requires the default left labels, and cannot be combined with --start-by datapoint or --boundaries. |  |
 | &nbsp;`‑‑rolling`&nbsp; | flag | Use rolling mode (see above). |  |
 | &nbsp;`‑‑sorted`&nbsp; | flag | The input is already sorted by --index, within each group when using --by, so skip timebucketp's sort. Unsorted input is then an error, never a wrong result. |  |
 | &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring the schema. Set to 0 to scan the entire file. | `10000` |

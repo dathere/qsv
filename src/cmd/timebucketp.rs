@@ -104,8 +104,9 @@ timebucketp options:
     --fill-gaps            Also emit the empty windows between each group's
                            first and last window: count, sum and len are 0
                            there, and every other aggregation is empty.
-                           Window mode only. Cannot be combined with
-                           datapoint labels or starts, or with --boundaries.
+                           Window mode only. Requires the default left labels,
+                           and cannot be combined with --start-by datapoint
+                           or --boundaries.
     --rolling              Use rolling mode (see above).
     --sorted               The input is already sorted by --index, within
                            each group when using --by, so skip timebucketp's
@@ -303,6 +304,46 @@ fn parse_start_by(value: &str) -> CliResult<StartBy> {
     })
 }
 
+/// Whether a chrono/strptime format has any time-of-day field, skipping `%%` literals and the
+/// padding/width modifiers (`%-H`, `%_M`, `%3f`, ...).
+fn format_has_time(fmt: &str) -> bool {
+    let mut chars = fmt.chars();
+    while let Some(c) = chars.next() {
+        if c != '%' {
+            continue;
+        }
+        let mut spec = chars.next();
+        while let Some(m) = spec
+            && (matches!(m, '-' | '_' | '0' | '^' | '#' | '.' | ':') || m.is_ascii_digit())
+        {
+            spec = chars.next();
+        }
+        if matches!(
+            spec,
+            Some(
+                'H' | 'I'
+                    | 'k'
+                    | 'l'
+                    | 'M'
+                    | 'S'
+                    | 'T'
+                    | 'R'
+                    | 'r'
+                    | 'c'
+                    | 's'
+                    | 'f'
+                    | 'p'
+                    | 'P'
+                    | 'X'
+                    | '+'
+            )
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Turn the Polars errors users can cause into actionable messages.
 fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
     let msg = err.to_string();
@@ -353,6 +394,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_incorrectusage_clierror!("--by cannot include the --index column.");
     }
     let aggs = parse_aggs(&args.flag_agg)?;
+    let boundary_cols = if args.flag_boundaries {
+        &["_lower_boundary", "_upper_boundary"][..]
+    } else {
+        &[]
+    };
+    for a in &aggs {
+        if a.output == index
+            || by_cols.contains(&a.output)
+            || boundary_cols.contains(&a.output.as_str())
+        {
+            return fail_incorrectusage_clierror!(
+                "--agg output \"{}\" clashes with an input or boundary column of the same name. \
+                 Rename that column first, e.g. with `qsv rename`.",
+                a.output
+            );
+        }
+    }
 
     // Validate the mode-specific options before reading any data.
     if args.flag_rolling {
@@ -387,9 +445,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.flag_fill_gaps {
         // Inserted windows are labelled on the --every grid, which only matches labels that sit
         // on it, and carry no boundaries.
-        if label == Label::DataPoint {
+        // Window ends (--label right) are not evenly spaced when --period differs from --every
+        // or the duration is calendar-based, so only the starts form a grid to fill.
+        if label != Label::Left {
             return fail_incorrectusage_clierror!(
-                "--fill-gaps cannot be combined with --label datapoint."
+                "--fill-gaps requires --label left (the default)."
             );
         }
         if start_by == StartBy::DataPoint {
@@ -517,6 +577,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             return fail_incorrectusage_clierror!("--by column \"{b}\" not found.");
         }
     }
+    // A header-only input has nothing to bucket, and its untyped (text) columns would fail the
+    // date parsing and the aggregations: write the output header only.
+    if lf.clone().limit(1).collect()?.height() == 0 {
+        let names = by_cols
+            .iter()
+            .cloned()
+            .chain(
+                args.flag_boundaries
+                    .then(|| ["_lower_boundary".to_string(), "_upper_boundary".to_string()])
+                    .into_iter()
+                    .flatten(),
+            )
+            .chain(std::iter::once(index.clone()))
+            .chain(aggs.iter().map(|a| a.output.clone()));
+        let mut empty = DataFrame::new_infer_height(
+            names
+                .map(|n| Column::new_empty(n.as_str().into(), &DataType::String))
+                .collect(),
+        )?;
+        return write_output(&mut empty, &args, output_delim);
+    }
+
     // Polars rejects an integer-index duration (e.g. 0i) on a temporal index, and vice versa.
     let offset = offset.unwrap_or_else(|| {
         Duration::parse(if index_dtype.is_integer() {
@@ -537,13 +619,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 strict: true,
                 ..Default::default()
             };
-            let has_time = args.flag_date_format.as_deref().is_some_and(|f| {
-                [
-                    "%H", "%I", "%k", "%l", "%M", "%S", "%T", "%R", "%r", "%c", "%s", "%+",
-                ]
-                .iter()
-                .any(|spec| f.contains(spec))
-            });
+            let has_time = args
+                .flag_date_format
+                .as_deref()
+                .is_some_and(format_has_time);
             let parsed = if args.flag_date_format.is_some() && !has_time {
                 col(index.as_str()).str().to_date(options)
             } else {
@@ -677,6 +756,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         )?;
     }
 
+    write_output(&mut result, &args, output_delim)
+}
+
+fn write_output(result: &mut DataFrame, args: &Args, output_delim: u8) -> CliResult<()> {
     let mut writer = match args.flag_output {
         Some(ref output_file) => Box::new(File::create(Path::new(output_file))?) as Box<dyn Write>,
         None => Box::new(io::stdout()) as Box<dyn Write>,
@@ -690,7 +773,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .with_float_precision(float_precision)
         .with_datetime_format(Some(PlSmallStr::from_static("%Y-%m-%d %H:%M:%S%.f")))
         .with_separator(output_delim)
-        .finish(&mut result)?;
+        .finish(result)?;
     drop(writer);
 
     compress_output_if_needed(args.flag_output.clone())?;

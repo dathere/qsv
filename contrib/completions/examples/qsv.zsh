@@ -3779,6 +3779,7 @@ _arguments "${_arguments_options[@]}" : \
 '--dates-whitelist=[]: :_default' \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
+'--escape=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '--mode-cardinality-cap=[]: :_default' \
@@ -3786,6 +3787,7 @@ _arguments "${_arguments_options[@]}" : \
 '--output=[]: :_default' \
 '--percentile-list=[]: :_default' \
 '--quantile-method=[]: :_default' \
+'--quote=[]: :_default' \
 '--round=[]: :_default' \
 '-s+[]: :_default' \
 '--select=[]: :_default' \
@@ -3804,6 +3806,7 @@ _arguments "${_arguments_options[@]}" : \
 '--mode[]' \
 '-n[]' \
 '--no-headers[]' \
+'--no-quoting[]' \
 '--nulls[]' \
 '--percentiles[]' \
 '--prefer-dmy[]' \
@@ -3823,17 +3826,27 @@ _arguments "${_arguments_options[@]}" : \
 '-d+[]: :_default' \
 '--delimiter=[]: :_default' \
 '--dictionary=[]: :_default' \
+'--discover-relationships=[]: :_default' \
+'--format=[]: :_default' \
 '--freq-limit=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
 '--joint-cardinality-cap=[]: :_default' \
 '--locale=[]: :_default' \
+'--min-count=[]: :_default' \
+'--model=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--quantiles=[]: :_default' \
+'--report=[]: :_default' \
 '-n+[]: :_default' \
 '--rows=[]: :_default' \
+'--rows-per-file=[]: :_default' \
+'--save-model=[]: :_default' \
 '--seed=[]: :_default' \
+'--shard=[]: :_default' \
 '--stats-options=[]: :_default' \
+'--target=[]: :_default' \
 '--consistent-fakes[]' \
 '--infer-content-type[]' \
 '--no-relationships[]' \
@@ -3886,6 +3899,38 @@ _arguments "${_arguments_options[@]}" : \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(timebucketp)
+_arguments "${_arguments_options[@]}" : \
+'-a+[]: :_default' \
+'--agg=[]: :_default' \
+'-b+[]: :_default' \
+'--by=[]: :_default' \
+'--closed=[]: :_default' \
+'--date-format=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--every=[]: :_default' \
+'-i+[]: :_default' \
+'--index=[]: :_default' \
+'--infer-len=[]: :_default' \
+'--label=[]: :_default' \
+'--offset=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--period=[]: :_default' \
+'--start-by=[]: :_default' \
+'--boundaries[]' \
+'--decimal-comma[]' \
+'--fill-gaps[]' \
+'--ignore-errors[]' \
+'-q[]' \
+'--quiet[]' \
+'--rolling[]' \
+'--sorted[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -4252,9 +4297,11 @@ _arguments "${_arguments_options[@]}" : \
 '--delimiter=[]: :_default' \
 '--dfa-size-limit=[]: :_default' \
 '--email-min-subdomains=[]: :_default' \
+'--escape=[]: :_default' \
 '--invalid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--quote=[]: :_default' \
 '--sarif=[]: :_default' \
 '--sarif-max-results=[]: :_default' \
 '--size-limit=[]: :_default' \
@@ -4270,6 +4317,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-format-validation[]' \
 '-n[]' \
 '--no-headers[]' \
+'--no-quoting[]' \
 '--offline[]' \
 '--pretty-json[]' \
 '-p[]' \
@@ -4302,9 +4350,11 @@ _arguments "${_arguments_options[@]}" : \
 '--delimiter=[]: :_default' \
 '--dfa-size-limit=[]: :_default' \
 '--email-min-subdomains=[]: :_default' \
+'--escape=[]: :_default' \
 '--invalid=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'--quote=[]: :_default' \
 '--sarif=[]: :_default' \
 '--sarif-max-results=[]: :_default' \
 '--size-limit=[]: :_default' \
@@ -4320,6 +4370,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-format-validation[]' \
 '-n[]' \
 '--no-headers[]' \
+'--no-quoting[]' \
 '--offline[]' \
 '--pretty-json[]' \
 '-p[]' \
@@ -7791,6 +7842,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(timebucketp)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (to)
 _arguments "${_arguments_options[@]}" : \
 ":: :_qsv__subcmd__help__subcmd__to_commands" \
@@ -8077,6 +8132,7 @@ _qsv_commands() {
 'synthesize:' \
 'table:' \
 'template:' \
+'timebucketp:' \
 'to:' \
 'tojsonl:' \
 'transpose:' \
@@ -8817,6 +8873,7 @@ _qsv__subcmd__help_commands() {
 'synthesize:' \
 'table:' \
 'template:' \
+'timebucketp:' \
 'to:' \
 'tojsonl:' \
 'transpose:' \
@@ -9486,6 +9543,11 @@ _qsv__subcmd__help__subcmd__template_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help template commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__timebucketp_commands] )) ||
+_qsv__subcmd__help__subcmd__timebucketp_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help timebucketp commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__help__subcmd__to_commands] )) ||
 _qsv__subcmd__help__subcmd__to_commands() {
     local commands; commands=(
@@ -10103,6 +10165,11 @@ _qsv__subcmd__table_commands() {
 _qsv__subcmd__template_commands() {
     local commands; commands=()
     _describe -t commands 'qsv template commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__timebucketp_commands] )) ||
+_qsv__subcmd__timebucketp_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv timebucketp commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__to_commands] )) ||
 _qsv__subcmd__to_commands() {

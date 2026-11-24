@@ -2551,6 +2551,7 @@ module completions {
     --cardinality-method: string
     --dates-whitelist: string
     --delimiter(-d): string
+    --escape: string
     --everything(-E)
     --flexible
     --force
@@ -2564,6 +2565,7 @@ module completions {
     --mode
     --mode-cardinality-cap: string
     --no-headers(-n)
+    --no-quoting
     --nulls
     --output(-o): string
     --percentile-list: string
@@ -2572,6 +2574,7 @@ module completions {
     --pretty-json
     --quantile-method: string
     --quartiles
+    --quote: string
     --round: string
     --select(-s): string
     --stats-jsonl
@@ -2587,17 +2590,27 @@ module completions {
     --correlation-threshold: string
     --delimiter(-d): string
     --dictionary: string
+    --discover-relationships: string
+    --format: string
     --freq-limit: string
     --infer-content-type
     --jobs(-j): string
     --joint-cardinality-cap: string
     --locale: string
+    --min-count: string
+    --model: string
     --no-relationships
     --output(-o): string
+    --quantiles: string
+    --report: string
     --rows(-n): string
+    --rows-per-file: string
+    --save-model: string
     --seed: string
+    --shard: string
     --stats-options: string
     --strict-relationships
+    --target: string
     --help(-h)                # Print help
   ]
 
@@ -2629,6 +2642,30 @@ module completions {
     --template: string
     --template-file(-t): string
     --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv timebucketp" [
+    --agg(-a): string
+    --boundaries
+    --by(-b): string
+    --closed: string
+    --date-format: string
+    --decimal-comma
+    --delimiter(-d): string
+    --every: string
+    --fill-gaps
+    --ignore-errors
+    --index(-i): string
+    --infer-len: string
+    --label: string
+    --offset: string
+    --output(-o): string
+    --period: string
+    --quiet(-q)
+    --rolling
+    --sorted
+    --start-by: string
     --help(-h)                # Print help
   ]
 
@@ -2846,6 +2883,7 @@ module completions {
     --email-domain-literal
     --email-min-subdomains: string
     --email-required-tld
+    --escape: string
     --fail-fast
     --fancy-regex
     --invalid: string
@@ -2853,10 +2891,12 @@ module completions {
     --json
     --no-format-validation
     --no-headers(-n)
+    --no-quoting
     --offline
     --pretty-json
     --progressbar(-p)
     --quiet(-q)
+    --quote: string
     --sarif: string
     --sarif-max-results: string
     --size-limit: string
@@ -2880,6 +2920,7 @@ module completions {
     --email-domain-literal
     --email-min-subdomains: string
     --email-required-tld
+    --escape: string
     --fail-fast
     --fancy-regex
     --invalid: string
@@ -2887,10 +2928,12 @@ module completions {
     --json
     --no-format-validation
     --no-headers(-n)
+    --no-quoting
     --offline
     --pretty-json
     --progressbar(-p)
     --quiet(-q)
+    --quote: string
     --sarif: string
     --sarif-max-results: string
     --size-limit: string
@@ -5839,6 +5882,9 @@ module completions {
   ]
 
   export extern "qsv help template" [
+  ]
+
+  export extern "qsv help timebucketp" [
   ]
 
   export extern "qsv help to" [

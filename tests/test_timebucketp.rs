@@ -399,8 +399,8 @@ fn timebucketp_weekly_from_monday_fill_gaps() {
 }
 
 #[test]
-fn timebucketp_date_format_reads_month_first() {
-    let wrk = Workdir::new("timebucketp_date_format_reads_month_first");
+fn timebucketp_ambiguous_dates_are_month_first() {
+    let wrk = Workdir::new("timebucketp_ambiguous_dates_are_month_first");
     wrk.create(
         "us.csv",
         vec![
@@ -409,9 +409,14 @@ fn timebucketp_date_format_reads_month_first() {
             svec!["01/09/2024", "2"],
         ],
     );
-    // without --date-format, Polars reads these day-first (1 March and 1 September)
-    let mut guessed = tb(&wrk, &["-i", "d", "--every", "1mo", "us.csv"]);
-    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut guessed);
+    // like the rest of qsv: January 3 and 9 (Polars alone would guess 1 March and 1 September)
+    let mut cmd = tb(&wrk, &["-i", "d", "--every", "1mo", "us.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["d", "count"], svec!["2024-01-01", "2"]]);
+
+    let mut dmy = tb(&wrk, &["-i", "d", "--every", "1mo", "us.csv"]);
+    dmy.env("QSV_PREFER_DMY", "1");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut dmy);
     assert_eq!(
         got,
         vec![
@@ -421,7 +426,7 @@ fn timebucketp_date_format_reads_month_first() {
         ]
     );
 
-    let mut cmd = tb(
+    let mut explicit = tb(
         &wrk,
         &[
             "-i",
@@ -429,12 +434,108 @@ fn timebucketp_date_format_reads_month_first() {
             "--every",
             "1mo",
             "--date-format",
-            "%m/%d/%Y",
+            "%d/%m/%Y",
             "us.csv",
         ],
     );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut explicit);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "count"],
+            svec!["2024-03-01", "1"],
+            svec!["2024-09-01", "1"]
+        ]
+    );
+}
+
+#[test]
+fn timebucketp_day_first_only_first_value_settles_the_order() {
+    let wrk = Workdir::new("timebucketp_day_first_only_first_value_settles_the_order");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["d", "v"],
+            svec!["25/12/2024", "1"],
+            svec!["01/03/2025", "2"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "d", "--every", "1mo", "d.csv"]);
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
-    assert_eq!(got, vec![svec!["d", "count"], svec!["2024-01-01", "2"]]);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "count"],
+            svec!["2024-12-01", "1"],
+            svec!["2025-03-01", "1"]
+        ]
+    );
+}
+
+#[test]
+fn timebucketp_later_day_first_value_is_an_error() {
+    let wrk = Workdir::new("timebucketp_later_day_first_value_is_an_error");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["d", "v"],
+            svec!["01/03/2025", "1"],
+            svec!["25/12/2024", "2"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "d", "--every", "1mo", "d.csv"]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("25/12/2024") && stderr.contains("QSV_PREFER_DMY"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_zoned_datetimes_are_read_as_utc() {
+    let wrk = Workdir::new("timebucketp_zoned_datetimes_are_read_as_utc");
+    wrk.create(
+        "z.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2024-01-01T10:15:00Z", "1"],
+            svec!["2024-01-01T12:20:00+02:00", "2"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1h", "--agg", "sum:v", "z.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["ts", "v_sum"], svec!["2024-01-01 10:00:00", "3"]]
+    );
+}
+
+#[test]
+fn timebucketp_other_date_columns_are_not_reparsed() {
+    let wrk = Workdir::new("timebucketp_other_date_columns_are_not_reparsed");
+    wrk.create(
+        "o.csv",
+        vec![
+            svec!["ts", "other"],
+            svec!["2024-01-01 10:15:00", "01/03/2024"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1h", "--agg", "first:other", "o.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "other_first"],
+            svec!["2024-01-01 10:00:00", "01/03/2024"]
+        ]
+    );
 }
 
 #[test]
@@ -732,4 +833,43 @@ fn timebucketp_date_format_with_unpadded_time_fields() {
         svec!["2024-01-03 10:00:00", "2"],
     ];
     assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_min_max_of_text_dates_are_month_first() {
+    // compared as text, "12/31/2023" would rank above "01/05/2024"
+    let wrk = Workdir::new("timebucketp_min_max_of_text_dates_are_month_first");
+    wrk.create(
+        "o.csv",
+        vec![
+            svec!["ts", "due"],
+            svec!["2024-01-01 10:15:00", "12/31/2023"],
+            svec!["2024-01-01 10:45:00", "01/05/2024"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--agg",
+            "min:due,max:due,first:due",
+            "o.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "due_min", "due_max", "due_first"],
+            svec![
+                "2024-01-01 10:00:00",
+                "2023-12-31",
+                "2024-01-05",
+                "2023-12-31"
+            ]
+        ]
+    );
 }

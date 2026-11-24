@@ -23,10 +23,13 @@ DURATIONS are an integer followed by a unit, and units combine (e.g. 1h30m):
   d, w, mo, q and y are calendar-aware: they respect month lengths.
   A leading minus makes a duration negative, e.g. --offset -30m.
 
-Date-like columns are parsed as dates. When the index column holds text,
-Polars guesses its date format and reads ambiguous dates such as 01/03/2024
-day-first, so set --date-format to be sure. An index that does not parse as
-dates is an error, as is an empty index value.
+The index column is parsed as dates or datetimes. Like the rest of qsv,
+ambiguous dates such as 01/03/2024 are read month-first (January 3). Set
+QSV_PREFER_DMY to read them day-first, or give the exact format with
+the --date-format option. Other text date columns are parsed the same way
+when min, max, mean, median or quantile aggregates them, and otherwise kept
+as written (unless a pschema.json types them). An index that does not parse
+as dates is an error, as is an empty index value.
 
 Examples:
 
@@ -304,6 +307,118 @@ fn parse_start_by(value: &str) -> CliResult<StartBy> {
     })
 }
 
+/// Polars' own day-first and year-first date patterns (`polars-core`'s `patterns.rs`, which keeps
+/// them private). Polars has no month-first patterns, and reads `01/03/2024` as 1 March.
+const DATE_Y_M_D: &[&str] = &["%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"];
+const DATE_D_M_Y: &[&str] = &["%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y"];
+const DATETIME_D_M_Y: &[&str] = &[
+    "%d-%m-%YT%H:%M:%S%.f",
+    "%d-%m-%YT%H%M%S%.f",
+    "%d-%m-%YT%H:%M",
+    "%d-%m-%YT%H%M",
+    "%d-%m-%Y %H:%M:%S%.f",
+    "%d-%m-%Y %H%M%S%.f",
+    "%d-%m-%Y %H:%M",
+    "%d-%m-%Y %H%M",
+    "%d/%m/%YT%H:%M:%S%.f",
+    "%d/%m/%YT%H%M%S%.f",
+    "%d/%m/%YT%H:%M",
+    "%d/%m/%YT%H%M",
+    "%d/%m/%Y %H:%M:%S%.f",
+    "%d/%m/%Y %H%M%S%.f",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %H%M",
+    "%d.%m.%YT%H:%M:%S%.f",
+    "%d.%m.%YT%H%M%S%.f",
+    "%d.%m.%YT%H:%M",
+    "%d.%m.%YT%H%M",
+    "%d.%m.%Y %H:%M:%S%.f",
+    "%d.%m.%Y %H%M%S%.f",
+    "%d.%m.%Y %H:%M",
+    "%d.%m.%Y %H%M",
+];
+
+/// The format to parse a text index with, chosen from its first value: year-first dates as
+/// such, and day/month dates month-first like the rest of qsv, or day-first with
+/// `QSV_PREFER_DMY`. None (anything else, e.g. ISO datetimes) leaves the format to Polars.
+fn index_date_format(sample: &str, prefer_dmy: bool) -> Option<String> {
+    use chrono::{NaiveDate, NaiveDateTime};
+
+    if let Some(f) = DATE_Y_M_D
+        .iter()
+        .find(|f| NaiveDate::parse_from_str(sample, f).is_ok())
+    {
+        return Some((*f).to_string());
+    }
+    let order = |f: &str, day_first: bool| {
+        if day_first {
+            f.to_string()
+        } else {
+            f.replacen("%d", "%DAY", 1)
+                .replacen("%m", "%d", 1)
+                .replacen("%DAY", "%m", 1)
+        }
+    };
+    // The preferred order first; a first value that only parses the other way (25/12/2024
+    // when month-first is preferred) settles the column's order.
+    [prefer_dmy, !prefer_dmy].into_iter().find_map(|day_first| {
+        DATE_D_M_Y
+            .iter()
+            .map(|f| order(f, day_first))
+            .find(|f| NaiveDate::parse_from_str(sample, f).is_ok())
+            .or_else(|| {
+                DATETIME_D_M_Y
+                    .iter()
+                    .map(|f| order(f, day_first))
+                    .find(|f| NaiveDateTime::parse_from_str(sample, f).is_ok())
+            })
+    })
+}
+
+/// The first non-empty value of a text column, trimmed.
+fn first_text_value(lf: &LazyFrame, name: &str) -> CliResult<Option<String>> {
+    let first = lf
+        .clone()
+        .select([col(name)])
+        .filter(col(name).is_not_null())
+        .limit(1)
+        .collect()?;
+    Ok(first
+        .column(name)?
+        .str()?
+        .get(0)
+        .map(|v| v.trim().to_string()))
+}
+
+/// Whether Polars recognizes a value as a year-first datetime, with or without a zone.
+fn looks_like_datetime(value: &str) -> bool {
+    use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
+    matches!(
+        infer_pattern_single(value),
+        Some(Pattern::DatetimeYMD | Pattern::DatetimeYMDZ)
+    )
+}
+
+/// Parse a text column as dates (a format without time fields) or datetimes. Without a format,
+/// Polars infers it; values with a zone or offset (e.g. ...Z) are then read as UTC, as in
+/// `util::polars_temporal_dtype`, since Polars refuses them without a time zone.
+fn text_date_expr(name: &str, format: Option<&str>, first: Option<&str>) -> Expr {
+    use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
+    let options = StrptimeOptions {
+        format: format.map(PlSmallStr::from_str),
+        strict: true,
+        ..Default::default()
+    };
+    if format.is_some_and(|f| !format_has_time(f)) {
+        return col(name).str().to_date(options);
+    }
+    let zoned =
+        format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
+    col(name)
+        .str()
+        .to_datetime(None, zoned.then_some(TimeZone::UTC), options, lit("raise"))
+}
+
 /// Whether a chrono/strptime format has any time-of-day field, skipping `%%` literals and the
 /// padding/width modifiers (`%-H`, `%_M`, `%3f`, ...).
 fn format_has_time(fmt: &str) -> bool {
@@ -363,7 +478,8 @@ fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
         // keep Polars' first line (which values failed), not its nested expression context
         let detail = msg[pos..].lines().next().unwrap_or_default();
         return crate::clitypes::CliError::Other(format!(
-            "Some --index values do not match the date format: {detail}"
+            "Some values do not match their date format: {detail}. Day-first dates need \
+             QSV_PREFER_DMY, or set the index format with --date-format."
         ));
     } else if msg.contains("null values in") {
         return crate::clitypes::CliError::Other(format!(
@@ -535,7 +651,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .with_has_header(true)
         .with_missing_is_null(true)
         .with_comment_prefix(comment_prefix)
-        .with_try_parse_dates(true)
+        .with_try_parse_dates(false)
         .with_decimal_comma(args.flag_decimal_comma)
         .with_separator(delim)
         .with_ignore_errors(args.flag_ignore_errors);
@@ -553,8 +669,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         csv_reader = csv_reader.with_schema(Some(Arc::new(schema)));
     } else {
+        // With date guessing off, a date index is read as text anyway. --date-format also
+        // needs digit-only dates (e.g. %Y%m%d) kept as text instead of read as integers.
         if args.flag_date_format.is_some() {
-            // keep the index as text, so it is parsed with --date-format rather than guessed
             let mut overwrite = Schema::default();
             overwrite.insert(index.as_str().into(), DataType::String);
             csv_reader = csv_reader.with_dtype_overwrite(Some(Arc::new(overwrite)));
@@ -619,6 +736,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "0ns"
         })
     });
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     match index_dtype {
         DataType::Date | DataType::Datetime(..) => {},
         // pschemas may type small integers as (U)Int8/16
@@ -626,29 +744,54 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             lf = lf.with_column(col(index.as_str()).cast(DataType::Int64));
         },
         DataType::String => {
-            let options = StrptimeOptions {
-                format: args.flag_date_format.as_deref().map(PlSmallStr::from_str),
-                strict: true,
-                ..Default::default()
-            };
-            let has_time = args
-                .flag_date_format
-                .as_deref()
-                .is_some_and(format_has_time);
-            let parsed = if args.flag_date_format.is_some() && !has_time {
-                col(index.as_str()).str().to_date(options)
-            } else {
-                col(index.as_str())
-                    .str()
-                    .to_datetime(None, None, options, lit("raise"))
-            };
-            lf = lf.with_column(parsed);
+            // pick the format from the first index value, so ambiguous dates follow qsv's
+            // month-first default (or QSV_PREFER_DMY) instead of Polars' day-first guess
+            let first = first_text_value(&lf, &index)?;
+            let format = args.flag_date_format.clone().or_else(|| {
+                first
+                    .as_deref()
+                    .and_then(|v| index_date_format(v, prefer_dmy))
+            });
+            lf = lf.with_column(text_date_expr(&index, format.as_deref(), first.as_deref()));
         },
         dt => {
             return fail_incorrectusage_clierror!(
                 "--index column \"{index}\" must hold dates, datetimes or integers, not {dt}."
             );
         },
+    }
+
+    // Text date columns compared by min/max/mean/median/quantile are parsed the same way as
+    // the index (month-first unless QSV_PREFER_DMY); compared as text, "12/31/2023" would
+    // rank above "01/05/2024". first/last keep the values as written.
+    let mut parsed_cols: Vec<&str> = Vec::new();
+    for a in &aggs {
+        let Some(c) = a.column.as_deref() else {
+            continue;
+        };
+        if c == index
+            || by_cols.iter().any(|b| b == c)
+            || parsed_cols.contains(&c)
+            || !matches!(
+                a.kind,
+                AggKind::Min
+                    | AggKind::Max
+                    | AggKind::Mean
+                    | AggKind::Median
+                    | AggKind::Quantile(_)
+            )
+            || schema.get(c) != Some(&DataType::String)
+        {
+            continue;
+        }
+        let Some(first) = first_text_value(&lf, c)? else {
+            continue;
+        };
+        let format = index_date_format(&first, prefer_dmy);
+        if format.is_some() || looks_like_datetime(&first) {
+            lf = lf.with_column(text_date_expr(c, format.as_deref(), Some(&first)));
+            parsed_cols.push(c);
+        }
     }
 
     if args.flag_sorted {

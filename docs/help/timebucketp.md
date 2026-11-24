@@ -35,10 +35,13 @@ y (year), i (index units, for integer index columns only: 3i spans 3).
 d, w, mo, q and y are calendar-aware: they respect month lengths.
 A leading minus makes a duration negative, e.g. --offset -30m.
 
-Date-like columns are parsed as dates. When the index column holds text,
-Polars guesses its date format and reads ambiguous dates such as 01/03/2024
-day-first, so set --date-format to be sure. An index that does not parse as
-dates is an error, as is an empty index value.
+The index column is parsed as dates or datetimes. Like the rest of qsv,
+ambiguous dates such as 01/03/2024 are read month-first (January 3). Set
+QSV_PREFER_DMY to read them day-first, or give the exact format with
+the --date-format option. Other text date columns are parsed the same way
+when min, max, mean, median or quantile aggregates them, and otherwise kept
+as written (unless a pschema.json types them). An index that does not parse
+as dates is an error, as is an empty index value.
 
 
 <a name="examples"></a>

@@ -577,9 +577,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             return fail_incorrectusage_clierror!("--by column \"{b}\" not found.");
         }
     }
+    for c in aggs.iter().filter_map(|a| a.column.as_deref()) {
+        if schema.get(c).is_none() {
+            return fail_incorrectusage_clierror!("--agg column \"{c}\" not found.");
+        }
+    }
     // A header-only input has nothing to bucket, and its untyped (text) columns would fail the
     // date parsing and the aggregations: write the output header only.
-    if lf.clone().limit(1).collect()?.height() == 0 {
+    if lf
+        .clone()
+        .select([col(index.as_str())])
+        .limit(1)
+        .collect()?
+        .height()
+        == 0
+    {
         let names = by_cols
             .iter()
             .cloned()

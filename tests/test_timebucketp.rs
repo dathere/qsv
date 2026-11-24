@@ -488,6 +488,7 @@ fn assert_fails_with(name: &str, args: &[&str], needle: &str) {
             svec!["", "2"],
         ],
     );
+    wrk.create_from_string("hdr.csv", "ts,v\n");
     wrk.create(
         "count.csv",
         vec![svec!["ts", "count"], svec!["2024-01-01 00:00:00", "1"]],
@@ -552,6 +553,22 @@ fn timebucketp_errors() {
         (
             &["-i", "ts", "--every", "1h", "--agg", "len:temp", "r.csv"],
             "--agg len takes no column",
+        ),
+        (
+            &["-i", "ts", "--every", "1h", "--agg", "sum:missing", "r.csv"],
+            "--agg column \"missing\" not found",
+        ),
+        (
+            &[
+                "-i",
+                "ts",
+                "--every",
+                "1h",
+                "--agg",
+                "sum:missing",
+                "hdr.csv",
+            ],
+            "--agg column \"missing\" not found",
         ),
         (
             &["-i", "ts", "--every", "1h", "--agg", "sum", "r.csv"],

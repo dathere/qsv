@@ -383,6 +383,7 @@ fn timebucketp_dmy_pschema_outlives_qsv_prefer_dmy() {
         &wrk,
         &["-i", "ts", "--every", "1d", "--agg", "sum:v", "d.csv"],
     );
+    cmd.env_remove("QSV_PREFER_DMY");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec!["ts", "v_sum"],
@@ -405,6 +406,7 @@ fn timebucketp_dmy_pschema_outlives_qsv_prefer_dmy() {
             "d.csv",
         ],
     );
+    with_format.env_remove("QSV_PREFER_DMY");
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut with_format);
     let expected = vec![
         svec!["ts", "v_sum"],
@@ -960,6 +962,22 @@ fn timebucketp_two_digit_years_need_a_date_format() {
     let mut guessed = tb(&wrk, &["-i", "d", "--every", "1mo", "y.csv"]);
     let stderr = wrk.stderr_on_error(&mut guessed);
     assert!(stderr.contains("--date-format"), "stderr: {stderr}");
+
+    // a later short year, after a 4-digit first value, must not become the year 24 either
+    wrk.create(
+        "later.csv",
+        vec![
+            svec!["d", "v"],
+            svec!["10/05/2024", "1"],
+            svec!["10/06/24", "2"],
+        ],
+    );
+    let mut later = tb(&wrk, &["-i", "d", "--every", "1mo", "later.csv"]);
+    let stderr = wrk.stderr_on_error(&mut later);
+    assert!(
+        stderr.contains("10/06/24 (needs a 4-digit year)"),
+        "stderr: {stderr}"
+    );
 
     let mut cmd = tb(
         &wrk,

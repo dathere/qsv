@@ -35,7 +35,8 @@ that does not parse as dates is an error, as is an empty index value.
 A pschema.json made by `qsv schema --polars` while QSV_PREFER_DMY was set
 marks day/month dates as already parsed, so they stay day-first in later
 runs even with QSV_PREFER_DMY unset. After changing QSV_PREFER_DMY, delete
-or regenerate the pschema.json, or pass --date-format, which overrides it.
+or regenerate the pschema.json. --date-format overrides it for the index
+column only.
 
 Examples:
 
@@ -440,23 +441,40 @@ fn looks_like_datetime(value: &str) -> bool {
     )
 }
 
-/// Parse a text column as dates (a format without time fields) or datetimes. Without a format,
-/// Polars infers it; values with a zone or offset (e.g. ...Z) are then read as UTC, as in
-/// `util::polars_temporal_dtype`, since Polars refuses them without a time zone.
-fn text_date_expr(name: &str, format: Option<&str>, first: Option<&str>, strict: bool) -> Expr {
+fn text_date_expr(
+    name: &str,
+    format: Option<&str>,
+    first: Option<&str>,
+    strict: bool,
+    guessed: bool,
+) -> Expr {
     use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
     let options = StrptimeOptions {
         format: format.map(PlSmallStr::from_str),
         strict,
         ..Default::default()
     };
+    let mut text = col(name);
+    // index_date_format checks only the first value's year, and chrono's %Y also takes
+    // 2-digit years (10/06/24 as the year 24), so mark later short years to fail the parse.
+    if guessed && let Some(f) = format {
+        let short_year = if f.starts_with("%Y") {
+            r"^(\d{1,3})([-/.]\d{1,2}[-/.]\d{1,2})"
+        } else {
+            r"^(\d{1,2}[-/.]\d{1,2}[-/.]\d{1,3})(\D|$)"
+        };
+        text = text.str().replace(
+            lit(short_year),
+            lit("${1} (needs a 4-digit year)${2}"),
+            false,
+        );
+    }
     if format.is_some_and(|f| !format_has_time(f)) {
-        return col(name).str().to_date(options);
+        return text.str().to_date(options);
     }
     let zoned =
         format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
-    col(name)
-        .str()
+    text.str()
         .to_datetime(None, zoned.then_some(TimeZone::UTC), options, lit("raise"))
 }
 
@@ -798,6 +816,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 format.as_deref(),
                 first.as_deref(),
                 true,
+                args.flag_date_format.is_none(),
             ));
         },
         dt => {
@@ -831,7 +850,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             continue;
         }
         // only a column whose every value parses is dates; mixed text keeps text comparison
-        let parsed = text_date_expr(c, format.as_deref(), Some(&first), false);
+        let parsed = text_date_expr(c, format.as_deref(), Some(&first), false, true);
         let unparsed = lf
             .clone()
             .select([col(c)

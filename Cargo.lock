@@ -6236,6 +6236,7 @@ version = "0.55.1"
 source = "git+https://github.com/pola-rs/polars?rev=08b2814ce6386c0efe0fea512912353f42a8b7b6#08b2814ce6386c0efe0fea512912353f42a8b7b6"
 dependencies = [
  "bitflags 2.13.2",
+ "chrono-tz",
  "hashbrown 0.17.1",
  "num-traits",
  "polars-arrow",

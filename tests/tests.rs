@@ -166,6 +166,8 @@ mod test_synthesize;
 mod test_table;
 #[cfg(feature = "feature_capable")]
 mod test_template;
+#[cfg(all(feature = "polars", feature = "feature_capable"))]
+mod test_timebucketp;
 #[cfg(all(feature = "to", feature = "feature_capable"))]
 mod test_to;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]

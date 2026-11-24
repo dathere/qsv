@@ -1,0 +1,137 @@
+{
+  "name": "qsv-timebucketp",
+  "version": "29.0.0",
+  "description": "Bucket time-series data into time windows (e.g. 15-minute, overlapping, or weekly from Monday) and aggregate them, optionally per group. Also computes rolling look-back windows (e.g. a trailing 2-hour average at each row) and can fill empty windows. Complements `sqlp`'s `DATE_TRUNC`, which only buckets by calendar unit.",
+  "category": "utility",
+  "command": {
+    "subcommand": "timebucketp",
+    "args": [
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": "The input CSV file. The file must have headers. If the file has a pschema.json file, it is used to type the columns unless --infer-len is set to a value other than the default. Stdin is not supported. A snappy-compressed (.sz) input is decompressed first, and an --output ending in .sz is snappy-compressed. Lines starting with QSV_COMMENT_CHAR are skipped. QSV_POLARS_FLOAT_PRECISION and QSV_OUTPUT_BOM apply to the output, as in sqlp and pivotp."
+      }
+    ],
+    "options": [
+      {
+        "flag": "--agg",
+        "type": "string",
+        "description": "Comma-separated aggregations, as func:column pairs, e.g. sum:sales,mean:temp. The functions are: first, last, sum, min, max, mean, median, quantile@<p> (alias q@<p>, p in [0, 1]), len. Each is output as <column>_<func>, e.g. sales_sum, or temp_quantile_0.95 for quantile@0.95. len takes no column: it counts the rows in each window and is output as \"count\".",
+        "default": "len"
+      },
+      {
+        "flag": "--boundaries",
+        "type": "flag",
+        "description": "Add _lower_boundary and _upper_boundary columns before the index column. Window mode only."
+      },
+      {
+        "flag": "--by",
+        "type": "string",
+        "description": "Also group by these columns (comma-separated). Windows are computed separately for each group."
+      },
+      {
+        "flag": "--closed",
+        "type": "string",
+        "description": "Which window boundaries are inclusive: left, right, both or none. Defaults to left in window mode and to right in rolling mode."
+      },
+      {
+        "flag": "--date-format",
+        "type": "string",
+        "description": "The strptime format of a text --index column, e.g. %m/%d/%Y or \"%d.%m.%Y %H:%M\". Without time fields the index is read as dates, otherwise as datetimes."
+      },
+      {
+        "flag": "--decimal-comma",
+        "type": "flag",
+        "description": "Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading/writing CSV data. Must be a single character. If not set, QSV_DEFAULT_DELIMITER is used, else ','. A .tsv/.tab (tab) or .ssv (semicolon) extension on the input or --output file sets that file's delimiter. (default: ,)"
+      },
+      {
+        "flag": "--every",
+        "type": "string",
+        "description": "Start a new window at this interval. Required in window mode."
+      },
+      {
+        "flag": "--fill-gaps",
+        "type": "flag",
+        "description": "Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Cannot be combined with datapoint labels or starts, or with --boundaries."
+      },
+      {
+        "flag": "--ignore-errors",
+        "type": "flag",
+        "description": "Skip rows that can't be parsed."
+      },
+      {
+        "flag": "--index",
+        "type": "string",
+        "description": "The date, datetime or integer column that defines the windows. Required. The output keeps its name."
+      },
+      {
+        "flag": "--infer-len",
+        "type": "number",
+        "description": "Number of rows to scan when inferring the schema. Set to 0 to scan the entire file.",
+        "default": 10000
+      },
+      {
+        "flag": "--label",
+        "type": "string",
+        "description": "The value written to the index column for each window. Window mode only. One of: left      - the window's start (the default) right     - the window's end datapoint - the window's first index value"
+      },
+      {
+        "flag": "--offset",
+        "type": "string",
+        "description": "Shift the window boundaries by this duration. Defaults to 0 in window mode, and to minus --period in rolling mode (a look-back window)."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout."
+      },
+      {
+        "flag": "--period",
+        "type": "string",
+        "description": "The length of each window. Defaults to --every in window mode. Required in rolling mode."
+      },
+      {
+        "flag": "--rolling",
+        "type": "flag",
+        "description": "Use rolling mode (see above)."
+      },
+      {
+        "flag": "--sorted",
+        "type": "flag",
+        "description": "The input is already sorted by --index, within each group when using --by, so skip timebucketp's sort. Unsorted input is then an error, never a wrong result."
+      },
+      {
+        "flag": "--start-by",
+        "type": "string",
+        "description": "Where the first window starts. Window mode only. One of: window    - the --every boundary at or before the first index value (the default) datapoint - the first index value itself monday ... sunday - that weekday (weekly --every)"
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "hourly sales totals",
+      "command": "qsv timebucketp --index ts --every 1h --agg sum:sales sales.csv"
+    },
+    {
+      "description": "1-hour windows starting every 15 minutes, computed per station",
+      "command": "qsv timebucketp -i ts --every 15m --period 1h --by station --agg mean:temp,max:temp readings.csv"
+    },
+    {
+      "description": "weekly row counts, weeks starting on Monday, with empty weeks as 0",
+      "command": "qsv timebucketp -i date --every 1w --start-by monday --fill-gaps events.csv"
+    },
+    {
+      "description": "trailing 2-hour average price at each trade",
+      "command": "qsv timebucketp -i ts --rolling --period 2h --agg mean:price trades.csv"
+    }
+  ]
+}

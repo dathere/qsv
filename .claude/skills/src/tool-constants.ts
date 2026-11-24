@@ -67,6 +67,7 @@ export const ALWAYS_FILE_COMMANDS = new Set([
   "safenames",
   "sqlp",
   "pivotp",
+  "timebucketp",
   "pragmastat",
   "tojsonl",
   "viz",

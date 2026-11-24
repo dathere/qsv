@@ -1,0 +1,580 @@
+use std::process;
+
+use crate::workdir::Workdir;
+
+/// Readings from two stations, deliberately NOT sorted by `ts`.
+fn readings(wrk: &Workdir) {
+    wrk.create(
+        "r.csv",
+        vec![
+            svec!["ts", "station", "temp"],
+            svec!["2024-01-01 00:05:00", "A", "1"],
+            svec!["2024-01-01 00:20:00", "B", "10"],
+            svec!["2024-01-01 00:50:00", "A", "3"],
+            svec!["2024-01-01 02:10:00", "A", "5"],
+            svec!["2024-01-01 01:15:00", "B", "20"],
+        ],
+    );
+}
+
+fn trades(wrk: &Workdir) {
+    wrk.create(
+        "t.csv",
+        vec![
+            svec!["ts", "price"],
+            svec!["2024-01-01 09:00:00", "10"],
+            svec!["2024-01-01 09:30:00", "20"],
+            svec!["2024-01-01 10:15:00", "30"],
+            svec!["2024-01-01 12:00:00", "40"],
+        ],
+    );
+}
+
+fn tb(wrk: &Workdir, args: &[&str]) -> process::Command {
+    let mut cmd = wrk.command("timebucketp");
+    cmd.args(args);
+    cmd
+}
+
+#[test]
+fn timebucketp_hourly_sum_and_count_of_unsorted_input() {
+    let wrk = Workdir::new("timebucketp_hourly_sum_and_count_of_unsorted_input");
+    readings(&wrk);
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--agg",
+            "sum:temp,len",
+            "r.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "temp_sum", "count"],
+        svec!["2024-01-01 00:00:00", "14", "3"],
+        svec!["2024-01-01 01:00:00", "20", "1"],
+        svec!["2024-01-01 02:00:00", "5", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_by_with_fill_gaps() {
+    let wrk = Workdir::new("timebucketp_by_with_fill_gaps");
+    readings(&wrk);
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--by",
+            "station",
+            "--agg",
+            "sum:temp,mean:temp,len",
+            "--fill-gaps",
+            "r.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // the empty 01:00 window of station A: the station is kept, sum and count are 0, mean empty
+    let expected = vec![
+        svec!["station", "ts", "temp_sum", "temp_mean", "count"],
+        svec!["A", "2024-01-01 00:00:00", "4", "2.0", "2"],
+        svec!["A", "2024-01-01 01:00:00", "0", "", "0"],
+        svec!["A", "2024-01-01 02:00:00", "5", "5.0", "1"],
+        svec!["B", "2024-01-01 00:00:00", "10", "10.0", "1"],
+        svec!["B", "2024-01-01 01:00:00", "20", "20.0", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_sorted_rejects_unsorted_input() {
+    // Polars' lazy group_by_dynamic does not check sortedness without `by`, and silently builds
+    // wrong windows; timebucketp must refuse instead.
+    let wrk = Workdir::new("timebucketp_sorted_rejects_unsorted_input");
+    readings(&wrk);
+    let mut cmd = tb(&wrk, &["-i", "ts", "--every", "1h", "--sorted", "r.csv"]);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("not sorted by --index. Drop --sorted"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_sorted_rejects_unsorted_group() {
+    let wrk = Workdir::new("timebucketp_sorted_rejects_unsorted_group");
+    wrk.create(
+        "u.csv",
+        vec![
+            svec!["ts", "station", "temp"],
+            svec!["2024-01-01 00:00:00", "B", "7"],
+            svec!["2024-01-01 00:50:00", "A", "3"],
+            svec!["2024-01-01 00:05:00", "A", "1"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i", "ts", "--every", "1h", "--by", "station", "--sorted", "u.csv",
+        ],
+    );
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("not sorted by --index within each --by group"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_sorted_accepts_interleaved_groups() {
+    let wrk = Workdir::new("timebucketp_sorted_accepts_interleaved_groups");
+    wrk.create(
+        "i.csv",
+        vec![
+            svec!["ts", "station", "temp"],
+            svec!["2024-01-01 00:05:00", "A", "1"],
+            svec!["2024-01-01 00:20:00", "B", "10"],
+            svec!["2024-01-01 00:50:00", "A", "3"],
+            svec!["2024-01-01 01:15:00", "B", "20"],
+            svec!["2024-01-01 02:10:00", "A", "5"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i", "ts", "--every", "1h", "--by", "station", "--sorted", "--agg", "sum:temp",
+            "i.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["station", "ts", "temp_sum"],
+        svec!["A", "2024-01-01 00:00:00", "4"],
+        svec!["A", "2024-01-01 02:00:00", "5"],
+        svec!["B", "2024-01-01 00:00:00", "10"],
+        svec!["B", "2024-01-01 01:00:00", "20"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_rolling_is_a_trailing_window_including_the_row() {
+    let wrk = Workdir::new("timebucketp_rolling_is_a_trailing_window_including_the_row");
+    trades(&wrk);
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--rolling",
+            "--period",
+            "1h",
+            "--agg",
+            "mean:price,len",
+            "t.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // each window is (ts - 1h, ts]
+    let expected = vec![
+        svec!["ts", "price_mean", "count"],
+        svec!["2024-01-01 09:00:00", "10.0", "1"],
+        svec!["2024-01-01 09:30:00", "15.0", "2"],
+        svec!["2024-01-01 10:15:00", "25.0", "2"],
+        svec!["2024-01-01 12:00:00", "40.0", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_overlapping_windows_label_right_boundaries_quantile() {
+    let wrk = Workdir::new("timebucketp_overlapping_windows_label_right_boundaries_quantile");
+    trades(&wrk);
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "30m",
+            "--period",
+            "1h",
+            "--label",
+            "right",
+            "--boundaries",
+            "--agg",
+            "q@0.5:price,max:price",
+            "t.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // the empty 10:30-11:30 window is skipped
+    let expected = vec![
+        svec![
+            "_lower_boundary",
+            "_upper_boundary",
+            "ts",
+            "price_quantile_0.5",
+            "price_max"
+        ],
+        svec![
+            "2024-01-01 09:00:00",
+            "2024-01-01 10:00:00",
+            "2024-01-01 10:00:00",
+            "15.0",
+            "20"
+        ],
+        svec![
+            "2024-01-01 09:30:00",
+            "2024-01-01 10:30:00",
+            "2024-01-01 10:30:00",
+            "25.0",
+            "30"
+        ],
+        svec![
+            "2024-01-01 10:00:00",
+            "2024-01-01 11:00:00",
+            "2024-01-01 11:00:00",
+            "30.0",
+            "30"
+        ],
+        svec![
+            "2024-01-01 11:30:00",
+            "2024-01-01 12:30:00",
+            "2024-01-01 12:30:00",
+            "40.0",
+            "40"
+        ],
+        svec![
+            "2024-01-01 12:00:00",
+            "2024-01-01 13:00:00",
+            "2024-01-01 13:00:00",
+            "40.0",
+            "40"
+        ],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_negative_offset() {
+    let wrk = Workdir::new("timebucketp_negative_offset");
+    trades(&wrk);
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--offset",
+            "-15m",
+            "--agg",
+            "sum:price",
+            "t.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "price_sum"],
+        svec!["2024-01-01 08:45:00", "30"],
+        svec!["2024-01-01 09:45:00", "30"],
+        svec!["2024-01-01 11:45:00", "40"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_integer_index_fill_gaps() {
+    let wrk = Workdir::new("timebucketp_integer_index_fill_gaps");
+    wrk.create(
+        "n.csv",
+        vec![
+            svec!["n", "v"],
+            svec!["1", "1"],
+            svec!["2", "2"],
+            svec!["5", "5"],
+            svec!["9", "9"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "n",
+            "--every",
+            "3i",
+            "--agg",
+            "sum:v",
+            "--fill-gaps",
+            "n.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["n", "v_sum"],
+        svec!["0", "3"],
+        svec!["3", "5"],
+        svec!["6", "0"],
+        svec!["9", "9"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_integer_index_typed_by_pschema() {
+    // `schema --polars` types small non-negative integers as UInt8/UInt16, which Polars windows
+    // do not accept, so timebucketp widens the index to Int64.
+    let wrk = Workdir::new("timebucketp_integer_index_typed_by_pschema");
+    wrk.create(
+        "n.csv",
+        vec![
+            svec!["n", "v"],
+            svec!["1", "1"],
+            svec!["2", "2"],
+            svec!["5", "5"],
+        ],
+    );
+    let mut schema = wrk.command("schema");
+    schema.args(["--polars", "n.csv"]);
+    wrk.assert_success(&mut schema);
+    let pschema = wrk.read_to_string("n.csv.pschema.json").unwrap();
+    assert!(pschema.contains("UInt"), "pschema: {pschema}");
+
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "n", "--every", "3i", "--agg", "sum:v", "n.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["n", "v_sum"], svec!["0", "3"], svec!["3", "5"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_weekly_from_monday_fill_gaps() {
+    let wrk = Workdir::new("timebucketp_weekly_from_monday_fill_gaps");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["d", "v"],
+            svec!["2024-01-03", "1"],
+            svec!["2024-01-09", "2"],
+            svec!["2024-01-24", "3"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "d",
+            "--every",
+            "1w",
+            "--start-by",
+            "monday",
+            "--agg",
+            "sum:v,len",
+            "--fill-gaps",
+            "d.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["d", "v_sum", "count"],
+        svec!["2024-01-01", "1", "1"],
+        svec!["2024-01-08", "2", "1"],
+        svec!["2024-01-15", "0", "0"],
+        svec!["2024-01-22", "3", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_date_format_reads_month_first() {
+    let wrk = Workdir::new("timebucketp_date_format_reads_month_first");
+    wrk.create(
+        "us.csv",
+        vec![
+            svec!["d", "v"],
+            svec!["01/03/2024", "1"],
+            svec!["01/09/2024", "2"],
+        ],
+    );
+    // without --date-format, Polars reads these day-first (1 March and 1 September)
+    let mut guessed = tb(&wrk, &["-i", "d", "--every", "1mo", "us.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut guessed);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "count"],
+            svec!["2024-03-01", "1"],
+            svec!["2024-09-01", "1"]
+        ]
+    );
+
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "d",
+            "--every",
+            "1mo",
+            "--date-format",
+            "%m/%d/%Y",
+            "us.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["d", "count"], svec!["2024-01-01", "2"]]);
+}
+
+#[test]
+fn timebucketp_date_format_with_time_fields() {
+    let wrk = Workdir::new("timebucketp_date_format_with_time_fields");
+    wrk.create(
+        "eu.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["03.01.2024 10:30", "1"],
+            svec!["03.01.2024 10:45", "2"],
+            svec!["03.01.2024 11:45", "4"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--date-format",
+            "%d.%m.%Y %H:%M",
+            "--agg",
+            "sum:v",
+            "eu.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "v_sum"],
+        svec!["2024-01-03 10:00:00", "3"],
+        svec!["2024-01-03 11:00:00", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+/// Run timebucketp and assert it fails with `needle` on stderr.
+fn assert_fails_with(name: &str, args: &[&str], needle: &str) {
+    let wrk = Workdir::new(name);
+    readings(&wrk);
+    wrk.create(
+        "bad.csv",
+        vec![svec!["ts", "v"], svec!["hello", "1"], svec!["world", "2"]],
+    );
+    wrk.create(
+        "nul.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2024-01-01 00:00:00", "1"],
+            svec!["", "2"],
+        ],
+    );
+    wrk.create(
+        "fl.csv",
+        vec![svec!["ts", "v"], svec!["1.5", "1"], svec!["2.5", "2"]],
+    );
+    let mut cmd = tb(&wrk, args);
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains(needle), "stderr: {stderr}");
+}
+
+#[test]
+fn timebucketp_errors() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--every", "1h", "r.csv"], "--index <col> is required"),
+        (&["-i", "ts", "r.csv"], "--every <dur> is required"),
+        (
+            &[
+                "-i",
+                "ts",
+                "--rolling",
+                "--period",
+                "1h",
+                "--every",
+                "1h",
+                "r.csv",
+            ],
+            "--every does not apply to --rolling",
+        ),
+        (
+            &["-i", "ts", "--rolling", "r.csv"],
+            "--rolling requires --period",
+        ),
+        (
+            &[
+                "-i",
+                "ts",
+                "--every",
+                "1h",
+                "--fill-gaps",
+                "--label",
+                "datapoint",
+                "r.csv",
+            ],
+            "--fill-gaps cannot be combined with --label datapoint",
+        ),
+        (
+            &[
+                "-i",
+                "ts",
+                "--every",
+                "1h",
+                "--agg",
+                "sum:temp,sum:temp",
+                "r.csv",
+            ],
+            "produces the column \"temp_sum\" more than once",
+        ),
+        (
+            &["-i", "ts", "--every", "1h", "--agg", "len:temp", "r.csv"],
+            "--agg len takes no column",
+        ),
+        (
+            &["-i", "ts", "--every", "1h", "--agg", "sum", "r.csv"],
+            "needs a column, as sum:<column>",
+        ),
+        (
+            &["-i", "ts", "--every", "1x", "r.csv"],
+            "Invalid --every duration",
+        ),
+        (
+            &["-i", "nope", "--every", "1h", "r.csv"],
+            "--index column \"nope\" not found",
+        ),
+        (
+            &["-i", "ts", "--every", "1h", "bad.csv"],
+            "Could not parse the --index column as dates",
+        ),
+        (
+            &["-i", "ts", "--every", "1h", "nul.csv"],
+            "The --index column has empty values",
+        ),
+        (
+            &["-i", "ts", "--every", "1i", "fl.csv"],
+            "must hold dates, datetimes or integers",
+        ),
+    ];
+    for (i, (args, needle)) in cases.iter().enumerate() {
+        assert_fails_with(&format!("timebucketp_errors_{i}"), args, needle);
+    }
+}

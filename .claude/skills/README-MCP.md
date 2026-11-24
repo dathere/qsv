@@ -1,12 +1,12 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 57 skill-based commands optimized for AI agent workflows.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 58 skill-based commands optimized for AI agent workflows.
 
 ## Overview
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: 10 core utility tools plus 13 commonly-used command tools (sniff, sqlp, joinp, frequency, search, etc.) — 23 tools at startup (~60% reduction vs full 57-tool exposure). `qsv_browse_directory` adds a 24th when MCP Apps are enabled. Remaining tools are discovered via search and added dynamically.
+- **Deferred Tool Loading**: 10 core utility tools plus 13 commonly-used command tools (sniff, sqlp, joinp, frequency, search, etc.) — 23 tools at startup (~60% reduction vs full 58-tool exposure). `qsv_browse_directory` adds a 24th when MCP Apps are enabled. Remaining tools are discovered via search and added dynamically.
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -178,7 +178,7 @@ This script will:
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
 | `QSV_MCP_SQL_FILE_WRITES` | `false` in plugin mode, else `true` | Allow SQL that writes files itself (`COPY ... TO '<file>'`, DuckDB `EXPORT DATABASE`). When `false`, qsv gets `QSV_SQL_DISABLE_FILE_WRITES=1` and SQL that may contain them (or `ATTACH`) runs on Polars `sqlp` (which refuses them) instead of DuckDB; use `output_file` instead. DuckDB itself then runs sandboxed to the allowed directories plus the input file, and parquet output (`format=parquet`) is written by `sqlp`, so DuckDB writes no query results, only the server's own Parquet cache of the input (DuckDB 1.2.0+; older versions route everything to `sqlp`). The sandbox covers DuckDB only: SQL that names files itself can still read them on the `sqlp` route. |
 | `QSV_MCP_ENABLE_APPS` | `true` | Enable MCP Apps UI tools. When `true` and the client supports MCP Apps, exposes the app-only `qsv_browse_directory` interactive directory browser. Set to `false` to disable. |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 57 tools immediately (no deferred loading). `false`: use only 10 core utility tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): deferred loading — 23 tools at startup (10 core + 13 commonly-used commands), +1 app-only when Apps enabled, plus tools discovered via search |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 58 tools immediately (no deferred loading). `false`: use only 10 core utility tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): deferred loading — 23 tools at startup (10 core + 13 commonly-used commands), +1 app-only when Apps enabled, plus tools discovered via search |
 | `QSV_MCP_SANITIZE_ERRORS` | `true` | Strip absolute paths from qsv error messages (and the command line echoed alongside them) before they reach the MCP client. Protects usernames and directory layout in hosted/shared deployments. Set to `false` to keep full paths for local debugging. |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
@@ -236,7 +236,7 @@ Tools for frequently used commands. Under default deferred loading these are reg
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any qsv command with a skill definition (57 commands):
+`qsv_command` - Execute any qsv command with a skill definition (58 commands):
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -246,7 +246,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-23 tools are loaded at startup — 10 core utility tools plus 13 commonly-used command tools — reducing token usage by ~60% vs exposing all 57 tools (`QSV_MCP_EXPOSE_ALL_TOOLS=true`):
+23 tools are loaded at startup — 10 core utility tools plus 13 commonly-used command tools — reducing token usage by ~60% vs exposing all 58 tools (`QSV_MCP_EXPOSE_ALL_TOOLS=true`):
 
 | Core Utility Tool | Purpose |
 |-------------------|---------|
@@ -276,9 +276,9 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
-- `true`: Always expose all 57 tools immediately (no deferred loading)
+- `true`: Always expose all 58 tools immediately (no deferred loading)
 - `false`: Always use 10 core utility tools only (+1 app-only tool when MCP Apps available; disables both deferred loading and the 13 pre-registered common command tools)
-- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 42 command tools (recommended). The 42 counts COMMAND tools only: of the 57 command skills, 13 are pre-registered as common commands and `index` and `stats` are promoted into the core set, leaving 42 to be discovered via `qsv_search_tools`
+- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 42 command tools (recommended). The 42 counts COMMAND tools only: of the 58 command skills, 13 are pre-registered as common commands and `index` and `stats` are promoted into the core set, leaving 42 to be discovered via `qsv_search_tools`
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -407,7 +407,7 @@ Result: Parquet file created with optimized data types (data.parquet)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
 │  • 10 Core Tools (always loaded)            │
-│  • 57 tools via deferred loading            │
+│  • 58 tools via deferred loading            │
 │  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
@@ -504,7 +504,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 57 skills
+Loaded 58 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -579,7 +579,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (57 skills loaded)
+- **Server Startup**: < 100ms (58 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -624,6 +624,6 @@ For issues or questions:
 
 **Updated**: 2026-11-23
 **Version**: 29.0.2
-**Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 57 discoverable via `qsv_search_tools`
-**Skills**: 57 qsv commands
+**Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 58 discoverable via `qsv_search_tools`
+**Skills**: 58 qsv commands
 **Status**: Production Ready

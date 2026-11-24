@@ -1,0 +1,703 @@
+pub(crate) static USAGE: &str = r#"
+Buckets time-series CSV data into time windows using the Polars engine.
+
+Groups rows into windows over a date, datetime or integer index column and
+aggregates them. Unlike sqlp's DATE_TRUNC, windows need not be calendar units
+(e.g. 15m), can overlap (a --period longer than --every) and can be shifted
+(--offset).
+
+WINDOW MODE (default):
+  A new window starts every --every and spans --period (default: --every).
+  Each output row is one window. Windows with no input rows are skipped
+  unless you set --fill-gaps.
+
+ROLLING MODE (--rolling):
+  One window per input row, looking back --period from that row's index
+  value, e.g. "the average over the preceding 2 hours". By default a row's
+  window is (index - period, index], so it includes the row itself. The
+  output has one row per input row.
+
+DURATIONS are an integer followed by a unit, and units combine (e.g. 1h30m):
+  ns, us, ms, s, m (minute), h, d, w, mo (calendar month), q (quarter),
+  y (year), i (index units, for integer index columns only: 3i spans 3).
+  d, w, mo, q and y are calendar-aware: they respect month lengths.
+  A leading minus makes a duration negative, e.g. --offset -30m.
+
+Date-like columns are parsed as dates. When the index column holds text,
+Polars guesses its date format and reads ambiguous dates such as 01/03/2024
+day-first, so set --date-format to be sure. An index that does not parse as
+dates is an error, as is an empty index value.
+
+Examples:
+
+  # hourly sales totals
+  $ qsv timebucketp --index ts --every 1h --agg sum:sales sales.csv
+
+  # 1-hour windows starting every 15 minutes, computed per station
+  $ qsv timebucketp -i ts --every 15m --period 1h --by station --agg mean:temp,max:temp readings.csv
+
+  # weekly row counts, weeks starting on Monday, with empty weeks as 0
+  $ qsv timebucketp -i date --every 1w --start-by monday --fill-gaps events.csv
+
+  # trailing 2-hour average price at each trade
+  $ qsv timebucketp -i ts --rolling --period 2h --agg mean:price trades.csv
+
+For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_timebucketp.rs.
+See also https://github.com/dathere/qsv/wiki/SQL-and-Polars#timebucketp
+
+Usage:
+    qsv timebucketp [options] <input>
+    qsv timebucketp --help
+
+timebucketp arguments:
+    <input>                The input CSV file. The file must have headers.
+                           If the file has a pschema.json file, it is used to
+                           type the columns unless --infer-len is set to a value
+                           other than the default. Stdin is not supported.
+                           A snappy-compressed (.sz) input is decompressed
+                           first, and an --output ending in .sz is
+                           snappy-compressed. Lines starting with
+                           QSV_COMMENT_CHAR are skipped.
+                           QSV_POLARS_FLOAT_PRECISION and QSV_OUTPUT_BOM apply
+                           to the output, as in sqlp and pivotp.
+
+timebucketp options:
+    -i, --index <col>      The date, datetime or integer column that defines
+                           the windows. Required. The output keeps its name.
+    --every <dur>          Start a new window at this interval.
+                           Required in window mode.
+    --period <dur>         The length of each window. Defaults to --every in
+                           window mode. Required in rolling mode.
+    --offset <dur>         Shift the window boundaries by this duration.
+                           Defaults to 0 in window mode, and to minus --period
+                           in rolling mode (a look-back window).
+    --date-format <fmt>    The strptime format of a text --index column, e.g.
+                           %m/%d/%Y or "%d.%m.%Y %H:%M". Without time fields
+                           the index is read as dates, otherwise as datetimes.
+    -b, --by <cols>        Also group by these columns (comma-separated).
+                           Windows are computed separately for each group.
+    -a, --agg <specs>      Comma-separated aggregations, as func:column pairs,
+                           e.g. sum:sales,mean:temp. The functions are:
+                             first, last, sum, min, max, mean, median,
+                             quantile@<p> (alias q@<p>, p in [0, 1]), len.
+                           Each is output as <column>_<func>, e.g. sales_sum,
+                           or temp_quantile_0.95 for quantile@0.95.
+                           len takes no column: it counts the rows in each
+                           window and is output as "count".
+                           [default: len]
+    --label <how>          The value written to the index column for each
+                           window. Window mode only. One of:
+                             left      - the window's start (the default)
+                             right     - the window's end
+                             datapoint - the window's first index value
+    --closed <side>        Which window boundaries are inclusive: left, right,
+                           both or none. Defaults to left in window mode and
+                           to right in rolling mode.
+    --start-by <how>       Where the first window starts. Window mode only.
+                           One of:
+                             window    - the --every boundary at or before
+                                         the first index value (the default)
+                             datapoint - the first index value itself
+                             monday ... sunday - that weekday (weekly --every)
+    --boundaries           Add _lower_boundary and _upper_boundary columns
+                           before the index column. Window mode only.
+    --fill-gaps            Also emit the empty windows between each group's
+                           first and last window: count, sum and len are 0
+                           there, and every other aggregation is empty.
+                           Window mode only. Cannot be combined with
+                           datapoint labels or starts, or with --boundaries.
+    --rolling              Use rolling mode (see above).
+    --sorted               The input is already sorted by --index, within
+                           each group when using --by, so skip timebucketp's
+                           sort. Unsorted input is then an error, never a
+                           wrong result.
+    --infer-len <arg>      Number of rows to scan when inferring the schema.
+                           Set to 0 to scan the entire file. [default: 10000]
+    --decimal-comma        Use comma as decimal separator when READING the input.
+                           Note that you will need to specify an alternate --delimiter.
+    --ignore-errors        Skip rows that can't be parsed.
+
+Common options:
+    -h, --help             Display this message
+    -o, --output <file>    Write output to <file> instead of stdout.
+    -d, --delimiter <arg>  The field delimiter for reading/writing CSV data.
+                           Must be a single character. If not set, QSV_DEFAULT_DELIMITER
+                           is used, else ','. A .tsv/.tab (tab) or .ssv (semicolon)
+                           extension on the input or --output file sets that file's
+                           delimiter. (default: ,)
+    -q, --quiet            Do not print the result's shape to stderr.
+"#;
+
+use std::{
+    fs::File,
+    io,
+    io::Write,
+    path::{Path, PathBuf},
+};
+
+use foldhash::HashSet;
+use polars::prelude::*;
+use serde::Deserialize;
+
+use crate::{
+    CliResult,
+    cmd::{joinp::path_delim, pivotp::AggKind, sqlp::compress_output_if_needed},
+    config::Delimiter,
+    util,
+};
+
+const DEFAULT_INFER_LEN: usize = 10000;
+
+#[derive(Deserialize)]
+struct Args {
+    arg_input:          String,
+    flag_index:         Option<String>,
+    flag_every:         Option<String>,
+    flag_period:        Option<String>,
+    flag_offset:        Option<String>,
+    flag_date_format:   Option<String>,
+    flag_by:            Option<String>,
+    flag_agg:           String,
+    flag_label:         Option<String>,
+    flag_closed:        Option<String>,
+    flag_start_by:      Option<String>,
+    flag_boundaries:    bool,
+    flag_fill_gaps:     bool,
+    flag_rolling:       bool,
+    flag_sorted:        bool,
+    flag_infer_len:     usize,
+    flag_decimal_comma: bool,
+    flag_ignore_errors: bool,
+    flag_output:        Option<String>,
+    flag_delimiter:     Option<Delimiter>,
+    flag_quiet:         bool,
+}
+
+/// One `--agg` entry: the aggregation, the column it reads (None for `len`) and its output name.
+struct AggSpec {
+    kind:   AggKind,
+    column: Option<String>,
+    output: String,
+}
+
+impl AggSpec {
+    fn expr(&self) -> Expr {
+        match &self.column {
+            Some(c) => self.kind.on(col(c.as_str())).alias(self.output.as_str()),
+            None => len().alias(self.output.as_str()),
+        }
+    }
+}
+
+/// Parse `--agg`, e.g. `sum:sales,mean:temp,len`, rejecting duplicate output columns.
+fn parse_aggs(spec: &str) -> CliResult<Vec<AggSpec>> {
+    let mut aggs = Vec::new();
+    let mut seen = HashSet::default();
+    for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let (func, column) = match item.split_once(':') {
+            Some((f, c)) => (f.trim().to_lowercase(), Some(c.trim().to_string())),
+            None => (item.to_lowercase(), None),
+        };
+        let agg = match (func.as_str(), column) {
+            ("len", None) => AggSpec {
+                kind:   AggKind::Len,
+                column: None,
+                output: "count".to_string(),
+            },
+            ("len", Some(_)) => {
+                return fail_incorrectusage_clierror!(
+                    "--agg len takes no column: it counts the rows in each window."
+                );
+            },
+            ("item", _) => {
+                return fail_incorrectusage_clierror!(
+                    "--agg item is not supported by timebucketp."
+                );
+            },
+            (f, Some(c)) if !c.is_empty() => {
+                let Some(kind) = AggKind::from_name(f) else {
+                    return fail_incorrectusage_clierror!(
+                        "Invalid --agg function \"{f}\" in \"{item}\"."
+                    );
+                };
+                let suffix = match kind {
+                    AggKind::Quantile(p) => format!("quantile_{p}"),
+                    _ => f.to_string(),
+                };
+                AggSpec {
+                    kind,
+                    output: format!("{c}_{suffix}"),
+                    column: Some(c),
+                }
+            },
+            (f, _) => {
+                return fail_incorrectusage_clierror!(
+                    "--agg \"{item}\" needs a column, as {f}:<column>."
+                );
+            },
+        };
+        if !seen.insert(agg.output.clone()) {
+            return fail_incorrectusage_clierror!(
+                "--agg produces the column \"{}\" more than once.",
+                agg.output
+            );
+        }
+        aggs.push(agg);
+    }
+    if aggs.is_empty() {
+        return fail_incorrectusage_clierror!("--agg needs at least one aggregation.");
+    }
+    Ok(aggs)
+}
+
+fn parse_duration(flag: &str, value: &str) -> CliResult<Duration> {
+    match Duration::try_parse(value) {
+        Ok(d) => Ok(d),
+        Err(e) => fail_incorrectusage_clierror!("Invalid {flag} duration \"{value}\": {e}"),
+    }
+}
+
+fn parse_closed(value: &str) -> CliResult<ClosedWindow> {
+    Ok(match value.to_lowercase().as_str() {
+        "left" => ClosedWindow::Left,
+        "right" => ClosedWindow::Right,
+        "both" => ClosedWindow::Both,
+        "none" => ClosedWindow::None,
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --closed \"{value}\": use left, right, both or none."
+            );
+        },
+    })
+}
+
+fn parse_label(value: &str) -> CliResult<Label> {
+    Ok(match value.to_lowercase().as_str() {
+        "left" => Label::Left,
+        "right" => Label::Right,
+        "datapoint" => Label::DataPoint,
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --label \"{value}\": use left, right or datapoint."
+            );
+        },
+    })
+}
+
+fn parse_start_by(value: &str) -> CliResult<StartBy> {
+    Ok(match value.to_lowercase().as_str() {
+        "window" => StartBy::WindowBound,
+        "datapoint" => StartBy::DataPoint,
+        "monday" => StartBy::Monday,
+        "tuesday" => StartBy::Tuesday,
+        "wednesday" => StartBy::Wednesday,
+        "thursday" => StartBy::Thursday,
+        "friday" => StartBy::Friday,
+        "saturday" => StartBy::Saturday,
+        "sunday" => StartBy::Sunday,
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Invalid --start-by \"{value}\": use window, datapoint or a weekday name."
+            );
+        },
+    })
+}
+
+/// Turn the Polars errors users can cause into actionable messages.
+fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
+    let msg = err.to_string();
+    if msg.contains("not sorted") {
+        if sorted {
+            return crate::clitypes::CliError::Other(format!(
+                "The input is not sorted by --index (within each --by group). Drop --sorted to \
+                 let timebucketp sort it. ({msg})"
+            ));
+        }
+    } else if msg.contains("could not find an appropriate format") {
+        return crate::clitypes::CliError::Other(format!(
+            "Could not parse the --index column as dates. Set its format with --date-format, e.g. \
+             --date-format %m/%d/%Y. ({msg})"
+        ));
+    } else if let Some(pos) = msg.find("conversion from `str` to") {
+        // keep Polars' first line (which values failed), not its nested expression context
+        let detail = msg[pos..].lines().next().unwrap_or_default();
+        return crate::clitypes::CliError::Other(format!(
+            "Some --index values do not match the date format: {detail}"
+        ));
+    } else if msg.contains("null values in") {
+        return crate::clitypes::CliError::Other(format!(
+            "The --index column has empty values. Remove those rows first, e.g. with `qsv search \
+             --select <index> --invert-match '^$'`. ({msg})"
+        ));
+    }
+    err.into()
+}
+
+pub fn run(argv: &[&str]) -> CliResult<()> {
+    let args: Args = util::get_args(USAGE, argv)?;
+
+    let Some(index) = args.flag_index.clone() else {
+        return fail_incorrectusage_clierror!("--index <col> is required.");
+    };
+    let by_cols: Vec<String> = args
+        .flag_by
+        .as_deref()
+        .map(|s| {
+            s.split(',')
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if by_cols.contains(&index) {
+        return fail_incorrectusage_clierror!("--by cannot include the --index column.");
+    }
+    let aggs = parse_aggs(&args.flag_agg)?;
+
+    // Validate the mode-specific options before reading any data.
+    if args.flag_rolling {
+        for (given, flag) in [
+            (args.flag_every.is_some(), "--every"),
+            (args.flag_label.is_some(), "--label"),
+            (args.flag_start_by.is_some(), "--start-by"),
+            (args.flag_boundaries, "--boundaries"),
+            (args.flag_fill_gaps, "--fill-gaps"),
+        ] {
+            if given {
+                return fail_incorrectusage_clierror!("{flag} does not apply to --rolling.");
+            }
+        }
+        if args.flag_period.is_none() {
+            return fail_incorrectusage_clierror!("--rolling requires --period <dur>.");
+        }
+    } else if args.flag_every.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--every <dur> is required (or use --rolling with --period)."
+        );
+    }
+
+    let label = args
+        .flag_label
+        .as_deref()
+        .map_or(Ok(Label::Left), parse_label)?;
+    let start_by = args
+        .flag_start_by
+        .as_deref()
+        .map_or(Ok(StartBy::WindowBound), parse_start_by)?;
+    if args.flag_fill_gaps {
+        // Inserted windows are labelled on the --every grid, which only matches labels that sit
+        // on it, and carry no boundaries.
+        if label == Label::DataPoint {
+            return fail_incorrectusage_clierror!(
+                "--fill-gaps cannot be combined with --label datapoint."
+            );
+        }
+        if start_by == StartBy::DataPoint {
+            return fail_incorrectusage_clierror!(
+                "--fill-gaps cannot be combined with --start-by datapoint."
+            );
+        }
+        if args.flag_boundaries {
+            return fail_incorrectusage_clierror!(
+                "--fill-gaps cannot be combined with --boundaries."
+            );
+        }
+    }
+
+    let every = args
+        .flag_every
+        .as_deref()
+        .map(|v| parse_duration("--every", v))
+        .transpose()?;
+    let period_str = args
+        .flag_period
+        .clone()
+        .or_else(|| args.flag_every.clone())
+        .unwrap_or_default();
+    let period = parse_duration("--period", &period_str)?;
+    if period.negative() || period.is_zero() {
+        return fail_incorrectusage_clierror!("--period must be positive.");
+    }
+    if let Some(e) = every
+        && (e.negative() || e.is_zero())
+    {
+        return fail_incorrectusage_clierror!("--every must be positive.");
+    }
+    let offset = match args.flag_offset.as_deref() {
+        Some(v) => Some(parse_duration("--offset", v)?),
+        // a trailing window, as in Polars' Python rolling()
+        None if args.flag_rolling => Some(parse_duration("--period", &format!("-{period_str}"))?),
+        // zero, in the index's units: resolved once the schema is known
+        None => None,
+    };
+    let closed = match args.flag_closed.as_deref() {
+        Some(v) => parse_closed(v)?,
+        None if args.flag_rolling => ClosedWindow::Right,
+        None => ClosedWindow::Left,
+    };
+
+    // Delimiters, .sz inputs, comment lines, preambles and pschemas are handled as in pivotp.
+    let fallback_delim = if let Some(delimiter) = args.flag_delimiter {
+        delimiter.as_byte()
+    } else if let Ok(delim) = std::env::var("QSV_DEFAULT_DELIMITER") {
+        Delimiter::decode_delimiter(&delim)?.as_byte()
+    } else {
+        b','
+    };
+    let delim = path_delim(&args.arg_input, args.flag_delimiter, fallback_delim);
+    let output_delim = args.flag_output.as_ref().map_or(fallback_delim, |out| {
+        path_delim(out, args.flag_delimiter, fallback_delim)
+    });
+    if args.flag_decimal_comma && delim == b',' {
+        return fail_incorrectusage_clierror!(
+            "You need to specify an alternate --delimiter when using --decimal-comma."
+        );
+    }
+
+    let snappy_tmpdir;
+    let reader_path = if Path::new(&args.arg_input)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+    {
+        snappy_tmpdir = tempfile::tempdir()?;
+        util::decompress_snappy_file(&PathBuf::from(&args.arg_input), &snappy_tmpdir)?
+    } else {
+        args.arg_input.clone()
+    };
+
+    let comment_prefix = std::env::var("QSV_COMMENT_CHAR")
+        .ok()
+        .map(PlSmallStr::from_string);
+    let mut csv_reader = LazyCsvReader::new(PlRefPath::new(&reader_path))
+        .with_skip_lines(crate::config::sniffed_preamble_lines(Path::new(
+            &reader_path,
+        )))
+        .with_has_header(true)
+        .with_missing_is_null(true)
+        .with_comment_prefix(comment_prefix)
+        .with_try_parse_dates(true)
+        .with_decimal_comma(args.flag_decimal_comma)
+        .with_separator(delim)
+        .with_ignore_errors(args.flag_ignore_errors);
+    let pschema = if args.flag_infer_len == DEFAULT_INFER_LEN {
+        util::load_valid_pschema(Path::new(&args.arg_input))?
+    } else {
+        None
+    };
+    if let Some(schema) = pschema {
+        let mut schema = (*schema).clone();
+        if args.flag_date_format.is_some()
+            && let Some(dt) = schema.get_mut(index.as_str())
+        {
+            *dt = DataType::String;
+        }
+        csv_reader = csv_reader.with_schema(Some(Arc::new(schema)));
+    } else {
+        if args.flag_date_format.is_some() {
+            // keep the index as text, so it is parsed with --date-format rather than guessed
+            let mut overwrite = Schema::default();
+            overwrite.insert(index.as_str().into(), DataType::String);
+            csv_reader = csv_reader.with_dtype_overwrite(Some(Arc::new(overwrite)));
+        }
+        csv_reader = csv_reader.with_infer_schema_length(if args.flag_infer_len == 0 {
+            None
+        } else {
+            Some(args.flag_infer_len)
+        });
+    }
+    let mut lf = csv_reader.finish()?;
+
+    // Polars windows need a Date, Datetime or Int32/Int64 index.
+    let schema = lf.collect_schema()?;
+    let Some(index_dtype) = schema.get(index.as_str()).cloned() else {
+        return fail_incorrectusage_clierror!("--index column \"{index}\" not found.");
+    };
+    for b in &by_cols {
+        if schema.get(b.as_str()).is_none() {
+            return fail_incorrectusage_clierror!("--by column \"{b}\" not found.");
+        }
+    }
+    // Polars rejects an integer-index duration (e.g. 0i) on a temporal index, and vice versa.
+    let offset = offset.unwrap_or_else(|| {
+        Duration::parse(if index_dtype.is_integer() {
+            "0i"
+        } else {
+            "0ns"
+        })
+    });
+    match index_dtype {
+        DataType::Date | DataType::Datetime(..) => {},
+        // pschemas may type small integers as (U)Int8/16
+        dt if dt.is_integer() => {
+            lf = lf.with_column(col(index.as_str()).cast(DataType::Int64));
+        },
+        DataType::String => {
+            let options = StrptimeOptions {
+                format: args.flag_date_format.as_deref().map(PlSmallStr::from_str),
+                strict: true,
+                ..Default::default()
+            };
+            let has_time = args.flag_date_format.as_deref().is_some_and(|f| {
+                [
+                    "%H", "%I", "%k", "%l", "%M", "%S", "%T", "%R", "%r", "%c", "%s", "%+",
+                ]
+                .iter()
+                .any(|spec| f.contains(spec))
+            });
+            let parsed = if args.flag_date_format.is_some() && !has_time {
+                col(index.as_str()).str().to_date(options)
+            } else {
+                col(index.as_str())
+                    .str()
+                    .to_datetime(None, None, options, lit("raise"))
+            };
+            lf = lf.with_column(parsed);
+        },
+        dt => {
+            return fail_incorrectusage_clierror!(
+                "--index column \"{index}\" must hold dates, datetimes or integers, not {dt}."
+            );
+        },
+    }
+
+    if args.flag_sorted {
+        // Polars' lazy group_by_dynamic/rolling does not check that the index is sorted when no
+        // --by is given, and silently builds wrong windows from unsorted input. A single pass
+        // looking for a value smaller than its predecessor (within each --by group) is still
+        // far cheaper than sorting.
+        let idx = col(index.as_str());
+        let descending_step = idx.clone().lt(idx.shift(lit(1)));
+        let check = if by_cols.is_empty() {
+            descending_step
+        } else {
+            descending_step.over(by_cols.iter().map(|c| col(c.as_str())).collect::<Vec<_>>())?
+        };
+        let unsorted = lf
+            .clone()
+            .select([check.any(true).alias("unsorted")])
+            .collect()
+            .map_err(|e| explain(e, true))?;
+        if unsorted.column("unsorted")?.bool()?.get(0) == Some(true) {
+            return fail_clierror!(
+                "--sorted was given, but the input is not sorted by --index{}. Drop --sorted to \
+                 let timebucketp sort it.",
+                if by_cols.is_empty() {
+                    ""
+                } else {
+                    " within each --by group"
+                }
+            );
+        }
+    } else {
+        let sort_cols: Vec<&str> = by_cols
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once(index.as_str()))
+            .collect();
+        lf = lf.sort(
+            sort_cols,
+            SortMultipleOptions::default().with_maintain_order(true),
+        );
+    }
+
+    let by_exprs: Vec<Expr> = by_cols.iter().map(|c| col(c.as_str())).collect();
+    let agg_exprs: Vec<Expr> = aggs.iter().map(AggSpec::expr).collect();
+    let grouped = if args.flag_rolling {
+        lf.rolling(
+            col(index.as_str()),
+            by_exprs,
+            RollingGroupOptions {
+                index_column: index.as_str().into(),
+                period,
+                offset,
+                closed_window: closed,
+            },
+        )
+    } else {
+        lf.group_by_dynamic(
+            col(index.as_str()),
+            by_exprs,
+            DynamicGroupOptions {
+                index_column: index.as_str().into(),
+                every: every.unwrap_or(period),
+                period,
+                offset,
+                label,
+                include_boundaries: args.flag_boundaries,
+                closed_window: closed,
+                start_by,
+            },
+        )
+    };
+    let mut result = grouped
+        .agg(agg_exprs)
+        .collect()
+        .map_err(|e| explain(e, args.flag_sorted))?;
+
+    if args.flag_fill_gaps
+        && let Some(every) = every
+    {
+        let by: Vec<PlSmallStr> = by_cols.iter().map(|c| c.as_str().into()).collect();
+        result = result
+            .sort(
+                by_cols
+                    .iter()
+                    .map(String::as_str)
+                    .chain(std::iter::once(index.as_str()))
+                    .collect::<Vec<_>>(),
+                SortMultipleOptions::default(),
+            )?
+            .upsample_stable(by, index.as_str(), every)?;
+        let fills: Vec<Expr> = aggs
+            .iter()
+            .filter(|a| a.kind.empty_cell_is_zero())
+            .map(|a| {
+                let dtype = result.schema().get(a.output.as_str()).cloned();
+                let zero = lit(0);
+                col(a.output.as_str()).fill_null(match dtype {
+                    Some(dt) => zero.cast(dt),
+                    None => zero,
+                })
+            })
+            .collect();
+        if !fills.is_empty() {
+            result = result.lazy().with_columns(fills).collect()?;
+        }
+    }
+
+    // Group order is not guaranteed, so sort the output by --by, then --index.
+    if !by_cols.is_empty() {
+        result = result.sort(
+            by_cols
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(index.as_str()))
+                .collect::<Vec<_>>(),
+            SortMultipleOptions::default().with_maintain_order(true),
+        )?;
+    }
+
+    let mut writer = match args.flag_output {
+        Some(ref output_file) => Box::new(File::create(Path::new(output_file))?) as Box<dyn Write>,
+        None => Box::new(io::stdout()) as Box<dyn Write>,
+    };
+    let float_precision = std::env::var("QSV_POLARS_FLOAT_PRECISION")
+        .ok()
+        .and_then(|s| s.parse().ok());
+    CsvWriter::new(&mut writer)
+        .include_header(true)
+        .include_bom(util::get_envvar_flag("QSV_OUTPUT_BOM"))
+        .with_float_precision(float_precision)
+        .with_datetime_format(Some(PlSmallStr::from_static("%Y-%m-%d %H:%M:%S%.f")))
+        .with_separator(output_delim)
+        .finish(&mut result)?;
+    drop(writer);
+
+    compress_output_if_needed(args.flag_output.clone())?;
+
+    if !args.flag_quiet {
+        eprintln!("{:?}", result.shape());
+    }
+
+    Ok(())
+}

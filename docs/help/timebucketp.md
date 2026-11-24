@@ -38,10 +38,11 @@ A leading minus makes a duration negative, e.g. --offset -30m.
 The index column is parsed as dates or datetimes. Like the rest of qsv,
 ambiguous dates such as 01/03/2024 are read month-first (January 3). Set
 QSV_PREFER_DMY to read them day-first, or give the exact format with
-the --date-format option. Other text date columns are parsed the same way
-when min, max, mean, median or quantile aggregates them, and otherwise kept
-as written (unless a pschema.json types them). An index that does not parse
-as dates is an error, as is an empty index value.
+the --date-format option. A text column whose every value is a date is
+parsed the same way for min, max, mean, median and quantile, so it compares
+as dates; first, last and --by keep values as written (unless a pschema.json
+types them). Dates need 4-digit years unless --date-format is given. An index
+that does not parse as dates is an error, as is an empty index value.
 
 
 <a name="examples"></a>

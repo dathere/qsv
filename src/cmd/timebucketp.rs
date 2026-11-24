@@ -26,10 +26,11 @@ DURATIONS are an integer followed by a unit, and units combine (e.g. 1h30m):
 The index column is parsed as dates or datetimes. Like the rest of qsv,
 ambiguous dates such as 01/03/2024 are read month-first (January 3). Set
 QSV_PREFER_DMY to read them day-first, or give the exact format with
-the --date-format option. Other text date columns are parsed the same way
-when min, max, mean, median or quantile aggregates them, and otherwise kept
-as written (unless a pschema.json types them). An index that does not parse
-as dates is an error, as is an empty index value.
+the --date-format option. A text column whose every value is a date is
+parsed the same way for min, max, mean, median and quantile, so it compares
+as dates; first, last and --by keep values as written (unless a pschema.json
+types them). Dates need 4-digit years unless --date-format is given. An index
+that does not parse as dates is an error, as is an empty index value.
 
 Examples:
 
@@ -182,6 +183,21 @@ struct AggSpec {
     kind:   AggKind,
     column: Option<String>,
     output: String,
+}
+
+trait ComparesValues {
+    fn compares_values(self) -> bool;
+}
+
+impl ComparesValues for AggKind {
+    /// Aggregations whose result depends on comparing or averaging values, so a text date
+    /// column must be parsed for them.
+    fn compares_values(self) -> bool {
+        matches!(
+            self,
+            Self::Min | Self::Max | Self::Mean | Self::Median | Self::Quantile(_)
+        )
+    }
 }
 
 impl AggSpec {
@@ -344,11 +360,31 @@ const DATETIME_D_M_Y: &[&str] = &[
 fn index_date_format(sample: &str, prefer_dmy: bool) -> Option<String> {
     use chrono::{NaiveDate, NaiveDateTime};
 
-    if let Some(f) = DATE_Y_M_D
-        .iter()
-        .find(|f| NaiveDate::parse_from_str(sample, f).is_ok())
+    // chrono's %Y also takes a 2-digit year (10/05/24 would be read as the year 10 or 24), so
+    // only pick a format for a 4-digit year where that format expects it
+    let fields: Vec<&str> = sample
+        .split([' ', 'T'])
+        .next()
+        .unwrap_or_default()
+        .split(['-', '/', '.'])
+        .collect();
+    let four_digits = |i: usize| {
+        fields
+            .get(i)
+            .is_some_and(|f| f.len() == 4 && f.bytes().all(|b| b.is_ascii_digit()))
+    };
+    if fields.len() != 3 {
+        return None;
+    }
+    if four_digits(0)
+        && let Some(f) = DATE_Y_M_D
+            .iter()
+            .find(|f| NaiveDate::parse_from_str(sample, f).is_ok())
     {
         return Some((*f).to_string());
+    }
+    if !four_digits(2) {
+        return None;
     }
     let order = |f: &str, day_first: bool| {
         if day_first {
@@ -402,11 +438,11 @@ fn looks_like_datetime(value: &str) -> bool {
 /// Parse a text column as dates (a format without time fields) or datetimes. Without a format,
 /// Polars infers it; values with a zone or offset (e.g. ...Z) are then read as UTC, as in
 /// `util::polars_temporal_dtype`, since Polars refuses them without a time zone.
-fn text_date_expr(name: &str, format: Option<&str>, first: Option<&str>) -> Expr {
+fn text_date_expr(name: &str, format: Option<&str>, first: Option<&str>, strict: bool) -> Expr {
     use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
     let options = StrptimeOptions {
         format: format.map(PlSmallStr::from_str),
-        strict: true,
+        strict,
         ..Default::default()
     };
     if format.is_some_and(|f| !format_has_time(f)) {
@@ -752,7 +788,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .as_deref()
                     .and_then(|v| index_date_format(v, prefer_dmy))
             });
-            lf = lf.with_column(text_date_expr(&index, format.as_deref(), first.as_deref()));
+            lf = lf.with_column(text_date_expr(
+                &index,
+                format.as_deref(),
+                first.as_deref(),
+                true,
+            ));
         },
         dt => {
             return fail_incorrectusage_clierror!(
@@ -764,22 +805,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Text date columns compared by min/max/mean/median/quantile are parsed the same way as
     // the index (month-first unless QSV_PREFER_DMY); compared as text, "12/31/2023" would
     // rank above "01/05/2024". first/last keep the values as written.
-    let mut parsed_cols: Vec<&str> = Vec::new();
+    let mut parsed_cols: Vec<(String, Expr)> = Vec::new();
     for a in &aggs {
         let Some(c) = a.column.as_deref() else {
             continue;
         };
         if c == index
             || by_cols.iter().any(|b| b == c)
-            || parsed_cols.contains(&c)
-            || !matches!(
-                a.kind,
-                AggKind::Min
-                    | AggKind::Max
-                    | AggKind::Mean
-                    | AggKind::Median
-                    | AggKind::Quantile(_)
-            )
+            || parsed_cols.iter().any(|(p, _)| p == c)
+            || !a.kind.compares_values()
             || schema.get(c) != Some(&DataType::String)
         {
             continue;
@@ -788,9 +822,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             continue;
         };
         let format = index_date_format(&first, prefer_dmy);
-        if format.is_some() || looks_like_datetime(&first) {
-            lf = lf.with_column(text_date_expr(c, format.as_deref(), Some(&first)));
-            parsed_cols.push(c);
+        if format.is_none() && !looks_like_datetime(&first) {
+            continue;
+        }
+        // only a column whose every value parses is dates; mixed text keeps text comparison
+        let parsed = text_date_expr(c, format.as_deref(), Some(&first), false);
+        let unparsed = lf
+            .clone()
+            .select([col(c)
+                .is_not_null()
+                .and(parsed.clone().is_null())
+                .any(true)
+                .alias("unparsed")])
+            .collect()?;
+        if unparsed.column("unparsed")?.bool()?.get(0) != Some(true) {
+            parsed_cols.push((c.to_string(), parsed));
         }
     }
 
@@ -835,7 +881,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let by_exprs: Vec<Expr> = by_cols.iter().map(|c| col(c.as_str())).collect();
-    let agg_exprs: Vec<Expr> = aggs.iter().map(AggSpec::expr).collect();
+    // a parsed date column feeds only the aggregations that compare values; first/last and
+    // the group keys keep the values as written
+    let agg_exprs: Vec<Expr> = aggs
+        .iter()
+        .map(|a| {
+            match parsed_cols
+                .iter()
+                .find(|(c, _)| a.kind.compares_values() && a.column.as_deref() == Some(c))
+            {
+                Some((_, parsed)) => a.kind.on(parsed.clone()).alias(a.output.as_str()),
+                None => a.expr(),
+            }
+        })
+        .collect();
     let grouped = if args.flag_rolling {
         lf.rolling(
             col(index.as_str()),

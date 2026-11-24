@@ -101,8 +101,7 @@ fn timebucketp_sorted_rejects_unsorted_input() {
     let wrk = Workdir::new("timebucketp_sorted_rejects_unsorted_input");
     readings(&wrk);
     let mut cmd = tb(&wrk, &["-i", "ts", "--every", "1h", "--sorted", "r.csv"]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("not sorted by --index. Drop --sorted"),
         "stderr: {stderr}"
@@ -127,8 +126,7 @@ fn timebucketp_sorted_rejects_unsorted_group() {
             "-i", "ts", "--every", "1h", "--by", "station", "--sorted", "u.csv",
         ],
     );
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("not sorted by --index within each --by group"),
         "stderr: {stderr}"
@@ -484,8 +482,7 @@ fn timebucketp_later_day_first_value_is_an_error() {
         ],
     );
     let mut cmd = tb(&wrk, &["-i", "d", "--every", "1mo", "d.csv"]);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
         stderr.contains("25/12/2024") && stderr.contains("QSV_PREFER_DMY"),
         "stderr: {stderr}"
@@ -599,8 +596,7 @@ fn assert_fails_with(name: &str, args: &[&str], needle: &str) {
         vec![svec!["ts", "v"], svec!["1.5", "1"], svec!["2.5", "2"]],
     );
     let mut cmd = tb(&wrk, args);
-    wrk.assert_err(&mut cmd);
-    let stderr = wrk.output_stderr(&mut cmd);
+    let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(stderr.contains(needle), "stderr: {stderr}");
 }
 
@@ -837,7 +833,7 @@ fn timebucketp_date_format_with_unpadded_time_fields() {
 
 #[test]
 fn timebucketp_min_max_of_text_dates_are_month_first() {
-    // compared as text, "12/31/2023" would rank above "01/05/2024"
+    // compared as text, "12/31/2023" would rank above "01/05/2024"; first keeps it as written
     let wrk = Workdir::new("timebucketp_min_max_of_text_dates_are_month_first");
     wrk.create(
         "o.csv",
@@ -868,8 +864,59 @@ fn timebucketp_min_max_of_text_dates_are_month_first() {
                 "2024-01-01 10:00:00",
                 "2023-12-31",
                 "2024-01-05",
-                "2023-12-31"
+                "12/31/2023"
             ]
         ]
     );
+}
+
+#[test]
+fn timebucketp_min_max_of_mixed_text_compare_as_text() {
+    // a column that is not all dates keeps text comparison, whatever the row order
+    let wrk = Workdir::new("timebucketp_min_max_of_mixed_text_compare_as_text");
+    wrk.create(
+        "o.csv",
+        vec![
+            svec!["ts", "status"],
+            svec!["2024-01-01 10:15:00", "12/31/2023"],
+            svec!["2024-01-01 10:45:00", "pending"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1h", "--agg", "max:status", "o.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "status_max"],
+            svec!["2024-01-01 10:00:00", "pending"]
+        ]
+    );
+}
+
+#[test]
+fn timebucketp_two_digit_years_need_a_date_format() {
+    // chrono's %Y would read 10/05/24 as the year 10 (or 24); refuse to guess instead
+    let wrk = Workdir::new("timebucketp_two_digit_years_need_a_date_format");
+    wrk.create("y.csv", vec![svec!["d", "v"], svec!["10/05/24", "1"]]);
+    let mut guessed = tb(&wrk, &["-i", "d", "--every", "1mo", "y.csv"]);
+    let stderr = wrk.stderr_on_error(&mut guessed);
+    assert!(stderr.contains("--date-format"), "stderr: {stderr}");
+
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "d",
+            "--every",
+            "1mo",
+            "--date-format",
+            "%m/%d/%y",
+            "y.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["d", "count"], svec!["2024-10-01", "1"]]);
 }

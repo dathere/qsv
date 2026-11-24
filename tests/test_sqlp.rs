@@ -4040,12 +4040,13 @@ fn sqlp_unnest_issue_3108() {
         .arg("select id, unnest(string_to_array(data, ',')) as value from data");
 
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // pola-rs/polars#30996: UNNEST of a NULL list returns no rows, so id 2 (empty `data`, read
+    // as NULL) has none. On 93d31f0 it had one row with an empty `value`.
     let expected = vec![
         svec!["id", "value"],
         svec!["1", "a"],
         svec!["1", "b"],
         svec!["1", "c"],
-        svec!["2", ""],
         svec!["3", "b"],
         svec!["3", "c"],
         svec!["3", "d"],
@@ -7978,6 +7979,228 @@ fn sqlp_new_functions_93d31f0() {
     assert_eq!(
         got,
         vec![svec!["c", "n"], svec!["buy", "3"], svec!["sell", "2"]]
+    );
+}
+
+// Polars SQL behavior changed between 93d31f0 and 08b2814.
+
+fn strings_fixture(wrk: &Workdir) {
+    wrk.create(
+        "s.csv",
+        vec![
+            svec!["i", "s"],
+            svec!["1", "héllo wörld"],
+            svec!["2", "abc"],
+            svec!["3", ""],
+        ],
+    );
+}
+
+#[test]
+fn sqlp_strpos_counts_characters() {
+    // pola-rs/polars#31026 (fix!): STRPOS returns a character position. On 93d31f0 it was a
+    // byte offset, so the multi-byte `é` before the `w` made it 8.
+    let wrk = Workdir::new("sqlp_strpos_counts_characters");
+    strings_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv")
+        .arg("SELECT STRPOS(s, 'w') AS p FROM s WHERE i < 3 ORDER BY i");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["p"], svec!["7"], svec!["0"]]);
+}
+
+#[test]
+fn sqlp_replace_empty_pattern_and_left_right_null() {
+    // pola-rs/polars#31039: REPLACE with an empty pattern leaves the string unchanged. On 93d31f0
+    // it put the replacement between every character ("XaXbXcX").
+    let wrk = Workdir::new("sqlp_replace_empty_pattern_and_left_right_null");
+    strings_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv")
+        .arg("SELECT REPLACE(s, '', 'X') AS r FROM s WHERE i = 2");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["r"], svec!["abc"]]);
+
+    // pola-rs/polars#30941: LEFT and RIGHT with a zero count return NULL on NULL input. On
+    // 93d31f0 they returned the empty string, written as `""`.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv")
+        .arg("SELECT LEFT(NULL, 0) AS l, RIGHT(NULL, 0) AS r");
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    assert_eq!(got, "l,r\n,");
+}
+
+#[test]
+fn sqlp_aggregate_in_where_errors() {
+    // pola-rs/polars#31004: an aggregate in WHERE is refused. On 93d31f0, `WHERE SUM(i) > 3`
+    // returned every row without an error.
+    let wrk = Workdir::new("sqlp_aggregate_in_where_errors");
+    strings_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv").arg("SELECT i FROM s WHERE SUM(i) > 3");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("aggregate functions are not allowed in WHERE"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn sqlp_unnest_empty_list_returns_no_rows() {
+    // pola-rs/polars#30996: UNNEST of an empty list returns no rows. On 93d31f0 it returned one
+    // NULL row.
+    let wrk = Workdir::new("sqlp_unnest_empty_list_returns_no_rows");
+    strings_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv")
+        .arg("SELECT COUNT(*) AS n FROM (SELECT UNNEST([]) AS x)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["0"]]);
+}
+
+#[test]
+fn sqlp_join_date_with_timestamp() {
+    // pola-rs/polars#31053: join keys of a date and a timestamp are cast to their common type.
+    // On 93d31f0 the join failed with "datatypes of join keys don't match".
+    let wrk = Workdir::new("sqlp_join_date_with_timestamp");
+    wrk.create(
+        "dates.csv",
+        vec![
+            svec!["d", "ts"],
+            svec!["2024-01-01", "2024-01-01 00:00:00"],
+            svec!["2024-01-02", "2024-01-02 12:00:00"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dates.csv").arg(
+        "SELECT a.d FROM (SELECT CAST(d AS DATE) AS d FROM dates) a JOIN (SELECT CAST(ts AS \
+         TIMESTAMP) AS ts FROM dates) b ON a.d = b.ts ORDER BY 1",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["d"], svec!["2024-01-01"]]);
+}
+
+#[test]
+fn sqlp_insert_update_change_table_not_file() {
+    // pola-rs/polars#30958: INSERT and UPDATE work on registered tables. They change the table
+    // for the statements after them, never the input file, so they run under
+    // QSV_SQL_DISABLE_FILE_WRITES too.
+    let wrk = Workdir::new("sqlp_insert_update_change_table_not_file");
+    wrk.create(
+        "u.csv",
+        vec![svec!["k", "v"], svec!["a", "10"], svec!["b", "20"]],
+    );
+    wrk.create_from_string(
+        "iu.sql",
+        "INSERT INTO u VALUES ('z', 99);\nUPDATE u SET v = 0 WHERE k = 'a';\nSELECT * FROM u \
+         ORDER BY k;\n",
+    );
+    let before = wrk.read_to_string("u.csv").unwrap();
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .arg("u.csv")
+        .arg("iu.sql");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "v"],
+            svec!["a", "0"],
+            svec!["b", "20"],
+            svec!["z", "99"],
+        ]
+    );
+    assert_eq!(wrk.read_to_string("u.csv").unwrap(), before);
+}
+
+#[test]
+fn sqlp_copy_from_appends_rows() {
+    // pola-rs/polars#30975: COPY <table> FROM '<file>' appends the file's rows to the table, as
+    // in Postgres (a header row is data unless the HEADER option is given). It reads files,
+    // which QSV_SQL_DISABLE_FILE_WRITES does not block (read_csv() already could).
+    let wrk = Workdir::new("sqlp_copy_from_appends_rows");
+    wrk.create(
+        "u.csv",
+        vec![svec!["k", "v"], svec!["a", "10"], svec!["b", "20"]],
+    );
+    wrk.create("more.csv", vec![svec!["k", "v"], svec!["c", "30"]]);
+    wrk.create_from_string(
+        "cf.sql",
+        "COPY u FROM 'more.csv' (HEADER true);\nSELECT * FROM u ORDER BY k;\n",
+    );
+    let before = wrk.read_to_string("u.csv").unwrap();
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.env("QSV_SQL_DISABLE_FILE_WRITES", "1")
+        .arg("u.csv")
+        .arg("cf.sql");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "v"],
+            svec!["a", "10"],
+            svec!["b", "20"],
+            svec!["c", "30"],
+        ]
+    );
+    assert_eq!(wrk.read_to_string("u.csv").unwrap(), before);
+}
+
+#[test]
+fn sqlp_new_sql_08b2814() {
+    // New SQL, all errors on 93d31f0: REGEXP_SUBSTR and JSON_EXTRACT_PATH_TEXT (#31003),
+    // UNNEST ... WITH ORDINALITY (#31017), window frames that end before the current row
+    // (#31022), and SHOW FUNCTIONS (#31002).
+    let wrk = Workdir::new("sqlp_new_sql_08b2814");
+    strings_fixture(&wrk);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv").arg(
+        "SELECT REGEXP_SUBSTR('héllo wörld', '[a-z]+') AS r, \
+         JSON_EXTRACT_PATH_TEXT('{\"a\":{\"b\":1}}', 'a', 'b') AS j",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["r", "j"], svec!["h", "1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv")
+        .arg("SELECT x, o FROM UNNEST([10, 20]) WITH ORDINALITY AS u(x, o)");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["x", "o"], svec!["10", "1"], svec!["20", "2"]]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv").arg(
+        "SELECT i, SUM(i) OVER (ORDER BY i ROWS BETWEEN 2 PRECEDING AND 1 PRECEDING) AS w FROM s \
+         ORDER BY i",
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["i", "w"],
+            svec!["1", ""],
+            svec!["2", "1"],
+            svec!["3", "3"],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.csv").arg("SHOW FUNCTIONS");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert!(
+        got.iter()
+            .any(|r| r.first().is_some_and(|n| n == "regexp_substr")),
+        "{got:?}"
     );
 }
 

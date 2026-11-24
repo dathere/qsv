@@ -389,6 +389,13 @@ fn append_to_filename(path: &std::path::Path, suffix: &str) -> std::path::PathBu
 }
 
 /// Append pragmastat one-sample columns to the .stats.csv cache file.
+/// Does `--stats-options` ask for a `--flexible` baseline?
+fn stats_options_flexible(args: &Args) -> bool {
+    args.flag_stats_options
+        .split_whitespace()
+        .any(|o| o == "--flexible")
+}
+
 fn run_cache_append(args: &Args) -> CliResult<()> {
     use csv::{ReaderBuilder, WriterBuilder};
 
@@ -417,9 +424,7 @@ fn run_cache_append(args: &Args) -> CliResult<()> {
             args.flag_no_headers,
             args.flag_delimiter,
             None,
-            args.flag_stats_options
-                .split_whitespace()
-                .any(|o| o == "--flexible"),
+            stats_options_flexible(args),
         );
     // a baseline computed here has a known selection, so its rows map to columns exactly
     let baseline_computed_here = !stats_current || version_mismatch || parsing_mismatch;
@@ -828,17 +833,22 @@ fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usi
     if cache_mtime <= input_mtime {
         return None;
     }
-    // nor one parsed otherwise than this run reads the input (#5105)
-    if util::stats_cache_parsing_opts_conflict(
-        std::path::Path::new(input_path),
-        &canonical,
-        args.flag_no_headers,
-        args.flag_delimiter,
-        // only the column types are used, which --prefer-dmy doesn't decide
-        None,
-        // read strictly
-        false,
-    ) {
+    // nor one parsed otherwise than this run reads the input (#5105), judged by a sidecar that
+    // describes this JSONL rather than a later stats run
+    let given_path = std::path::Path::new(input_path);
+    if util::stats_jsonl_predates_stats_cache(&cache_path, [given_path, &canonical])
+        || util::stats_cache_parsing_opts_conflict(
+            given_path,
+            &canonical,
+            args.flag_no_headers,
+            args.flag_delimiter,
+            // only the column types are used, which --prefer-dmy doesn't decide
+            None,
+            // as the append baseline: a --flexible one is what `--stats-options --flexible`
+            // asks for
+            !args.flag_standalone && stats_options_flexible(args),
+        )
+    {
         return None;
     }
 

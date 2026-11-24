@@ -931,6 +931,8 @@ fn load_or_generate_caches(
     // a fresh cache parsed otherwise than scoresql reads the input describes other columns (#5105)
     let stats = if stats_path.exists()
         && is_cache_fresh(&stats_path, &canonical)
+        // a later stats run's sidecar doesn't describe this JSONL
+        && !util::stats_jsonl_predates_stats_cache(&stats_path, [input_path, &canonical])
         && !util::stats_cache_parsing_opts_conflict(
             input_path,
             &canonical,

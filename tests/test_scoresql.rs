@@ -1252,3 +1252,28 @@ fn scoresql_regenerates_a_stats_cache_parsed_otherwise() {
         "{parsed}"
     );
 }
+
+// A later stats run without --stats-jsonl rewrites the sidecar but leaves the `'`-quoted JSONL,
+// which that sidecar no longer describes
+#[test]
+fn scoresql_regenerates_a_jsonl_older_than_its_sidecar() {
+    let wrk = Workdir::new("scoresql_regenerates_a_jsonl_older_than_its_sidecar");
+    wrk.create_from_string("data.csv", "id,n\n1,\"10\"\n2,\"20\"\n");
+    let mut stats = wrk.command("stats");
+    stats.args(["--quote", "'", "--stats-jsonl", "data.csv"]);
+    wrk.assert_success(&mut stats);
+    let mut restats = wrk.command("stats");
+    restats.args(["--cache-threshold", "1", "data.csv"]);
+    wrk.assert_success(&mut restats);
+
+    let mut cmd = wrk.command("scoresql");
+    cmd.args(["--json", "data.csv", "SELECT * FROM data WHERE n = 10"]);
+    let got = wrk.output(&mut cmd);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&got.stdout)).unwrap();
+    assert_eq!(
+        parsed["cache_status"]["stats_available"],
+        serde_json::json!(["data"]),
+        "{parsed}"
+    );
+}

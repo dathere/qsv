@@ -2041,3 +2041,42 @@ fn pragmastat_append_recomputes_a_baseline_parsed_otherwise() {
     let n = rows.iter().find(|r| r[0] == "n").unwrap();
     assert_eq!(n[1..3], ["2", "15"], "{rows:?}");
 }
+
+// A later stats run without --stats-jsonl rewrites the sidecar but leaves the JSONL, so the
+// sidecar no longer describes it: the stale `'`-quoted JSONL must not be trusted either.
+#[test]
+fn pragmastat_standalone_ignores_a_jsonl_older_than_its_sidecar() {
+    let wrk = Workdir::new("pragmastat_standalone_ignores_a_jsonl_older_than_its_sidecar");
+    quote_cached_data(&wrk);
+    let mut restats = wrk.command("stats");
+    restats.args(["--cache-threshold", "1", "data.csv"]);
+    wrk.assert_success(&mut restats);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--standalone", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert_eq!(fields, ["id", "n"]);
+}
+
+// A --flexible baseline is accepted when --stats-options asks for one, so the column types
+// must come from that same cache, or the date column is read as numbers.
+#[test]
+fn pragmastat_append_flexible_baseline_keeps_its_column_types() {
+    let wrk = Workdir::new("pragmastat_append_flexible_baseline_keeps_its_column_types");
+    wrk.create_from_string(
+        "data.csv",
+        "d,x\n2020-01-01,1\n2020-02-01,2\n2020-03-01,3\n",
+    );
+    let options = "--flexible --infer-dates --stats-jsonl";
+    let mut stats = wrk.command("stats");
+    stats.args(options.split(' ')).arg("data.csv");
+    wrk.assert_success(&mut stats);
+
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--stats-options", options, "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    let rows = ps_rows(&wrk.path("data.stats.csv"));
+    let d = rows.iter().find(|r| r[0] == "d").unwrap();
+    assert_eq!(d[1], "3", "{rows:?}");
+}

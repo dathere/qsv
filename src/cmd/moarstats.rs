@@ -5215,6 +5215,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // so a CSV joined with another one would lose every statistic derived from them.
         let separator_mismatch =
             stats_current && util::stats_csv_separator_mismatch(&path, &stats_separator);
+        // The input is read below with the default parsing options, so a baseline computed
+        // under others (another delimiter or quoting, --no-headers, ...) describes other
+        // columns (#5105). A --flexible baseline is what `--stats-options --flexible` asks for.
+        let parsing_mismatch = stats_current
+            && util::stats_cache_parsing_opts_conflict(
+                input_path,
+                &input_path
+                    .canonicalize()
+                    .unwrap_or_else(|_| input_path.to_path_buf()),
+                false,
+                None,
+                None,
+                args.flag_stats_options
+                    .split_whitespace()
+                    .any(|o| o == "--flexible"),
+            );
         // A current stats CSV can still be unusable for --use-percentiles: it
         // may have been computed with a --percentile-list that lacks the
         // requested --pct-thresholds (issue #4455). Treat that as stale so the
@@ -5230,7 +5246,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             } else {
                 true
             };
-        if !stats_current || version_mismatch || separator_mismatch || !covers_thresholds {
+        if !stats_current
+            || version_mismatch
+            || separator_mismatch
+            || parsing_mismatch
+            || !covers_thresholds
+        {
             if args.flag_force {
                 winfo!("Force flag set: recomputing stats...");
             } else if !stats_current {
@@ -5255,6 +5276,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 wwarn!(
                     "Stats CSV file was written with a different QSV_STATS_SEPARATOR: \
                      {}\nRecomputing baseline stats...",
+                    path.display()
+                );
+            } else if parsing_mismatch {
+                wwarn!(
+                    "Stats CSV file was computed with other CSV parsing options (e.g. delimiter \
+                     or quoting) than moarstats reads the input with: {}\nRecomputing baseline \
+                     stats...",
                     path.display()
                 );
             } else {

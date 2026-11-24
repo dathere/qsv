@@ -2006,3 +2006,38 @@ fn pragmastat_cache_append_no_headers_partial_cache_left_empty() {
     assert_eq!(rows.len(), 1);
     assert!(rows[0][1..].iter().all(String::is_empty), "{rows:?}");
 }
+
+// Read with `'`, the `"10"` cells keep their quotes, so a cache computed that way types `n`
+// as String. pragmastat reads the input with the default quoting, so it must not trust such a
+// cache to pick its columns, nor extend it as a baseline (#5105).
+fn quote_cached_data(wrk: &Workdir) {
+    wrk.create_from_string("data.csv", "id,n\n1,\"10\"\n2,\"20\"\n");
+    let mut stats = wrk.command("stats");
+    stats.args(["--quote", "'", "--stats-jsonl", "data.csv"]);
+    wrk.assert_success(&mut stats);
+}
+
+#[test]
+fn pragmastat_standalone_ignores_a_cache_parsed_otherwise() {
+    let wrk = Workdir::new("pragmastat_standalone_ignores_a_cache_parsed_otherwise");
+    quote_cached_data(&wrk);
+    let mut cmd = wrk.command("pragmastat");
+    cmd.args(["--standalone", "data.csv"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let fields: Vec<&str> = got.iter().skip(1).map(|r| r[0].as_str()).collect();
+    assert_eq!(fields, ["id", "n"]);
+}
+
+#[test]
+fn pragmastat_append_recomputes_a_baseline_parsed_otherwise() {
+    let wrk = Workdir::new("pragmastat_append_recomputes_a_baseline_parsed_otherwise");
+    quote_cached_data(&wrk);
+    let mut cmd = wrk.command("pragmastat");
+    cmd.arg("data.csv");
+    let got = wrk.stderr_on_success(&mut cmd);
+    assert!(got.contains("other CSV parsing options"), "{got}");
+    // `n` is numeric again: ps_n, ps_center
+    let rows = ps_rows(&wrk.path("data.stats.csv"));
+    let n = rows.iter().find(|r| r[0] == "n").unwrap();
+    assert_eq!(n[1..3], ["2", "15"], "{rows:?}");
+}

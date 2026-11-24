@@ -396,7 +396,7 @@ pub(super) fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&P
 ///
 /// (`get_stats_records_readonly` still fails closed on missing metadata: it returns an `Option`
 /// its callers treat as a best-effort accelerator, so refusing costs nothing there.)
-pub(super) fn stats_cache_parsing_opts_conflict(
+pub(crate) fn stats_cache_parsing_opts_conflict(
     input_path: &Path,
     canonical_input_path: &Path,
     no_headers: bool,

@@ -8304,3 +8304,47 @@ fn moarstats_derived_statistics_skip_nan_cells() {
     );
     assert_eq!(derived[0], derived[1]);
 }
+
+/// `stat` of `field` in the stats CSV at `path`
+fn stats_csv_value(path: &std::path::Path, field: &str, stat: &str) -> String {
+    let mut rdr = ReaderBuilder::new().from_path(path).unwrap();
+    let headers = rdr.headers().unwrap().clone();
+    let field_idx = get_column_index(&headers, "field").unwrap();
+    let stat_idx = get_column_index(&headers, stat).unwrap();
+    rdr.records()
+        .map(Result::unwrap)
+        .find(|r| r.get(field_idx) == Some(field))
+        .and_then(|r| get_field_value(&r, stat_idx))
+        .unwrap_or_else(|| panic!("no {stat} for {field}"))
+}
+
+// moarstats reads the input with the default parsing options, so it must not extend a
+// baseline `stats` computed under others (#5105). Read with `'`, `b` is 1,2,3,4; read with
+// `"`, it is 9,1,2,3,4.
+#[test]
+fn moarstats_recomputes_a_baseline_parsed_otherwise() {
+    let wrk = Workdir::new("moarstats_recomputes_a_baseline_parsed_otherwise");
+    wrk.create_from_string("data.csv", "a,b\n'p,9\nq',1\nr,2\ns,3\nt,4\n");
+    let mut stats = wrk.command("stats");
+    stats.args(["--quote", "'", "--stats-jsonl", "data.csv"]);
+    wrk.assert_success(&mut stats);
+    assert_eq!(
+        stats_csv_value(&wrk.path("data.stats.csv"), "b", "max"),
+        "4"
+    );
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("data.csv");
+    let got = wrk.stderr_on_success(&mut cmd);
+    assert!(got.contains("other CSV parsing options"), "{got}");
+    assert_eq!(
+        stats_csv_value(&wrk.path("data.stats.csv"), "b", "max"),
+        "9"
+    );
+
+    // the recomputed baseline is the default reading's, so it is reused from now on
+    let mut again = wrk.command("moarstats");
+    again.arg("data.csv");
+    let got = wrk.stderr_on_success(&mut again);
+    assert!(!got.contains("Recomputing"), "{got}");
+}

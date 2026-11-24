@@ -928,7 +928,17 @@ fn load_or_generate_caches(
 
     // Check for stats cache
     let stats_path = canonical.with_extension("stats.csv.data.jsonl");
-    let stats = if stats_path.exists() && is_cache_fresh(&stats_path, &canonical) {
+    // a fresh cache parsed otherwise than scoresql reads the input describes other columns (#5105)
+    let stats = if stats_path.exists()
+        && is_cache_fresh(&stats_path, &canonical)
+        && !util::stats_cache_parsing_opts_conflict(
+            input_path,
+            &canonical,
+            false,
+            Some(Delimiter(delim)),
+            None,
+            false,
+        ) {
         load_stats_cache(&stats_path)?
     } else {
         if !quiet {

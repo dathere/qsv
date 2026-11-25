@@ -916,21 +916,38 @@ impl JoinStruct {
             .filter(|(left, right)| left == right)
             .map(|(left, _)| *left)
             .collect();
-        let join_lf = if keys_transformed && self.coalesce {
+        // Semi and anti joins output only left columns, so there is no right copy there.
+        // The copies are dropped here, before --sql-filter, so the filter sees the same
+        // columns as in a join without key transformations.
+        let join_lf = if keys_transformed
+            && self.coalesce
+            && !matches!(jointype, JoinType::Semi | JoinType::Anti)
+        {
             let mut join_lf = join_lf;
             let schema = join_lf.collect_schema()?;
-            let coalesced: Vec<Expr> = same_name_keys
+            let copied: Vec<&str> = same_name_keys
                 .iter()
+                .copied()
                 .filter(|name| schema.contains(&format!("{name}_right")))
-                .map(|name| {
-                    polars::lazy::dsl::coalesce(&[col(*name), col(format!("{name}_right"))])
-                        .alias(*name)
-                })
                 .collect();
-            if coalesced.is_empty() {
+            if copied.is_empty() {
                 join_lf
             } else {
-                join_lf.with_columns(coalesced)
+                let coalesced: Vec<Expr> = copied
+                    .iter()
+                    .map(|name| {
+                        polars::lazy::dsl::coalesce(&[col(*name), col(format!("{name}_right"))])
+                            .alias(*name)
+                    })
+                    .collect();
+                let copies: Vec<String> =
+                    copied.iter().map(|name| format!("{name}_right")).collect();
+                let keep: Vec<Expr> = schema
+                    .iter_names()
+                    .filter(|name| !copies.iter().any(|copy| copy == name.as_str()))
+                    .map(|name| col(name.as_str()))
+                    .collect();
+                join_lf.with_columns(coalesced).select(keep)
             }
         } else {
             join_lf
@@ -946,25 +963,11 @@ impl JoinStruct {
         };
 
         if keys_transformed {
-            // Remove temporary transformed columns and, with --coalesce, the right copies of
-            // same-named join keys
-            let right_copies: Vec<String> = if self.coalesce {
-                same_name_keys
-                    .iter()
-                    .map(|name| format!("{name}_right"))
-                    .collect()
-            } else {
-                Vec::new()
-            };
+            // Remove temporary transformed columns
             let keep_cols: Vec<Expr> = results_lf
                 .collect_schema()?
                 .iter_names()
-                .filter(|col| {
-                    if col.contains("-transformed") {
-                        return false;
-                    }
-                    !right_copies.iter().any(|copy| copy == col.as_str())
-                })
+                .filter(|col| !col.contains("-transformed"))
                 .map(|col| polars::lazy::dsl::col(col.as_str()))
                 .collect();
             results_lf = results_lf.select(keep_cols);

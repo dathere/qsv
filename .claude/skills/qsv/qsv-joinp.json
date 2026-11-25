@@ -106,7 +106,7 @@
       {
         "flag": "--ignore-errors",
         "type": "flag",
-        "description": "Read CSV values that can't be parsed as their column's type as empty (null) instead of failing. Their rows are kept (a null join key matches nothing). If not set, the join will fail. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the join."
+        "description": "Read CSV values that can't be parsed as their column's type as empty (null) instead of failing. Their rows are kept, and in the standard joins, a null join key, like an empty one, matches only with --nulls. If not set, the join will fail. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the join."
       },
       {
         "flag": "--ignore-leading-zeros",
@@ -174,7 +174,7 @@
       {
         "flag": "--nulls",
         "type": "flag",
-        "description": "When set, joins will work on empty fields. Otherwise, empty fields are completely ignored."
+        "description": "When set, unquoted empty fields are read as null (so they are written as the --null-value string), and in the standard joins, empty join keys match each other. Otherwise, rows with an empty key never match there (outer joins keep them, unmatched). The key matching doesn't apply to cross, non-equi or asof joins."
       },
       {
         "flag": "--output",

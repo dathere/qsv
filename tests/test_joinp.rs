@@ -3648,3 +3648,134 @@ fn joinp_sql_filter_copy_to_disabled_by_envvar() {
     );
     assert!(!out.exists(), "COPY wrote {}", out.display());
 }
+
+// --nulls makes empty join keys match each other; without it they never match,
+// whether the key column is read as text or as a number. Either way the key values
+// themselves are not changed.
+#[test]
+fn joinp_nulls_controls_empty_key_matches() {
+    let wrk = Workdir::new("joinp_nulls_controls_empty_key_matches");
+    wrk.create_from_string("text1.csv", "k,a\nx,1\n,2\n");
+    wrk.create_from_string("text2.csv", "k,b\nx,p\n,q\n");
+    wrk.create_from_string("quoted2.csv", "k,b\nx,p\n\"\",q\n");
+    wrk.create_from_string("int1.csv", "k,a\n1,x\n,w\n");
+    wrk.create_from_string("int2.csv", "k,b\n1,p\n,q\n");
+    wrk.create_from_string("zeros1.csv", "k,a\n0,x\n,y\nab,z\n");
+    wrk.create_from_string("zeros2.csv", "k,b\n000,p\n,q\ncd,r\n");
+
+    let join = |name: &str, left: &str, right: &str, extra: &[&str]| -> Vec<Vec<String>> {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["k", left, "k", right, "--maintain-order", "left_right"])
+            .args(extra);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+        eprintln!("{name}: {got:?}");
+        got
+    };
+
+    let text = |extra: &[&str]| join(&extra.join(" "), "text1.csv", "text2.csv", extra);
+    assert_eq!(text(&[]), vec![svec!["k", "a", "b"], svec!["x", "1", "p"]]);
+    assert_eq!(
+        text(&["--nulls"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["x", "1", "p"],
+            svec!["", "2", "q"]
+        ]
+    );
+    // outer joins keep the empty-key rows, unmatched, with their keys as read
+    assert_eq!(
+        text(&["--left", "--null-value", "NA"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["x", "1", "p"],
+            svec!["", "2", "NA"]
+        ]
+    );
+    assert_eq!(
+        text(&[
+            "--left",
+            "--sql-filter",
+            "SELECT * FROM join_result WHERE k = ''"
+        ]),
+        vec![svec!["k", "a", "b"], svec!["", "2", ""]]
+    );
+    assert_eq!(
+        text(&["--right"]),
+        vec![
+            svec!["a", "k", "b"],
+            svec!["1", "x", "p"],
+            svec!["", "", "q"]
+        ]
+    );
+    assert_eq!(
+        text(&["--full", "--null-value", "NA"]),
+        vec![
+            svec!["k", "a", "k_right", "b"],
+            svec!["x", "1", "x", "p"],
+            svec!["", "2", "NA", "NA"],
+            svec!["NA", "NA", "", "q"]
+        ]
+    );
+    assert_eq!(
+        text(&["--full", "--coalesce"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["x", "1", "p"],
+            svec!["", "2", ""],
+            svec!["", "", "q"]
+        ]
+    );
+    assert_eq!(
+        text(&["--left-anti"]),
+        vec![svec!["k", "a"], svec!["", "2"]]
+    );
+    assert_eq!(
+        text(&["--left-semi"]),
+        vec![svec!["k", "a"], svec!["x", "1"]]
+    );
+    // key transformations don't make empty text keys match either
+    assert_eq!(
+        text(&["-i"]),
+        vec![svec!["k", "a", "k_right", "b"], svec!["x", "1", "x", "p"]]
+    );
+
+    // an unquoted empty key and a quoted "" match each other with --nulls
+    assert_eq!(
+        join("quoted", "text1.csv", "quoted2.csv", &["--nulls"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["x", "1", "p"],
+            svec!["", "2", "q"]
+        ]
+    );
+
+    assert_eq!(
+        join("int", "int1.csv", "int2.csv", &[]),
+        vec![svec!["k", "a", "b"], svec!["1", "x", "p"]]
+    );
+    assert_eq!(
+        join("int --nulls", "int1.csv", "int2.csv", &["--nulls"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["1", "x", "p"],
+            svec!["", "w", "q"]
+        ]
+    );
+
+    // text keys with -z: "0" and "000" still match, but "000" isn't made empty, so it
+    // doesn't match an empty key
+    assert_eq!(
+        join("zeros", "zeros1.csv", "zeros2.csv", &["-z"]),
+        vec![svec!["k", "a", "k_right", "b"], svec!["0", "x", "000", "p"]]
+    );
+    // -z strips leading zeros before a line break inside a quoted key too
+    wrk.create_from_string("nl1.csv", "k,a\n\"00\nA\",x\n");
+    wrk.create_from_string("nl2.csv", "k,b\n\"\nA\",p\n");
+    assert_eq!(
+        join("newline", "nl1.csv", "nl2.csv", &["-z"]),
+        vec![
+            svec!["k", "a", "k_right", "b"],
+            svec!["00\nA", "x", "\nA", "p"]
+        ]
+    );
+}

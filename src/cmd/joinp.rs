@@ -109,8 +109,12 @@ joinp options:
                             Only inner, left, right and full joins can maintain order;
                             cross, non-equi and asof joins ignore this option.
                             [default: none]
-    --nulls                When set, joins will work on empty fields.
-                           Otherwise, empty fields are completely ignored.
+    --nulls                When set, unquoted empty fields are read as null (so
+                           they are written as the --null-value string), and in
+                           the standard joins, empty join keys match each other.
+                           Otherwise, rows with an empty key never match there
+                           (outer joins keep them, unmatched). The key matching
+                           doesn't apply to cross, non-equi or asof joins.
     --streaming            Write the join result as it is computed, batch by batch, instead
                            of collecting the whole result in memory first. Use this when the
                            result is too big for memory: it uses less memory but is slower.
@@ -153,8 +157,9 @@ joinp options:
     --no-optimizations     Disable non-default join optimizations. This will make joins slower.
                            Only use this when you get join errors.                           
     --ignore-errors        Read CSV values that can't be parsed as their column's type
-                           as empty (null) instead of failing. Their rows are kept (a
-                           null join key matches nothing). If not set, the join will fail.
+                           as empty (null) instead of failing. Their rows are kept, and
+                           in the standard joins, a null join key, like an empty one,
+                           matches only with --nulls. If not set, the join will fail.
                            To get more detailed error messages, set the environment variable
                            POLARS_BACKTRACE_IN_ERR=1 before running the join.
     --decimal-comma        Use comma as the decimal separator when parsing & writing CSVs.
@@ -604,6 +609,7 @@ struct JoinStruct {
     decimal_comma:        bool,
     ignore_case:          bool,
     ignore_leading_zeros: bool,
+    nulls:                bool,
 }
 
 impl JoinStruct {
@@ -633,13 +639,58 @@ impl JoinStruct {
             .map(polars::lazy::dsl::col)
             .collect();
 
+        let equi_join = special_join == SpecialJoin::None && jointype != JoinType::Cross;
+        let mut left_text_keys: Vec<&str> = Vec::new();
+        let mut right_text_keys: Vec<&str> = Vec::new();
+        if equi_join {
+            let schema = self.left_lf.collect_schema()?;
+            left_text_keys = left_col_names
+                .iter()
+                .copied()
+                .filter(|n| schema.get(n) == Some(&DataType::String))
+                .collect();
+            let schema = self.right_lf.collect_schema()?;
+            right_text_keys = right_col_names
+                .iter()
+                .copied()
+                .filter(|n| schema.get(n) == Some(&DataType::String))
+                .collect();
+        }
+
+        // --nulls reads unquoted empty fields as null, but a quoted "" stays "". Make text keys
+        // "" null too, so both spellings match. This runs before the key transformations, so
+        // --ignore-leading-zeros still lets "0" and "000" match.
+        if self.nulls {
+            for (lf, keys) in [
+                (&mut self.left_lf, &left_text_keys),
+                (&mut self.right_lf, &right_text_keys),
+            ] {
+                if !keys.is_empty() {
+                    let nulled: Vec<Expr> = keys
+                        .iter()
+                        .map(|k| {
+                            when(col(*k).eq(lit("")))
+                                .then(lit(NULL).cast(DataType::String))
+                                .otherwise(col(*k))
+                                .alias(*k)
+                        })
+                        .collect();
+                    *lf = lf.clone().with_columns(nulled);
+                }
+            }
+        }
+
         // Handle ignore_case, ignore_leading_zeros, and unicode normalization transformations
         let keys_transformed =
             if self.ignore_case || self.ignore_leading_zeros || normalization_form.is_some() {
                 let transform_col = |col: Expr| {
                     let mut transformed = col.cast(DataType::String);
                     if self.ignore_leading_zeros {
-                        transformed = transformed.str().replace_all(lit(r"^0+"), lit(""), false);
+                        // keep the last zero, so "000" becomes "0", not an empty key
+                        transformed =
+                            transformed
+                                .str()
+                                .replace_all(lit(r"(?s)^0+(.)"), lit("${1}"), false);
                     }
                     if self.ignore_case {
                         transformed = transformed.str().to_lowercase();
@@ -676,6 +727,30 @@ impl JoinStruct {
             } else {
                 false
             };
+
+        // Without --nulls, empty text keys must not match each other (numeric empties are null
+        // and never match). The key values are output and seen by --sql-filter, so rather than
+        // change them, drop rows with an empty text key from the side whose unmatched rows aren't
+        // output. A full join outputs both sides: its right-side empty-key rows are joined on
+        // their own, matching nothing, and appended.
+        let has_empty = |keys: &[&str]| {
+            keys.iter()
+                .map(|k| col(*k).eq(lit("")).fill_null(lit(false)))
+                .reduce(|a, b| a.or(b))
+        };
+        let mut full_join_empty_right = None;
+        if !self.nulls && equi_join {
+            if jointype == JoinType::Right {
+                if let Some(empty) = has_empty(&left_text_keys) {
+                    self.left_lf = self.left_lf.filter(empty.not());
+                }
+            } else if let Some(empty) = has_empty(&right_text_keys) {
+                if jointype == JoinType::Full {
+                    full_join_empty_right = Some(self.right_lf.clone().filter(empty.clone()));
+                }
+                self.right_lf = self.right_lf.filter(empty.not());
+            }
+        }
 
         let left_selcols_len = left_selcols.len();
         let right_selcols_len = right_selcols.len();
@@ -805,18 +880,29 @@ impl JoinStruct {
                     .join_where(vec![expr])
             } else {
                 // it's one of the "standard" joins as indicated by jointype
-                self.left_lf
-                    .with_optimizations(optflags)
-                    .join_builder()
-                    .with(self.right_lf.with_optimizations(optflags))
-                    .left_on(left_selcols)
-                    .right_on(right_selcols)
-                    .how(jointype)
-                    .maintain_order(maintain_order)
-                    .coalesce(coalesce_flag)
-                    .allow_parallel(true)
-                    .validate(validation)
-                    .finish()?
+                let nulls = self.nulls;
+                let join = |left: LazyFrame, right: LazyFrame| {
+                    left.with_optimizations(optflags)
+                        .join_builder()
+                        .with(right.with_optimizations(optflags))
+                        .left_on(left_selcols.clone())
+                        .right_on(right_selcols.clone())
+                        .how(jointype.clone())
+                        .join_nulls(nulls)
+                        .maintain_order(maintain_order)
+                        .coalesce(coalesce_flag)
+                        .allow_parallel(true)
+                        .validate(validation)
+                        .finish()
+                };
+                let joined = join(self.left_lf.clone(), self.right_lf)?;
+                match full_join_empty_right {
+                    Some(empty_right) => concat(
+                        [joined, join(self.left_lf.filter(lit(false)), empty_right)?],
+                        UnionArgs::default(),
+                    )?,
+                    None => joined,
+                }
             }
         };
 
@@ -1234,6 +1320,7 @@ impl Args {
             decimal_comma: self.flag_decimal_comma,
             ignore_case: self.flag_ignore_case,
             ignore_leading_zeros: self.flag_ignore_leading_zeros,
+            nulls: self.flag_nulls,
         })
     }
 }

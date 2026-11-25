@@ -730,7 +730,7 @@ describe("path confinement", () => {
     const NOT_A_PATH = new Set([
       "--agg", "--align", "--cities-url", "--compression", "--delimiter", "--denominator-key",
       "--denominator-unit", "--feature-id-key", "--feature-name-key", "--filter",
-      "--group", "--languages", "--rnull-values", "--select", "--sentinels-as", "--shard",
+      "--group", "--languages", "--quote", "--rnull-values", "--select", "--sentinels-as", "--shard",
       "--table-name", "--template",
       // handled elsewhere: the output_file alias, and luau's inline-or-path scripts
       "--output", "--begin", "--end",

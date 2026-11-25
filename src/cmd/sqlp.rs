@@ -273,10 +273,9 @@ sqlp options:
     --truncate-ragged-lines   Truncate ragged lines when parsing CSVs. If set, rows with more
                               columns than the header will be truncated. If not set, the query
                               will fail. Use this only when you get an error about ragged lines.
-    --ignore-errors           Ignore errors when parsing CSVs. If set, rows with errors
-                              will be skipped. If not set, the query will fail.
-                              Only use this when debugging queries, as Polars does batched
-                              parsing and will skip the entire batch where the error occurred.
+    --ignore-errors           Read CSV values that can't be parsed as their column's type
+                              as empty (null) instead of failing. Their rows are kept, so
+                              COUNT(*) still counts them. If not set, the query will fail.
                               To get more detailed error messages, set the environment variable
                               POLARS_BACKTRACE_IN_ERR=1 before running the query.
     --rnull-values <arg>      The comma-delimited list of case-sensitive strings to consider as

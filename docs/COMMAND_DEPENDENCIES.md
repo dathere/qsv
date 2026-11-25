@@ -62,7 +62,7 @@ proceed without it when absent:
 
 ## 4. Dependency on `schema` (created via `qsv schema`)
 *   **`validate`**: Primarily depends on a `.schema.json` file (produced by `schema`) to validate CSV records.
-*   **`sqlp`, `joinp`, `pivotp`, `to`**: These Polars-based commands automatically look for a `.pschema.json` file (created via `qsv schema --polars`). If found, they use it to bypass schema inference, ensuring correct data types (like `Decimal` or `Date`) and optimizing query planning.
+*   **`sqlp`, `joinp`, `pivotp`, `timebucketp`, `to`**: These Polars-based commands automatically look for a `.pschema.json` file (created via `qsv schema --polars`). If found, they use it to bypass schema inference, ensuring correct data types (like `Decimal` or `Date`) and optimizing query planning.
 
 ## 5. Cross-Command Data Dependencies
 *   **`validate` (via `dynamicEnum`)**: Can depend on **any other CSV** to serve as a lookup table for validating values in a specific column.

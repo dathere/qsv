@@ -1899,6 +1899,7 @@ const MCP_SKILL_COMMANDS: &[&str] = &[
     "synthesize",
     "table",
     "template",
+    "timebucketp",
     "to",
     "tojsonl",
     "transpose",

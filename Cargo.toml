@@ -384,6 +384,10 @@ polars = { version = "0.55", features = [
     "dtype-duration",
     "dtype-categorical",
     "dtype-decimal",
+    # "dynamic_group_by" backs `timebucketp`: LazyFrame::group_by_dynamic (time windows),
+    # LazyFrame::rolling (per-row look-back windows) and the upsample behind --fill-gaps.
+    # It adds no SQL syntax to sqlp.
+    "dynamic_group_by",
     # "extract_jsonpath",
     "iejoin",
     "ipc",

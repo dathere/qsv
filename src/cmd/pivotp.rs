@@ -176,7 +176,7 @@ fn parse_quantile_agg(s: &str) -> Option<f64> {
 
 /// An aggregation, applicable to a column (group-by mode, and the pre-aggregation in pivot mode).
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum AggKind {
+pub(crate) enum AggKind {
     First,
     Last,
     Sum,
@@ -192,7 +192,7 @@ enum AggKind {
 impl AggKind {
     /// Parse an explicit (already lowercased) `--agg` name. `smart` and `none` are resolved by
     /// the caller.
-    fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "first" => Self::First,
             "last" => Self::Last,
@@ -208,7 +208,7 @@ impl AggKind {
     }
 
     /// The aggregation applied to `e`. `Len` counts rows, nulls included.
-    fn on(self, e: Expr) -> Expr {
+    pub(crate) fn on(self, e: Expr) -> Expr {
         match self {
             Self::First => e.first(),
             Self::Last => e.last(),
@@ -233,7 +233,7 @@ impl AggKind {
 
     /// Polars' pivot reports an EMPTY cell (no rows for that index/column pair) as 0 for these
     /// aggregations and as null for every other one.
-    const fn empty_cell_is_zero(self) -> bool {
+    pub(crate) const fn empty_cell_is_zero(self) -> bool {
         matches!(self, Self::Sum | Self::Len)
     }
 }

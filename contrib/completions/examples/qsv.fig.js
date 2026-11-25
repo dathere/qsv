@@ -13441,6 +13441,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--escape",
+          isRepeatable: true,
+          args: {
+            name: "escape",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-j", "--jobs"],
           isRepeatable: true,
           args: {
@@ -13477,6 +13485,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "quantile-method",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
             isOptional: true,
           },
         },
@@ -13541,6 +13557,9 @@ const completion: Fig.Spec = {
           name: ["-n", "--no-headers"],
         },
         {
+          name: "--no-quoting",
+        },
+        {
           name: "--nulls",
         },
         {
@@ -13601,6 +13620,22 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--discover-relationships",
+          isRepeatable: true,
+          args: {
+            name: "discover-relationships",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--format",
+          isRepeatable: true,
+          args: {
+            name: "format",
+            isOptional: true,
+          },
+        },
+        {
           name: "--freq-limit",
           isRepeatable: true,
           args: {
@@ -13633,10 +13668,42 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--min-count",
+          isRepeatable: true,
+          args: {
+            name: "min-count",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--model",
+          isRepeatable: true,
+          args: {
+            name: "model",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-o", "--output"],
           isRepeatable: true,
           args: {
             name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quantiles",
+          isRepeatable: true,
+          args: {
+            name: "quantiles",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--report",
+          isRepeatable: true,
+          args: {
+            name: "report",
             isOptional: true,
           },
         },
@@ -13649,6 +13716,22 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--rows-per-file",
+          isRepeatable: true,
+          args: {
+            name: "rows-per-file",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--save-model",
+          isRepeatable: true,
+          args: {
+            name: "save-model",
+            isOptional: true,
+          },
+        },
+        {
           name: "--seed",
           isRepeatable: true,
           args: {
@@ -13657,10 +13740,26 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--shard",
+          isRepeatable: true,
+          args: {
+            name: "shard",
+            isOptional: true,
+          },
+        },
+        {
           name: "--stats-options",
           isRepeatable: true,
           args: {
             name: "stats-options",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--target",
+          isRepeatable: true,
+          args: {
+            name: "target",
             isOptional: true,
           },
         },
@@ -13862,6 +13961,140 @@ const completion: Fig.Spec = {
         },
         {
           name: ["-p", "--progressbar"],
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "timebucketp",
+      options: [
+        {
+          name: ["-a", "--agg"],
+          isRepeatable: true,
+          args: {
+            name: "agg",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-b", "--by"],
+          isRepeatable: true,
+          args: {
+            name: "by",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--closed",
+          isRepeatable: true,
+          args: {
+            name: "closed",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--date-format",
+          isRepeatable: true,
+          args: {
+            name: "date-format",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--every",
+          isRepeatable: true,
+          args: {
+            name: "every",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-i", "--index"],
+          isRepeatable: true,
+          args: {
+            name: "index",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--infer-len",
+          isRepeatable: true,
+          args: {
+            name: "infer-len",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--label",
+          isRepeatable: true,
+          args: {
+            name: "label",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--offset",
+          isRepeatable: true,
+          args: {
+            name: "offset",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--period",
+          isRepeatable: true,
+          args: {
+            name: "period",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--start-by",
+          isRepeatable: true,
+          args: {
+            name: "start-by",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--boundaries",
+        },
+        {
+          name: "--decimal-comma",
+        },
+        {
+          name: "--fill-gaps",
+        },
+        {
+          name: "--ignore-errors",
+        },
+        {
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: "--rolling",
+        },
+        {
+          name: "--sorted",
         },
         {
           name: ["-h", "--help"],
@@ -14826,6 +15059,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--escape",
+              isRepeatable: true,
+              args: {
+                name: "escape",
+                isOptional: true,
+              },
+            },
+            {
               name: "--invalid",
               isRepeatable: true,
               args: {
@@ -14838,6 +15079,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--quote",
+              isRepeatable: true,
+              args: {
+                name: "quote",
                 isOptional: true,
               },
             },
@@ -14912,6 +15161,9 @@ const completion: Fig.Spec = {
             },
             {
               name: ["-n", "--no-headers"],
+            },
+            {
+              name: "--no-quoting",
             },
             {
               name: "--offline",
@@ -15017,6 +15269,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--escape",
+          isRepeatable: true,
+          args: {
+            name: "escape",
+            isOptional: true,
+          },
+        },
+        {
           name: "--invalid",
           isRepeatable: true,
           args: {
@@ -15029,6 +15289,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--quote",
+          isRepeatable: true,
+          args: {
+            name: "quote",
             isOptional: true,
           },
         },
@@ -15103,6 +15371,9 @@ const completion: Fig.Spec = {
         },
         {
           name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--no-quoting",
         },
         {
           name: "--offline",
@@ -31783,6 +32054,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "template",
+        },
+        {
+          name: "timebucketp",
         },
         {
           name: "to",

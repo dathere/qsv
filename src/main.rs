@@ -264,9 +264,15 @@ fn main() -> QsvExitCode {
 
     enabled_commands.push_str(
         "    table       Align CSV data into columns
-    template    Render templates using CSV data
-    tojsonl     Convert CSV to newline-delimited JSON\n",
+    template    Render templates using CSV data\n",
     );
+
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    enabled_commands.push_str(
+        "    timebucketp Bucket time-series data into time windows using the Pola.rs engine\n",
+    );
+
+    enabled_commands.push_str("    tojsonl     Convert CSV to newline-delimited JSON\n");
 
     #[cfg(all(feature = "to", feature = "feature_capable"))]
     {
@@ -513,6 +519,8 @@ enum Command {
     Moarstats,
     Table,
     Template,
+    #[cfg(all(feature = "polars", feature = "feature_capable"))]
+    TimeBucketP,
     Transpose,
     #[cfg(all(feature = "to", feature = "feature_capable"))]
     To,
@@ -627,6 +635,8 @@ impl Command {
             Command::Moarstats => Some(cmd::moarstats::USAGE),
             Command::Table => Some(cmd::table::USAGE),
             Command::Template => Some(cmd::template::USAGE),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::TimeBucketP => Some(cmd::timebucketp::USAGE),
             Command::Transpose => Some(cmd::transpose::USAGE),
             #[cfg(all(feature = "to", feature = "feature_capable"))]
             Command::To => Some(cmd::to::USAGE),
@@ -766,6 +776,8 @@ impl Command {
             Command::Moarstats => cmd::moarstats::run(argv),
             Command::Table => cmd::table::run(argv),
             Command::Template => cmd::template::run(argv),
+            #[cfg(all(feature = "polars", feature = "feature_capable"))]
+            Command::TimeBucketP => cmd::timebucketp::run(argv),
             Command::Transpose => cmd::transpose::run(argv),
             #[cfg(all(feature = "to", feature = "feature_capable"))]
             Command::To => cmd::to::run(argv),

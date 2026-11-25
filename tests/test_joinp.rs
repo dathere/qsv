@@ -3322,6 +3322,50 @@ fn joinp_cache_schema_floats_keep_f64_precision_issue_4752() {
 }
 
 // joinp decompresses both inputs into one temp dir before running the join;
+// with a key transformation, --coalesce must keep the key of right-only rows
+#[test]
+fn joinp_coalesce_transformed_keys_keeps_right_only_keys() {
+    let wrk = Workdir::new("joinp_coalesce_transformed_keys_keeps_right_only_keys");
+    wrk.create_from_string("left.csv", "k,a\nX,1\nZ,2\n");
+    wrk.create_from_string("right.csv", "k,b\nx,p\nY,q\n");
+
+    let join = |extra: &[&str]| -> Vec<Vec<String>> {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["k", "left.csv", "k", "right.csv", "-i", "--coalesce"])
+            .args(["--maintain-order", "left_right"])
+            .args(extra);
+        wrk.read_stdout(&mut cmd)
+    };
+
+    // matched rows keep the left key, right-only rows get the right key
+    assert_eq!(
+        join(&["--full"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["X", "1", "p"],
+            svec!["Z", "2", ""],
+            svec!["Y", "", "q"]
+        ]
+    );
+    assert_eq!(
+        join(&["--right"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["X", "1", "p"],
+            svec!["Y", "", "q"]
+        ]
+    );
+    // --sql-filter sees the coalesced key
+    assert_eq!(
+        join(&[
+            "--full",
+            "--sql-filter",
+            "SELECT * FROM join_result WHERE k = 'Y'"
+        ]),
+        vec![svec!["k", "a", "b"], svec!["Y", "", "q"]]
+    );
+}
+
 // same-named .sz inputs, snappy or not, must not overwrite each other (#4779).
 #[test]
 fn joinp_same_named_sz_inputs() {

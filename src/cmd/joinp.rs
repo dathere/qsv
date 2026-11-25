@@ -820,6 +820,29 @@ impl JoinStruct {
             }
         };
 
+        // Transformed keys are joined through temporary columns, so Polars can't coalesce the
+        // original key columns. With --coalesce, fill each left key from its right copy, which
+        // is dropped below, so right-only rows keep their key.
+        let join_lf = if keys_transformed && self.coalesce {
+            let mut join_lf = join_lf;
+            let schema = join_lf.collect_schema()?;
+            let coalesced: Vec<Expr> = left_col_names
+                .iter()
+                .filter(|name| schema.contains(&format!("{name}_right")))
+                .map(|name| {
+                    polars::lazy::dsl::coalesce(&[col(*name), col(format!("{name}_right"))])
+                        .alias(*name)
+                })
+                .collect();
+            if coalesced.is_empty() {
+                join_lf
+            } else {
+                join_lf.with_columns(coalesced)
+            }
+        } else {
+            join_lf
+        };
+
         let mut results_lf = match &self.sql_filter {
             Some(sql_filter) => {
                 let mut ctx = util::new_sql_context();

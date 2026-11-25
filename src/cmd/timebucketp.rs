@@ -126,8 +126,11 @@ timebucketp options:
                            Set to 0 to scan the entire file. [default: 10000]
     --decimal-comma        Use comma as decimal separator when READING the input.
                            Note that you will need to specify an alternate --delimiter.
-    --ignore-errors        Read values that can't be parsed as empty (null)
-                           instead of failing. Their rows are kept.
+    --ignore-errors        Read CSV values that can't be parsed as their
+                           column's type as empty (null) instead of failing.
+                           Their rows are kept. This does not relax the
+                           index: its values must still parse as dates (or
+                           integers), with none empty.
 
 Common options:
     -h, --help             Display this message
@@ -553,9 +556,7 @@ fn explain(
         // A text index is null where a cell is empty or the year check rejected the date;
         // name the first such value. Only runs on this failure path.
         let Some((raw, index, parsed)) = text_index else {
-            return crate::clitypes::CliError::Other(format!(
-                "The --index column has empty values, or dates with years before 1000. ({msg})"
-            ));
+            return crate::clitypes::CliError::Other(empty);
         };
         let first_null = raw
             .clone()

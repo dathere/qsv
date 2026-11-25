@@ -480,6 +480,28 @@ fn timebucketp_ignore_errors_reads_bad_values_as_null() {
 }
 
 #[test]
+fn timebucketp_empty_integer_index_value() {
+    // an integer index skips the date year check, so an empty cell gets the empty-rows advice
+    let wrk = Workdir::new("timebucketp_empty_integer_index_value");
+    wrk.create(
+        "n.csv",
+        vec![
+            svec!["n", "v"],
+            svec!["1", "1"],
+            svec!["", "2"],
+            svec!["3", "3"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "n", "--every", "2i", "n.csv"]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("The --index column has empty values. Remove those rows first"),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains("year"), "stderr: {stderr}");
+}
+
+#[test]
 fn timebucketp_weekly_from_monday_fill_gaps() {
     let wrk = Workdir::new("timebucketp_weekly_from_monday_fill_gaps");
     wrk.create(

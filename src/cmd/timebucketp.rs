@@ -515,8 +515,11 @@ fn format_has_time(fmt: &str) -> bool {
     false
 }
 
-/// Turn the Polars errors users can cause into actionable messages.
-fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
+fn explain(
+    err: PolarsError,
+    sorted: bool,
+    text_index: Option<&(LazyFrame, String, Expr)>,
+) -> crate::clitypes::CliError {
     let msg = err.to_string();
     if msg.contains("not sorted") {
         if sorted {
@@ -538,11 +541,37 @@ fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
              QSV_PREFER_DMY, or set the index format with --date-format."
         ));
     } else if msg.contains("null values in") {
-        return crate::clitypes::CliError::Other(format!(
-            "The --index column has empty values, or dates with years before 1000 (2-digit years \
-             need --date-format, e.g. --date-format %m/%d/%y). Remove empty rows first, e.g. with \
-             `qsv search --select <index> --invert-match '^$'`. ({msg})"
-        ));
+        let empty = format!(
+            "The --index column has empty values. Remove those rows first, e.g. with `qsv search \
+             --select <index> --invert-match '^$'`. ({msg})"
+        );
+        // A text index is null where a cell is empty or the year check rejected the date;
+        // name the first such value. Only runs on this failure path.
+        let Some((raw, index, parsed)) = text_index else {
+            return crate::clitypes::CliError::Other(format!(
+                "The --index column has empty values, or dates with years before 1000. ({msg})"
+            ));
+        };
+        let first_null = raw
+            .clone()
+            .filter(parsed.clone().is_null())
+            .select([col(index.as_str())])
+            .limit(1)
+            .collect()
+            .ok()
+            .and_then(|df| {
+                df.column(index.as_str())
+                    .ok()
+                    .map(|c| c.str().ok().map(|s| s.get(0).map(str::to_string)))
+            })
+            .flatten();
+        return crate::clitypes::CliError::Other(match first_null {
+            Some(Some(value)) => format!(
+                "The --index value \"{value}\" has a year before 1000. 2-digit years need \
+                 --date-format, e.g. --date-format %m/%d/%y."
+            ),
+            _ => empty,
+        });
     }
     err.into()
 }
@@ -794,6 +823,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         })
     });
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+    // the unparsed input and the index parse, to name a bad value if the windows fail
+    let mut text_index: Option<(LazyFrame, String, Expr)> = None;
     match index_dtype {
         DataType::Date | DataType::Datetime(..) => {},
         // pschemas may type small integers as (U)Int8/16
@@ -809,13 +840,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .as_deref()
                     .and_then(|v| index_date_format(v, prefer_dmy))
             });
-            lf = lf.with_column(text_date_expr(
+            let parsed = text_date_expr(
                 &index,
                 format.as_deref(),
                 first.as_deref(),
                 true,
                 args.flag_date_format.is_none(),
-            ));
+            );
+            text_index = Some((lf.clone(), index.clone(), parsed.clone()));
+            lf = lf.with_column(parsed);
         },
         dt => {
             return fail_incorrectusage_clierror!(
@@ -878,7 +911,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .clone()
             .select([check.any(true).alias("unsorted")])
             .collect()
-            .map_err(|e| explain(e, true))?;
+            .map_err(|e| explain(e, true, text_index.as_ref()))?;
         if unsorted.column("unsorted")?.bool()?.get(0) == Some(true) {
             return fail_clierror!(
                 "--sorted was given, but the input is not sorted by --index{}. Drop --sorted to \
@@ -947,7 +980,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut result = grouped
         .agg(agg_exprs)
         .collect()
-        .map_err(|e| explain(e, args.flag_sorted))?;
+        .map_err(|e| explain(e, args.flag_sorted, text_index.as_ref()))?;
 
     if args.flag_fill_gaps
         && let Some(every) = every

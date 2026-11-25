@@ -975,7 +975,7 @@ fn timebucketp_two_digit_years_need_a_date_format() {
     let mut later = tb(&wrk, &["-i", "d", "--every", "1mo", "later.csv"]);
     let stderr = wrk.stderr_on_error(&mut later);
     assert!(
-        stderr.contains("2-digit years need --date-format"),
+        stderr.contains(r#"value "10/06/24" has a year before 1000"#),
         "stderr: {stderr}"
     );
     // nor one chrono reads past a space, or one in a format Polars infers
@@ -990,7 +990,7 @@ fn timebucketp_two_digit_years_need_a_date_format() {
         let mut short_cmd = tb(&wrk, &["-i", "d", "--every", "1mo", name]);
         let stderr = wrk.stderr_on_error(&mut short_cmd);
         assert!(
-            stderr.contains("2-digit years need --date-format"),
+            stderr.contains(&format!("value \"{short}\" has a year before 1000")),
             "{name} stderr: {stderr}"
         );
     }

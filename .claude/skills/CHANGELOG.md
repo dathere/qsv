@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`qsv-synthesize --seed` is the same at any `--jobs`**: rows are now generated in parallel, in fixed 8,192-row blocks, so a seed gives the same rows whatever `--jobs` is (unless `stats` uses approximate estimators, whether requested via `--stats-options` or switched on automatically when the input won't fit in memory), though different rows than qsv 29.0.0. Skill regenerated from the USAGE text. ([#5069](https://github.com/dathere/qsv/pull/5069))
 - **`qsv-synthesize` warns that its output is not anonymized** ([#5064](https://github.com/dathere/qsv/pull/5064)): synthetic output can contain real source values. The skill description was regenerated from the README command table.
 
+### Fixed
+- **Path-classification test: `stats --quote` and `validate --quote` are not paths.** Since #5104 the test that every skill option whose description mentions files is classified failed on every PR: these options take a quote character, and their descriptions mention the file being read. They are now listed with the other options that aren't paths. Test-only change. ([#5115](https://github.com/dathere/qsv/pull/5115))
+
 ## [29.0.2] - 2026-11-23
 Patch release of the MCP server and the Claude Cowork / Claude Code plugin, for use with qsv 29.0.0 (`minimum_qsv_version` stays 29.0.0). It carries the security fixes below, published as advisory [GHSA-5763-32xg-7rh3](https://github.com/dathere/qsv/security/advisories/GHSA-5763-32xg-7rh3); update now. As in 29.0.1, the bundled skill files also describe `qsv-synthesize` options from the next qsv release (listed under [Unreleased]); with qsv 29.0.0 those options are rejected as unknown flags.
 

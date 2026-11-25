@@ -126,7 +126,8 @@ timebucketp options:
                            Set to 0 to scan the entire file. [default: 10000]
     --decimal-comma        Use comma as decimal separator when READING the input.
                            Note that you will need to specify an alternate --delimiter.
-    --ignore-errors        Skip rows that can't be parsed.
+    --ignore-errors        Read values that can't be parsed as empty (null)
+                           instead of failing. Their rows are kept.
 
 Common options:
     -h, --help             Display this message
@@ -447,6 +448,7 @@ fn text_date_expr(
     first: Option<&str>,
     strict: bool,
     guessed: bool,
+    nanos: bool,
 ) -> Expr {
     use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
     let options = StrptimeOptions {
@@ -459,9 +461,12 @@ fn text_date_expr(
     } else {
         let zoned =
             format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
-        col(name)
-            .str()
-            .to_datetime(None, zoned.then_some(TimeZone::UTC), options, lit("raise"))
+        col(name).str().to_datetime(
+            nanos.then_some(TimeUnit::Nanoseconds),
+            zoned.then_some(TimeZone::UTC),
+            options,
+            lit("raise"),
+        )
     };
     if !guessed {
         return parsed;
@@ -822,10 +827,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "0ns"
         })
     });
+    // Text datetimes parse to microseconds; a window finer than that would select nothing
+    let nanos = every
+        .iter()
+        .chain([&period, &offset])
+        .any(|d| d.nanoseconds() % 1000 != 0);
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     // the unparsed input and the index parse, to name a bad value if the windows fail
     let mut text_index: Option<(LazyFrame, String, Expr)> = None;
     match index_dtype {
+        DataType::Datetime(unit, tz) if nanos && unit != TimeUnit::Nanoseconds => {
+            lf = lf.with_column(
+                col(index.as_str()).cast(DataType::Datetime(TimeUnit::Nanoseconds, tz.clone())),
+            );
+        },
         DataType::Date | DataType::Datetime(..) => {},
         // pschemas may type small integers as (U)Int8/16
         dt if dt.is_integer() => {
@@ -846,6 +861,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 first.as_deref(),
                 true,
                 args.flag_date_format.is_none(),
+                nanos,
             );
             text_index = Some((lf.clone(), index.clone(), parsed.clone()));
             lf = lf.with_column(parsed);
@@ -881,7 +897,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             continue;
         }
         // only a column whose every value parses is dates; mixed text keeps text comparison
-        let parsed = text_date_expr(c, format.as_deref(), Some(&first), false, true);
+        let parsed = text_date_expr(c, format.as_deref(), Some(&first), false, true, false);
         let unparsed = lf
             .clone()
             .select([col(c)

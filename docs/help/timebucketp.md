@@ -122,7 +122,7 @@ qsv timebucketp --help
 | &nbsp;`‑‑sorted`&nbsp; | flag | The input is already sorted by --index, within each group when using --by, so skip timebucketp's sort. Unsorted input is then an error, never a wrong result. |  |
 | &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring the schema. Set to 0 to scan the entire file. | `10000` |
 | &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
-| &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Skip rows that can't be parsed. |  |
+| &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Read values that can't be parsed as empty (null) instead of failing. Their rows are kept. |  |
 
 <a name="common-options"></a>
 

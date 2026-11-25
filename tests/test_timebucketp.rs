@@ -417,6 +417,69 @@ fn timebucketp_dmy_pschema_outlives_qsv_prefer_dmy() {
 }
 
 #[test]
+fn timebucketp_sub_microsecond_windows() {
+    // text datetimes parse to microseconds unless a duration needs nanoseconds; at
+    // microseconds a 100ns window selects nothing
+    let wrk = Workdir::new("timebucketp_sub_microsecond_windows");
+    wrk.create(
+        "ns.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2024-01-01 00:00:00.000000001", "1"],
+            svec!["2024-01-01 00:00:00.000000002", "2"],
+            svec!["2024-01-01 00:00:00.000000150", "4"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "100ns", "--agg", "sum:v", "ns.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "v_sum"],
+        svec!["2024-01-01 00:00:00", "3"],
+        svec!["2024-01-01 00:00:00.000000100", "4"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn timebucketp_ignore_errors_reads_bad_values_as_null() {
+    // a value the inferred schema can't hold becomes null; its row still counts
+    let wrk = Workdir::new("timebucketp_ignore_errors_reads_bad_values_as_null");
+    wrk.create(
+        "e.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2024-01-01 00:00:00", "1"],
+            svec!["2024-01-01 00:10:00", "2"],
+            svec!["2024-01-01 00:20:00", "abc"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1h",
+            "--agg",
+            "sum:v,len",
+            "--infer-len",
+            "2",
+            "--ignore-errors",
+            "e.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec!["ts", "v_sum", "count"],
+        svec!["2024-01-01 00:00:00", "3", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn timebucketp_weekly_from_monday_fill_gaps() {
     let wrk = Workdir::new("timebucketp_weekly_from_monday_fill_gaps");
     wrk.create(

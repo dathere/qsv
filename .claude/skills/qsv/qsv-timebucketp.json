@@ -63,7 +63,7 @@
       {
         "flag": "--ignore-errors",
         "type": "flag",
-        "description": "Skip rows that can't be parsed."
+        "description": "Read values that can't be parsed as empty (null) instead of failing. Their rows are kept."
       },
       {
         "flag": "--index",

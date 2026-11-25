@@ -3364,6 +3364,52 @@ fn joinp_coalesce_transformed_keys_keeps_right_only_keys() {
         ]),
         vec![svec!["k", "a", "b"], svec!["Y", "", "q"]]
     );
+    // only same-named key pairs are coalesced: a right column that merely shares the
+    // left key's name is left alone
+    wrk.create_from_string("payload.csv", "rk,k,b\nx,pay1,p\nY,pay2,q\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args([
+        "k",
+        "left.csv",
+        "rk",
+        "payload.csv",
+        "-i",
+        "--coalesce",
+        "--full",
+    ])
+    .args(["--maintain-order", "left_right"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "a", "rk", "k_right", "b"],
+            svec!["X", "1", "x", "pay1", "p"],
+            svec!["Z", "2", "", "", ""],
+            svec!["", "", "Y", "pay2", "q"]
+        ]
+    );
+
+    // a key whose name ends in _right keeps its right-only value
+    wrk.create_from_string("ids1.csv", "id,id_right,a\nA,B,1\n");
+    wrk.create_from_string("ids2.csv", "rid,id_right,b\na,b,p\nC,D,q\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id,id_right", "ids1.csv", "rid,id_right", "ids2.csv"])
+        .args([
+            "-i",
+            "--coalesce",
+            "--full",
+            "--maintain-order",
+            "left_right",
+        ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "id_right", "a", "rid", "b"],
+            svec!["A", "B", "1", "a", "p"],
+            svec!["", "D", "", "C", "q"]
+        ]
+    );
 }
 
 // same-named .sz inputs, snappy or not, must not overwrite each other (#4779).

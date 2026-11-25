@@ -822,11 +822,18 @@ impl JoinStruct {
 
         // Transformed keys are joined through temporary columns, so Polars can't coalesce the
         // original key columns. With --coalesce, fill each left key from its right copy, which
-        // is dropped below, so right-only rows keep their key.
+        // is dropped below, so right-only rows keep their key. Only a key joined to a
+        // same-named right key has such a copy, `<key>_right`.
+        let same_name_keys: Vec<&str> = left_col_names
+            .iter()
+            .zip(&right_col_names)
+            .filter(|(left, right)| left == right)
+            .map(|(left, _)| *left)
+            .collect();
         let join_lf = if keys_transformed && self.coalesce {
             let mut join_lf = join_lf;
             let schema = join_lf.collect_schema()?;
-            let coalesced: Vec<Expr> = left_col_names
+            let coalesced: Vec<Expr> = same_name_keys
                 .iter()
                 .filter(|name| schema.contains(&format!("{name}_right")))
                 .map(|name| {
@@ -853,9 +860,16 @@ impl JoinStruct {
         };
 
         if keys_transformed {
-            // Remove temporary transformed columns and
-            // duplicate right-side join columns if coalesce is true
-            let left_join_cols: Vec<&str> = self.left_sel.split(',').collect();
+            // Remove temporary transformed columns and, with --coalesce, the right copies of
+            // same-named join keys
+            let right_copies: Vec<String> = if self.coalesce {
+                same_name_keys
+                    .iter()
+                    .map(|name| format!("{name}_right"))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let keep_cols: Vec<Expr> = results_lf
                 .collect_schema()?
                 .iter_names()
@@ -863,10 +877,7 @@ impl JoinStruct {
                     if col.contains("-transformed") {
                         return false;
                     }
-                    // For join columns, only keep the left version if coalesce is true
-                    !(self.coalesce
-                        && col.ends_with("_right")
-                        && left_join_cols.contains(&col.trim_end_matches("_right")))
+                    !right_copies.iter().any(|copy| copy == col.as_str())
                 })
                 .map(|col| polars::lazy::dsl::col(col.as_str()))
                 .collect();

@@ -454,28 +454,25 @@ fn text_date_expr(
         strict,
         ..Default::default()
     };
-    let mut text = col(name);
-    // index_date_format checks only the first value's year, and chrono's %Y also takes
-    // 2-digit years (10/06/24 as the year 24), so mark later short years to fail the parse.
-    if guessed && let Some(f) = format {
-        let short_year = if f.starts_with("%Y") {
-            r"^(\d{1,3})([-/.]\d{1,2}[-/.]\d{1,2})"
-        } else {
-            r"^(\d{1,2}[-/.]\d{1,2}[-/.]\d{1,3})(\D|$)"
-        };
-        text = text.str().replace(
-            lit(short_year),
-            lit("${1} (needs a 4-digit year)${2}"),
-            false,
-        );
+    let parsed = if format.is_some_and(|f| !format_has_time(f)) {
+        col(name).str().to_date(options)
+    } else {
+        let zoned =
+            format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
+        col(name)
+            .str()
+            .to_datetime(None, zoned.then_some(TimeZone::UTC), options, lit("raise"))
+    };
+    if !guessed {
+        return parsed;
     }
-    if format.is_some_and(|f| !format_has_time(f)) {
-        return text.str().to_date(options);
-    }
-    let zoned =
-        format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
-    text.str()
-        .to_datetime(None, zoned.then_some(TimeZone::UTC), options, lit("raise"))
+    // A guessed or inferred format's %Y also takes 2-digit years (10/06/24, 10/06/ 24 or
+    // 24-10-06T10:15 as the year 24), and only the first value is checked, so years before
+    // 1000 become nulls: an error for the index, text comparison for an aggregated column.
+    when(parsed.clone().dt().year().lt(lit(1000)))
+        .then(lit(NULL))
+        .otherwise(parsed)
+        .alias(name)
 }
 
 /// Whether a chrono/strptime format has any time-of-day field, skipping `%%` literals and the
@@ -542,8 +539,9 @@ fn explain(err: PolarsError, sorted: bool) -> crate::clitypes::CliError {
         ));
     } else if msg.contains("null values in") {
         return crate::clitypes::CliError::Other(format!(
-            "The --index column has empty values. Remove those rows first, e.g. with `qsv search \
-             --select <index> --invert-match '^$'`. ({msg})"
+            "The --index column has empty values, or dates with years before 1000 (2-digit years \
+             need --date-format, e.g. --date-format %m/%d/%y). Remove empty rows first, e.g. with \
+             `qsv search --select <index> --invert-match '^$'`. ({msg})"
         ));
     }
     err.into()

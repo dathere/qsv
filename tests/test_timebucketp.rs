@@ -975,9 +975,25 @@ fn timebucketp_two_digit_years_need_a_date_format() {
     let mut later = tb(&wrk, &["-i", "d", "--every", "1mo", "later.csv"]);
     let stderr = wrk.stderr_on_error(&mut later);
     assert!(
-        stderr.contains("10/06/24 (needs a 4-digit year)"),
+        stderr.contains("2-digit years need --date-format"),
         "stderr: {stderr}"
     );
+    // nor one chrono reads past a space, or one in a format Polars infers
+    for (name, first, short) in [
+        ("space.csv", "10/05/2024", "10/06/ 24"),
+        ("iso.csv", "2024-10-05T10:15:00", "24-10-06T10:15:00"),
+    ] {
+        wrk.create(
+            name,
+            vec![svec!["d", "v"], svec![first, "1"], svec![short, "2"]],
+        );
+        let mut short_cmd = tb(&wrk, &["-i", "d", "--every", "1mo", name]);
+        let stderr = wrk.stderr_on_error(&mut short_cmd);
+        assert!(
+            stderr.contains("2-digit years need --date-format"),
+            "{name} stderr: {stderr}"
+        );
+    }
 
     let mut cmd = tb(
         &wrk,

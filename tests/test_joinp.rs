@@ -3768,4 +3768,14 @@ fn joinp_nulls_controls_empty_key_matches() {
         join("zeros", "zeros1.csv", "zeros2.csv", &["-z"]),
         vec![svec!["k", "a", "k_right", "b"], svec!["0", "x", "000", "p"]]
     );
+    // -z strips leading zeros before a line break inside a quoted key too
+    wrk.create_from_string("nl1.csv", "k,a\n\"00\nA\",x\n");
+    wrk.create_from_string("nl2.csv", "k,b\n\"\nA\",p\n");
+    assert_eq!(
+        join("newline", "nl1.csv", "nl2.csv", &["-z"]),
+        vec![
+            svec!["k", "a", "k_right", "b"],
+            svec!["00\nA", "x", "\nA", "p"]
+        ]
+    );
 }

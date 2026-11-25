@@ -3648,3 +3648,67 @@ fn joinp_sql_filter_copy_to_disabled_by_envvar() {
     );
     assert!(!out.exists(), "COPY wrote {}", out.display());
 }
+
+// --nulls makes empty join keys match each other; without it they never match,
+// whether the key column is read as text or as a number.
+#[test]
+fn joinp_nulls_controls_empty_key_matches() {
+    let wrk = Workdir::new("joinp_nulls_controls_empty_key_matches");
+    wrk.create_from_string("text1.csv", "k,a\nx,1\n,2\n");
+    wrk.create_from_string("text2.csv", "k,b\nx,p\n,q\n");
+    wrk.create_from_string("int1.csv", "k,a\n1,x\n,w\n");
+    wrk.create_from_string("int2.csv", "k,b\n1,p\n,q\n");
+
+    for (left, right, key) in [
+        ("text1.csv", "text2.csv", "x"),
+        ("int1.csv", "int2.csv", "1"),
+    ] {
+        let (a, b) = if key == "x" { ("1", "p") } else { ("x", "p") };
+        let (empty_a, empty_b) = if key == "x" { ("2", "q") } else { ("w", "q") };
+
+        let mut without = wrk.command("joinp");
+        without.args(["k", left, "k", right]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut without);
+        assert_eq!(
+            got,
+            vec![svec!["k", "a", "b"], svec![key, a, b]],
+            "{left} without --nulls"
+        );
+
+        let mut with_nulls = wrk.command("joinp");
+        with_nulls.args(["k", left, "k", right, "--nulls"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut with_nulls);
+        assert_eq!(
+            got,
+            vec![
+                svec!["k", "a", "b"],
+                svec![key, a, b],
+                svec!["", empty_a, empty_b]
+            ],
+            "{left} with --nulls"
+        );
+
+        // a left join keeps the empty-key row, unmatched
+        let mut left_join = wrk.command("joinp");
+        left_join.args(["k", left, "k", right, "--left"]);
+        let got: Vec<Vec<String>> = wrk.read_stdout(&mut left_join);
+        assert_eq!(
+            got,
+            vec![
+                svec!["k", "a", "b"],
+                svec![key, a, b],
+                svec!["", empty_a, ""]
+            ],
+            "{left} --left without --nulls"
+        );
+    }
+
+    // key transformations don't make empty text keys match either
+    let mut ignore_case = wrk.command("joinp");
+    ignore_case.args(["k", "text1.csv", "k", "text2.csv", "-i"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut ignore_case);
+    assert_eq!(
+        got,
+        vec![svec!["k", "a", "k_right", "b"], svec!["x", "1", "x", "p"]]
+    );
+}

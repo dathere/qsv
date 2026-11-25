@@ -605,6 +605,7 @@ struct JoinStruct {
     decimal_comma:        bool,
     ignore_case:          bool,
     ignore_leading_zeros: bool,
+    nulls:                bool,
 }
 
 impl JoinStruct {
@@ -633,6 +634,30 @@ impl JoinStruct {
             .copied()
             .map(polars::lazy::dsl::col)
             .collect();
+
+        // Without --nulls, empty text keys must not match each other. Numeric empties are
+        // already null, but text empties are read as "", so turn those into nulls too.
+        if !self.nulls && special_join == SpecialJoin::None && jointype != JoinType::Cross {
+            for (lf, names) in [
+                (&mut self.left_lf, &left_col_names),
+                (&mut self.right_lf, &right_col_names),
+            ] {
+                let schema = lf.collect_schema()?;
+                let nulled: Vec<Expr> = names
+                    .iter()
+                    .filter(|n| schema.get(n) == Some(&DataType::String))
+                    .map(|n| {
+                        when(col(*n).eq(lit("")))
+                            .then(lit(NULL).cast(DataType::String))
+                            .otherwise(col(*n))
+                            .alias(*n)
+                    })
+                    .collect();
+                if !nulled.is_empty() {
+                    *lf = lf.clone().with_columns(nulled);
+                }
+            }
+        }
 
         // Handle ignore_case, ignore_leading_zeros, and unicode normalization transformations
         let keys_transformed =
@@ -813,6 +838,7 @@ impl JoinStruct {
                     .left_on(left_selcols)
                     .right_on(right_selcols)
                     .how(jointype)
+                    .join_nulls(self.nulls)
                     .maintain_order(maintain_order)
                     .coalesce(coalesce_flag)
                     .allow_parallel(true)
@@ -1235,6 +1261,7 @@ impl Args {
             decimal_comma: self.flag_decimal_comma,
             ignore_case: self.flag_ignore_case,
             ignore_leading_zeros: self.flag_ignore_leading_zeros,
+            nulls: self.flag_nulls,
         })
     }
 }

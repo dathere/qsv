@@ -3660,8 +3660,8 @@ fn joinp_nulls_controls_empty_key_matches() {
     wrk.create_from_string("quoted2.csv", "k,b\nx,p\n\"\",q\n");
     wrk.create_from_string("int1.csv", "k,a\n1,x\n,w\n");
     wrk.create_from_string("int2.csv", "k,b\n1,p\n,q\n");
-    wrk.create_from_string("zeros1.csv", "k,a\n0,x\n,y\n");
-    wrk.create_from_string("zeros2.csv", "k,b\n000,p\n,q\n");
+    wrk.create_from_string("zeros1.csv", "k,a\n0,x\n,y\nab,z\n");
+    wrk.create_from_string("zeros2.csv", "k,b\n000,p\n,q\ncd,r\n");
 
     let join = |name: &str, left: &str, right: &str, extra: &[&str]| -> Vec<Vec<String>> {
         let mut cmd = wrk.command("joinp");
@@ -3762,9 +3762,10 @@ fn joinp_nulls_controls_empty_key_matches() {
         ]
     );
 
-    // with -z, "0" and "000" still match, but empty keys don't
+    // text keys with -z: "0" and "000" still match, but "000" isn't made empty, so it
+    // doesn't match an empty key
     assert_eq!(
         join("zeros", "zeros1.csv", "zeros2.csv", &["-z"]),
-        vec![svec!["k", "a", "k_right", "b"], svec!["0", "x", "0", "p"]]
+        vec![svec!["k", "a", "k_right", "b"], svec!["0", "x", "000", "p"]]
     );
 }

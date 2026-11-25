@@ -109,12 +109,12 @@ joinp options:
                             Only inner, left, right and full joins can maintain order;
                             cross, non-equi and asof joins ignore this option.
                             [default: none]
-    --nulls                When set, empty join keys match each other, and all
-                           empty fields are read as null, so they are written as
-                           the --null-value string. Otherwise, rows with an empty
-                           key never match (--left, --right and --full joins keep
-                           them, unmatched). Applies to the standard joins, not
-                           to cross, non-equi or asof joins.
+    --nulls                When set, empty join keys match each other, and
+                           unquoted empty fields are read as null, so they are
+                           written as the --null-value string. Otherwise, rows
+                           with an empty key never match (outer joins keep them,
+                           unmatched). Applies to the standard joins, not to
+                           cross, non-equi or asof joins.
     --streaming            Write the join result as it is computed, batch by batch, instead
                            of collecting the whole result in memory first. Use this when the
                            result is too big for memory: it uses less memory but is slower.
@@ -158,8 +158,8 @@ joinp options:
                            Only use this when you get join errors.                           
     --ignore-errors        Read CSV values that can't be parsed as their column's type
                            as empty (null) instead of failing. Their rows are kept, and
-                           a null join key, like an empty one, matches only with --nulls.
-                           If not set, the join will fail.
+                           in the standard joins, a null join key, like an empty one,
+                           matches only with --nulls. If not set, the join will fail.
                            To get more detailed error messages, set the environment variable
                            POLARS_BACKTRACE_IN_ERR=1 before running the join.
     --decimal-comma        Use comma as the decimal separator when parsing & writing CSVs.
@@ -681,48 +681,52 @@ impl JoinStruct {
         }
 
         // Handle ignore_case, ignore_leading_zeros, and unicode normalization transformations
-        let keys_transformed =
-            if self.ignore_case || self.ignore_leading_zeros || normalization_form.is_some() {
-                let transform_col = |col: Expr| {
-                    let mut transformed = col.cast(DataType::String);
-                    if self.ignore_leading_zeros {
-                        transformed = transformed.str().replace_all(lit(r"^0+"), lit(""), false);
-                    }
-                    if self.ignore_case {
-                        transformed = transformed.str().to_lowercase();
-                    }
-                    if let Some(form) = normalization_form {
-                        transformed = transformed.str().normalize(form.clone());
-                    }
-                    transformed
-                };
-
-                // Apply transformations to one side: add `_qsv-<name>-transformed` columns
-                // to the lazyframe in a single `with_columns` call (so we only clone the
-                // LazyFrame once per side rather than once per join key) and return the
-                // list of expressions pointing at those temp columns so the join runs
-                // against them.
-                let apply_side = |lf: &mut LazyFrame, names: &[&str]| -> Vec<Expr> {
-                    let mut temp_columns = Vec::with_capacity(names.len());
-                    let mut temp_exprs = Vec::with_capacity(names.len());
-                    for name in names {
-                        let temp_col_name = format!("_qsv-{name}-transformed");
-                        temp_columns.push(
-                            transform_col(polars::lazy::dsl::col(*name)).alias(&temp_col_name),
-                        );
-                        temp_exprs.push(polars::lazy::dsl::col(temp_col_name));
-                    }
-                    *lf = lf.clone().with_columns(temp_columns);
-                    temp_exprs
-                };
-
-                left_selcols = apply_side(&mut self.left_lf, &left_col_names);
-                right_selcols = apply_side(&mut self.right_lf, &right_col_names);
-
-                true
-            } else {
-                false
+        let keys_transformed = if self.ignore_case
+            || self.ignore_leading_zeros
+            || normalization_form.is_some()
+        {
+            let transform_col = |col: Expr| {
+                let mut transformed = col.cast(DataType::String);
+                if self.ignore_leading_zeros {
+                    // keep the last zero, so "000" becomes "0", not an empty key
+                    transformed = transformed
+                        .str()
+                        .replace_all(lit(r"^0+(.)"), lit("${1}"), false);
+                }
+                if self.ignore_case {
+                    transformed = transformed.str().to_lowercase();
+                }
+                if let Some(form) = normalization_form {
+                    transformed = transformed.str().normalize(form.clone());
+                }
+                transformed
             };
+
+            // Apply transformations to one side: add `_qsv-<name>-transformed` columns
+            // to the lazyframe in a single `with_columns` call (so we only clone the
+            // LazyFrame once per side rather than once per join key) and return the
+            // list of expressions pointing at those temp columns so the join runs
+            // against them.
+            let apply_side = |lf: &mut LazyFrame, names: &[&str]| -> Vec<Expr> {
+                let mut temp_columns = Vec::with_capacity(names.len());
+                let mut temp_exprs = Vec::with_capacity(names.len());
+                for name in names {
+                    let temp_col_name = format!("_qsv-{name}-transformed");
+                    temp_columns
+                        .push(transform_col(polars::lazy::dsl::col(*name)).alias(&temp_col_name));
+                    temp_exprs.push(polars::lazy::dsl::col(temp_col_name));
+                }
+                *lf = lf.clone().with_columns(temp_columns);
+                temp_exprs
+            };
+
+            left_selcols = apply_side(&mut self.left_lf, &left_col_names);
+            right_selcols = apply_side(&mut self.right_lf, &right_col_names);
+
+            true
+        } else {
+            false
+        };
 
         // Without --nulls, empty text keys must not match each other (numeric empties are null
         // and never match). The key values are output and seen by --sql-filter, so rather than

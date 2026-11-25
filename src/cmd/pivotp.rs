@@ -110,7 +110,8 @@ pivotp options:
                             Set to 0 to scan entire file. [default: 10000]
     --decimal-comma         Use comma as decimal separator when READING the input.
                             Note that you will need to specify an alternate --delimiter.
-    --ignore-errors         Skip rows that can't be parsed.
+    --ignore-errors         Read values that can't be parsed as empty (null) instead
+                            of failing. Their rows are kept.
     --grand-total           Append a grand total row summing all numeric non-index columns.
                             The first index column will contain "Grand <total-label>".
     --subtotal              Insert subtotal rows after each group in the first index column.

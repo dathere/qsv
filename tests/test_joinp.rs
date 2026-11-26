@@ -3322,6 +3322,136 @@ fn joinp_cache_schema_floats_keep_f64_precision_issue_4752() {
 }
 
 // joinp decompresses both inputs into one temp dir before running the join;
+// with a key transformation, --coalesce must keep the key of right-only rows
+#[test]
+fn joinp_coalesce_transformed_keys_keeps_right_only_keys() {
+    let wrk = Workdir::new("joinp_coalesce_transformed_keys_keeps_right_only_keys");
+    wrk.create_from_string("left.csv", "k,a\nX,1\nZ,2\n");
+    wrk.create_from_string("right.csv", "k,b\nx,p\nY,q\n");
+
+    let join = |extra: &[&str]| -> Vec<Vec<String>> {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["k", "left.csv", "k", "right.csv", "-i", "--coalesce"])
+            .args(["--maintain-order", "left_right"])
+            .args(extra);
+        wrk.read_stdout(&mut cmd)
+    };
+
+    // matched rows keep the left key, right-only rows get the right key
+    assert_eq!(
+        join(&["--full"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["X", "1", "p"],
+            svec!["Z", "2", ""],
+            svec!["Y", "", "q"]
+        ]
+    );
+    assert_eq!(
+        join(&["--right"]),
+        vec![
+            svec!["k", "a", "b"],
+            svec!["X", "1", "p"],
+            svec!["Y", "", "q"]
+        ]
+    );
+    // --sql-filter sees the coalesced key
+    assert_eq!(
+        join(&[
+            "--full",
+            "--sql-filter",
+            "SELECT * FROM join_result WHERE k = 'Y'"
+        ]),
+        vec![svec!["k", "a", "b"], svec!["Y", "", "q"]]
+    );
+    // only same-named key pairs are coalesced: a right column that merely shares the
+    // left key's name is left alone
+    wrk.create_from_string("payload.csv", "rk,k,b\nx,pay1,p\nY,pay2,q\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args([
+        "k",
+        "left.csv",
+        "rk",
+        "payload.csv",
+        "-i",
+        "--coalesce",
+        "--full",
+    ])
+    .args(["--maintain-order", "left_right"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "a", "rk", "k_right", "b"],
+            svec!["X", "1", "x", "pay1", "p"],
+            svec!["Z", "2", "", "", ""],
+            svec!["", "", "Y", "pay2", "q"]
+        ]
+    );
+
+    // a key whose name ends in _right keeps its right-only value
+    wrk.create_from_string("ids1.csv", "id,id_right,a\nA,B,1\n");
+    wrk.create_from_string("ids2.csv", "rid,id_right,b\na,b,p\nC,D,q\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id,id_right", "ids1.csv", "rid,id_right", "ids2.csv"])
+        .args([
+            "-i",
+            "--coalesce",
+            "--full",
+            "--maintain-order",
+            "left_right",
+        ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "id_right", "a", "rid", "b"],
+            svec!["A", "B", "1", "a", "p"],
+            svec!["", "D", "", "C", "q"]
+        ]
+    );
+    // a semi join outputs only left columns, so a left column named like a right copy stays
+    wrk.create_from_string("semi1.csv", "id_right,id_right_right,a\nA,keep,1\n");
+    wrk.create_from_string("semi2.csv", "id_right,b\na,p\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id_right", "semi1.csv", "id_right", "semi2.csv"])
+        .args(["--left-semi", "-i", "--coalesce"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id_right", "id_right_right", "a"],
+            svec!["A", "keep", "1"]
+        ]
+    );
+
+    // the right copies are dropped before --sql-filter, so a column it names like one stays
+    wrk.create_from_string("sql1.csv", "id_right,a\nA,1\n");
+    wrk.create_from_string("sql2.csv", "id_right,b\na,p\nC,q\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["id_right", "sql1.csv", "id_right", "sql2.csv"])
+        .args([
+            "--full",
+            "-i",
+            "--coalesce",
+            "--maintain-order",
+            "left_right",
+        ])
+        .args([
+            "--sql-filter",
+            "SELECT id_right, b AS id_right_right FROM join_result",
+        ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id_right", "id_right_right"],
+            svec!["A", "p"],
+            svec!["C", "q"]
+        ]
+    );
+}
+
 // same-named .sz inputs, snappy or not, must not overwrite each other (#4779).
 #[test]
 fn joinp_same_named_sz_inputs() {

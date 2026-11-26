@@ -799,7 +799,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let any_compared = !compared.is_empty();
         #[allow(clippy::cast_precision_loss)]
         let rate = (any_compared && synthetic_rows > 0)
-            .then(|| exact_matches as f64 / synthetic_rows as f64);
+            .then_some(exact_matches as f64 / synthetic_rows as f64);
         let report = serde_json::json!({
             "source_rows": fitted.total_rows,
             "synthetic_rows": synthetic_rows,

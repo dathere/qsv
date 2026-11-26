@@ -899,15 +899,8 @@ fn count_sniff_preamble_ignores_an_index() {
     wrk.assert_success(&mut cmd);
     wrk.create_from_string("p.csv", &preamble_csv());
     std::fs::rename(wrk.path("big.csv.idx"), wrk.path("p.csv.idx")).unwrap();
-    let later = filetime::FileTime::from_unix_time(
-        filetime::FileTime::from_last_modification_time(
-            &std::fs::metadata(wrk.path("p.csv")).unwrap(),
-        )
-        .unix_seconds()
-            + 4,
-        0,
-    );
-    filetime::set_file_mtime(wrk.path("p.csv.idx"), later).unwrap();
+    let later = crate::mtime(wrk.path("p.csv")) + std::time::Duration::from_secs(4);
+    crate::set_mtime(wrk.path("p.csv.idx"), later);
 
     let mut cmd = wrk.command("count");
     cmd.env("QSV_SNIFF_PREAMBLE", "1").arg("p.csv");
@@ -943,16 +936,14 @@ fn count_index_rewritten_within_the_same_second() {
 
     wrk.create_from_string("data.csv", "a,b\n1,y\n2,y\n3,y\n");
     // the data is half a second newer than its index, within the same second
-    filetime::set_file_mtime(
+    crate::set_mtime(
         wrk.path("data.csv.idx"),
-        filetime::FileTime::from_unix_time(1_700_000_000, 100),
-    )
-    .unwrap();
-    filetime::set_file_mtime(
+        crate::unix_time(1_700_000_000, 100),
+    );
+    crate::set_mtime(
         wrk.path("data.csv"),
-        filetime::FileTime::from_unix_time(1_700_000_000, 500_000_000),
-    )
-    .unwrap();
+        crate::unix_time(1_700_000_000, 500_000_000),
+    );
 
     let mut cmd = wrk.command("count");
     cmd.arg("data.csv");

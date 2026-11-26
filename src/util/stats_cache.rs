@@ -9,7 +9,6 @@ use std::{
 };
 
 use csv::ByteRecord;
-use filetime::FileTime;
 use log::info;
 
 use super::{
@@ -375,11 +374,14 @@ pub(crate) fn stats_jsonl_predates_stats_cache(statsdata_path: &Path, bases: [&P
     let Ok(jsonl_meta) = std::fs::metadata(statsdata_path) else {
         return false;
     };
-    let jsonl_mtime = FileTime::from_last_modification_time(&jsonl_meta);
+    let Ok(jsonl_mtime) = jsonl_meta.modified() else {
+        return false;
+    };
 
     bases.iter().any(|base| {
         std::fs::metadata(base.with_extension("stats.csv.json"))
-            .is_ok_and(|m| FileTime::from_last_modification_time(&m) > jsonl_mtime)
+            .and_then(|m| m.modified())
+            .is_ok_and(|mtime| mtime > jsonl_mtime)
     })
 }
 
@@ -630,8 +632,8 @@ pub fn get_stats_records_flexible(
 
         let input_metadata = std::fs::metadata(input_path)?;
 
-        let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
-        let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+        let statsdata_mtime = statsdata_metadata.modified()?;
+        let input_mtime = input_metadata.modified()?;
         // Does THIS mode actually infer dates? Mirrors the per-mode argv built below: Schema
         // and ProfileSchema always pass --infer-dates, PolarsSchema only when it has a
         // whitelist (i.e. sniff found date columns), and the Frequency modes never do.
@@ -1098,8 +1100,8 @@ pub fn get_stats_records_readonly(
     // the cache sidecar must exist AND be newer than the input file
     let statsdata_metadata = std::fs::metadata(&statsdata_path).ok()?;
     let input_metadata = std::fs::metadata(&input_path_owned).ok()?;
-    let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
-    let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+    let statsdata_mtime = statsdata_metadata.modified().ok()?;
+    let input_mtime = input_metadata.modified().ok()?;
     if statsdata_mtime <= input_mtime {
         return None;
     }

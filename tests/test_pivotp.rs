@@ -1840,8 +1840,8 @@ fn pivotp_ignores_stale_pschema() {
     let canonical = wrk.path("sales.csv").canonicalize().unwrap();
     let pschema = format!("{}.pschema.json", canonical.display());
     std::fs::write(&pschema, SALES_FLOAT_PSCHEMA).unwrap();
-    let old = filetime::FileTime::from_unix_time(1_000_000_000, 0);
-    filetime::set_file_mtime(&pschema, old).unwrap();
+    let old = crate::unix_time(1_000_000_000, 0);
+    crate::set_mtime(&pschema, old);
 
     let out = sum_sales_pivot(&wrk, "sales.csv", &[]);
     assert!(

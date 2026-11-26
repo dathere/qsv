@@ -97,8 +97,6 @@ fn clean_preserves_user_file_without_sidecar() {
 
 #[test]
 fn clean_stale_keeps_fresh_removes_stale() {
-    use filetime::{FileTime, set_file_mtime};
-
     let wrk = Workdir::new("clean_stale_keeps_fresh_removes_stale");
     wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
     make_caches(&wrk, "data.csv");
@@ -112,8 +110,8 @@ fn clean_stale_keeps_fresh_removes_stale() {
     assert!(wrk.path("data.freq.csv.data.jsonl").exists());
 
     // make the source NEWER than the caches -> they are now stale
-    let future = FileTime::from_unix_time(FileTime::now().unix_seconds() + 3600, 0);
-    set_file_mtime(wrk.path("data.csv"), future).unwrap();
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+    crate::set_mtime(wrk.path("data.csv"), future);
 
     let mut cmd = wrk.command("clean");
     cmd.args(["--stale", "--force"]);
@@ -319,8 +317,6 @@ fn clean_stale_relative_path_from_other_cwd() {
 // it rather than risk deleting a fresh cache based on a guessed source.
 #[test]
 fn clean_stale_keeps_legacy_frequency_cache() {
-    use filetime::{FileTime, set_file_mtime};
-
     let wrk = Workdir::new("clean_stale_keeps_legacy_frequency_cache");
     wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
 
@@ -329,8 +325,8 @@ fn clean_stale_keeps_legacy_frequency_cache() {
     wrk.create_from_string("data.freq.csv.data.jsonl", &format!("{meta}\n"));
 
     // make the source NEWER so a naive staleness check would delete the cache
-    let future = FileTime::from_unix_time(FileTime::now().unix_seconds() + 3600, 0);
-    set_file_mtime(wrk.path("data.csv"), future).unwrap();
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+    crate::set_mtime(wrk.path("data.csv"), future);
 
     let mut cmd = wrk.command("clean");
     cmd.args(["--stale", "--force"]);
@@ -366,8 +362,6 @@ fn clean_stale_keeps_uppercase_extension_cache() {
 // delete the fresh cache.
 #[test]
 fn clean_stale_same_stem_uses_correct_source() {
-    use filetime::{FileTime, set_file_mtime};
-
     let wrk = Workdir::new("clean_stale_same_stem_uses_correct_source");
     wrk.create_with_delim("data.tsv", vec![svec!["h1", "h2"], svec!["a", "1"]], b'\t');
     wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
@@ -379,8 +373,8 @@ fn clean_stale_same_stem_uses_correct_source() {
     assert!(wrk.path("data.freq.csv.data.jsonl").exists());
 
     // make the OTHER same-stem file newer than the cache; the real source is not
-    let future = FileTime::from_unix_time(FileTime::now().unix_seconds() + 3600, 0);
-    set_file_mtime(wrk.path("data.csv"), future).unwrap();
+    let future = std::time::SystemTime::now() + std::time::Duration::from_secs(3600);
+    crate::set_mtime(wrk.path("data.csv"), future);
 
     let mut cmd = wrk.command("clean");
     cmd.args(["--stale", "--force"]);

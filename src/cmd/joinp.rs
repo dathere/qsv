@@ -953,7 +953,34 @@ impl JoinStruct {
             join_lf
         };
 
-        let mut results_lf = match &self.sql_filter {
+        // Drop the temporary transformed key columns by their exact names (a right one gets
+        // a `_right` suffix when it collides), before --sql-filter, so the filter sees the
+        // same columns as in a join without key transformations, and user columns whose names
+        // merely contain "-transformed" are kept.
+        let join_lf = if keys_transformed {
+            let mut join_lf = join_lf;
+            let temp_cols: Vec<String> = left_col_names
+                .iter()
+                .chain(&right_col_names)
+                .flat_map(|name| {
+                    [
+                        format!("_qsv-{name}-transformed"),
+                        format!("_qsv-{name}-transformed_right"),
+                    ]
+                })
+                .collect();
+            let keep_cols: Vec<Expr> = join_lf
+                .collect_schema()?
+                .iter_names()
+                .filter(|name| !temp_cols.iter().any(|temp| temp == name.as_str()))
+                .map(|name| col(name.as_str()))
+                .collect();
+            join_lf.select(keep_cols)
+        } else {
+            join_lf
+        };
+
+        let results_lf = match &self.sql_filter {
             Some(sql_filter) => {
                 let mut ctx = util::new_sql_context();
                 ctx.register("join_result", join_lf);
@@ -961,17 +988,6 @@ impl JoinStruct {
             },
             _ => join_lf,
         };
-
-        if keys_transformed {
-            // Remove temporary transformed columns
-            let keep_cols: Vec<Expr> = results_lf
-                .collect_schema()?
-                .iter_names()
-                .filter(|col| !col.contains("-transformed"))
-                .map(|col| polars::lazy::dsl::col(col.as_str()))
-                .collect();
-            results_lf = results_lf.select(keep_cols);
-        }
 
         // SQLContext defers a --sql-filter query into a plan with default flags, so set them
         // on the whole plan to honor --no-optimizations

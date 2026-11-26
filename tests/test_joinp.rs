@@ -3452,6 +3452,43 @@ fn joinp_coalesce_transformed_keys_keeps_right_only_keys() {
     );
 }
 
+// with a key transformation, the temporary key columns are dropped by name before --sql-filter
+#[test]
+fn joinp_transformed_keys_temp_columns_hidden() {
+    let wrk = Workdir::new("joinp_transformed_keys_temp_columns_hidden");
+    wrk.create_from_string("left.csv", "k,a\nB,1\na,2\n");
+    wrk.create_from_string("right.csv", "k,b\nb,1\nA,2\n");
+
+    // --sql-filter sees only the output columns, so ORDER BY 3 sorts by b, not a temp key
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "left.csv", "k", "right.csv", "-i", "--coalesce"])
+        .args(["--sql-filter", "SELECT * FROM join_result ORDER BY 3"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "a", "b"],
+            svec!["B", "1", "1"],
+            svec!["a", "2", "2"]
+        ]
+    );
+
+    // user columns and SQL aliases whose names contain "-transformed" are kept
+    wrk.create_from_string("status.csv", "k,status-transformed\nB,x\n");
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "status.csv", "k", "right.csv", "-i", "--left-semi"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["k", "status-transformed"], svec!["B", "x"]]);
+
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "status.csv", "k", "right.csv", "-i"]).args([
+        "--sql-filter",
+        r#"SELECT k, b AS "b-transformed" FROM join_result"#,
+    ]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["k", "b-transformed"], svec!["B", "1"]]);
+}
+
 // same-named .sz inputs, snappy or not, must not overwrite each other (#4779).
 #[test]
 fn joinp_same_named_sz_inputs() {

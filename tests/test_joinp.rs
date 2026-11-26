@@ -3473,6 +3473,20 @@ fn joinp_transformed_keys_temp_columns_hidden() {
         ]
     );
 
+    // a full join keeps the right temp key too, suffixed `_right` as it collides; it is dropped
+    let mut cmd = wrk.command("joinp");
+    cmd.args(["k", "left.csv", "k", "right.csv", "-i", "--full"])
+        .args(["--maintain-order", "left_right"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["k", "a", "k_right", "b"],
+            svec!["B", "1", "b", "1"],
+            svec!["a", "2", "A", "2"]
+        ]
+    );
+
     // user columns and SQL aliases whose names contain "-transformed" are kept
     wrk.create_from_string("status.csv", "k,status-transformed\nB,x\n");
     let mut cmd = wrk.command("joinp");

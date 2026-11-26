@@ -1246,10 +1246,10 @@ fn writestat_stale_stats_cache() {
     cmd.args(["in.csv", "-o", "first.sav"]);
     wrk.assert_success(&mut cmd);
     let cache = std::fs::metadata(wrk.path("in.stats.csv.data.jsonl")).unwrap();
-    let cache_mtime = filetime::FileTime::from_last_modification_time(&cache);
+    let cache_mtime = cache.modified().unwrap();
     wrk.create_from_string("in.csv", "n\n1\nx\n");
-    let older = filetime::FileTime::from_unix_time(cache_mtime.unix_seconds() - 60, 0);
-    filetime::set_file_mtime(wrk.path("in.csv"), older).unwrap();
+    let older = cache_mtime - std::time::Duration::from_secs(60);
+    crate::set_mtime(wrk.path("in.csv"), older);
 
     inferred(&wrk, "second.sav", true);
     assert_eq!(var(&metadata(&wrk, "second.sav"), "n")["type"], "Str");
@@ -1261,8 +1261,8 @@ fn writestat_stale_stats_cache() {
 fn writestat_comment_char_stats_cache() {
     let wrk = Workdir::new("writestat_comment_char_stats_cache");
     wrk.create_from_string("in.csv", "n\n1\n#foo\n2\n");
-    let old = filetime::FileTime::from_unix_time(1_700_000_000, 0);
-    filetime::set_file_mtime(wrk.path("in.csv"), old).unwrap();
+    let old = crate::unix_time(1_700_000_000, 0);
+    crate::set_mtime(wrk.path("in.csv"), old);
     let mut cmd = wrk.command("stats");
     cmd.args(["--cardinality", "--stats-jsonl", "in.csv"])
         .env("QSV_COMMENT_CHAR", "#");
@@ -1292,8 +1292,8 @@ fn writestat_zero_padded_stays_text() {
 /// CSV older than the cache, so the cache is reused rather than recomputed.
 fn cached_with(wrk: &Workdir, csv: &str, stats_flags: &[&str]) {
     wrk.create_from_string("in.csv", csv);
-    let old = filetime::FileTime::from_unix_time(1_700_000_000, 0);
-    filetime::set_file_mtime(wrk.path("in.csv"), old).unwrap();
+    let old = crate::unix_time(1_700_000_000, 0);
+    crate::set_mtime(wrk.path("in.csv"), old);
     let mut cmd = wrk.command("stats");
     cmd.args(stats_flags)
         .args(["--cardinality", "--stats-jsonl", "in.csv"]);

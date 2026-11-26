@@ -1,6 +1,7 @@
-use std::fs;
-
-use filetime::{FileTime, set_file_times};
+use std::{
+    fs,
+    time::{Duration, SystemTime},
+};
 
 use crate::workdir::Workdir;
 
@@ -17,10 +18,11 @@ fn index_outdated_count() {
     );
 
     let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
+    fs::set_times(
         wrk.path("in.csv"),
-        future_time(FileTime::from_last_modification_time(&md)),
-        future_time(FileTime::from_last_access_time(&md)),
+        fs::FileTimes::new()
+            .set_accessed(future_time(md.accessed().unwrap()))
+            .set_modified(future_time(md.modified().unwrap())),
     )
     .unwrap();
 
@@ -49,10 +51,11 @@ fn index_outdated_stats() {
     );
 
     let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
+    fs::set_times(
         wrk.path("in.csv"),
-        future_time(FileTime::from_last_access_time(&md)),
-        future_time(FileTime::from_last_modification_time(&md)),
+        fs::FileTimes::new()
+            .set_accessed(future_time(md.accessed().unwrap()))
+            .set_modified(future_time(md.modified().unwrap())),
     )
     .unwrap();
 
@@ -81,10 +84,11 @@ fn index_outdated_index() {
     );
 
     let md = fs::metadata(wrk.path("in.csv.idx")).unwrap();
-    set_file_times(
+    fs::set_times(
         wrk.path("in.csv"),
-        future_time(FileTime::from_last_access_time(&md)),
-        future_time(FileTime::from_last_modification_time(&md)),
+        fs::FileTimes::new()
+            .set_accessed(future_time(md.accessed().unwrap()))
+            .set_modified(future_time(md.modified().unwrap())),
     )
     .unwrap();
 
@@ -336,7 +340,6 @@ fn empty_csv_still_works_without_a_usable_index() {
     rassert_eq!(got, 0);
 }
 
-fn future_time(ft: FileTime) -> FileTime {
-    let secs = ft.unix_seconds();
-    FileTime::from_unix_time(secs + 10_000, 0)
+fn future_time(t: SystemTime) -> SystemTime {
+    t + Duration::from_secs(10_000)
 }

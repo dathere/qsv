@@ -204,14 +204,20 @@ fn download_file_rejects_final_3xx() {
     let _ = std::fs::remove_file(&dest);
 }
 
-use std::path::Path;
+use std::{
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use filetime::FileTime;
 #[cfg(not(feature = "lite"))]
 use tempfile::NamedTempFile;
 
 use super::*;
 use crate::cmd::stats::StatsData;
+
+fn set_mtime(path: impl AsRef<Path>, mtime: SystemTime) {
+    std::fs::set_times(path, std::fs::FileTimes::new().set_modified(mtime)).unwrap();
+}
 
 // A stats cache is located by input path and validated by mtime, NOT by parsing options, so
 // these two fields are the only thing standing between a `--no-headers` (or differently
@@ -504,13 +510,13 @@ fn stats_jsonl_predates_stats_cache_only_when_the_sidecar_is_newer() {
     // sidecar OLDER than the JSONL: exactly the `stats` then `moarstats` ordering, where
     // the JSONL is the later and richer artifact. Still not stale.
     std::fs::write(&sidecar, b"{}").unwrap();
-    filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(1_000, 0)).unwrap();
-    filetime::set_file_mtime(&jsonl, FileTime::from_unix_time(2_000, 0)).unwrap();
+    set_mtime(&sidecar, UNIX_EPOCH + Duration::from_secs(1_000));
+    set_mtime(&jsonl, UNIX_EPOCH + Duration::from_secs(2_000));
     assert!(!stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
 
     // sidecar NEWER than the JSONL: a recompute refreshed the stats and left the JSONL
     // behind. This is the case that silently poisoned consumers.
-    filetime::set_file_mtime(&sidecar, FileTime::from_unix_time(3_000, 0)).unwrap();
+    set_mtime(&sidecar, UNIX_EPOCH + Duration::from_secs(3_000));
     assert!(stats_jsonl_predates_stats_cache(&jsonl, [&input, &input]));
 }
 
@@ -1283,14 +1289,14 @@ fn load_valid_pschema_honors_freshness() {
     let mut schema = Schema::with_capacity(1);
     schema.insert(PlSmallStr::from_static("id"), DataType::Int64);
     super::write_pschema(&schema_file, &schema).unwrap();
-    let old = filetime::FileTime::from_unix_time(1_000_000_000, 0);
-    filetime::set_file_mtime(&input, old).unwrap();
+    let old = UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+    set_mtime(&input, old);
     assert!(super::pschema_is_current(&input, &schema_file));
     assert_eq!(*super::load_valid_pschema(&input).unwrap().unwrap(), schema);
 
     // the input changed after the schema was written
-    filetime::set_file_mtime(&schema_file, old).unwrap();
-    filetime::set_file_mtime(&input, filetime::FileTime::now()).unwrap();
+    set_mtime(&schema_file, old);
+    set_mtime(&input, SystemTime::now());
     assert!(!super::pschema_is_current(&input, &schema_file));
     assert!(super::load_valid_pschema(&input).unwrap().is_none());
 }

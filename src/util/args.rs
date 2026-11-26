@@ -208,8 +208,11 @@ pub const fn num_of_chunks(nitems: usize, chunk_size: usize) -> usize {
 
 #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
 pub fn file_metadata(md: &fs::Metadata) -> (u64, u64) {
-    use filetime::FileTime;
-    let last_modified = FileTime::from_last_modification_time(md).unix_seconds() as u64;
+    let last_modified = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
     let fsize = md.len();
     (last_modified, fsize)
 }

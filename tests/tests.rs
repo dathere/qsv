@@ -6,12 +6,15 @@ extern crate log;
 extern crate serde;
 
 extern crate csv;
-extern crate filetime;
 extern crate quickcheck;
 extern crate rand;
 extern crate stats;
 
-use std::{env, fmt, ops};
+use std::{
+    env, fmt, ops,
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
 use rand::RngExt;
@@ -34,6 +37,19 @@ macro_rules! rassert_eq {
 }
 
 mod workdir;
+
+/// A time `secs` seconds and `nanos` nanoseconds after the Unix epoch.
+pub fn unix_time(secs: u64, nanos: u32) -> SystemTime {
+    UNIX_EPOCH + Duration::new(secs, nanos)
+}
+
+pub fn set_mtime(path: impl AsRef<Path>, mtime: SystemTime) {
+    std::fs::set_times(path, std::fs::FileTimes::new().set_modified(mtime)).unwrap();
+}
+
+pub fn mtime(path: impl AsRef<Path>) -> SystemTime {
+    std::fs::metadata(path).unwrap().modified().unwrap()
+}
 
 mod test_100;
 mod test_alloc_tuning;

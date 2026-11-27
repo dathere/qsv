@@ -29,7 +29,7 @@
       {
         "flag": "--col-separator",
         "type": "string",
-        "description": "The separator in generated column names in case of multiple --values columns. (pivot mode only; ignored in group-by mode)",
+        "description": "The separator in generated column names in case of multiple --values columns. A generated name that equals an index column's takes a _2 (_3, ...) suffix, with a warning. (pivot mode only; ignored in group-by mode)",
         "default": "_"
       },
       {
@@ -113,7 +113,7 @@
       {
         "flag": "--values",
         "type": "string",
-        "description": "The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. In pivot mode, if None, all remaining columns not specified on --on and --index will be used; at least one of --index and --values must be specified. In group-by mode, if omitted, a single \"count\" column is produced."
+        "description": "The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. In pivot mode, if None, all remaining columns not specified on --on and --index will be used; at least one of --index and --values must be specified. If no columns remain, len (the default then) counts the rows of each cell; any other aggregation needs --values. In group-by mode, if omitted, a single \"count\" column is produced."
       }
     ]
   },

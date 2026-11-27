@@ -744,6 +744,32 @@ fn slice_from_jsonl_with_late_key() {
 
 #[cfg(feature = "polars")]
 #[test]
+fn slice_from_jsonl_nested_values_as_json_text() {
+    // CSV can't hold nested data, so a JSONL object or array value is written as its JSON text,
+    // whether it appears in the first rows or (now that the whole file is inferred) only later.
+    // Before, an early nested value failed the conversion and a late one was dropped.
+    let wrk = Workdir::new("slice_from_jsonl_nested_values_as_json_text");
+    let mut jsonl: String = (1..150)
+        .map(|i| format!("{{\"id\":{i},\"tags\":[\"t{i}\"]}}\n"))
+        .collect();
+    jsonl.push_str("{\"id\":150,\"tags\":[],\"late\":{\"k\":1}}\n");
+    wrk.create_from_string("nested.jsonl", &jsonl);
+
+    let mut cmd = wrk.command("slice");
+    cmd.arg("nested.jsonl").args(["--start", "148"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["id", "tags", "late"],
+            svec!["149", r#"["t149"]"#, ""],
+            svec!["150", "[]", r#"{"k": 1}"#],
+        ]
+    );
+}
+
+#[cfg(feature = "polars")]
+#[test]
 fn slice_from_avro() {
     let wrk = Workdir::new("slice_from_avro");
     let test_file = wrk.load_test_file("NYC311-5.avro");

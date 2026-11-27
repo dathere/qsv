@@ -335,7 +335,7 @@ plotly = { version = "0.15", default-features = false, optional = true }
 # `t!` macro expands to `crate::_rust_i18n_t!`. See src/cmd/viz_i18n.rs.
 rust-i18n = { version = "4.2.1", optional = true }
 pragmastat = "14.0"
-polars-readstat-rs = { version = "0.27", optional = true }
+polars-readstat-rs = { version = "0.27.1", optional = true }
 # only for `default_ipc_fields`, which `sqlp --streaming --format arrow` needs to build a
 # batched IPC writer; it resolves to the same patched git rev as polars itself.
 polars-arrow = { version = "0.55", optional = true }
@@ -550,12 +550,12 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io. (#5021)
 polars-core  = { git = "https://github.com/pola-rs/polars", rev = "08b2814ce6386c0efe0fea512912353f42a8b7b6" }
 polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "08b2814ce6386c0efe0fea512912353f42a8b7b6" }
-# polars-readstat-rs 0.27.0 calls DataFrame/Series::slice(offset, len), which polars main
-# replaced with slice(impl Into<Slice>) (pola-rs/polars#30887). Our fork passes the pair as a
-# tuple; upstream can't take it while it builds on crates.io polars 0.55.1. The fork also
-# writes & reads .por numbers far below 1 without loss (#5094). Drop once a polars-readstat-rs
-# release builds against the pinned polars rev AND has that .por fix (else #5094 comes back).
-polars-readstat-rs = { git = "https://github.com/dathere/polars_readstat", rev = "18551f90697b23e677c5e17a0fe8f03ad710d90b" }
+# polars-readstat-rs 0.27.1 calls DataFrame/Series::slice(offset, len), which polars main
+# replaced with slice(impl Into<Slice>) (pola-rs/polars#30887). Our fork (upstream 0.27.1 plus
+# one commit) passes the pair as a tuple; upstream can't take it while it builds on crates.io
+# polars 0.55.1. Drop once a polars-readstat-rs release builds against the pinned polars rev.
+# 0.27.1 has upstream's exact .por number fix, so #5094 no longer needs the fork.
+polars-readstat-rs = { git = "https://github.com/dathere/polars_readstat", rev = "43b9b7b9d8def3d4883af76409ac885be5873639" }
 # Polars (since py-2.0.0) calls HashTable::prefetch_{get,insert}, which exist only in its
 # hashbrown fork (https://github.com/rust-lang/hashbrown/pull/727). Polars' own workspace
 # [patch] doesn't propagate to dependents, so mirror it here; keep the rev in sync with the

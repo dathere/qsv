@@ -586,8 +586,7 @@ fn writestat_xpt_number_too_small_boundary() {
 }
 
 // A portable file holds numbers far closer to 0 than SAS transport files do;
-// they come back as written, not as 0 (#5094). The reader rebuilds them with
-// float arithmetic, so within a few ulps.
+// they come back exactly as written, not as 0, subnormals included (#5094).
 #[test]
 fn writestat_por_small_numbers() {
     let wrk = Workdir::new("writestat_por_small_numbers");
@@ -607,10 +606,9 @@ fn writestat_por_small_numbers() {
         .collect();
     assert_eq!(got.len(), values.len(), "{back}");
     for (want, got) in values.iter().zip(got) {
-        // a subnormal holds fewer digits
-        let tolerance = (4.0 * f64::from_bits(1) / want.abs()).max(1e-15);
-        assert!(
-            got != 0.0 && ((got - want) / want).abs() <= tolerance,
+        assert_eq!(
+            want.to_bits(),
+            got.to_bits(),
             "{want:e} read back as {got:e}"
         );
     }

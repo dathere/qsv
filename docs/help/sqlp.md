@@ -258,8 +258,8 @@ qsv sqlp SKIP_INPUT "select * from read_csv('data.csv', separator => ';', commen
 
 > read_ndjson() takes Polars' scan_ndjson options the same way: schema, schema_overrides,
 > infer_schema_length, ignore_errors and include_file_paths.
-> Infer the schema from the whole file, so a key that first appears late isn't dropped
-> (by default, only the first 100 rows are used):
+> Infer the schema from the whole file. By default only the first 100 rows are used, and
+> a key that first appears later fails the query with "extra field in NDJSON data":
 
 ```console
 qsv sqlp SKIP_INPUT "select * from read_ndjson('events.jsonl', infer_schema_length => NULL)"

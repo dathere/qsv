@@ -377,7 +377,9 @@ pub fn convert_special_format(
             if let Some(schema) = schema {
                 lf.with_schema(Some(schema)).finish()?
             } else {
-                lf.finish()?
+                // Infer from every row: Polars raises on a key that first appears past the
+                // inference window (pola-rs/polars#31139), and before that it dropped the key.
+                lf.with_infer_schema_length(None).finish()?
             }
             .collect()?
         },

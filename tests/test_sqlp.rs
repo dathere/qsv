@@ -5949,6 +5949,10 @@ fn sqlp_cast_temporal_error_payloads() {
     //     <dates|times>"
     // Before the rewrite both cases produced the first message, so the
     // format-inference failure is the new signal.
+    // pola-rs/polars#31082 then made string->DATE/TIMESTAMP casts read only year-first dates
+    // instead of inferring a format, so an all-bad DATE column reports the "conversion ...
+    // failed" error again (on py-2.2.0: "could not find an appropriate format to parse
+    // dates"). TIME casts still infer.
     let wrk = Workdir::new("sqlp_cast_temporal_error_payloads");
     wrk.create(
         "allbad.csv",
@@ -5961,7 +5965,8 @@ fn sqlp_cast_temporal_error_payloads() {
         .arg("SELECT id, CAST(s AS DATE) AS d FROM allbad");
     let date_stderr = wrk.stderr_on_error(&mut date_cmd);
     assert!(
-        date_stderr.contains("could not find an appropriate format to parse dates"),
+        date_stderr.contains("conversion from `str` to `date` failed")
+            && date_stderr.contains("aaa"),
         "unexpected stderr: {date_stderr}"
     );
 
@@ -6601,13 +6606,27 @@ fn sqlp_read_ndjson_named_options() {
         vec![svec!["id", "late"], svec!["1", ""], svec!["2", "x"]]
     );
 
+    // pola-rs/polars#31139: a key that first appears past infer_schema_length fails the query
+    // (on py-2.2.0 it was silently dropped). `SELECT *`: a projection that leaves the key out
+    // doesn't fail.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT * FROM read_ndjson('ev.ndjson', schema_overrides => {'payload': 'VARCHAR'}, \
+         infer_schema_length => 1)",
+    );
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("extra field in NDJSON data: late"),
+        "unexpected stderr: {stderr}"
+    );
+
     // schema_overrides types `date` and reads the nested `payload` as JSON text,
     // which CSV output can hold; include_file_paths adds the source column.
     let mut cmd = wrk.command("sqlp");
     cmd.arg("SKIP_INPUT").arg(
         "SELECT id, YEAR(date) AS y, payload, src FROM read_ndjson('ev.ndjson', schema_overrides \
-         => {'date': 'DATE', 'payload': 'VARCHAR'}, infer_schema_length => 1, include_file_paths \
-         => 'src') ORDER BY id",
+         => {'date': 'DATE', 'payload': 'VARCHAR'}, infer_schema_length => NULL, \
+         include_file_paths => 'src') ORDER BY id",
     );
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(

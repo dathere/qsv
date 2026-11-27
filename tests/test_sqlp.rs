@@ -8745,6 +8745,28 @@ fn sqlp_cast_string_to_date_reads_year_first_only() {
         "unexpected stderr: {stderr}"
     );
 
+    // TIMESTAMP too: on py-2.2.0 this gave 2024-05-03T10:30:00 and a NULL for the ISO row.
+    wrk.create(
+        "ts.csv",
+        vec![
+            svec!["ts"],
+            svec!["3/5/2024 10:30:00"],
+            svec!["2024-03-05 10:30:00"],
+        ],
+    );
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("ts.csv")
+        .arg("SELECT ts, TRY_CAST(ts AS TIMESTAMP) AS t FROM ts");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "t"],
+            svec!["3/5/2024 10:30:00", ""],
+            svec!["2024-03-05 10:30:00", "2024-03-05T10:30:00.000000"],
+        ]
+    );
+
     // a format still reads it
     let mut cmd = wrk.command("sqlp");
     cmd.arg("d.csv")

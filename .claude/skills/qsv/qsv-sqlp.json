@@ -117,7 +117,7 @@
       {
         "flag": "--try-parsedates",
         "type": "flag",
-        "description": "Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates. Polars reads slash, dash and dot dates as day-first, so 01/05/2024 becomes 2024-05-01. CAST(col AS DATE) reads only year-first dates (2024-05-01, 2024/5/1); it fails on 01/05/2024 and TRY_CAST returns NULL. For month-first (US) dates, leave this off and use STRPTIME(col, '%m/%d/%Y') in the query instead."
+        "description": "Automatically try to parse dates/datetimes and time. If parsing fails, columns remain as strings. Note that if dates are not well-formatted in your CSV, that you may want to try to set `--ignore-errors` to relax the CSV parsing of dates. Polars reads slash, dash and dot dates as day-first, so 01/05/2024 becomes 2024-05-01. Without this option, the column stays a string, and CAST(col AS DATE) of a string reads only year-first dates (2024-05-01, 2024/5/1): it fails on 01/05/2024, and TRY_CAST returns NULL. For month-first (US) dates, leave this off and use STRPTIME(col, '%m/%d/%Y') in the query instead."
       },
       {
         "flag": "--wnull-value",

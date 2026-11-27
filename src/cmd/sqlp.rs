@@ -224,7 +224,9 @@ sqlp options:
                               that you may want to try to set `--ignore-errors` to relax
                               the CSV parsing of dates.
                               Polars reads slash, dash and dot dates as day-first, so
-                              01/05/2024 becomes 2024-05-01. So does CAST(col AS DATE).
+                              01/05/2024 becomes 2024-05-01. CAST(col AS DATE) reads
+                              only year-first dates (2024-05-01, 2024/5/1); it fails on
+                              01/05/2024 and TRY_CAST returns NULL.
                               For month-first (US) dates, leave this off and use
                               STRPTIME(col, '%m/%d/%Y') in the query instead.
     --infer-len <arg>         The number of rows to scan when inferring the schema of the CSV.

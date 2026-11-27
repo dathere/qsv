@@ -8685,3 +8685,70 @@ fn sqlp_cache_schema_sniff_preamble_keeps_its_own_schema() {
         unskipped
     );
 }
+
+// Polars SQL behavior changed between 08b2814 (py-2.2.0) and 4ba28fb.
+
+#[test]
+fn sqlp_cast_string_to_date_reads_year_first_only() {
+    // pola-rs/polars#31082: a SQL cast of a string to DATE reads only year-first dates. On
+    // py-2.2.0 the format was guessed from the column's first value, so `3/5/2024` came back
+    // as 2024-05-03 and the year-first rows after it were NULL.
+    let wrk = Workdir::new("sqlp_cast_string_to_date_reads_year_first_only");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["d"],
+            svec!["3/5/2024"],
+            svec!["2024-03-05"],
+            svec!["2024/3/5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv")
+        .arg("SELECT d, TRY_CAST(d AS DATE) AS td FROM d");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "td"],
+            svec!["3/5/2024", ""],
+            svec!["2024-03-05", "2024-03-05"],
+            svec!["2024/3/5", "2024-03-05"],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv").arg("SELECT CAST('3/5/2024' AS DATE) AS x");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("a cast reads a date with the year first"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // a format still reads it
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv")
+        .arg("SELECT STRPTIME('3/5/2024', '%d/%m/%Y') AS x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[1][0].get(..10), Some("2024-05-03"));
+}
+
+#[test]
+fn sqlp_version_function() {
+    // pola-rs/polars#31077 added SQL `version()`, the Polars crate version.
+    let wrk = Workdir::new("sqlp_version_function");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("SELECT version() AS v");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["v"]);
+    let parts: Vec<&str> = got[1][0].split('.').collect();
+    assert_eq!(parts.len(), 3, "not a x.y.z version: {:?}", got[1][0]);
+    assert!(
+        parts.iter().all(|p| p.parse::<u32>().is_ok()),
+        "not a x.y.z version: {:?}",
+        got[1][0]
+    );
+}

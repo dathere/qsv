@@ -48,6 +48,8 @@ pivotp options:
                             will be computed.
                             In pivot mode, if None, all remaining columns not specified on --on and --index
                             will be used; at least one of --index and --values must be specified.
+                            If no columns remain, len (the default then) counts the rows of each
+                            cell; any other aggregation needs --values.
                             In group-by mode, if omitted, a single "count" column is produced.
     -a, --agg <func>        The aggregation function to use:
                               first - First value encountered
@@ -96,6 +98,8 @@ pivotp options:
                             order: rows follow their index values' first appearance and
                             pivoted columns their <on-cols> values' first appearance.
     --col-separator <arg>   The separator in generated column names in case of multiple --values columns.
+                            A generated name that equals an index column's takes a _2 (_3, ...)
+                            suffix, with a warning.
                             (pivot mode only; ignored in group-by mode) [default: _]
     --validate              Report the pivot column(s)' cardinality before pivoting. Informational
                             only - it does not refuse a pivot; --max-columns does that.
@@ -1094,6 +1098,20 @@ fn log_mixed_sign(stats: &StatsData) {
     );
 }
 
+/// Polars names the pivoted columns `<value col><sep><pivot value>`, so two of them can
+/// coincide (`a_b` x `c` and `a` x `b_c` are both `a_b_c`). A clash with an index column can't
+/// happen here: the pivot runs on renamed copies of the index columns (#5123).
+fn pivot_name_clash(err: PolarsError) -> crate::CliError {
+    match err {
+        PolarsError::Duplicate(msg) => crate::CliError::IncorrectUsage(format!(
+            "The pivot would output two columns with the same name ({msg}): two generated column \
+             names coincide. Set a different --col-separator, or pass --values <cols> to pick the \
+             value columns."
+        )),
+        other => other.into(),
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
@@ -1346,13 +1364,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .map(std::string::String::as_str)
             .collect();
 
-        Some(
-            all_cols
-                .iter()
-                .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
-                .cloned()
-                .collect(),
-        )
+        let remaining: Vec<String> = all_cols
+            .iter()
+            .filter(|c| !on_set.contains(c.as_str()) && !index_set.contains(c.as_str()))
+            .cloned()
+            .collect();
+        if remaining.is_empty() {
+            // Every column is a pivot or index column (#5122). Len counts rows whatever the
+            // column, so count the first pivot column, as `--values <on-col>` does.
+            if agg_kind != AggKind::Len {
+                return fail_incorrectusage_clierror!(
+                    "No columns are left to aggregate: every column is in <on-cols> or --index. \
+                     Pass --values <cols>, or use --agg len to count rows."
+                );
+            }
+            Some(vec![oc[0].clone()])
+        } else {
+            Some(remaining)
+        }
     } else {
         // Group-by mode without --values: no value columns, just count rows
         None
@@ -1431,7 +1460,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let separator = PlSmallStr::from_str(&args.flag_col_separator);
 
         let on_selector = cols(on_cols.iter().map(std::string::String::as_str));
-        let index_selector = cols(actual_index_cols.iter().map(std::string::String::as_str));
+        // Pivot on copies of the index columns, under names no input or generated column takes,
+        // so a generated name equal to an index column's (`name` x `null` -> `name_null`) can't
+        // clash inside Polars. Such names get a suffix after the pivot (#5123).
+        let temp_index_cols: Vec<String> = (0..actual_index_cols.len())
+            .map(|i| format!("\u{1}qsv_pivotp_index_{i}"))
+            .collect();
+        lf = lf.with_columns(
+            actual_index_cols
+                .iter()
+                .zip(&temp_index_cols)
+                .map(|(c, t)| col(c.as_str()).alias(t.as_str()))
+                .collect::<Vec<_>>(),
+        );
+        let index_selector = cols(temp_index_cols.iter().map(std::string::String::as_str));
         let values_selector = cols(actual_value_cols.iter().map(std::string::String::as_str));
         let column_naming = PivotColumnNaming::default();
 
@@ -1452,7 +1494,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // 2.4 GB vs 0.88 GB. group_by_stable keeps first-appearance order, so row order is
             // unchanged.
             lf.group_by_stable(
-                actual_index_cols
+                temp_index_cols
                     .iter()
                     .chain(on_cols.iter())
                     .map(col)
@@ -1483,7 +1525,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 column_naming,
             )
             .with_optimizations(OptFlags::EAGER)
-            .collect()?
+            .collect()
+            .map_err(pivot_name_clash)?
         } else {
             lf.pivot(
                 on_selector,
@@ -1495,8 +1538,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 separator,
                 column_naming,
             )
-            .collect()?
+            .collect()
+            .map_err(pivot_name_clash)?
         };
+
+        // Give the index columns back their names. A generated column that has one of them
+        // takes the first free `<name>_<n>`, n from 2, instead (#5123).
+        let generated: Vec<String> = pivot_result
+            .get_column_names()
+            .into_iter()
+            .skip(temp_index_cols.len())
+            .map(polars::prelude::PlSmallStr::to_string)
+            .collect();
+        let index_set: HashSet<&str> = actual_index_cols
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+        let mut used: HashSet<String> = actual_index_cols
+            .iter()
+            .chain(&generated)
+            .cloned()
+            .collect();
+        let mut final_names = actual_index_cols.clone();
+        for name in generated {
+            if index_set.contains(name.as_str()) {
+                let renamed = (2_u64..)
+                    .map(|n| format!("{name}_{n}"))
+                    .find(|cand| !used.contains(cand))
+                    .unwrap_or_default();
+                used.insert(renamed.clone());
+                if !args.flag_quiet {
+                    eprintln!(
+                        "Renamed pivot column \"{name}\" to \"{renamed}\": an --index column has \
+                         that name."
+                    );
+                }
+                final_names.push(renamed);
+            } else {
+                final_names.push(name);
+            }
+        }
+        pivot_result.set_column_names(&final_names)?;
 
         // A cell with no rows: pivoting the raw rows gives 0 for sum and len, and null for every
         // other aggregation. Pivoting the pre-aggregated groups gives null throughout (the group

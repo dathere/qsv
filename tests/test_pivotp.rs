@@ -3241,3 +3241,149 @@ fn pivotp_sniff_preamble_skips_preamble_rows() {
     assert_eq!(got[0][..3], svec!["id", "n1", "n2"]);
     assert_eq!(got[1][..3], svec!["1", "10", "0"]);
 }
+
+// With every column in <on-cols> or --index, the default --values is empty: len counts rows of
+// each cell, the same as `--values <on-col>`, instead of failing in Polars (#5122).
+#[test]
+fn pivotp_no_remaining_values_counts_rows() {
+    let wrk = Workdir::new("pivotp_no_remaining_values_counts_rows");
+    wrk.create(
+        "ct.csv",
+        vec![
+            svec!["region", "sex"],
+            svec!["N", "M"],
+            svec!["N", "F"],
+            svec!["S", "M"],
+        ],
+    );
+    let expected = vec![
+        svec!["sex", "N", "S"],
+        svec!["M", "1", "1"],
+        svec!["F", "1", "0"],
+    ];
+    for extra in [
+        &["--agg", "len"][..],
+        &[],
+        &["--values", "region", "--agg", "len"],
+    ] {
+        let mut cmd = wrk.command("pivotp");
+        cmd.args(["region", "--index", "sex"])
+            .args(extra)
+            .arg("ct.csv");
+        let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+        assert_eq!(got, expected, "args: {extra:?}");
+    }
+}
+
+// Any aggregation other than len needs a value column; say so instead of a Polars error (#5122).
+#[test]
+fn pivotp_no_remaining_values_other_agg_errors() {
+    let wrk = Workdir::new("pivotp_no_remaining_values_other_agg_errors");
+    wrk.create(
+        "ct.csv",
+        vec![svec!["region", "sex"], svec!["N", "M"], svec!["S", "F"]],
+    );
+    let mut cmd = wrk.command("pivotp");
+    cmd.args(["region", "--index", "sex", "--agg", "sum", "ct.csv"]);
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("No columns are left to aggregate"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("Polars error"), "{stderr}");
+}
+
+// A generated column whose name equals an --index column's takes a `_<n>` suffix, with a
+// warning, instead of failing in Polars (#5123).
+#[test]
+fn pivotp_generated_name_clashes_with_index() {
+    let wrk = Workdir::new("pivotp_generated_name_clashes_with_index");
+    wrk.create(
+        "multi.csv",
+        vec![
+            svec!["id", "name", "name_null", "r"],
+            svec!["1", "Ana", "", ""],
+            svec!["2", "Bo", "NA", "8"],
+        ],
+    );
+    wrk.create(
+        "single.csv",
+        vec![
+            svec!["k", "p", "v"],
+            svec!["x", "k", "1"],
+            svec!["y", "z", "2"],
+        ],
+    );
+    let cases: [(&[&str], Vec<Vec<String>>, &str); 2] = [
+        // several value columns: `name` x pivot value `null` -> `name_null`
+        (
+            &["r", "--index", "name_null", "--agg", "len", "multi.csv"],
+            vec![
+                svec!["name_null", "id_null", "id_8", "name_null_2", "name_8"],
+                svec!["", "1", "0", "1", "0"],
+                svec!["NA", "0", "1", "0", "1"],
+            ],
+            "\"name_null\" to \"name_null_2\"",
+        ),
+        // one value column: the pivot value `k` -> `k`
+        (
+            &[
+                "p",
+                "--index",
+                "k",
+                "--values",
+                "v",
+                "--agg",
+                "sum",
+                "single.csv",
+            ],
+            vec![
+                svec!["k", "k_2", "z"],
+                svec!["x", "1", "0"],
+                svec!["y", "0", "2"],
+            ],
+            "\"k\" to \"k_2\"",
+        ),
+    ];
+    for (args, expected, warning) in cases {
+        let mut cmd = wrk.command("pivotp");
+        cmd.args(args);
+        let out = cmd.output().unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{args:?}: {stderr}");
+        assert!(stderr.contains(warning), "{args:?}: {stderr}");
+        let got: Vec<Vec<String>> = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(&out.stdout[..])
+            .records()
+            .map(|r| r.unwrap().iter().map(String::from).collect())
+            .collect();
+        assert_eq!(got, expected, "{args:?}");
+    }
+}
+
+// Two generated names that coincide (`a_b` x `c` and `a` x `b_c` are both `a_b_c`) can't be
+// fixed by renaming the index, so that stays a qsv usage error, not a raw Polars error.
+#[test]
+fn pivotp_generated_names_clash_with_each_other() {
+    let wrk = Workdir::new("pivotp_generated_names_clash_with_each_other");
+    wrk.create(
+        "gen.csv",
+        vec![
+            svec!["i", "a_b", "a", "p"],
+            svec!["x", "1", "2", "c"],
+            svec!["y", "3", "4", "b_c"],
+        ],
+    );
+    let mut cmd = wrk.command("pivotp");
+    cmd.args(["p", "--index", "i", "--agg", "sum", "gen.csv"]);
+    let out = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("two generated column names coincide") && stderr.contains("a_b_c"),
+        "{stderr}"
+    );
+}

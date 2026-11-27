@@ -333,11 +333,13 @@ pub fn convert_special_format(
     format: SpecialFormat,
     delim: u8,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    use std::sync::Arc;
+
     use polars::{
         io::avro::AvroReader,
         prelude::{
-            CsvWriter, IpcReader, JsonReader, LazyFileListReader, LazyJsonLineReader,
-            ParquetReader, PlRefPath, SerReader, SerWriter,
+            CsvWriter, DataType, IpcReader, JsonReader, LazyFileListReader, LazyJsonLineReader,
+            ParquetReader, PlRefPath, Schema, SerReader, SerWriter,
         },
     };
 
@@ -379,7 +381,25 @@ pub fn convert_special_format(
             } else {
                 // Infer from every row: Polars raises on a key that first appears past the
                 // inference window (pola-rs/polars#31139), and before that it dropped the key.
-                lf.with_infer_schema_length(None).finish()?
+                let mut inferred = lf.clone().with_infer_schema_length(None).finish()?;
+                let schema = inferred.collect_schema()?;
+                if schema.iter_values().any(DataType::is_nested) {
+                    // CSV can't hold nested data, so read nested values as their JSON text.
+                    let as_text: Schema = schema
+                        .iter()
+                        .map(|(name, dtype)| {
+                            let dtype = if dtype.is_nested() {
+                                DataType::String
+                            } else {
+                                dtype.clone()
+                            };
+                            (name.clone(), dtype)
+                        })
+                        .collect();
+                    lf.with_schema(Some(Arc::new(as_text))).finish()?
+                } else {
+                    inferred
+                }
             }
             .collect()?
         },

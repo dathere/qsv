@@ -32,6 +32,19 @@ ignore = [
     # askama main already swapped it for `toml` (askama-rs/askama#594); clears on
     # the next askama release (0.16.1 is still the latest). See dathere/qsv#4860.
     "RUSTSEC-2026-0374",
+
+    # ---------------------------------------------------------------------
+    # vulnerabilities in code paths qsv does not compile or reach
+    # ---------------------------------------------------------------------
+
+    # RUSTSEC-2026-0594: cookie private-cookie nonce reuse after fork().
+    #   qsv (viz_static) -> plotly -> plotly_static -> fantoccini -> webdriver 0.54
+    #       -> cookie 0.16.2
+    # Only PrivateJar is affected; it is behind cookie's opt-in `private` feature,
+    # which nothing enables (no aes-gcm/rand in the Cargo.lock entry). qsv also never
+    # forks without exec. reqwest's cookie is already the patched 0.18.3. Clears when
+    # webdriver (0.54.0 is still the latest) moves to cookie >=0.18.3. See dathere/qsv#5109.
+    "RUSTSEC-2026-0594",
 ]
 
 [yanked]

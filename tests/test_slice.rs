@@ -724,6 +724,26 @@ fn slice_from_jsonl() {
 
 #[cfg(feature = "polars")]
 #[test]
+fn slice_from_jsonl_with_late_key() {
+    // A key that first appears after Polars' 100-row inference window. Since
+    // pola-rs/polars#31139 such a key fails the read of an inferred schema (before, it was
+    // dropped), so the JSONL conversion infers from the whole file and keeps the key.
+    let wrk = Workdir::new("slice_from_jsonl_with_late_key");
+    let mut jsonl: String = (1..150).map(|i| format!("{{\"id\":{i}}}\n")).collect();
+    jsonl.push_str("{\"id\":150,\"late\":\"x\"}\n");
+    wrk.create_from_string("late.jsonl", &jsonl);
+
+    let mut cmd = wrk.command("slice");
+    cmd.arg("late.jsonl").args(["--start", "148"]);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["id", "late"], svec!["149", ""], svec!["150", "x"]]
+    );
+}
+
+#[cfg(feature = "polars")]
+#[test]
 fn slice_from_avro() {
     let wrk = Workdir::new("slice_from_avro");
     let test_file = wrk.load_test_file("NYC311-5.avro");

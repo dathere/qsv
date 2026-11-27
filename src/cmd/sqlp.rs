@@ -137,8 +137,8 @@ Examples:
 
   # read_ndjson() takes Polars' scan_ndjson options the same way: schema, schema_overrides,
   # infer_schema_length, ignore_errors and include_file_paths.
-  # Infer the schema from the whole file, so a key that first appears late isn't dropped
-  # (by default, only the first 100 rows are used):
+  # Infer the schema from the whole file. By default only the first 100 rows are used, and
+  # a key that first appears later fails the query with "extra field in NDJSON data":
   $ qsv sqlp SKIP_INPUT "select * from read_ndjson('events.jsonl', infer_schema_length => NULL)"
   # Type a column, and read a nested object as its JSON text. CSV output can't hold nested
   # data, so this avoids the "CSV format does not support nested data" error:
@@ -224,7 +224,10 @@ sqlp options:
                               that you may want to try to set `--ignore-errors` to relax
                               the CSV parsing of dates.
                               Polars reads slash, dash and dot dates as day-first, so
-                              01/05/2024 becomes 2024-05-01. So does CAST(col AS DATE).
+                              01/05/2024 becomes 2024-05-01. Without this option, the
+                              column stays a string, and CAST(col AS DATE) of a string
+                              reads only year-first dates (2024-05-01, 2024/5/1): it
+                              fails on 01/05/2024, and TRY_CAST returns NULL.
                               For month-first (US) dates, leave this off and use
                               STRPTIME(col, '%m/%d/%Y') in the query instead.
     --infer-len <arg>         The number of rows to scan when inferring the schema of the CSV.

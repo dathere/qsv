@@ -548,8 +548,8 @@ serial_test = { version = "4.0", features = ["file_locks"] }
 [patch.crates-io]
 # polars-readstat-rs depends on these directly; redirect them onto the same git polars
 # revision qsv pins, otherwise a second, incompatible polars tree resolves from crates.io. (#5021)
-polars-core  = { git = "https://github.com/pola-rs/polars", rev = "08b2814ce6386c0efe0fea512912353f42a8b7b6" }
-polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "08b2814ce6386c0efe0fea512912353f42a8b7b6" }
+polars-core  = { git = "https://github.com/pola-rs/polars", rev = "4ba28fb5c5d911fdf8a42b40d842158b19456347" }
+polars-arrow = { git = "https://github.com/pola-rs/polars", rev = "4ba28fb5c5d911fdf8a42b40d842158b19456347" }
 # polars-readstat-rs 0.27.1 calls DataFrame/Series::slice(offset, len), which polars main
 # replaced with slice(impl Into<Slice>) (pola-rs/polars#30887). Our fork (upstream 0.27.1 plus
 # one commit) passes the pair as a tuple; upstream can't take it while it builds on crates.io
@@ -627,9 +627,9 @@ compact_bytes = { git = "https://github.com/jqnatividad/compact_bytes", branch =
 #      and the commit hash 52ea381)
 # ================================
 # Keep the next line bare: build.rs reads everything after `=` into --version.
-# QSV_POLARS_REV=py-2.1.0:08b2814
-# polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.1.0", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "08b2814ce6386c0efe0fea512912353f42a8b7b6", optional = true }
+# QSV_POLARS_REV=py-2.2.0:4ba28fb
+# polars = { git = "https://github.com/pola-rs/polars", tag = "py-2.2.0", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "4ba28fb5c5d911fdf8a42b40d842158b19456347", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

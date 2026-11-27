@@ -5949,6 +5949,10 @@ fn sqlp_cast_temporal_error_payloads() {
     //     <dates|times>"
     // Before the rewrite both cases produced the first message, so the
     // format-inference failure is the new signal.
+    // pola-rs/polars#31082 then made string->DATE/TIMESTAMP casts read only year-first dates
+    // instead of inferring a format, so an all-bad DATE column reports the "conversion ...
+    // failed" error again (on py-2.2.0: "could not find an appropriate format to parse
+    // dates"). TIME casts still infer.
     let wrk = Workdir::new("sqlp_cast_temporal_error_payloads");
     wrk.create(
         "allbad.csv",
@@ -5961,7 +5965,8 @@ fn sqlp_cast_temporal_error_payloads() {
         .arg("SELECT id, CAST(s AS DATE) AS d FROM allbad");
     let date_stderr = wrk.stderr_on_error(&mut date_cmd);
     assert!(
-        date_stderr.contains("could not find an appropriate format to parse dates"),
+        date_stderr.contains("conversion from `str` to `date` failed")
+            && date_stderr.contains("aaa"),
         "unexpected stderr: {date_stderr}"
     );
 
@@ -6601,13 +6606,27 @@ fn sqlp_read_ndjson_named_options() {
         vec![svec!["id", "late"], svec!["1", ""], svec!["2", "x"]]
     );
 
+    // pola-rs/polars#31139: a key that first appears past infer_schema_length fails the query
+    // (on py-2.2.0 it was silently dropped). `SELECT *`: a projection that leaves the key out
+    // doesn't fail.
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT").arg(
+        "SELECT * FROM read_ndjson('ev.ndjson', schema_overrides => {'payload': 'VARCHAR'}, \
+         infer_schema_length => 1)",
+    );
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("extra field in NDJSON data: late"),
+        "unexpected stderr: {stderr}"
+    );
+
     // schema_overrides types `date` and reads the nested `payload` as JSON text,
     // which CSV output can hold; include_file_paths adds the source column.
     let mut cmd = wrk.command("sqlp");
     cmd.arg("SKIP_INPUT").arg(
         "SELECT id, YEAR(date) AS y, payload, src FROM read_ndjson('ev.ndjson', schema_overrides \
-         => {'date': 'DATE', 'payload': 'VARCHAR'}, infer_schema_length => 1, include_file_paths \
-         => 'src') ORDER BY id",
+         => {'date': 'DATE', 'payload': 'VARCHAR'}, infer_schema_length => NULL, \
+         include_file_paths => 'src') ORDER BY id",
     );
     let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
@@ -8683,5 +8702,94 @@ fn sqlp_cache_schema_sniff_preamble_keeps_its_own_schema() {
     assert_eq!(
         std::fs::read_to_string(wrk.path("p.csv.pschema.json")).unwrap(),
         unskipped
+    );
+}
+
+// Polars SQL behavior changed between 08b2814 (py-2.2.0) and 4ba28fb.
+
+#[test]
+fn sqlp_cast_string_to_date_reads_year_first_only() {
+    // pola-rs/polars#31082: a SQL cast of a string to DATE reads only year-first dates. On
+    // py-2.2.0 the format was guessed from the column's first value, so `3/5/2024` came back
+    // as 2024-05-03 and the year-first rows after it were NULL.
+    let wrk = Workdir::new("sqlp_cast_string_to_date_reads_year_first_only");
+    wrk.create(
+        "d.csv",
+        vec![
+            svec!["d"],
+            svec!["3/5/2024"],
+            svec!["2024-03-05"],
+            svec!["2024/3/5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv")
+        .arg("SELECT d, TRY_CAST(d AS DATE) AS td FROM d");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["d", "td"],
+            svec!["3/5/2024", ""],
+            svec!["2024-03-05", "2024-03-05"],
+            svec!["2024/3/5", "2024-03-05"],
+        ]
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv").arg("SELECT CAST('3/5/2024' AS DATE) AS x");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("a cast reads a date with the year first"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // TIMESTAMP too: on py-2.2.0 this gave 2024-05-03T10:30:00 and a NULL for the ISO row.
+    wrk.create(
+        "ts.csv",
+        vec![
+            svec!["ts"],
+            svec!["3/5/2024 10:30:00"],
+            svec!["2024-03-05 10:30:00"],
+        ],
+    );
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("ts.csv")
+        .arg("SELECT ts, TRY_CAST(ts AS TIMESTAMP) AS t FROM ts");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "t"],
+            svec!["3/5/2024 10:30:00", ""],
+            svec!["2024-03-05 10:30:00", "2024-03-05T10:30:00.000000"],
+        ]
+    );
+
+    // a format still reads it
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("d.csv")
+        .arg("SELECT STRPTIME('3/5/2024', '%d/%m/%Y') AS x");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[1][0].get(..10), Some("2024-05-03"));
+}
+
+#[test]
+fn sqlp_version_function() {
+    // pola-rs/polars#31077 added SQL `version()`, the Polars crate version.
+    let wrk = Workdir::new("sqlp_version_function");
+    wrk.create("t.csv", vec![svec!["a"], svec!["1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("t.csv").arg("SELECT version() AS v");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got[0], svec!["v"]);
+    let parts: Vec<&str> = got[1][0].split('.').collect();
+    assert_eq!(parts.len(), 3, "not a x.y.z version: {:?}", got[1][0]);
+    assert!(
+        parts.iter().all(|p| p.parse::<u32>().is_ok()),
+        "not a x.y.z version: {:?}",
+        got[1][0]
     );
 }

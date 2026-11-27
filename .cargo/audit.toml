@@ -33,6 +33,26 @@ ignore = [
     # the next askama release (0.16.1 is still the latest). See dathere/qsv#4860.
     "RUSTSEC-2026-0374",
 
+    # RUSTSEC-2026-0543: chrono is unmaintained.
+    #   qsv -> polars-* (14 crates), arrow-* (4), object_store, calamine, fake,
+    #       spreadsheet-ods, csvs_convert, qsv-dateparser -> chrono
+    # Also used directly by qsv. Migrating qsv itself (e.g. to jiff) would not drop
+    # it from the tree; clears only once polars and arrow move off chrono.
+    # See dathere/qsv#5070.
+    "RUSTSEC-2026-0543",
+
+    # RUSTSEC-2026-0555: chrono-tz is unmaintained.
+    #   qsv -> polars-arrow (and the rest of polars) -> chrono-tz
+    # Also used directly by qsv (clitypes, datefmt, sample). Clears with chrono above.
+    # See dathere/qsv#5071.
+    "RUSTSEC-2026-0555",
+
+    # RUSTSEC-2026-0542: humantime is unmaintained.
+    #   qsv -> polars-io -> object_store -> humantime
+    # The advisory says humantime wraps chrono, but the locked 2.4.0 has no
+    # dependencies. Clears when object_store drops humantime. See dathere/qsv#5072.
+    "RUSTSEC-2026-0542",
+
     # ---------------------------------------------------------------------
     # vulnerabilities in code paths qsv does not compile or reach
     # ---------------------------------------------------------------------

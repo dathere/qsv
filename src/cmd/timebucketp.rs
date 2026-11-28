@@ -532,9 +532,20 @@ fn mixed_index_expr(
     else {
         return Ok(None);
     };
-    let other_format = index_date_format(&value, prefer_dmy);
+    // a day/month first value settles the order for the rest too
+    // Some(true) for day-first, Some(false) for month-first, None for year-first or inferred
+    let day_first = |f: Option<&str>| match f.and_then(|f| f.get(..2)) {
+        Some("%d") => Some(true),
+        Some("%m") => Some(false),
+        _ => None,
+    };
+    let first_order = day_first(format);
+    let other_format = index_date_format(&value, first_order.unwrap_or(prefer_dmy));
     let other_is_kind = match other_format.as_deref() {
-        Some(f) => format_has_time(f) == first_is_date,
+        Some(f) => {
+            format_has_time(f) == first_is_date
+                && first_order.is_none_or(|o| day_first(Some(f)) == Some(o))
+        },
         None => first_is_date && looks_like_datetime(&value),
     };
     if !other_is_kind {
@@ -616,6 +627,7 @@ fn format_has_time(fmt: &str) -> bool {
 fn explain(
     err: PolarsError,
     sorted: bool,
+    date_format_given: bool,
     text_index: Option<&(LazyFrame, String, Expr)>,
 ) -> crate::clitypes::CliError {
     let msg = err.to_string();
@@ -643,7 +655,7 @@ fn explain(
                 looks_like_datetime(v)
                     || index_date_format(v, false).is_some_and(|f| format_has_time(&f))
             });
-        if let Some(value) = datetime_value {
+        if let Some(value) = datetime_value.filter(|_| date_format_given) {
             return crate::clitypes::CliError::Other(format!(
                 "The --index column mixes dates and datetimes (e.g. \"{value}\"), which a \
                  --date-format without time fields cannot parse. Drop --date-format to read the \
@@ -691,7 +703,17 @@ fn explain(
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
+    bucket(&args, false)
+}
 
+/// Whether a failed run should be retried with `mixed_index_expr`: a guessed text index whose
+/// strict parse failed. Checking for a mixed index up front would cost a pass over the index
+/// on every run; this costs one failed attempt, and only on input that used to be an error.
+fn retry_mixed(err: &PolarsError, guessed_text_index: bool) -> bool {
+    guessed_text_index && err.to_string().contains("conversion from `str` to")
+}
+
+fn bucket(args: &Args, try_mixed: bool) -> CliResult<()> {
     let Some(index) = args.flag_index.clone() else {
         return fail_incorrectusage_clierror!("--index <col> is required.");
     };
@@ -924,7 +946,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map(|n| Column::new_empty(n.as_str().into(), &DataType::String))
                 .collect(),
         )?;
-        return write_output(&mut empty, &args, output_delim);
+        return write_output(&mut empty, args, output_delim);
     }
 
     // Polars rejects an integer-index duration (e.g. 0i) on a temporal index, and vice versa.
@@ -943,6 +965,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     // the unparsed input and the index parse, to name a bad value if the windows fail
     let mut text_index: Option<(LazyFrame, String, Expr)> = None;
+    let mut retryable = false;
     match index_dtype {
         DataType::Datetime(unit, tz) if nanos && unit != TimeUnit::Nanoseconds => {
             lf = lf.with_column(
@@ -965,7 +988,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             });
             let guessed = args.flag_date_format.is_none();
             let mixed = match first.as_deref() {
-                Some(v) if guessed => {
+                Some(v) if guessed && try_mixed => {
                     mixed_index_expr(&lf, &index, format.as_deref(), v, prefer_dmy, nanos)?
                 },
                 _ => None,
@@ -982,6 +1005,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             });
             text_index = Some((lf.clone(), index.clone(), parsed.clone()));
             lf = lf.with_column(parsed);
+            retryable = guessed && !try_mixed;
         },
         dt => {
             return fail_incorrectusage_clierror!(
@@ -1040,11 +1064,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             descending_step.over(by_cols.iter().map(|c| col(c.as_str())).collect::<Vec<_>>())?
         };
-        let unsorted = lf
+        let unsorted = match lf
             .clone()
             .select([check.any(true).alias("unsorted")])
             .collect()
-            .map_err(|e| explain(e, true, text_index.as_ref()))?;
+        {
+            Err(e) if retry_mixed(&e, retryable) => return bucket(args, true),
+            r => r.map_err(|e| {
+                explain(
+                    e,
+                    true,
+                    args.flag_date_format.is_some(),
+                    text_index.as_ref(),
+                )
+            })?,
+        };
         if unsorted.column("unsorted")?.bool()?.get(0) == Some(true) {
             return fail_clierror!(
                 "--sorted was given, but the input is not sorted by --index{}. Drop --sorted to \
@@ -1110,10 +1144,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         )
     };
-    let mut result = grouped
-        .agg(agg_exprs)
-        .collect()
-        .map_err(|e| explain(e, args.flag_sorted, text_index.as_ref()))?;
+    let mut result = match grouped.agg(agg_exprs).collect() {
+        Err(e) if retry_mixed(&e, retryable) => return bucket(args, true),
+        r => r.map_err(|e| {
+            explain(
+                e,
+                args.flag_sorted,
+                args.flag_date_format.is_some(),
+                text_index.as_ref(),
+            )
+        })?,
+    };
 
     if args.flag_fill_gaps
         && let Some(every) = every
@@ -1158,7 +1199,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         )?;
     }
 
-    write_output(&mut result, &args, output_delim)
+    write_output(&mut result, args, output_delim)
 }
 
 fn write_output(result: &mut DataFrame, args: &Args, output_delim: u8) -> CliResult<()> {

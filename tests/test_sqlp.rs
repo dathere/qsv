@@ -8828,9 +8828,19 @@ fn sqlp_refuses_jsonl_input() {
     cmd.arg("s3.jsonl.sz").arg("SELECT 1 AS x");
     let stderr = wrk.stderr_on_error(&mut cmd);
     assert!(
-        stderr.contains("s3.jsonl.sz is a JSONL/NDJSON file"),
+        stderr.contains("s3.jsonl.sz is a JSONL/NDJSON file")
+            && stderr.contains("Decompress it first")
+            && stderr.contains("read_ndjson('s3.jsonl')"),
         "unexpected stderr: {stderr}"
     );
+
+    // a directory that only carries a JSONL-looking name is expanded, not refused
+    std::fs::create_dir(wrk.path("batch.jsonl")).unwrap();
+    std::fs::write(wrk.path("batch.jsonl").join("b.csv"), "id\n7\n").unwrap();
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("batch.jsonl").arg("SELECT id FROM b");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["id"], svec!["7"]]);
 
     // a JSONL file found by expanding a directory input is named without its temp path
     std::fs::create_dir(wrk.path("dir")).unwrap();

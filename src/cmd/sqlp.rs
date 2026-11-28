@@ -1055,12 +1055,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // An input table is read with Polars' CSV reader, which would take a JSONL file's first
     // line as the header and split each object at its commas (#5126). Check the names as
     // given first, so the hint names the user's file (not a temp copy) and stdin isn't spooled.
-    if let Some(jsonl) = args.arg_input.iter().find(|path| is_jsonl_path(path)) {
-        let jsonl = jsonl.display();
+    // (only existing files: a directory or a `dc:` handle may carry such a name and resolve to
+    // CSVs; the check after expansion covers what they hold)
+    if let Some(jsonl) = args
+        .arg_input
+        .iter()
+        .find(|path| path.is_file() && is_jsonl_path(path))
+    {
+        let (decompress, example) = if jsonl
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+        {
+            (" Decompress it first.", jsonl.with_extension(""))
+        } else {
+            ("", jsonl.clone())
+        };
         return fail_incorrectusage_clierror!(
-            "{jsonl} is a JSONL/NDJSON file, which sqlp can't read as an input table. Use the \
-             read_ndjson() table function instead (decompress a .sz file first), e.g.:\n  qsv \
-             sqlp SKIP_INPUT \"SELECT * FROM read_ndjson('{jsonl}')\""
+            "{} is a JSONL/NDJSON file, which sqlp can't read as an input table.{decompress} Use \
+             the read_ndjson() table function instead, e.g.:\n  qsv sqlp SKIP_INPUT \"SELECT * \
+             FROM read_ndjson('{}')\"",
+            jsonl.display(),
+            example.display()
         );
     }
     // stdin is copied to a temp `stdin.csv`, whose made-up extension must not pick the delimiter

@@ -21,7 +21,8 @@ Usage:
 
 joinp arguments:
     Both <input1> aka <left> & <input2> aka <right> files need to have headers.
-    Stdin is not supported.
+    Stdin is not supported. JSONL/NDJSON (.jsonl/.ndjson) inputs are refused: convert them
+    with `qsv jsonl` first, or join them in sqlp with the read_ndjson() table function.
 
     The columns arguments specify the columns to join for each input. Columns are
     referenced by name. Specify multiple columns by separating them with a comma.
@@ -296,7 +297,7 @@ use crate::{
         STREAM_BATCH_ROWS, SharedOutput, StreamWriter, compress_output_if_needed,
         open_staged_output, sink_to,
     },
-    config::Delimiter,
+    config::{Delimiter, SpecialFormat, get_special_format},
     util,
     util::get_stats_records,
 };
@@ -1286,6 +1287,17 @@ impl Args {
         let mut input2_path = PathBuf::from(&self.arg_input2);
         if !input2_path.exists() {
             return fail_clierror!("Input file {} does not exist.", self.arg_input2);
+        }
+        // Inputs are read with Polars' CSV reader, which would take a JSONL file's first line
+        // as the header and split each object at its commas (#5126).
+        for input in [&self.arg_input1, &self.arg_input2] {
+            if get_special_format(Path::new(input)) == SpecialFormat::Jsonl {
+                return fail_incorrectusage_clierror!(
+                    "{input} is a JSONL/NDJSON file, which joinp can't read. Convert it to CSV \
+                     first, e.g. `qsv jsonl {input} > data.csv`, or join it in sqlp with the \
+                     read_ndjson() table function."
+                );
+            }
         }
 
         // Handle snappy compression for left input

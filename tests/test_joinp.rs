@@ -706,6 +706,29 @@ joinp_test_comments!(
 );
 
 #[test]
+fn joinp_refuses_jsonl_input() {
+    // #5126: joinp read a JSONL input with the CSV reader (its first line became the header),
+    // so the join failed with a confusing ColumnNotFound. It now refuses it up front.
+    let wrk = Workdir::new("joinp_refuses_jsonl_input");
+    wrk.create_from_string(
+        "s.jsonl",
+        "{\"id\": 1, \"v\": \"a\"}\n{\"id\": 2, \"v\": \"b\"}\n",
+    );
+    wrk.create("k.csv", vec![svec!["id", "w"], svec!["1", "x"]]);
+
+    for (left, right) in [("s.jsonl", "k.csv"), ("k.csv", "s.jsonl")] {
+        let mut cmd = wrk.command("joinp");
+        cmd.args(["id", left, "id", right]);
+        let stderr = wrk.stderr_on_error(&mut cmd);
+        assert!(
+            stderr.contains("s.jsonl is a JSONL/NDJSON file, which joinp can't read")
+                && stderr.contains("qsv jsonl s.jsonl"),
+            "unexpected stderr ({left} {right}): {stderr}"
+        );
+    }
+}
+
+#[test]
 fn joinp_cross() {
     let wrk = Workdir::new("join_cross");
     wrk.create(

@@ -8793,3 +8793,39 @@ fn sqlp_version_function() {
         got[1][0]
     );
 }
+
+#[test]
+fn sqlp_refuses_jsonl_input() {
+    // #5126: an input table is read with the CSV reader, so a JSONL file's first line became
+    // the header and COUNT(*) was one short. sqlp now refuses it and points to read_ndjson().
+    let wrk = Workdir::new("sqlp_refuses_jsonl_input");
+    let jsonl = "{\"id\": 1, \"v\": \"a\"}\n{\"id\": 2, \"v\": \"b\"}\n{\"id\": 3, \"v\": \"c\"}\n";
+    wrk.create_from_string("s.jsonl", jsonl);
+    wrk.create_from_string("s2.NDJSON", jsonl);
+    wrk.create("k.csv", vec![svec!["id"], svec!["1"]]);
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s.jsonl").arg("SELECT COUNT(*) AS n FROM s");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("s.jsonl is a JSONL/NDJSON file")
+            && stderr.contains("read_ndjson('s.jsonl')"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // any position, any case of the extension
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("k.csv").arg("s2.NDJSON").arg("SELECT 1 AS x");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("s2.NDJSON is a JSONL/NDJSON file"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // the documented route reads every record
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("SKIP_INPUT")
+        .arg("SELECT COUNT(*) AS n FROM read_ndjson('s.jsonl')");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["n"], svec!["3"]]);
+}

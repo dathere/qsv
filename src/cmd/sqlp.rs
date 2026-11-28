@@ -193,6 +193,8 @@ sqlp arguments:
                            decompressed automatically.
                            Column headers are required. Use 'qsv rename _all_generic --no-headers'
                            to add generic column names (_col_N) to a CSV with no headers.
+                           A JSONL/NDJSON (.jsonl/.ndjson) input is refused: query it with
+                           the read_ndjson() table function and SKIP_INPUT instead.
                            If you are using Polars SQL's table functions like read_csv() & read_parquet()
                            to read input files directly in the SQL statement, you can use the sentinel value
                            'SKIP_INPUT' to skip input preprocessing.
@@ -357,7 +359,7 @@ use serde::Deserialize;
 use crate::{
     CliResult,
     cmd::joinp::path_delim,
-    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter},
+    config::{Config, DEFAULT_WTR_BUFFER_CAPACITY, Delimiter, SpecialFormat, get_special_format},
     util,
 };
 
@@ -1050,6 +1052,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         inputs
     };
+    // An input table is read with Polars' CSV reader, which would take a JSONL file's first
+    // line as the header and split each object at its commas (#5126).
+    if let Some(jsonl) = args
+        .arg_input
+        .iter()
+        .find(|path| get_special_format(path) == SpecialFormat::Jsonl)
+    {
+        let jsonl = jsonl.display();
+        return fail_incorrectusage_clierror!(
+            "{jsonl} is a JSONL/NDJSON file, which sqlp can't read as an input table. Use the \
+             read_ndjson() table function instead, e.g.:\n  qsv sqlp SKIP_INPUT \"SELECT * FROM \
+             read_ndjson('{jsonl}')\""
+        );
+    }
 
     let rnull_values = if args.flag_rnull_values == "<empty string>" {
         vec![PlSmallStr::EMPTY]

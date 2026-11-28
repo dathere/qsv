@@ -30,7 +30,9 @@ the --date-format option. A text column whose every value is a date is
 parsed the same way for min, max, mean, median and quantile, so it compares
 as dates; first, last and --by keep values as written (unless a pschema.json
 types them). Dates need 4-digit years unless --date-format is given. An index
-that does not parse as dates is an error, as is an empty index value.
+that does not parse as dates is an error, as is an empty index value. An
+index that mixes dates and datetimes, as `qsv datefmt` writes midnight
+values, is read as datetimes, its dates as midnight.
 
 A pschema.json made by `qsv schema --polars` while QSV_PREFER_DMY was set
 marks day/month dates as already parsed, so they stay day-first in later
@@ -453,6 +455,19 @@ fn text_date_expr(
     guessed: bool,
     nanos: bool,
 ) -> Expr {
+    text_date_expr_of(col(name), name, format, first, strict, guessed, nanos)
+}
+
+/// `text_date_expr` of any text expression, aliased to `name`.
+fn text_date_expr_of(
+    input: Expr,
+    name: &str,
+    format: Option<&str>,
+    first: Option<&str>,
+    strict: bool,
+    guessed: bool,
+    nanos: bool,
+) -> Expr {
     use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
     let options = StrptimeOptions {
         format: format.map(PlSmallStr::from_str),
@@ -460,11 +475,11 @@ fn text_date_expr(
         ..Default::default()
     };
     let parsed = if format.is_some_and(|f| !format_has_time(f)) {
-        col(name).str().to_date(options)
+        input.str().to_date(options)
     } else {
         let zoned =
             format.is_none() && first.and_then(infer_pattern_single) == Some(Pattern::DatetimeYMDZ);
-        col(name).str().to_datetime(
+        input.str().to_datetime(
             nanos.then_some(TimeUnit::Nanoseconds),
             zoned.then_some(TimeZone::UTC),
             options,
@@ -472,7 +487,7 @@ fn text_date_expr(
         )
     };
     if !guessed {
-        return parsed;
+        return parsed.alias(name);
     }
     // A guessed or inferred format's %Y also takes 2-digit years (10/06/24, 10/06/ 24 or
     // 24-10-06T10:15 as the year 24), and only the first value is checked, so years before
@@ -481,6 +496,92 @@ fn text_date_expr(
         .then(lit(NULL))
         .otherwise(parsed)
         .alias(name)
+}
+
+/// A text index that mixes dates and datetimes, e.g. `qsv datefmt` output, which drops midnight
+/// times. Parses it as datetimes, its dates as midnight: values in the first value's `format`
+/// as such, the rest strictly in the format of the first value that does not match it. None when
+/// every value matches `format`, or the first that does not is no date or datetime of the other
+/// kind.
+fn mixed_index_expr(
+    lf: &LazyFrame,
+    name: &str,
+    format: Option<&str>,
+    first: &str,
+    prefer_dmy: bool,
+    nanos: bool,
+) -> CliResult<Option<Expr>> {
+    use polars::chunked_array::temporal::string::{infer::infer_pattern_single, patterns::Pattern};
+    let first_is_date = format.is_some_and(|f| !format_has_time(f));
+    let primary = text_date_expr_of(col(name), name, format, Some(first), false, false, nanos);
+    let unmatched = lf
+        .clone()
+        .select([col(name)])
+        .filter(col(name).is_not_null().and(primary.clone().is_null()))
+        .limit(1)
+        .collect()?;
+    // ChunkedArray::get panics out of bounds; no row means every value matches `format`
+    if unmatched.height() == 0 {
+        return Ok(None);
+    }
+    let Some(value) = unmatched
+        .column(name)?
+        .str()?
+        .get(0)
+        .map(|v| v.trim().to_string())
+    else {
+        return Ok(None);
+    };
+    // a day/month first value settles the order for the rest too
+    // Some(true) for day-first, Some(false) for month-first, None for year-first or inferred
+    let day_first = |f: Option<&str>| match f.and_then(|f| f.get(..2)) {
+        Some("%d") => Some(true),
+        Some("%m") => Some(false),
+        _ => None,
+    };
+    let first_order = day_first(format);
+    let other_format = index_date_format(&value, first_order.unwrap_or(prefer_dmy));
+    let other_is_kind = match other_format.as_deref() {
+        Some(f) => {
+            format_has_time(f) == first_is_date
+                && first_order.is_none_or(|o| day_first(Some(f)) == Some(o))
+        },
+        None => first_is_date && looks_like_datetime(&value),
+    };
+    if !other_is_kind {
+        return Ok(None);
+    }
+    // parse the rest on its own, so a format inferred by Polars comes from one of its values
+    let others = text_date_expr_of(
+        when(primary.clone().is_null())
+            .then(col(name))
+            .otherwise(lit(NULL)),
+        name,
+        other_format.as_deref(),
+        Some(&value),
+        true,
+        false,
+        nanos,
+    );
+    let zoned = |f: Option<&str>, v: &str| {
+        f.is_none() && infer_pattern_single(v) == Some(Pattern::DatetimeYMDZ)
+    };
+    let dtype = DataType::Datetime(
+        if nanos {
+            TimeUnit::Nanoseconds
+        } else {
+            TimeUnit::Microseconds
+        },
+        (zoned(format, first) || zoned(other_format.as_deref(), &value)).then_some(TimeZone::UTC),
+    );
+    let parsed = polars::lazy::dsl::coalesce(&[primary.cast(dtype.clone()), others.cast(dtype)]);
+    // as in text_date_expr: a guessed %Y also takes 2-digit years
+    Ok(Some(
+        when(parsed.clone().dt().year().lt(lit(1000)))
+            .then(lit(NULL))
+            .otherwise(parsed)
+            .alias(name),
+    ))
 }
 
 /// Whether a chrono/strptime format has any time-of-day field, skipping `%%` literals and the
@@ -526,6 +627,7 @@ fn format_has_time(fmt: &str) -> bool {
 fn explain(
     err: PolarsError,
     sorted: bool,
+    date_format_given: bool,
     text_index: Option<&(LazyFrame, String, Expr)>,
 ) -> crate::clitypes::CliError {
     let msg = err.to_string();
@@ -544,6 +646,23 @@ fn explain(
     } else if let Some(pos) = msg.find("conversion from `str` to") {
         // keep Polars' first line (which values failed), not its nested expression context
         let detail = msg[pos..].lines().next().unwrap_or_default();
+        // Polars lists the failing values as `["v1", "v2"]`
+        let datetime_value = detail
+            .starts_with("conversion from `str` to `date`")
+            .then(|| detail.split_once("[\"")?.1.split('"').next())
+            .flatten()
+            .filter(|v| {
+                looks_like_datetime(v)
+                    || index_date_format(v, false).is_some_and(|f| format_has_time(&f))
+            });
+        if let Some(value) = datetime_value.filter(|_| date_format_given) {
+            return crate::clitypes::CliError::Other(format!(
+                "The --index column mixes dates and datetimes (e.g. \"{value}\"), which a \
+                 --date-format without time fields cannot parse. Drop --date-format to read the \
+                 dates as midnight, or make every value a full datetime, e.g. with `qsv datefmt \
+                 <col> --keep-zero-time`. ({detail})"
+            ));
+        }
         return crate::clitypes::CliError::Other(format!(
             "Some values do not match their date format: {detail}. Day-first dates need \
              QSV_PREFER_DMY, or set the index format with --date-format."
@@ -584,7 +703,17 @@ fn explain(
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
+    bucket(&args, false)
+}
 
+/// Whether a failed run should be retried with `mixed_index_expr`: a guessed text index whose
+/// strict parse failed. Checking for a mixed index up front would cost a pass over the index
+/// on every run; this costs one failed attempt, and only on input that used to be an error.
+fn retry_mixed(err: &PolarsError, guessed_text_index: bool) -> bool {
+    guessed_text_index && err.to_string().contains("conversion from `str` to")
+}
+
+fn bucket(args: &Args, try_mixed: bool) -> CliResult<()> {
     let Some(index) = args.flag_index.clone() else {
         return fail_incorrectusage_clierror!("--index <col> is required.");
     };
@@ -817,7 +946,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .map(|n| Column::new_empty(n.as_str().into(), &DataType::String))
                 .collect(),
         )?;
-        return write_output(&mut empty, &args, output_delim);
+        return write_output(&mut empty, args, output_delim);
     }
 
     // Polars rejects an integer-index duration (e.g. 0i) on a temporal index, and vice versa.
@@ -836,6 +965,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     // the unparsed input and the index parse, to name a bad value if the windows fail
     let mut text_index: Option<(LazyFrame, String, Expr)> = None;
+    let mut retryable = false;
     match index_dtype {
         DataType::Datetime(unit, tz) if nanos && unit != TimeUnit::Nanoseconds => {
             lf = lf.with_column(
@@ -856,16 +986,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .as_deref()
                     .and_then(|v| index_date_format(v, prefer_dmy))
             });
-            let parsed = text_date_expr(
-                &index,
-                format.as_deref(),
-                first.as_deref(),
-                true,
-                args.flag_date_format.is_none(),
-                nanos,
-            );
+            let guessed = args.flag_date_format.is_none();
+            let mixed = match first.as_deref() {
+                Some(v) if guessed && try_mixed => {
+                    mixed_index_expr(&lf, &index, format.as_deref(), v, prefer_dmy, nanos)?
+                },
+                _ => None,
+            };
+            let parsed = mixed.unwrap_or_else(|| {
+                text_date_expr(
+                    &index,
+                    format.as_deref(),
+                    first.as_deref(),
+                    true,
+                    guessed,
+                    nanos,
+                )
+            });
             text_index = Some((lf.clone(), index.clone(), parsed.clone()));
             lf = lf.with_column(parsed);
+            retryable = guessed && !try_mixed;
         },
         dt => {
             return fail_incorrectusage_clierror!(
@@ -924,11 +1064,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             descending_step.over(by_cols.iter().map(|c| col(c.as_str())).collect::<Vec<_>>())?
         };
-        let unsorted = lf
+        let unsorted = match lf
             .clone()
             .select([check.any(true).alias("unsorted")])
             .collect()
-            .map_err(|e| explain(e, true, text_index.as_ref()))?;
+        {
+            Err(e) if retry_mixed(&e, retryable) => return bucket(args, true),
+            r => r.map_err(|e| {
+                explain(
+                    e,
+                    true,
+                    args.flag_date_format.is_some(),
+                    text_index.as_ref(),
+                )
+            })?,
+        };
         if unsorted.column("unsorted")?.bool()?.get(0) == Some(true) {
             return fail_clierror!(
                 "--sorted was given, but the input is not sorted by --index{}. Drop --sorted to \
@@ -994,10 +1144,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             },
         )
     };
-    let mut result = grouped
-        .agg(agg_exprs)
-        .collect()
-        .map_err(|e| explain(e, args.flag_sorted, text_index.as_ref()))?;
+    let mut result = match grouped.agg(agg_exprs).collect() {
+        Err(e) if retry_mixed(&e, retryable) => return bucket(args, true),
+        r => r.map_err(|e| {
+            explain(
+                e,
+                args.flag_sorted,
+                args.flag_date_format.is_some(),
+                text_index.as_ref(),
+            )
+        })?,
+    };
 
     if args.flag_fill_gaps
         && let Some(every) = every
@@ -1042,7 +1199,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         )?;
     }
 
-    write_output(&mut result, &args, output_delim)
+    write_output(&mut result, args, output_delim)
 }
 
 fn write_output(result: &mut DataFrame, args: &Args, output_delim: u8) -> CliResult<()> {

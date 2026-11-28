@@ -632,6 +632,279 @@ fn timebucketp_later_day_first_value_is_an_error() {
     );
 }
 
+// `qsv datefmt` drops midnight times, so its output mixes dates and datetimes (#5129)
+#[test]
+fn timebucketp_mixed_dates_and_datetimes_read_dates_as_midnight() {
+    let wrk = Workdir::new("timebucketp_mixed_dates_and_datetimes_read_dates_as_midnight");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2020-01-01", "1"],
+            svec!["2020-01-01T10:30:00", "2"],
+            svec!["2020-01-02T08:00:00", "3"],
+            svec!["2020-01-02", "4"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "12h", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2020-01-01 00:00:00", "3"],
+            svec!["2020-01-02 00:00:00", "7"],
+        ]
+    );
+}
+
+#[test]
+fn timebucketp_mixed_month_first_dates_and_datetimes() {
+    let wrk = Workdir::new("timebucketp_mixed_month_first_dates_and_datetimes");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["01/02/2020", "1"],
+            svec!["01/02/2020 10:30", "2"],
+            svec!["01/03/2020 08:00", "3"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1d", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2020-01-02 00:00:00", "3"],
+            svec!["2020-01-03 00:00:00", "3"],
+        ]
+    );
+}
+
+// `qsv datefmt`'s default RFC 3339 output: a zoned datetime first, midnight dates later
+#[test]
+fn timebucketp_zoned_datetimes_then_dates_read_dates_as_midnight_utc() {
+    let wrk = Workdir::new("timebucketp_zoned_datetimes_then_dates_read_dates_as_midnight_utc");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2010-08-25T13:00:00+00:00", "1"],
+            svec!["2010-08-25", "2"],
+            svec!["2010-08-26T08:00:00+00:00", "3"],
+            svec!["2010-08-26", "4"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1h", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2010-08-25 00:00:00", "2"],
+            svec!["2010-08-25 13:00:00", "1"],
+            svec!["2010-08-26 00:00:00", "4"],
+            svec!["2010-08-26 08:00:00", "3"],
+        ]
+    );
+}
+
+#[test]
+fn timebucketp_month_first_datetimes_then_dates() {
+    let wrk = Workdir::new("timebucketp_month_first_datetimes_then_dates");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["01/02/2020 10:30", "1"],
+            svec!["01/02/2020", "2"],
+            svec!["01/03/2020", "3"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1d", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2020-01-02 00:00:00", "3"],
+            svec!["2020-01-03 00:00:00", "3"],
+        ]
+    );
+}
+
+// a first value that only parses day-first settles the order for the datetimes too
+#[test]
+fn timebucketp_day_first_date_settles_the_order_of_later_datetimes() {
+    let wrk = Workdir::new("timebucketp_day_first_date_settles_the_order_of_later_datetimes");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["25/12/2024", "1"],
+            svec!["03/01/2025 10:30", "2"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1mo", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2024-12-01 00:00:00", "1"],
+            svec!["2025-01-01 00:00:00", "2"],
+        ]
+    );
+}
+
+// a third shape fails the date fallback; without --date-format, don't tell the user to drop it
+#[test]
+fn timebucketp_third_index_shape_does_not_blame_date_format() {
+    let wrk = Workdir::new("timebucketp_third_index_shape_does_not_blame_date_format");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["01/02/2020 10:30", "1"],
+            svec!["01/02/2020", "2"],
+            svec!["01/03/2020T08:00:00", "3"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "ts", "--every", "1d", "m.csv"]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("01/03/2020T08:00:00") && !stderr.contains("Drop --date-format"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_date_only_format_on_mixed_index_names_the_mix() {
+    let wrk = Workdir::new("timebucketp_date_only_format_on_mixed_index_names_the_mix");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2020-01-01", "1"],
+            svec!["2020-01-02T08:00:00", "2"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--every",
+            "1d",
+            "--date-format",
+            "%Y-%m-%d",
+            "m.csv",
+        ],
+    );
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("mixes dates and datetimes")
+            && stderr.contains("2020-01-02T08:00:00")
+            && !stderr.contains("QSV_PREFER_DMY"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_mixed_index_with_a_bad_value_is_an_error() {
+    let wrk = Workdir::new("timebucketp_mixed_index_with_a_bad_value_is_an_error");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2020-01-01", "1"],
+            svec!["2020-01-01T10:30:00", "2"],
+            svec!["hello", "3"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "ts", "--every", "1d", "m.csv"]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("hello") && !stderr.contains("mixes dates"),
+        "stderr: {stderr}"
+    );
+}
+
+// the first value that is not a date is not a datetime either, so the strict parse's error stands
+#[test]
+fn timebucketp_bad_value_before_a_datetime_is_an_error() {
+    let wrk = Workdir::new("timebucketp_bad_value_before_a_datetime_is_an_error");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2020-01-01", "1"],
+            svec!["hello", "2"],
+            svec!["2020-01-01T10:30:00", "3"],
+        ],
+    );
+    let mut cmd = tb(&wrk, &["-i", "ts", "--every", "1d", "m.csv"]);
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("hello") && stderr.contains("do not match their date format"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn timebucketp_sorted_rolling_over_mixed_index() {
+    let wrk = Workdir::new("timebucketp_sorted_rolling_over_mixed_index");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["2010-08-25T00:30:00+00:00", "1"],
+            svec!["2010-08-26", "2"],
+            svec!["2010-08-26T08:00:00+00:00", "3"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &[
+            "-i",
+            "ts",
+            "--rolling",
+            "--period",
+            "1d",
+            "--sorted",
+            "--agg",
+            "sum:v",
+            "m.csv",
+        ],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2010-08-25 00:30:00", "1"],
+            svec!["2010-08-26 00:00:00", "3"],
+            svec!["2010-08-26 08:00:00", "5"],
+        ]
+    );
+}
+
 #[test]
 fn timebucketp_zoned_datetimes_are_read_as_utc() {
     let wrk = Workdir::new("timebucketp_zoned_datetimes_are_read_as_utc");

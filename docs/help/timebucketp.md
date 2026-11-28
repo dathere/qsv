@@ -42,7 +42,9 @@ the --date-format option. A text column whose every value is a date is
 parsed the same way for min, max, mean, median and quantile, so it compares
 as dates; first, last and --by keep values as written (unless a pschema.json
 types them). Dates need 4-digit years unless --date-format is given. An index
-that does not parse as dates is an error, as is an empty index value.
+that does not parse as dates is an error, as is an empty index value. An
+index that mixes dates and datetimes, as `qsv datefmt` writes midnight
+values, is read as datetimes, its dates as midnight.
 
 A pschema.json made by `qsv schema --polars` while QSV_PREFER_DMY was set
 marks day/month dates as already parsed, so they stay day-first in later

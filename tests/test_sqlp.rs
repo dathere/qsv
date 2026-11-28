@@ -8822,6 +8822,27 @@ fn sqlp_refuses_jsonl_input() {
         "unexpected stderr: {stderr}"
     );
 
+    // a Snappy-compressed JSONL is refused by its name, before it is decompressed
+    wrk.create_from_string("s3.jsonl.sz", "not read");
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("s3.jsonl.sz").arg("SELECT 1 AS x");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("s3.jsonl.sz is a JSONL/NDJSON file"),
+        "unexpected stderr: {stderr}"
+    );
+
+    // a JSONL file found by expanding a directory input is named without its temp path
+    std::fs::create_dir(wrk.path("dir")).unwrap();
+    std::fs::write(wrk.path("dir").join("d.jsonl"), jsonl).unwrap();
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("dir").arg("SELECT 1 AS x");
+    let stderr = wrk.stderr_on_error(&mut cmd);
+    assert!(
+        stderr.contains("d.jsonl (from a directory, .infile-list or archive input)"),
+        "unexpected stderr: {stderr}"
+    );
+
     // the documented route reads every record
     let mut cmd = wrk.command("sqlp");
     cmd.arg("SKIP_INPUT")

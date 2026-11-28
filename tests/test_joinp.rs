@@ -715,14 +715,21 @@ fn joinp_refuses_jsonl_input() {
         "{\"id\": 1, \"v\": \"a\"}\n{\"id\": 2, \"v\": \"b\"}\n",
     );
     wrk.create("k.csv", vec![svec!["id", "w"], svec!["1", "x"]]);
+    // refused by its name, before the .sz is decompressed
+    wrk.create_from_string("z.NDJSON.sz", "not read");
 
-    for (left, right) in [("s.jsonl", "k.csv"), ("k.csv", "s.jsonl")] {
+    for (left, right, jsonl) in [
+        ("s.jsonl", "k.csv", "s.jsonl"),
+        ("k.csv", "s.jsonl", "s.jsonl"),
+        ("z.NDJSON.sz", "k.csv", "z.NDJSON.sz"),
+    ] {
         let mut cmd = wrk.command("joinp");
         cmd.args(["id", left, "id", right]);
         let stderr = wrk.stderr_on_error(&mut cmd);
         assert!(
-            stderr.contains("s.jsonl is a JSONL/NDJSON file, which joinp can't read")
-                && stderr.contains("qsv jsonl s.jsonl"),
+            stderr.contains(&format!(
+                "{jsonl} is a JSONL/NDJSON file, which joinp can't read"
+            )) && stderr.contains("qsv jsonl"),
             "unexpected stderr ({left} {right}): {stderr}"
         );
     }

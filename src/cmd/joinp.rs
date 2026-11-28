@@ -294,10 +294,10 @@ use tempfile::tempdir;
 use crate::{
     CliResult,
     cmd::sqlp::{
-        STREAM_BATCH_ROWS, SharedOutput, StreamWriter, compress_output_if_needed,
+        STREAM_BATCH_ROWS, SharedOutput, StreamWriter, compress_output_if_needed, is_jsonl_path,
         open_staged_output, sink_to,
     },
-    config::{Delimiter, SpecialFormat, get_special_format},
+    config::Delimiter,
     util,
     util::get_stats_records,
 };
@@ -1290,12 +1290,13 @@ impl Args {
         }
         // Inputs are read with Polars' CSV reader, which would take a JSONL file's first line
         // as the header and split each object at its commas (#5126).
+        // Checked before the .sz decompression below, so a .jsonl.sz is caught too.
         for input in [&self.arg_input1, &self.arg_input2] {
-            if get_special_format(Path::new(input)) == SpecialFormat::Jsonl {
+            if is_jsonl_path(Path::new(input)) {
                 return fail_incorrectusage_clierror!(
-                    "{input} is a JSONL/NDJSON file, which joinp can't read. Convert it to CSV \
-                     first, e.g. `qsv jsonl {input} > data.csv`, or join it in sqlp with the \
-                     read_ndjson() table function."
+                    "{input} is a JSONL/NDJSON file, which joinp can't read. Convert it to a new \
+                     CSV file with `qsv jsonl` (decompress a .sz file first), or join it in sqlp \
+                     with the read_ndjson() table function."
                 );
             }
         }

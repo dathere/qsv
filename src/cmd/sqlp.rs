@@ -193,6 +193,8 @@ sqlp arguments:
                            decompressed automatically.
                            Column headers are required. Use 'qsv rename _all_generic --no-headers'
                            to add generic column names (_col_N) to a CSV with no headers.
+                           A JSONL/NDJSON (.jsonl/.ndjson) input is refused: query it with
+                           the read_ndjson() table function and SKIP_INPUT instead.
                            If you are using Polars SQL's table functions like read_csv() & read_parquet()
                            to read input files directly in the SQL statement, you can use the sentinel value
                            'SKIP_INPUT' to skip input preprocessing.
@@ -1029,12 +1031,53 @@ impl FromStr for QsvAvroCompression {
     }
 }
 
+/// Whether `path` names a JSONL/NDJSON file (`.jsonl`/`.ndjson`, any case), also under a
+/// Snappy `.sz` suffix. sqlp and joinp read inputs as CSV, so they refuse these (#5126).
+pub(crate) fn is_jsonl_path(path: &Path) -> bool {
+    let has_ext = |p: &Path, exts: &[&str]| {
+        p.extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|ext| exts.iter().any(|e| ext.eq_ignore_ascii_case(e)))
+    };
+    if has_ext(path, &["sz"]) {
+        has_ext(&path.with_extension(""), &["jsonl", "ndjson"])
+    } else {
+        has_ext(path, &["jsonl", "ndjson"])
+    }
+}
+
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
 
     let tmpdir = tempfile::tempdir()?;
 
     let mut skip_input = false;
+    // An input table is read with Polars' CSV reader, which would take a JSONL file's first
+    // line as the header and split each object at its commas (#5126). Check the names as
+    // given first, so the hint names the user's file (not a temp copy) and stdin isn't spooled.
+    // (only existing files: a directory or a `dc:` handle may carry such a name and resolve to
+    // CSVs; the check after expansion covers what they hold)
+    if let Some(jsonl) = args
+        .arg_input
+        .iter()
+        .find(|path| path.is_file() && is_jsonl_path(path))
+    {
+        let (decompress, example) = if jsonl
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("sz"))
+        {
+            (" Decompress it first.", jsonl.with_extension(""))
+        } else {
+            ("", jsonl.clone())
+        };
+        return fail_incorrectusage_clierror!(
+            "{} is a JSONL/NDJSON file, which sqlp can't read as an input table.{decompress} Use \
+             the read_ndjson() table function instead, e.g.:\n  qsv sqlp SKIP_INPUT \"SELECT * \
+             FROM read_ndjson('{}')\"",
+            jsonl.display(),
+            example.display()
+        );
+    }
     // stdin is copied to a temp `stdin.csv`, whose made-up extension must not pick the delimiter
     let mut stdin_input: Option<PathBuf> = None;
     args.arg_input = if args.arg_input == [PathBuf::from("SKIP_INPUT")] {
@@ -1050,6 +1093,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         inputs
     };
+    // A JSONL file can also come from a directory, an .infile-list or an archive. Its path may
+    // be a temp copy that is gone once sqlp exits, so name only the file.
+    if let Some(jsonl) = args.arg_input.iter().find(|path| is_jsonl_path(path)) {
+        let name = jsonl.file_name().unwrap_or_default().to_string_lossy();
+        return fail_incorrectusage_clierror!(
+            "{name} (from a directory, .infile-list or archive input) is a JSONL/NDJSON file, \
+             which sqlp can't read as an input table. Extract it and query it with the \
+             read_ndjson() table function and SKIP_INPUT instead."
+        );
+    }
 
     let rnull_values = if args.flag_rnull_values == "<empty string>" {
         vec![PlSmallStr::EMPTY]

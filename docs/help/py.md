@@ -120,7 +120,7 @@ builtins, math, random & datetime. The user can import additional modules with t
 with the ability to use any Python module that's installed in the current Python virtualenv.
 
 The Python expression is evaluated on a per record basis.
-With "py map", if the expression is invalid for a record, "<ERROR>" is returned for that record.
+With "py map", if the expression is invalid for a record, "&lt;ERROR&gt;" is returned for that record.
 With "py filter", if the expression is invalid for a record, that record is not filtered.
 
 If any record has an invalid result, an exitcode of 1 is returned and an error count is logged.
@@ -167,7 +167,7 @@ qsv py --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

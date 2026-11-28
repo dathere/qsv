@@ -75,7 +75,7 @@ See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
 <https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
 URL OPTIONS:  
-<url-column> needs to be a fully qualified URL path. Alternatively, you can dynamically
+&lt;url-column&gt; needs to be a fully qualified URL path. Alternatively, you can dynamically
 construct URLs for each CSV record with the --url-template option (see Examples below).
 
 JSON RESPONSE HANDLING:  
@@ -224,7 +224,7 @@ qsv fetch --help
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Do not cache responses. |  |
 | &nbsp;`‑‑mem‑cache‑size`&nbsp; | integer | Maximum number of entries in the in-memory LRU cache. | `2000000` |
 | &nbsp;`‑‑disk‑cache`&nbsp; | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries are cached indefinitely). |  |
-| &nbsp;`‑‑disk‑cache‑dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetch` |
+| &nbsp;`‑‑disk‑cache‑dir`&nbsp; | string | The directory &lt;dir&gt; to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetch jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetch` |
 | &nbsp;`‑‑redis‑cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/1" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH env vars respectively to change Redis settings. A QSV_REDIS_TTL_SECS of 0 disables expiration (entries cached indefinitely). This option is ignored if the --disk-cache option is enabled. |  |
 | &nbsp;`‑‑cache‑error`&nbsp; | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | &nbsp;`‑‑flush‑cache`&nbsp; | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
@@ -236,7 +236,7 @@ qsv fetch --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |

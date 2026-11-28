@@ -23,7 +23,7 @@ and can access an extensive library of built-in filters/functions, with addition
 from minijinja_contrib <https://docs.rs/minijinja-contrib/latest/minijinja_contrib/>.
 Additional qsv custom filters are also documented at the end of this file.
 
-If the <outdir> argument is specified, it will create a file for each row in <outdir>, with
+If the &lt;outdir&gt; argument is specified, it will create a file for each row in &lt;outdir&gt;, with
 the filename rendered using --outfilename option.
 Otherwise, ALL the rendered rows will be sent to STDOUT or the designated --output.
 
@@ -119,7 +119,7 @@ qsv template --help
 | &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, input is read from STDIN. |
-| &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to <outdir>, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
+| &nbsp;`<outdir>`&nbsp; | The directory where the output files will be written. If it does not exist, it will be created. If not set, output will be sent to stdout or the specified --output. When writing to &lt;outdir&gt;, files are organized into subdirectories of --outsubdir-size (default: 1000) files each to avoid filesystem navigation & performance issues. |
 
 <a name="template-options"></a>
 
@@ -130,9 +130,9 @@ qsv template --help
 | &nbsp;`‑‑template`&nbsp; | string | MiniJinja template string to use (alternative to --template-file) |  |
 | &nbsp;`‑t,`<br>`‑‑template‑file`&nbsp; | string | MiniJinja template file to use |  |
 | &nbsp;`‑J,`<br>`‑‑globals‑json`&nbsp; | string | A JSON file containing global variables to make available in templates. The JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.school_name}}, {{qsv_g.year}}). This allows sharing common values across all template renders. |  |
-| &nbsp;`‑‑outfilename`&nbsp; | string | MiniJinja template string to use to create the filename of the output files to write to <outdir>. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
-| &nbsp;`‑‑outsubdir‑size`&nbsp; | integer | The number of files per subdirectory in <outdir>. | `1000` |
-| &nbsp;`‑‑customfilter‑error`&nbsp; | string | The value to return when a custom filter returns an error. Use "<empty string>" to return an empty string. | `<FILTER_ERROR>` |
+| &nbsp;`‑‑outfilename`&nbsp; | string | MiniJinja template string to use to create the filename of the output files to write to &lt;outdir&gt;. If set to just QSV_ROWNO, the filestem is set to the current rowno of the record, padded with leading zeroes, with the ".txt" extension (e.g. 001.txt, 002.txt, etc.) Note that all the fields, including QSV_ROWNO, are available when defining the filename template. | `QSV_ROWNO` |
+| &nbsp;`‑‑outsubdir‑size`&nbsp; | integer | The number of files per subdirectory in &lt;outdir&gt;. | `1000` |
+| &nbsp;`‑‑customfilter‑error`&nbsp; | string | The value to return when a custom filter returns an error. Use "&lt;empty string&gt;" to return an empty string. | `<FILTER_ERROR>` |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Set to 0 to load all rows in one batch. | `50000` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading lookups on URLs. | `30` |
@@ -147,7 +147,7 @@ qsv template --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Templates must use numeric 1-based indices with the "_c" prefix. (e.g. col1: {{_c1}} col2: {{_c2}}) |  |
 | &nbsp;`‑‑delimiter`&nbsp; | string | Field separator for reading CSV (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

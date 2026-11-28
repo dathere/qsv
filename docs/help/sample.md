@@ -26,7 +26,7 @@ by random indexing, using MEMORY PROPORTIONAL to the sample size (k) - O(k).
 
 * BERNOULLI: the sampling method when the --bernoulli option is specified.
 Each record has an independent probability p of being selected, where p is
-specified by the <sample-size> argument. For example, if p=0.1, then each record
+specified by the &lt;sample-size&gt; argument. For example, if p=0.1, then each record
 has a 10% chance of being selected, regardless of the other records. The final
 sample size is random and follows a binomial distribution. Uses CONSTANT MEMORY - O(1).
 When sampling from a remote URL, processes the file in chunks without downloading it
@@ -34,10 +34,10 @@ entirely, making it especially efficient for sampling large remote files.
 <https://en.wikipedia.org/wiki/Bernoulli_sampling>
 
 * SYSTEMATIC: the sampling method when the --systematic option is specified.
-Selects every nth record from the input, where n is the integer part of <sample-size>
+Selects every nth record from the input, where n is the integer part of &lt;sample-size&gt;
 and the fraction part is the percentage of the population to sample.
-For example, if <sample-size> is 10.5, it will select every 10th record and 50% of the
-population. If <sample-size> is a whole number (no fractional part), it will select
+For example, if &lt;sample-size&gt; is 10.5, it will select every 10th record and 50% of the
+population. If &lt;sample-size&gt; is a whole number (no fractional part), it will select
 every nth record for the whole population. Uses CONSTANT memory - O(1). The starting
 point can be specified as "random" or "first". Useful for time series data or when you
 want evenly spaced samples.
@@ -51,7 +51,7 @@ For example, if you want to sample 1,000 records from a population of 100,000 ac
 you can stratify the population by US state and then sample 20 records from each stratum.
 This will ensure that you have a representative sample from each of the 50 states.
 The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the
-number of strata (s) and samples per stratum (k) as specified by <sample-size> - O(s*k).
+number of strata (s) and samples per stratum (k) as specified by &lt;sample-size&gt; - O(s*k).
 <https://en.wikipedia.org/wiki/Stratified_sampling>
 
 * WEIGHTED: the sampling method when the --weighted option is specified.
@@ -60,14 +60,14 @@ Records with higher weights are more likely to be selected. For example, if you 
 sales data and want to sample transactions weighted by revenue, high-value transactions
 will have a higher chance of being included. Non-numeric weights are treated as zero.
 The weights are automatically normalized using the maximum weight in the dataset.
-Specify the desired sample size with <sample-size>. Uses MEMORY PROPORTIONAL to the
+Specify the desired sample size with &lt;sample-size&gt;. Uses MEMORY PROPORTIONAL to the
 sample size (k) - O(k).
 "Weighted random sampling with a reservoir" <https://doi.org/10.1016/j.ipl.2005.11.003>
 
 * VAROPT: the sampling method when the --varopt option is specified.
 Variance-bounded weighted reservoir sampling using the A-ExpJ keying scheme of
 Efraimidis and Spirakis (2006). For each record, computes a key u^(1/w) and
-retains the <sample-size> items with the largest keys. Unlike the --weighted
+retains the &lt;sample-size&gt; items with the largest keys. Unlike the --weighted
 method, it does NOT require a stats cache, runs in a single pass, and supports
 merge across partitions through the --sketch-out and --sketch-in options.
 Suitable for heavy-tailed weight distributions where bounded-variance
@@ -92,7 +92,7 @@ See en.wikipedia.org/wiki/Reservoir_sampling
 
 * CLUSTER: the sampling method when the --cluster option is specified.
 Samples entire groups of records together based on a cluster identifier column.
-The number of clusters is specified by the <sample-size> argument.
+The number of clusters is specified by the &lt;sample-size&gt; argument.
 Useful when records are naturally grouped (e.g., by household, neighborhood, etc.).
 For example, if you have records grouped by neighborhood and specify a sample size of 10,
 it will randomly select 10 neighborhoods and include ALL records from those neighborhoods
@@ -241,14 +241,14 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, <sample-size> must be between 0 and 1 and represents the probability of selecting each record. |  |
-| &nbsp;`‑‑systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by <sample-size>). If <arg> is "random", the starting point is randomly chosen between 0 & n. If <arg> is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
-| &nbsp;`‑‑stratified`&nbsp; | string | Use stratified sampling. The strata column is specified by <col>. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k). |  |
-| &nbsp;`‑‑weighted`&nbsp; | string | Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
-| &nbsp;`‑‑varopt`&nbsp; | string | Use VAROPT weighted reservoir sampling (A-ExpJ keying). The weight column is specified by <col> (column name or 0-based index). Variance-bounded, single-pass, no stats-cache required, mergeable via --sketch-out / --sketch-in. Records with non-positive or non-numeric weights are silently skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
+| &nbsp;`‑‑bernoulli`&nbsp; | flag | Use Bernoulli sampling instead of indexed or reservoir sampling. When this flag is set, &lt;sample-size&gt; must be between 0 and 1 and represents the probability of selecting each record. |  |
+| &nbsp;`‑‑systematic`&nbsp; | string | Use systematic sampling (every nth record as specified by &lt;sample-size&gt;). If &lt;arg&gt; is "random", the starting point is randomly chosen between 0 & n. If &lt;arg&gt; is "first", the starting point is the first record. The sample size must be a whole number. Uses CONSTANT memory - O(1). |  |
+| &nbsp;`‑‑stratified`&nbsp; | string | Use stratified sampling. The strata column is specified by &lt;col&gt;. Can be either a column name or 0-based column index. The sample size must be a whole number. Uses MEMORY PROPORTIONAL to the number of strata (s) and samples per stratum (k) - O(s*k). |  |
+| &nbsp;`‑‑weighted`&nbsp; | string | Use weighted sampling. The weight column is specified by &lt;col&gt;. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
+| &nbsp;`‑‑varopt`&nbsp; | string | Use VAROPT weighted reservoir sampling (A-ExpJ keying). The weight column is specified by &lt;col&gt; (column name or 0-based index). Variance-bounded, single-pass, no stats-cache required, mergeable via --sketch-out / --sketch-in. Records with non-positive or non-numeric weights are silently skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k). |  |
 | &nbsp;`‑‑mergeable‑reservoir`&nbsp; | flag | Use a mergeable Algorithm-R reservoir sampler. Distribution is identical to the default RESERVOIR method, but the resulting sketch is mergeable via --sketch-out / --sketch-in. Cannot be combined with another sampling-method flag. |  |
-| &nbsp;`‑‑cluster`&nbsp; | string | Use cluster sampling. The cluster column is specified by <col>. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
-| &nbsp;`‑‑timeseries`&nbsp; | string | Use time-series sampling. The time column is specified by <col>. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
+| &nbsp;`‑‑cluster`&nbsp; | string | Use cluster sampling. The cluster column is specified by &lt;col&gt;. Can be either a column name or 0-based column index. Uses MEMORY PROPORTIONAL to the number of clusters (c) - O(c). |  |
+| &nbsp;`‑‑timeseries`&nbsp; | string | Use time-series sampling. The time column is specified by &lt;col&gt;. Can be either a column name or 0-based column index. Sorts records by the specified time column and then groups by time intervals and selects one record per interval. Supports various date formats (19 formats recognized by qsv-dateparser). Uses MEMORY PROPORTIONAL to the number of records - O(n). |  |
 
 <a name="time-series-sampling-options"></a>
 
@@ -256,7 +256,7 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑ts‑interval`&nbsp; | string | Time interval for grouping records. Format: <number><unit> where unit is h (hour), d (day), w (week), m (month), y (year). Examples: "1h", "1d", "1w", "2d" (every 2 days). If not specified, <sample-size> is treated as hours. |  |
+| &nbsp;`‑‑ts‑interval`&nbsp; | string | Time interval for grouping records. Format: &lt;number&gt;&lt;unit&gt; where unit is h (hour), d (day), w (week), m (month), y (year). Examples: "1h", "1d", "1w", "2d" (every 2 days). If not specified, &lt;sample-size&gt; is treated as hours. |  |
 | &nbsp;`‑‑ts‑start`&nbsp; | string | Starting point for time-series sampling. Options: "first" (earliest timestamp, default), "last" (most recent timestamp), "random" (random starting point). | `first` |
 | &nbsp;`‑‑ts‑adaptive`&nbsp; | string | Adaptive sampling mode for time-series data. Options: "business-hours" (prefer 9am-5pm Mon-Fri), "weekends" (prefer weekends), "business-days" (prefer weekdays), "both" (combine business-hours and weekends). |  |
 | &nbsp;`‑‑ts‑aggregate`&nbsp; | string | Aggregation function to apply within each time interval. Options: "first", "last", "mean", "sum", "count", "min", "max", "median". When specified, aggregates all records in each interval instead of selecting a single record. |  |
@@ -269,8 +269,8 @@ qsv sample --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑sketch‑out`&nbsp; | string | After sampling, also write a binary sketch describing the internal sampler state to <file>. The blob can later be merged into another run via --sketch-in. Only valid with --varopt or --mergeable-reservoir. The format is qsv-specific and is not interoperable with serialized sketches from other tools. |  |
-| &nbsp;`‑‑sketch‑in`&nbsp; | string | Comma-separated list of sketch files produced by --sketch-out. CSV input is NOT read; the listed sketches (which must all be of the same sampler kind) are merged and the resulting sample is emitted as CSV. <sample-size> may be used to cap the merged sample below the sketches' own k. |  |
+| &nbsp;`‑‑sketch‑out`&nbsp; | string | After sampling, also write a binary sketch describing the internal sampler state to &lt;file&gt;. The blob can later be merged into another run via --sketch-in. Only valid with --varopt or --mergeable-reservoir. The format is qsv-specific and is not interoperable with serialized sketches from other tools. |  |
+| &nbsp;`‑‑sketch‑in`&nbsp; | string | Comma-separated list of sketch files produced by --sketch-out. CSV input is NOT read; the listed sketches (which must all be of the same sampler kind) are merged and the resulting sample is emitted as CSV. &lt;sample-size&gt; may be used to cap the merged sample below the sketches' own k. |  |
 
 <a name="remote-file-options"></a>
 
@@ -290,7 +290,7 @@ qsv sample --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
 

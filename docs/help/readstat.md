@@ -67,7 +67,7 @@ qsv readstat --value-labels survey.sav -o survey.csv
 ```
 
 
-Keep the sentinel codes of a SAS dataset, in a <name>_null column after each
+Keep the sentinel codes of a SAS dataset, in a &lt;name&gt;_null column after each
 numeric variable:  
 ```console
 qsv readstat --sentinels-as value data.sas7bdat
@@ -159,17 +159,17 @@ qsv readstat --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑metadata`&nbsp; | string | Dump variable metadata instead of the data. Valid values: none, csv, json, pretty-json. For SAS, the value labels are included when a format catalog is used (see --value-labels). | `none` |
-| &nbsp;`‑‑value‑labels`&nbsp; | flag | Decode coded values to their label strings (e.g. 1 becomes "Male") instead of writing the underlying codes. For SAS .sas7bdat files, the labels come from the format catalog: the file named by --sas7bcat, else <name>.sas7bcat or formats.sas7bcat next to the data file. Not supported for .xpt files. |  |
+| &nbsp;`‑‑value‑labels`&nbsp; | flag | Decode coded values to their label strings (e.g. 1 becomes "Male") instead of writing the underlying codes. For SAS .sas7bdat files, the labels come from the format catalog: the file named by --sas7bcat, else &lt;name&gt;.sas7bcat or formats.sas7bcat next to the data file. Not supported for .xpt files. |  |
 | &nbsp;`‑‑sas7bcat`&nbsp; | string | The SAS format catalog (.sas7bcat) holding the value labels of a .sas7bdat file, for use by the options --value-labels, --sentinels-as label & --metadata. It only names the catalog, so the data needs one of the first two. |  |
-| &nbsp;`‑‑dictionary`&nbsp; | string | Also write a JSON Schema data dictionary of the CSV written to <file>. Name it <stem>.schema.json after the CSV & 'qsv viz smart' finds it on its own. It describes the data as written, so the other options shape it too: the types follow the option --compress-numeric, the enums follow --value-labels, & so on. |  |
+| &nbsp;`‑‑dictionary`&nbsp; | string | Also write a JSON Schema data dictionary of the CSV written to &lt;file&gt;. Name it &lt;stem&gt;.schema.json after the CSV & 'qsv viz smart' finds it on its own. It describes the data as written, so the other options shape it too: the types follow the option --compress-numeric, the enums follow --value-labels, & so on. |  |
 | &nbsp;`‑‑compress‑numeric`&nbsp; | flag | Write float variables that only ever hold whole numbers as integers, without the ".0" (e.g. 3.0 becomes 3). SPSS stores every number as a float, so this matters most for SPSS files. It is decided per variable, over the rows written: one value like 2.5 keeps the ".0" on every row of that variable. The file is read twice - once to check the values. With sentinel labels embedded, a variable with a label that reads as a number (e.g. "1.0") keeps its ".0", so the label is not rewritten. |  |
-| &nbsp;`‑‑sentinels‑as`&nbsp; | string | Keep sentinels instead of writing them as empty cells. Each eligible variable gets a <name>_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. none  - write them as empty cells, without the check & its warning. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels reads files on a single thread, so the option --jobs has no effect, and reads SPSS .sav & .zsav files whole (see --batch). |  |
-| &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a <name>_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |
+| &nbsp;`‑‑sentinels‑as`&nbsp; | string | Keep sentinels instead of writing them as empty cells. Each eligible variable gets a &lt;name&gt;_null column right after it, holding the sentinel of each row that has one & empty otherwise. Valid values: none, value, label. none  - write them as empty cells, without the check & its warning. value - the sentinel's code (e.g. .A or 99). label - the sentinel's value label if it has one, else its code. label labels only the sentinels: other values stay codes unless --value-labels is also given. SAS takes its sentinel labels from the format catalog, found as for --value-labels. For SPSS, value cannot be combined with --value-labels. Not supported for .xpt & .por files. Tracking sentinels reads files on a single thread, so the option --jobs has no effect, and reads SPSS .sav & .zsav files whole (see --batch). |  |
+| &nbsp;`‑‑sentinels‑embedded`&nbsp; | flag | Write each sentinel into its variable's own column instead of a &lt;name&gt;_null column. Those columns then mix numbers & sentinels. Requires --sentinels-as. |  |
 | &nbsp;`‑‑sentinels‑columns`&nbsp; | string | Comma-separated variables to keep sentinels for. Requires --sentinels-as. By default, every eligible variable: the numeric ones for SAS & Stata, those with declared missing values for SPSS. |  |
 | &nbsp;`‑‑select`&nbsp; | string | The variables to read, in the order given, using qsv's select syntax: names, 1-based indices, ranges (q1-q20) & /regex/, or a leading ! to read every variable except those listed. See 'qsv select --help' for the full syntax. Variables left out are skipped by the reader. Also applies to the option --metadata, which then lists only these variables. |  |
-| &nbsp;`‑‑offset`&nbsp; | integer | Skip the first <n> rows. | `0` |
-| &nbsp;`‑‑limit`&nbsp; | integer | Write at most <n> rows, counted after the rows skipped by --offset. |  |
-| &nbsp;`‑‑sample`&nbsp; | integer | Write a random sample of <n> rows, in file order, drawn from the rows --offset & --limit select. If there are no more than <n> such rows, all of them are written. |  |
+| &nbsp;`‑‑offset`&nbsp; | integer | Skip the first &lt;n&gt; rows. | `0` |
+| &nbsp;`‑‑limit`&nbsp; | integer | Write at most &lt;n&gt; rows, counted after the rows skipped by --offset. |  |
+| &nbsp;`‑‑sample`&nbsp; | integer | Write a random sample of &lt;n&gt; rows, in file order, drawn from the rows --offset & --limit select. If there are no more than &lt;n&gt; such rows, all of them are written. |  |
 | &nbsp;`‑‑seed`&nbsp; | integer | Seed the random number generator of --sample, so the same sample is drawn every time. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of reader threads. Raising it speeds up large uncompressed files at the cost of memory, as out-of-order chunks have to be buffered to keep the rows in source order. Row order is preserved either way. | `1` |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | Number of rows to read into memory at a time. Does not apply to SPSS portable (.por) files - they have no chunked reader upstream, so they are read whole & memory scales with the file. Nor does it apply to .sav & .zsav files while their sentinels are tracked, which also reads them whole: with the option --sentinels-as value or label, or by the sentinel check when a variable declares missing values & the file holds at most about 128 MB of data (see --sentinels-as none). | `50000` |
@@ -181,7 +181,7 @@ qsv readstat --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The delimiter to use when writing CSV data. Must be a single character. (default: ,) |  |
 
 ---

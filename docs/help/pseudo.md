@@ -89,7 +89,7 @@ qsv pseudo --help
 | &nbsp;`‑‑start`&nbsp; | integer | The starting number for the incremental identifier. | `0` |
 | &nbsp;`‑‑increment`&nbsp; | integer | The increment for the incremental identifier. Must be greater than 0. | `1` |
 | &nbsp;`‑‑formatstr`&nbsp; | string | The format string for the incremental identifier. The format string must contain a single "{}" which will be replaced with the incremental identifier. | `{}` |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 

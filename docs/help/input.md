@@ -59,12 +59,12 @@ qsv input --help
 | &nbsp;`‑‑no‑quoting`&nbsp; | flag | Disable quoting completely when reading CSV data. |  |
 | &nbsp;`‑‑quote‑style`&nbsp; | string | The quoting style to use when writing CSV data. Possible values: all, necessary, nonnumeric and never. All: Quotes all fields. Necessary: Quotes fields only when necessary - when fields contain a quote, delimiter or record terminator. Quotes are also necessary when writing an empty record (which is indistinguishable from a record with one empty field). NonNumeric: Quotes all fields that are non-numeric. Never: Never write quotes. Even if it produces invalid CSV. | `necessary` |
 | &nbsp;`‑‑skip‑lines`&nbsp; | integer | The number of preamble CSV records to skip. |  |
-| &nbsp;`‑‑auto‑skip`&nbsp; | flag | Sniffs a CSV for preamble records and automatically skips them. Takes precedence over --skip-lines option. Does not work with <stdin>. |  |
+| &nbsp;`‑‑auto‑skip`&nbsp; | flag | Sniffs a CSV for preamble records and automatically skips them. Takes precedence over --skip-lines option. Does not work with &lt;stdin&gt;. |  |
 | &nbsp;`‑‑skip‑lastlines`&nbsp; | integer | The number of epilogue CSV records to skip. |  |
 | &nbsp;`‑‑trim‑headers`&nbsp; | flag | Trim leading & trailing whitespace & quotes from header values. |  |
 | &nbsp;`‑‑trim‑fields`&nbsp; | flag | Trim leading & trailing whitespace from field values. |  |
 | &nbsp;`‑‑comment`&nbsp; | string | The comment character to use (single-byte; only the first byte of the UTF-8 encoding is matched). When set, lines starting with this byte will be skipped. |  |
-| &nbsp;`‑‑encoding‑errors`&nbsp; | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "<SKIPPED>". strict: Fail on any encoding errors. | `replace` |
+| &nbsp;`‑‑encoding‑errors`&nbsp; | string | How to handle UTF-8 encoding errors. Possible values: replace, skip, strict. replace: Replace invalid UTF-8 sequences with �. skip: Fields with encoding errors are "&lt;SKIPPED&gt;". strict: Fail on any encoding errors. | `replace` |
 
 <a name="common-options"></a>
 
@@ -73,7 +73,7 @@ qsv input --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 
 ---

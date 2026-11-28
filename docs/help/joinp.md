@@ -51,7 +51,7 @@ qsv joinp --help
 | &nbsp;`‑‑right‑semi`&nbsp; | flag | This returns only the rows in the second CSV data set that have a corresponding row in the first data set. The output schema is the same as the second data set. |  |
 | &nbsp;`‑‑full`&nbsp; | flag | Do a 'full outer' join. This returns all rows in both data sets with matching records joined. If there is no match, the missing side will be padded out with empty fields. |  |
 | &nbsp;`‑‑cross`&nbsp; | flag | USE WITH CAUTION. This returns the cartesian product of the CSV data sets given. The number of rows return is equal to N * M, where N and M correspond to the number of rows in the given data sets, respectively. The columns1 and columns2 arguments are ignored. |  |
-| &nbsp;`‑‑non‑equi`&nbsp; | string | Do a non-equi join. The given expression is evaluated for each row in the left dataset and can refer to columns in the left and right dataset. If the expression evaluates to true, the row is joined with the corresponding row in the right dataset. The expression is a valid Polars SQL where clause, with each column name followed by "_left" or "_right" suffixes to indicate which data set the column belongs to. (e.g. "salary_left >= min_salary_right AND \ salary_left <= max_salary_right AND \ experience_left >= min_exp_right") |  |
+| &nbsp;`‑‑non‑equi`&nbsp; | string | Do a non-equi join. The given expression is evaluated for each row in the left dataset and can refer to columns in the left and right dataset. If the expression evaluates to true, the row is joined with the corresponding row in the right dataset. The expression is a valid Polars SQL where clause, with each column name followed by "_left" or "_right" suffixes to indicate which data set the column belongs to. (e.g. "salary_left >= min_salary_right AND \ salary_left &lt;= max_salary_right AND \ experience_left &gt;= min_exp_right") |  |
 | &nbsp;`‑‑coalesce`&nbsp; | flag | Force the join to coalesce columns with the same name. For inner joins, this is not necessary as the join columns are automatically coalesced. |  |
 | &nbsp;`‑‑filter‑left`&nbsp; | string | Filter the left CSV data set by the given Polars SQL expression BEFORE the join. Only rows that evaluates to true are used in the join. |  |
 | &nbsp;`‑‑filter‑right`&nbsp; | string | Filter the right CSV data set by the given Polars SQL expression BEFORE the join. Only rows that evaluates to true are used in the join. |  |
@@ -90,7 +90,7 @@ qsv joinp --help
 | &nbsp;`‑‑no‑sort`&nbsp; | flag | Do not sort the CSV data sets on the join columns by default. Note that asof joins REQUIRE the join keys to be sorted, so this option should only be used as a performance optimization when you know the CSV join keys are already sorted. If the CSV join keys are not sorted, the asof join will fail or return incorrect results. |  |
 | &nbsp;`‑‑left_by`&nbsp; | string | Do an 'asof_by' join - a special implementation of the asof join that searches for the nearest keys within a subgroup set by the asof_by columns. This specifies the column/s for the left CSV. Columns are referenced by name. Specify multiple columns by separating them with a comma. |  |
 | &nbsp;`‑‑right_by`&nbsp; | string | Do an 'asof_by' join. This specifies the column/s for the right CSV. |  |
-| &nbsp;`‑‑strategy`&nbsp; | string | The strategy to use for the asof join: backward - For each row in the first CSV data set, we find the last row in the second data set whose key is less than the key in the first data set (or <= with --allow-exact-matches). forward -  For each row in the first CSV data set, we find the first row in the second data set whose key is greater than the key in the first data set (or >= with --allow-exact-matches). nearest -  selects the last row in the second data set whose value is nearest to the value in the first data set. | `backward` |
+| &nbsp;`‑‑strategy`&nbsp; | string | The strategy to use for the asof join: backward - For each row in the first CSV data set, we find the last row in the second data set whose key is less than the key in the first data set (or &lt;= with --allow-exact-matches). forward -  For each row in the first CSV data set, we find the first row in the second data set whose key is greater than the key in the first data set (or &gt;= with --allow-exact-matches). nearest -  selects the last row in the second data set whose value is nearest to the value in the first data set. | `backward` |
 | &nbsp;`‑‑tolerance`&nbsp; | string | The tolerance for the nearest asof join. This is only used when the nearest strategy is used. The tolerance is a positive integer that specifies the maximum number of rows to search for a match. |  |
 | &nbsp;`‑X,`<br>`‑‑allow‑exact‑matches`&nbsp; | flag | When set, the asof join will allow exact matches. (i.e. less-than-or-equal-to or greater-than-or-equal-to) Otherwise, the asof join will only allow nearest matches (strictly less-than or greater-than) by default. |  |
 
@@ -105,7 +105,7 @@ qsv joinp --help
 | &nbsp;`‑‑date‑format`&nbsp; | string | The date format to use writing dates. |  |
 | &nbsp;`‑‑time‑format`&nbsp; | string | The time format to use writing times. |  |
 | &nbsp;`‑‑float‑precision`&nbsp; | integer | The number of digits of precision to use when writing floats. (default: 6) |  |
-| &nbsp;`‑‑null‑value`&nbsp; | string | The string to use when writing null values. (default: <empty string>) |  |
+| &nbsp;`‑‑null‑value`&nbsp; | string | The string to use when writing null values. (default: &lt;empty string&gt;) |  |
 
 <a name="join-key-transformation-options"></a>
 
@@ -124,7 +124,7 @@ qsv joinp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return join shape to stderr. |  |
 

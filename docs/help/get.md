@@ -136,7 +136,7 @@ qsv get cache-set-ttl data.csv --ttl=86400
 qsv get cache-set-policy data.csv --refresh=never
 ```
 
-The `dc:` handle prefix is accepted (and ignored) wherever a cached <name> is
+The `dc:` handle prefix is accepted (and ignored) wherever a cached &lt;name&gt; is
 expected, so a `dc:` reference copied from another command works as-is:  
 ```console
 qsv get cache-fetch dc:data.csv --output /tmp/data.csv
@@ -189,8 +189,8 @@ qsv get --help
 | &nbsp;`‑‑refresh`&nbsp; | string | Revalidation policy for `dc:` use: on-stale, always or never. A `dc:` input re-fetches only past TTL; `always` does not change that - it only makes that fetch unconditional, skipping If-None-Match/If-Modified-Since revalidation. Also the value applied by cache-set-policy. | `on-stale` |
 | &nbsp;`‑‑compress`&nbsp; | string | Transparent blob compression: zstd or none. | `zstd` |
 | &nbsp;`‑‑force`&nbsp; | flag | Re-fetch even if a fresh cached copy exists. |  |
-| &nbsp;`‑‑sample`&nbsp; | integer | PREVIEW: stream the first N data records of <source> to stdout (or the --output file) WITHOUT caching. No `dc:` entry is created. The sniffed header row is re-attached. Single <source> only. |  |
-| &nbsp;`‑‑offset`&nbsp; | integer | PREVIEW: skip ~<mb> megabytes (via an HTTP Range request) before sampling, realigning to the next record boundary. Implies --sample. Requires a Range-capable source. |  |
+| &nbsp;`‑‑sample`&nbsp; | integer | PREVIEW: stream the first N data records of &lt;source&gt; to stdout (or the --output file) WITHOUT caching. No `dc:` entry is created. The sniffed header row is re-attached. Single &lt;source&gt; only. |  |
+| &nbsp;`‑‑offset`&nbsp; | integer | PREVIEW: skip ~&lt;mb&gt; megabytes (via an HTTP Range request) before sampling, realigning to the next record boundary. Implies --sample. Requires a Range-capable source. |  |
 | &nbsp;`‑‑random`&nbsp; | flag | PREVIEW: random (reservoir) sampling. Streams the full source and parses it from the start, so quoted multi-line records stay intact. Slower than --sample (which only reads the head); use it when you need a uniform sample. |  |
 | &nbsp;`‑‑cloud‑opt`&nbsp; | string | Extra cloud object-store config as a `key=value` pair (repeatable), e.g. region=us-east-1 or skip_signature=true. Overrides the AWS_*/AZURE_*/GOOGLE_* environment. (get_cloud only) |  |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | CKAN Action API base URL. Overrides the QSV_CKAN_API env var. | `https://data.dathere.com/api/3/action` |
@@ -208,7 +208,7 @@ qsv get --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The qsv cache directory. If the QSV_CACHE_DIR envvar is set, it will be used instead. The cache itself (its get/ subdirectory) is readable by you only. | `~/.qsv-cache` |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | For a single <source> (or cache-fetch <name>), write the (decompressed) data to <file> (use `-` for stdout). |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | For a single &lt;source&gt; (or cache-fetch &lt;name&gt;), write the (decompressed) data to &lt;file&gt; (use `-` for stdout). |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print progress/summary messages to stderr. |  |
 
 ---

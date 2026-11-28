@@ -149,7 +149,7 @@ qsv sqlp data.csv "select CASE WHEN col1 > 10 THEN 'foo' WHEN col1 > 5 THEN 'bar
 qsv sqlp data.csv "select CASE col*5 WHEN 10 THEN 'foo' WHEN 5 THEN 'bar' ELSE 'baz' END from _t_1"
 ```
 
-> NULL-safe equality operator: "<=>" (same as IS NOT DISTINCT FROM)
+> NULL-safe equality operator: "&lt;=&gt;" (same as IS NOT DISTINCT FROM)
 > returns true if both sides are equal or both are NULL, false otherwise (never NULL)
 
 ```console
@@ -192,9 +192,9 @@ qsv sqlp data.csv "select * from data WHERE col1 ~ '^foo' AND col2 > 10"
 qsv sqlp data.csv "select * from data WHERE col1 !~* 'bar$' AND col2 > 10"
 ```
 
-> regexp_like function: regexp_like(<string>, <pattern>, <optional flags>)
-> returns true if <string> matches <pattern>, false otherwise
-> <optional flags> can be one or more of the following:
+> regexp_like function: regexp_like(&lt;string&gt;, &lt;pattern&gt;, &lt;optional flags&gt;)
+> returns true if &lt;string&gt; matches &lt;pattern&gt;, false otherwise
+> &lt;optional flags&gt; can be one or more of the following:
 > 'c' (case-sensitive - default), 'i' (case-insensitive), 'm' (multiline)
 
 ```console
@@ -373,7 +373,7 @@ qsv sqlp --help
 | &nbsp;`‑‑no‑optimizations`&nbsp; | flag | Disable non-default query optimizations. This will make queries slower. Use this when you get query errors or to force CSV parsing when there is only one input file, no CSV parsing options are used and its not a SQL script. |  |
 | &nbsp;`‑‑truncate‑ragged‑lines`&nbsp; | flag | Truncate ragged lines when parsing CSVs. If set, rows with more columns than the header will be truncated. If not set, the query will fail. Use this only when you get an error about ragged lines. |  |
 | &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Read CSV values that can't be parsed as their column's type as empty (null) instead of failing. Their rows are kept, so COUNT(*) still counts them. If not set, the query will fail. To get more detailed error messages, set the environment variable POLARS_BACKTRACE_IN_ERR=1 before running the query. |  |
-| &nbsp;`‑‑rnull‑values`&nbsp; | string | The comma-delimited list of case-sensitive strings to consider as null values when READING CSV files (e.g. NULL, NONE, <empty string>). Use "<empty string>" to consider an empty string a null value. | `<empty string>` |
+| &nbsp;`‑‑rnull‑values`&nbsp; | string | The comma-delimited list of case-sensitive strings to consider as null values when READING CSV files (e.g. NULL, NONE, &lt;empty string&gt;). Use "&lt;empty string&gt;" to consider an empty string a null value. | `<empty string>` |
 | &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as the decimal separator when parsing & writing CSVs. Otherwise, use period as the decimal separator. Note that you'll need to set --delimiter to an alternate delimiter other than the default comma if you are using this option. |  |
 
 <a name="csv-output-format-only-options"></a>
@@ -412,7 +412,7 @@ qsv sqlp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading and writing CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return result shape to stderr. |  |
 

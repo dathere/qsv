@@ -114,10 +114,10 @@ qsv timebucketp --help
 | &nbsp;`‑‑offset`&nbsp; | string | Shift the window boundaries by this duration. Defaults to 0 in window mode, and to minus --period in rolling mode (a look-back window). |  |
 | &nbsp;`‑‑date‑format`&nbsp; | string | The strptime format of a text --index column, e.g. %m/%d/%Y or "%d.%m.%Y %H:%M". Without time fields the index is read as dates, otherwise as datetimes. |  |
 | &nbsp;`‑b,`<br>`‑‑by`&nbsp; | string | Also group by these columns (comma-separated). Windows are computed separately for each group. |  |
-| &nbsp;`‑a,`<br>`‑‑agg`&nbsp; | string | Comma-separated aggregations, as func:column pairs, e.g. sum:sales,mean:temp. The functions are: first, last, sum, min, max, mean, median, quantile@<p> (alias q@<p>, p in [0, 1]), len. Each is output as <column>_<func>, e.g. sales_sum, or temp_quantile_0.95 for quantile@0.95. len takes no column: it counts the rows in each window and is output as "count". | `len` |
-| &nbsp;`‑‑label`&nbsp; | string | The value written to the index column for each window. Window mode only. One of: left      - the window's start (the default) right     - the window's end datapoint - the window's first index value |  |
+| &nbsp;`‑a,`<br>`‑‑agg`&nbsp; | string | Comma-separated aggregations, as func:column pairs, e.g. sum:sales,mean:temp. The functions are: first, last, sum, min, max, mean, median, quantile@&lt;p&gt; (alias q@&lt;p&gt;, p in [0, 1]), len. Each is output as &lt;column&gt;_&lt;func&gt;, e.g. sales_sum, or temp_quantile_0.95 for quantile@0.95. len takes no column: it counts the rows in each window and is output as "count". | `len` |
+| &nbsp;`‑‑label`&nbsp; | string | The value written to the index column for each window. Window mode only. One of:<ul><li>left - the window's start (the default)</li><li>right - the window's end</li><li>datapoint - the window's first index value</li></ul> |  |
 | &nbsp;`‑‑closed`&nbsp; | string | Which window boundaries are inclusive: left, right, both or none. Defaults to left in window mode and to right in rolling mode. |  |
-| &nbsp;`‑‑start‑by`&nbsp; | string | Where the first window starts. Window mode only. |  |
+| &nbsp;`‑‑start‑by`&nbsp; | string | Where the first window starts, in window mode only. One of:<ul><li>window - the --every boundary at or before the first index value (the default)</li><li>datapoint - the first index value itself</li><li>monday ... sunday - that weekday (weekly --every)</li></ul> |  |
 | &nbsp;`‑‑boundaries`&nbsp; | flag | Add _lower_boundary and _upper_boundary columns before the index column. Window mode only. |  |
 | &nbsp;`‑‑fill‑gaps`&nbsp; | flag | Also emit the empty windows between each group's first and last window: count, sum and len are 0 there, and every other aggregation is empty. Window mode only. Requires the default left labels, and cannot be combined with --start-by datapoint or --boundaries. |  |
 | &nbsp;`‑‑rolling`&nbsp; | flag | Use rolling mode (see above). |  |
@@ -133,7 +133,7 @@ qsv timebucketp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. If not set, QSV_DEFAULT_DELIMITER is used, else ','. A .tsv/.tab (tab) or .ssv (semicolon) extension on the input or --output file sets that file's delimiter. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print the result's shape to stderr. |  |
 

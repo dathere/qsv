@@ -58,7 +58,7 @@ Shows how extreme the maximum value is.
 Large positive values indicate outliers or heavy right tail.
 8. Median-to-Mean Ratio: median / mean
 Indicates skewness direction.
-Ratio < 1 suggests right skew, > 1 suggests left skew, = 1 suggests symmetry.
+Ratio &lt; 1 suggests right skew, &gt; 1 suggests left skew, = 1 suggests symmetry.
 9. IQR-to-Range Ratio: iqr / range
 Measures concentration of data.
 Higher values (closer to 1) indicate more data concentrated in the middle 50%.
@@ -185,18 +185,18 @@ Requires --advanced flag (computed alongside entropy from frequency data).
 39. Winsorized Mean: Replaces values below/above thresholds with threshold values, then computes mean.
 All values are included in the calculation, but extreme values are capped at thresholds.
 <https://en.wikipedia.org/wiki/Winsorized_mean>
-Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):  
-winsorized_stddev_<PCT>, winsorized_variance_<PCT>, winsorized_cv_<PCT>,
-winsorized_range_<PCT>, and winsorized_<PCT>_stddev_ratio
-(winsorized stddev / overall stddev). Note the ratio column interpolates <PCT>
+Also computes (&lt;PCT&gt; is the threshold suffix of the mean column, e.g. 25pct or 5pct):  
+winsorized_stddev_&lt;PCT&gt;, winsorized_variance_&lt;PCT&gt;, winsorized_cv_&lt;PCT&gt;,
+winsorized_range_&lt;PCT&gt;, and winsorized_&lt;PCT&gt;_stddev_ratio
+(winsorized stddev / overall stddev). Note the ratio column interpolates &lt;PCT&gt;
 before _stddev_ratio, unlike the others.
 40. Trimmed Mean: Excludes values outside thresholds, then computes mean.
 Only values within thresholds are included in the calculation.
 <https://en.wikipedia.org/wiki/Truncated_mean>
-Also computes (<PCT> is the threshold suffix of the mean column, e.g. 25pct or 5pct):  
-trimmed_stddev_<PCT>, trimmed_variance_<PCT>, trimmed_cv_<PCT>, trimmed_range_<PCT>,
-and trimmed_<PCT>_stddev_ratio (trimmed stddev / overall stddev). Note the ratio
-column interpolates <PCT> before _stddev_ratio, unlike the others.
+Also computes (&lt;PCT&gt; is the threshold suffix of the mean column, e.g. 25pct or 5pct):  
+trimmed_stddev_&lt;PCT&gt;, trimmed_variance_&lt;PCT&gt;, trimmed_cv_&lt;PCT&gt;, trimmed_range_&lt;PCT&gt;,
+and trimmed_&lt;PCT&gt;_stddev_ratio (trimmed stddev / overall stddev). Note the ratio
+column interpolates &lt;PCT&gt; before _stddev_ratio, unlike the others.
 By default, uses Q1 and Q3 as thresholds (25% winsorization/trimming).
 With --use-percentiles, uses configurable percentiles (e.g., 5th/95th) as thresholds
 with --pct-thresholds.
@@ -402,7 +402,7 @@ qsv moarstats --help
 | &nbsp;`‑‑advanced`&nbsp; | flag | Compute Moment Skewness, Kurtosis, Shannon Entropy, Bimodality Coefficient, Jarque-Bera, Gini Coefficient, Atkinson Index, Theil Index, Mean Absolute Deviation, Hoover Index, L-moment ratios, Lag-1 Autocorrelation, Benford MAD and Simpson's Diversity Index. These advanced statistics computations require reading the original CSV file to collect all values for computation and are computationally expensive. Further, Entropy computation requires the frequency command to be run with --limit 0 to collect all frequencies. An index will be auto-created for the original CSV file if it doesn't already exist to enable parallel processing. |  |
 | &nbsp;`‑e,`<br>`‑‑epsilon`&nbsp; | float | The Atkinson Index Inequality Aversion parameter. Epsilon controls the sensitivity of the Atkinson Index to inequality. The higher the epsilon, the more sensitive the index is to inequality. Typical values are 0.5 (standard in economic research), 1.0 (natural boundary), or 2.0 (useful for poverty analysis). | `1.0` |
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Options to pass to the stats command if baseline stats need to be generated. The options are passed as a single string that will be split by whitespace. | `--infer-dates --infer-boolean --cardinality --mode --mad --quartiles --percentiles --force --stats-jsonl` |
-| &nbsp;`‑‑round`&nbsp; | integer | Round statistics to <n> decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
+| &nbsp;`‑‑round`&nbsp; | integer | Round statistics to &lt;n&gt; decimal places. Rounding follows Midpoint Nearest Even (Bankers Rounding) rule. | `4` |
 | &nbsp;`‑‑use‑percentiles`&nbsp; | flag | Use percentiles instead of Q1/Q3 for winsorization/trimming. Requires percentiles to be computed in the stats CSV. |  |
 | &nbsp;`‑‑pct‑thresholds`&nbsp; | string | Comma-separated percentile pair (e.g., "10,90") to use for winsorization/trimming when --use-percentiles is set. Both values must truncate to whole percentiles between 1 and 100, and lower < upper. The thresholds are automatically merged into the --percentile-list of the stats run, and an existing stats CSV computed with a percentile list that lacks them is recomputed. | `5,95` |
 | &nbsp;`‑‑xsd‑gdate‑scan`&nbsp; | string | Gregorian XSD date type detection mode. "quick": Fast detection using min/max values. Produces types with ?? suffix (less confident). "thorough": Comprehensive detection checking all percentile values. Slower but ensures all values match the pattern. Produces types with ? suffix (more confident). | `quick` |
@@ -416,7 +416,7 @@ qsv moarstats --help
 | &nbsp;`‑B,`<br>`‑‑bivariate`&nbsp; | flag | Enable bivariate statistics computation. Requires indexed CSV file (index will be auto-created if missing). Computes the pairwise statistics selected with --bivariate-stats between columns (pearson & covariance by default). The bivariate |  |
 | &nbsp;`‑S,`<br>`‑‑bivariate‑stats`&nbsp; | string | Comma-separated list of bivariate statistics to compute. Options: pearson, spearman, kendall, covariance, mi (mutual information), nmi (normalized mutual information), u (Theil's directed uncertainty coefficient; emits u_field2_given_field1 and u_field1_given_field2), cramersv (Cramér's V) and regression (slope, intercept & r_squared). Use "all" to compute all statistics or "fast" to compute only pearson & covariance, which is much faster as it doesn't require storing all values and uses streaming algorithms. | `fast` |
 | &nbsp;`‑C,`<br>`‑‑cardinality‑threshold`&nbsp; | integer | Skip mutual information (mi/nmi/u) and cramersv for field pairs where either field's cardinality exceeds this threshold. Such pairs also skip building their joint-frequency table, which is the dominant memory cost of --bivariate-stats all. Defaults to half the row count, floored at 1000, so it stays inert on small inputs and scales with large ones. Mutual information between near-unique columns saturates at log(n) and is noise regardless of how efficiently it is computed. All-unique fields always skip these statistics, regardless of this threshold. |  |
-| &nbsp;`‑‑bivariate‑batch`&nbsp; | integer | Process at most <n> field pairs per pass over the input, bounding peak memory at the cost of extra passes. Peak memory is otherwise O(columns^2) regardless of row count - a 160-column, 100k-row (60 MB) input needs ~21 GiB with mi/nmi/u enabled. Extra passes are cheap, so prefer the largest <n> that fits. Only applies to indexed input with >= 10,000 rows. Set to 0 to process all pairs in one pass. | `0` |
+| &nbsp;`‑‑bivariate‑batch`&nbsp; | integer | Process at most &lt;n&gt; field pairs per pass over the input, bounding peak memory at the cost of extra passes. Peak memory is otherwise O(columns^2) regardless of row count - a 160-column, 100k-row (60 MB) input needs ~21 GiB with mi/nmi/u enabled. Extra passes are cheap, so prefer the largest &lt;n&gt; that fits. Only applies to indexed input with >= 10,000 rows. Set to 0 to process all pairs in one pass. | `0` |
 | &nbsp;`‑J,`<br>`‑‑join‑inputs`&nbsp; | string | Additional datasets to join. Comma-separated list of CSV files to join with the primary input. e.g.: --join-inputs customers.csv,products.csv |  |
 | &nbsp;`‑K,`<br>`‑‑join‑keys`&nbsp; | string | Join keys for each dataset. Comma-separated list of join key column names, one per dataset. Must specify same number of keys as datasets (primary + addl). e.g.: --join-keys customer_id,customer_id,product_id |  |
 | &nbsp;`‑T,`<br>`‑‑join‑type`&nbsp; | string | Join type when using --join-inputs. Valid values: inner, left, right, full | `inner` |
@@ -431,7 +431,7 @@ qsv moarstats --help
 | &nbsp;`‑‑force`&nbsp; | flag | Force recomputing stats even if valid precomputed stats cache exists. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. This works only when the given CSV has an index. Note that a file handle is opened for each job. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of overwriting the stats CSV file. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of overwriting the stats CSV file. |  |
 
 ---
 **Source:** [`src/cmd/moarstats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/moarstats.rs)

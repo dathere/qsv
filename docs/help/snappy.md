@@ -76,7 +76,7 @@ qsv snappy --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <output> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;output&gt; instead of stdout. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when compressing. When not set, its set to the number of CPUs - 1 |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Suppress status messages to stderr. |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show download progress bars. Only valid for URL input. |  |

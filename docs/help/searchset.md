@@ -72,9 +72,9 @@ qsv searchset --help
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
 | &nbsp;`‑v,`<br>`‑‑invert‑match`&nbsp; | flag | Select only rows that did not match |  |
 | &nbsp;`‑u,`<br>`‑‑unicode`&nbsp; | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
-| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag the found rows in a new column named <column>. For each found row, <column> is set to the row number of the row, followed by a semicolon, then a list of the matching regexes. |  |
+| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag the found rows in a new column named &lt;column&gt;. For each found row, &lt;column&gt; is set to the row number of the row, followed by a semicolon, then a list of the matching regexes. |  |
 | &nbsp;`‑‑flag‑matches‑only`&nbsp; | flag | When --flag is enabled, only rows that match are sent to output. Rows that do not match are filtered. |  |
-| &nbsp;`‑‑unmatched‑output`&nbsp; | string | When --flag-matches-only is enabled, output the rows that did not match to <file>. |  |
+| &nbsp;`‑‑unmatched‑output`&nbsp; | string | When --flag-matches-only is enabled, output the rows that did not match to &lt;file&gt;. |  |
 | &nbsp;`‑Q,`<br>`‑‑quick`&nbsp; | flag | Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. Ignored if --json is enabled. |  |
 | &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Write the number of matches to stderr. Suppressed by --quiet. Ignored if --json is enabled. |  |
 | &nbsp;`‑j,`<br>`‑‑json`&nbsp; | flag | Return number of matches, number of rows with matches, and number of rows to stderr in JSON format. |  |
@@ -90,7 +90,7 @@ qsv searchset --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

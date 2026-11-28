@@ -99,18 +99,18 @@ timebucketp options:
                            [default: len]
     --label <how>          The value written to the index column for each
                            window. Window mode only. One of:
-                             left      - the window's start (the default)
-                             right     - the window's end
-                             datapoint - the window's first index value
+                           * left - the window's start (the default)
+                           * right - the window's end
+                           * datapoint - the window's first index value
     --closed <side>        Which window boundaries are inclusive: left, right,
                            both or none. Defaults to left in window mode and
                            to right in rolling mode.
-    --start-by <how>       Where the first window starts. Window mode only.
-                           One of:
-                             window    - the --every boundary at or before
-                                         the first index value (the default)
-                             datapoint - the first index value itself
-                             monday ... sunday - that weekday (weekly --every)
+    --start-by <how>       Where the first window starts, in window mode
+                           only. One of:
+                           * window - the --every boundary at or before the
+                             first index value (the default)
+                           * datapoint - the first index value itself
+                           * monday ... sunday - that weekday (weekly --every)
     --boundaries           Add _lower_boundary and _upper_boundary columns
                            before the index column. Window mode only.
     --fill-gaps            Also emit the empty windows between each group's

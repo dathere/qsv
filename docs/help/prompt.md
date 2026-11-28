@@ -70,7 +70,7 @@ qsv prompt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> without showing a save dialog. Mutually exclusive with --fd-output. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; without showing a save dialog. Mutually exclusive with --fd-output. |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print --fd-output message to stderr. |  |
 
 ---

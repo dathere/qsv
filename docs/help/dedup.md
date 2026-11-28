@@ -22,7 +22,7 @@ than memory CSV files. This will make dedup run in streaming mode with constant 
 
 Either way, the output will not only be deduplicated, it will also be sorted.
 
-A duplicate count will also be sent to <stderr>.
+A duplicate count will also be sent to &lt;stderr&gt;.
 
 
 <a name="examples"></a>
@@ -88,7 +88,7 @@ qsv dedup --help
 | &nbsp;`‑N,`<br>`‑‑numeric`&nbsp; | flag | Compare according to string numerical value |  |
 | &nbsp;`‑i,`<br>`‑‑ignore‑case`&nbsp; | flag | Compare strings disregarding case. |  |
 | &nbsp;`‑‑sorted`&nbsp; | flag | The input is already sorted. Do not load the CSV into memory to sort it first. Meant to be used in tandem and after an extsort. |  |
-| &nbsp;`‑D,`<br>`‑‑dupes‑output`&nbsp; | string | Write duplicates to <file>. |  |
+| &nbsp;`‑D,`<br>`‑‑dupes‑output`&nbsp; | string | Write duplicates to &lt;file&gt;. |  |
 | &nbsp;`‑H,`<br>`‑‑human‑readable`&nbsp; | flag | Comma separate duplicate count. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel when sorting an unsorted CSV, before deduping. When not set, the number of jobs is set to the number of CPUs detected. Does not work with --sorted option as its not multithreaded. |  |
 
@@ -99,7 +99,7 @@ qsv dedup --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. That is, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print duplicate count to stderr. |  |

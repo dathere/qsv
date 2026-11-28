@@ -42,7 +42,7 @@ qsv fixlengths --help
 |--------|------|-------------|--------|
 | &nbsp;`‑l,`<br>`‑‑length`&nbsp; | integer | Forcefully set the length of each record. If a record is not the size given, then it is truncated or expanded as appropriate. |  |
 | &nbsp;`‑r,`<br>`‑‑remove‑empty`&nbsp; | flag | Remove empty columns. |  |
-| &nbsp;`‑i,`<br>`‑‑insert`&nbsp; | integer | If empty fields need to be inserted, insert them at <pos>. If <pos> is zero, then it is inserted at the end of each record. If <pos> is negative, it is inserted from the END of each record going backwards. If <pos> is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
+| &nbsp;`‑i,`<br>`‑‑insert`&nbsp; | integer | If empty fields need to be inserted, insert them at &lt;pos&gt;. If &lt;pos&gt; is zero, then it is inserted at the end of each record. If &lt;pos&gt; is negative, it is inserted from the END of each record going backwards. If &lt;pos&gt; is positive, it is inserted from the BEGINNING of each record going forward. | `0` |
 | &nbsp;`‑‑quote`&nbsp; | string | The quote character to use. | `"` |
 | &nbsp;`‑‑escape`&nbsp; | string | The escape character to use. When not specified, quotes are escaped by doubling them. |  |
 
@@ -53,7 +53,7 @@ qsv fixlengths --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Don't print removed column information. |  |
 

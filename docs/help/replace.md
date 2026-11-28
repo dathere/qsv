@@ -55,7 +55,7 @@ qsv replace 'hello' 'world' file.csv -i
 ```
 
 Replace all valid email addresses (using a regex)
-with '<EMAIL>' in the file.csv file.
+with '&lt;EMAIL&gt;' in the file.csv file.
 ```console
 qsv replace '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})' \
 '<EMAIL>' file.csv
@@ -82,7 +82,7 @@ qsv replace --help
 |----------|-------------|
 | &nbsp;`<pattern>`&nbsp; | Regular expression pattern to match. Uses Rust regex syntax. See <https://docs.rs/regex/latest/regex/index.html#syntax> or <https://regex101.com> with the Rust flavor for more info. |
 | &nbsp;`<input>`&nbsp; | The CSV file to read. If not given, reads from stdin. |
-| &nbsp;`<replacement>`&nbsp; | Replacement string. Set to '<NULL>' if you want to replace matches with ''. |
+| &nbsp;`<replacement>`&nbsp; | Replacement string. Set to '&lt;NULL&gt;' if you want to replace matches with ''. |
 
 <a name="replace-options"></a>
 
@@ -107,7 +107,7 @@ qsv replace --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

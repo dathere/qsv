@@ -25,7 +25,7 @@ separating them with a comma. Specify a range of columns with `-`. Both
 columns1 and columns2 must specify exactly the same number of columns.
 (See 'qsv select --help' for the full syntax.)
 
-Either <input1> or <input2> can be set to `-` to read from stdin, but not both.
+Either &lt;input1&gt; or &lt;input2&gt; can be set to `-` to read from stdin, but not both.
 
 
 <a name="examples"></a>
@@ -117,7 +117,7 @@ qsv exclude --help
 | &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<input1>`&nbsp; | is the file from which data will be removed. |
-| &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from <input1> e.g. 'qsv exclude id records.csv id previously-processed.csv' Either input may be set to `-` to read from stdin, but not both. |
+| &nbsp;`<input2>`&nbsp; | is the file containing the data to be removed from &lt;input1&gt; e.g. 'qsv exclude id records.csv id previously-processed.csv' Either input may be set to `-` to read from stdin, but not both. |
 
 <a name="exclude-options"></a>
 
@@ -135,10 +135,10 @@ qsv exclude --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
-| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load <input2> into memory using CONSERVATIVE heuristics. |  |
+| &nbsp;`‑‑memcheck`&nbsp; | flag | Check if there is enough memory to load &lt;input2&gt; into memory using CONSERVATIVE heuristics. |  |
 
 ---
 **Source:** [`src/cmd/exclude.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/exclude.rs)

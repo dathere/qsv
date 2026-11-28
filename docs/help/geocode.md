@@ -343,7 +343,7 @@ queries do NOT re-hit the API. The free trial allows 2,500 requests/day at 1
 request/second; rows are processed sequentially and rate-limited (see --rate-limit).
 
 #### opencage
-The <column> may contain either a free-form address (forward geocoding) or a
+The &lt;column&gt; may contain either a free-form address (forward geocoding) or a
 "lat, long" / "(lat, long)" WGS-84 coordinate (reverse geocoding). The mode is
 auto-detected per row; pass --reverse to force reverse geocoding.
 
@@ -353,8 +353,8 @@ and --output options behave as they do for the other subcommands.
 
 The --formatstr option supports these OpenCage-specific formats:  
 * '%+' | '%formatted'   - the OpenCage formatted address (default)
-* '%lat-long'           - <latitude>, <longitude>
-* '%location'           - (<latitude>, <longitude>)
+* '%lat-long'           - &lt;latitude&gt;, &lt;longitude&gt;
+* '%location'           - (&lt;latitude&gt;, &lt;longitude&gt;)
 * '%city'               - the city/town/village
 * '%state' | '%admin1'  - the state/province
 * '%county' | '%admin2' - the county
@@ -366,8 +366,8 @@ The --formatstr option supports these OpenCage-specific formats:
 * '%pretty-json'        - the first OpenCage result as pretty JSON
 Dynamic formatting is also supported, using dotted keys, e.g.
 "{components.city}, {components.country}" or "{annotations.timezone.name}".
-Available keys: formatted, lat, lng, confidence, components.<name> and
-annotations.<dotted.path>.
+Available keys: formatted, lat, lng, confidence, components.&lt;name&gt; and
+annotations.&lt;dotted.path&gt;.
 
 The special "%dyncols:" format is also supported, adding multiple columns to the
 output CSV. Set --formatstr to "%dyncols:" followed by a comma-delimited list of
@@ -436,18 +436,18 @@ duplicate locations are only looked up once.
 
 #### geoclient
 The --endpoint option selects the kind of lookup:  
-* search       - (default) a free-form NYC location in <column>, e.g.
+* search       - (default) a free-form NYC location in &lt;column&gt;, e.g.
 "314 W 100 St Manhattan", "Empire State Building" or a BBL/BIN.
-* bin          - a Building Identification Number in <column>.
-* bbl          - a Borough-Block-Lot in <column>, either as 10 digits (1000670001)
+* bin          - a Building Identification Number in &lt;column&gt;.
+* bbl          - a Borough-Block-Lot in &lt;column&gt;, either as 10 digits (1000670001)
 or delimited (1-67-1, 1/00067/0001).
-* normalize    - a street name in <column>, returned in Geosupport's normalized
+* normalize    - a street name in &lt;column&gt;, returned in Geosupport's normalized
 form ("w 100 st" -> "WEST  100 STREET"). It only standardizes the
 name: it does not check that the street exists. By default, numbers
 are padded for sorting ("WEST    1 STREET"), the same spacing as the
 street names in other Geoclient results; to compare with
 single-spaced data, add --params format=C ("WEST 1 STREET").
-* streetcode   - a Geosupport street code in <column> (the borough digit plus a 5-,
+* streetcode   - a Geosupport street code in &lt;column&gt; (the borough digit plus a 5-,
 7- or 10-digit code: 6, 8 or 11 digits, e.g. 11361001), returned as
 the street's name. Other values are left unchanged, not sent.
 * address, addresspoint, intersection, place, blockface - structured lookups whose
@@ -463,7 +463,7 @@ are case-sensitive:
 * blockface    - onStreet, crossStreetOne, crossStreetTwo, borough
 (optional: boroughCrossStreetOne, boroughCrossStreetTwo, compassDirection)
 The borough may be a name (Manhattan), an abbreviation (MN) or a number (1-5).
-With a structured endpoint, <column> is not sent to the API: it is only the column that
+With a structured endpoint, &lt;column&gt; is not sent to the API: it is only the column that
 is replaced with the result (or that --rename applies to). For search, --params may
 set fixed search options, e.g. "exactMatchMaxLevel=5". For normalize and streetcode,
 it may set format - S (sort, the default) pads numbers so names sort numerically
@@ -487,10 +487,10 @@ the JSON formats print the reject under "_reject". So that rejected searches car
 their reason, search sends returnRejections=true unless it is set in --params.
 
 The --formatstr option supports these Geoclient-specific formats:  
-* '%+' | '%lat-long'    - <latitude>, <longitude> (default). For normalize and
+* '%+' | '%lat-long'    - &lt;latitude&gt;, &lt;longitude&gt; (default). For normalize and
 streetcode, which return no coordinates: the street name
 (firstStreetNameNormalized).
-* '%location'           - (<latitude>, <longitude>)
+* '%location'           - (&lt;latitude&gt;, &lt;longitude&gt;)
 * '%bbl'                - the BBL
 * '%bin'                - the BIN (buildingIdentificationNumber)
 * '%normalized-address' - the address on one line, single-spaced, e.g.
@@ -563,15 +563,15 @@ the --no-cache option is then suggested.
 
 #### census
 There are three kinds of input:  
-* a one-line address in <column> (the default), e.g.
+* a one-line address in &lt;column&gt; (the default), e.g.
 "4600 Silver Hill Rd, Washington, DC 20233".
 * an address in several columns, mapped with --params to the parts street, city,
 state and zip ("name={Column}" or a fixed "name=value"), e.g.
 "street={Street},city={City},state=MD,zip={Zip}". The Census Geocoder
 needs a street plus a ZIP code, or a street plus city and state: a row without
-them is not sent, and is left unchanged (or set to --invalid-result). <column> is
+them is not sent, and is left unchanged (or set to --invalid-result). &lt;column&gt; is
 then only the column the result goes in.
-* a "lat, long" WGS 84 coordinate in <column>, with --reverse. It returns the Census
+* a "lat, long" WGS 84 coordinate in &lt;column&gt;, with --reverse. It returns the Census
 geographies at that point (there is no matched address).
 
 The --benchmark (address ranges release) and --vintage (geography release) options
@@ -604,8 +604,8 @@ looked up once. Batch no-matches and ties are not cached, as batch matching vari
 the load on the Census servers.
 
 The --formatstr option supports these Census-specific formats:  
-* '%+' | '%lat-long'    - <latitude>, <longitude> (default)
-* '%location'           - (<latitude>, <longitude>)
+* '%+' | '%lat-long'    - &lt;latitude&gt;, &lt;longitude&gt; (default)
+* '%location'           - (&lt;latitude&gt;, &lt;longitude&gt;)
 * '%matched-address'    - the matched address, e.g.
 "4600 SILVER HILL RD, WASHINGTON, DC, 20233"
 * '%census-geoids'      - 5 columns, as with "%dyncols:": census_state,
@@ -817,7 +817,7 @@ qsv geocode --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑reverse`&nbsp; | flag | Force reverse geocoding for opencage/opencagenow (treat the query as a "lat, long" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row. For census/censusnow, <column> holds "lat, long" coordinates and the Census geographies at that point are returned. |  |
+| &nbsp;`‑‑reverse`&nbsp; | flag | Force reverse geocoding for opencage/opencagenow (treat the query as a "lat, long" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row. For census/censusnow, &lt;column&gt; holds "lat, long" coordinates and the Census geographies at that point are returned. |  |
 | &nbsp;`‑‑no‑annotations`&nbsp; | flag | Omit OpenCage annotations (timezone, currency, etc.) from the result and from %json output. |  |
 
 <a name="geoclient-only-options"></a>
@@ -877,7 +877,7 @@ qsv geocode --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |
 

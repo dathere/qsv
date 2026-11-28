@@ -15,10 +15,10 @@ Fetchpost sends/fetches data to/from web services for every row using HTTP Post.
 As opposed to fetch, which uses HTTP Get.
 
 CSV data is posted using two methods:  
-1. As an HTML Form using using the <column-list> argument
+1. As an HTML Form using using the &lt;column-list&gt; argument
 The columns are used to construct the HTML form data and posted to the server
 as a URL-encoded form. (content-type: application/x-www-form-urlencoded)
-2. As a payload using a MiniJinja template with the --payload-tpl <file> option
+2. As a payload using a MiniJinja template with the --payload-tpl &lt;file&gt; option
 The template file is used to construct the payload and posted to the server
 as JSON by default (content-type: application/json), with automatic checking if the
 rendered template is valid JSON.
@@ -95,7 +95,7 @@ See <https://www.cloudflare.com/learning/performance/http2-vs-http1.1/> and
 <https://medium.com/coderscorner/http-2-flow-control-77e54f7fd518> for more info.
 
 URL OPTIONS:  
-<url-column> needs to be a fully qualified URL path. It can be specified as a column name
+&lt;url-column&gt; needs to be a fully qualified URL path. It can be specified as a column name
 from which the URL value will be retrieved for each record, or as the URL literal itself.
 
 JSON RESPONSE HANDLING:  
@@ -195,7 +195,7 @@ qsv fetchpost --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑t,`<br>`‑‑payload‑tpl`&nbsp; | string | Instead of <column-list>, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
+| &nbsp;`‑t,`<br>`‑‑payload‑tpl`&nbsp; | string | Instead of &lt;column-list&gt;, use a MiniJinja template file to render a JSON payload in the HTTP Post body. You can also use --payload-tpl to render a non-JSON payload, but --content-type will have to be set manually. If a rendered JSON is invalid, `fetchpost` will abort and return an error. |  |
 | &nbsp;`‑‑content‑type`&nbsp; | string | Overrides automatic content types for `<column-list>` (`application/x-www-form-urlencoded`) and `--payload-tpl` (`application/json`). Typical alternative values are `multipart/form-data` and `text/plain`. It is the responsibility of the user to format the payload accordingly when using --payload-tpl. |  |
 | &nbsp;`‑j,`<br>`‑‑globals‑json`&nbsp; | string | A JSON file containing global variables. When posting as an HTML Form, this file is added to the Form data. When constructing a payload using a MiniJinja template, the JSON properties can be accessed in templates using the "qsv_g" namespace (e.g. {{qsv_g.api_key}}, {{qsv_g.base_url}}). |  |
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Put the fetched values in a new column. Specifying this option results in a CSV. Otherwise, the output is in JSONL format. |  |
@@ -223,7 +223,7 @@ qsv fetchpost --help
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Do not cache responses. |  |
 | &nbsp;`‑‑mem‑cache‑size`&nbsp; | integer | Maximum number of entries in the in-memory LRU cache. | `2000000` |
 | &nbsp;`‑‑disk‑cache`&nbsp; | flag | Use a persistent disk cache for responses. The cache is stored in the directory specified by --disk-cache-dir. If the directory does not exist, it will be created. If the directory exists, it will be used as is. It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not refresh the TTL of cached values. Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change DiskCache settings. A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries are cached indefinitely). |  |
-| &nbsp;`‑‑disk‑cache‑dir`&nbsp; | string | The directory <dir> to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetchpost jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetchpost` |
+| &nbsp;`‑‑disk‑cache‑dir`&nbsp; | string | The directory &lt;dir&gt; to store the disk cache. Note that if the directory does not exist, it will be created. If the directory exists, it will be used as is, and will not be flushed. This option allows you to maintain several disk caches for different fetchpost jobs (e.g. one for geocoding, another for weather, etc.) | `~/.qsv-cache/fetchpost` |
 | &nbsp;`‑‑redis‑cache`&nbsp; | flag | Use Redis to cache responses. It connects to "redis://127.0.0.1:6379/2" with a connection pool size of 20, with a TTL of 28 days, and a cache hit NOT renewing an entry's TTL. Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH respectively to change Redis settings. A QSV_REDIS_TTL_SECS of 0 disables expiration (entries cached indefinitely). |  |
 | &nbsp;`‑‑cache‑error`&nbsp; | flag | Cache error responses even if a request fails. If an identical URL is requested, the cached error is returned. Otherwise, the fetch is attempted again for --max-retries. |  |
 | &nbsp;`‑‑flush‑cache`&nbsp; | flag | Flush all the keys in the current cache on startup. This only applies to Disk and Redis caches. |  |
@@ -235,7 +235,7 @@ qsv fetchpost --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Namely, it will be sorted with the rest of the rows. Otherwise, the first row will always appear as the header row in the output. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Will also show the cache hit rate upon completion. Not valid for stdin. |  |

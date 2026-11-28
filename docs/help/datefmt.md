@@ -88,7 +88,7 @@ qsv datefmt --help
 
 | &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<column>`&nbsp; | The column/s to apply the date formats to. Note that the <column> argument supports multiple columns. See 'qsv select --help' for the format details. |
+| &nbsp;`<column>`&nbsp; | The column/s to apply the date formats to. Note that the &lt;column&gt; argument supports multiple columns. See 'qsv select --help' for the format details. |
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
 
 <a name="datefmt-options"></a>
@@ -117,7 +117,7 @@ qsv datefmt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

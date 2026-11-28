@@ -16,9 +16,9 @@ perform typical data-wrangling tasks and/or to harmonize some values, etc.
 
 It has five subcommands:  
 1. operations*   - 40 string, format, currency, regex & NLP operators.
-2. emptyreplace* - replace empty cells with <--replacement> string.
+2. emptyreplace* - replace empty cells with &lt;--replacement&gt; string.
 3. dynfmt        - Dynamically constructs a new column from other columns using
-the <--formatstr> template.
+the &lt;--formatstr&gt; template.
 4. calcconv      - parse and evaluate math expressions, with support for units
 and conversions.
 5. summarize*    - summarize a column or group of columns using an OpenAI
@@ -69,7 +69,7 @@ It has 40 supported operations:
 * replace: Replace all matches of a pattern (using --comparand)
 with a string (using --replacement) (Rust replace)
 * regex_replace: Replace all regex matches in --comparand w/ --replacement.
-Specify <NULL> as --replacement to remove matches.
+Specify &lt;NULL&gt; as --replacement to remove matches.
 * titlecase - capitalizes English text using Daring Fireball titlecase style
 <https://daringfireball.net/2008/05/title_case>
 * censor: profanity filter. Add additional comma-delimited profanities with --comparand.
@@ -116,12 +116,12 @@ question mark (e.g. 0.9?)
 <https://github.com/greyblake/whatlang-rs/blob/master/SUPPORTED_LANGUAGES.md>
 
 EMPTYREPLACE (multi-column capable)
-Replace empty cells with <--replacement> string.
+Replace empty cells with &lt;--replacement&gt; string.
 Non-empty cells are not modified. See the `fill` command for more complex empty field operations.
 
 ### Dynfmt
 
-Dynamically constructs a new column from other columns using the <--formatstr> template.
+Dynamically constructs a new column from other columns using the &lt;--formatstr&gt; template.
 The template can contain arbitrary characters. To insert a column value, enclose the
 column name in curly braces, replacing all non-alphanumeric characters with underscores.
 
@@ -131,8 +131,8 @@ computed values, check out the py command to take advantage of Python's f-string
 ### Calcconv
 
 Parse and evaluate math expressions into a new column, with support for units and conversions.
-The math expression is built dynamically using the <--formatstr> template, similar to the DYNFMT
-subcommand, with the addition that if the literal '<UNIT>' is found at the end of the template, the
+The math expression is built dynamically using the &lt;--formatstr&gt; template, similar to the DYNFMT
+subcommand, with the addition that if the literal '&lt;UNIT&gt;' is found at the end of the template, the
 inferred unit will be appended to the result.
 
 For a complete list of supported units, constants, operators and functions, see <https://docs.rs/cpc>
@@ -287,7 +287,7 @@ qsv apply calcconv --formatstr '{col1} Fahrenheit in Celsius' -c metric_temperat
 qsv apply calcconv --formatstr '{col1}km + {col2}mi in meters' -c meters file.csv
 ```
 
-> You can append the inferred unit at the end of the result by ending the expression with '<UNIT>':
+> You can append the inferred unit at the end of the result by ending the expression with '&lt;UNIT&gt;':
 
 ```console
 qsv apply calcconv --formatstr '({col1} + {col2})km to light years <UNIT>' -c light_years file.csv
@@ -373,7 +373,7 @@ qsv apply --help
 
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<column>`&nbsp; | The column/s to apply the transformation to. Note that the <column> argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details. |
+| &nbsp;`<column>`&nbsp; | The column/s to apply the transformation to. Note that the &lt;column&gt; argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details. |
 | &nbsp;`<operations>`&nbsp; | The operation/s to apply. |
 | &nbsp;`<column>`&nbsp; | The column/s to apply the operations to. |
 | &nbsp;`<column>`&nbsp; | The column/s to check for emptiness. |
@@ -416,12 +416,12 @@ qsv apply --help
 | &nbsp;`‑‑prompt`&nbsp; | string | MiniJinja prompt template rendered per record. Overrides the default prompt. Reference columns by their safe name. |  |
 | &nbsp;`‑‑prompt‑file`&nbsp; | string | Read the prompt template from a file. Ignored if --prompt is set. |  |
 | &nbsp;`‑‑rate‑limit`&nbsp; | float | Seconds to sleep between LLM requests to avoid provider rate limits. Accepts fractional seconds (e.g. 0.5). | `0` |
-| &nbsp;`‑‑on‑error`&nbsp; | string | What to do when an LLM request fails: "fail" aborts; "skip" writes an "<ERROR: ...>" cell and continues. | `fail` |
+| &nbsp;`‑‑on‑error`&nbsp; | string | What to do when an LLM request fails: "fail" aborts; "skip" writes an "&lt;ERROR: ...&gt;" cell and continues. | `fail` |
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Custom user agent for LLM requests. Supports variables like $QSV_VERSION. |  |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | Directory for the disk cache. The cache TTL defaults to 28 days; set the QSV_DISKCACHE_TTL_SECS env var to change it. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching. | `~/.qsv-cache/apply-summarize` |
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the disk cache (one LLM call per row, always). |  |
 | &nbsp;`‑‑fresh`&nbsp; | flag | Force fresh LLM calls, refreshing any cached values. |  |
-| &nbsp;`‑‑stats`&nbsp; | flag | Append two extra columns per row alongside --new-column: "<new-column>_elapsed_ms" (inference time in milliseconds) and "<new-column>_tokens" (total tokens used). For cached rows, these report the values captured when the summary was first computed. |  |
+| &nbsp;`‑‑stats`&nbsp; | flag | Append two extra columns per row alongside --new-column: "&lt;new-column&gt;_elapsed_ms" (inference time in milliseconds) and "&lt;new-column&gt;_tokens" (total tokens used). For cached rows, these report the values captured when the summary was first computed. |  |
 
 <a name="common-options"></a>
 
@@ -430,7 +430,7 @@ qsv apply --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. |  |

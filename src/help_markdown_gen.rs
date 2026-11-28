@@ -712,7 +712,9 @@ fn generate_command_markdown(
                 md,
                 "| &nbsp;`{}`&nbsp; | {} |",
                 arg.name,
-                escape_table_cell(&linkify_bare_urls(&arg.description))
+                escape_table_cell(&escape_html_placeholders(&linkify_bare_urls(
+                    &arg.description
+                )))
             );
         }
         md.push('\n');
@@ -769,7 +771,7 @@ fn generate_command_markdown(
                 "| {} | {} | {} | {} |",
                 option_display,
                 opt.option_type,
-                escape_table_cell(&linkify_bare_urls(&description)),
+                escape_table_cell(&escape_html_placeholders(&linkify_bare_urls(&description))),
                 default_str
             );
         }
@@ -792,6 +794,45 @@ fn escape_table_cell(text: &str) -> String {
     text.replace('|', "\\|")
         .replace('\n', " ")
         .replace('\r', "")
+}
+
+/// Entity-escape `<placeholder>` tokens (e.g. `<file>`, `<p>`) in option/argument descriptions,
+/// which GitHub would otherwise parse as HTML and strip or render. Keeps the tags the generator
+/// itself injects (`<br>`, `<ul>`, `<li>`), `<https://...>` autolinks and code spans intact.
+fn escape_html_placeholders(text: &str) -> String {
+    let tag_re = regex_oncelock!(r"<([^<>]+)>");
+    let parts: Vec<&str> = text.split('`').collect();
+    let last = parts.len() - 1;
+    parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| {
+            // odd parts are inside a code span, where entities would render literally;
+            // a trailing part after an unmatched backtick is not
+            if i % 2 == 1 && !(i == last && last % 2 == 1) {
+                return part.to_string();
+            }
+            tag_re
+                .replace_all(part, |caps: &regex::Captures| {
+                    let inner = &caps[1];
+                    if matches!(inner, "br" | "ul" | "/ul" | "li" | "/li")
+                        || inner.starts_with("http://")
+                        || inner.starts_with("https://")
+                    {
+                        caps[0].to_string()
+                    } else {
+                        format!("&lt;{inner}&gt;")
+                    }
+                })
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("`")
+}
+
+/// A prose line of a description or example: bare URLs linkified, placeholders escaped.
+fn prose_text(text: &str) -> String {
+    escape_html_placeholders(&linkify_bare_urls(text))
 }
 
 /// Convert bare URLs (https://...) in text to markdown autolinks (<https://...>).
@@ -1231,7 +1272,7 @@ fn format_description(lines: &[String]) -> String {
                 continue;
             }
             md.push_str("> ");
-            md.push_str(&linkify_bare_urls(trimmed));
+            md.push_str(&prose_text(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
@@ -1345,7 +1386,7 @@ fn format_description(lines: &[String]) -> String {
             let _ = writeln!(md, "> [!{kind}]");
             if !rest.is_empty() {
                 md.push_str("> ");
-                md.push_str(&linkify_bare_urls(rest));
+                md.push_str(&prose_text(rest));
                 md.push('\n');
             }
             in_alert = true;
@@ -1366,7 +1407,7 @@ fn format_description(lines: &[String]) -> String {
             if rel > 0 {
                 md.push_str(&" ".repeat(rel));
             }
-            md.push_str(&linkify_bare_urls(trimmed));
+            md.push_str(&prose_text(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
@@ -1376,7 +1417,7 @@ fn format_description(lines: &[String]) -> String {
         if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains(". ") {
             in_list = true;
             cur_item_content_indent = 0;
-            md.push_str(&linkify_bare_urls(trimmed));
+            md.push_str(&prose_text(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
@@ -1409,7 +1450,7 @@ fn format_description(lines: &[String]) -> String {
         if in_list && cur_item_content_indent > 0 {
             md.push_str(&" ".repeat(cur_item_content_indent));
         }
-        md.push_str(&linkify_bare_urls(trimmed));
+        md.push_str(&prose_text(trimmed));
         maybe_append_colon_break(&mut md, trimmed);
         md.push('\n');
         prev_empty = false;
@@ -1655,7 +1696,7 @@ fn format_examples(lines: &[String]) -> String {
                 in_code_block = false;
             }
             let comment = trimmed.trim_start_matches('#').trim();
-            let _ = writeln!(md, "> {}", linkify_bare_urls(comment));
+            let _ = writeln!(md, "> {}", prose_text(comment));
             // Check if the next non-empty line is also a comment — if not, end the blockquote
             let next_is_comment = lines
                 .get(idx + 1..)
@@ -1735,7 +1776,7 @@ fn format_examples(lines: &[String]) -> String {
         // is absorbed as a lazy continuation of the blockquote (CommonMark),
         // mis-scoping following text into the note.
         if trimmed.starts_with('>') {
-            md.push_str(&linkify_bare_urls(trimmed));
+            md.push_str(&prose_text(trimmed));
             md.push('\n');
             let next_is_quote = lines
                 .get(idx + 1..)
@@ -1748,7 +1789,7 @@ fn format_examples(lines: &[String]) -> String {
         }
 
         // Any other text (description paragraphs within examples)
-        md.push_str(&linkify_bare_urls(trimmed));
+        md.push_str(&prose_text(trimmed));
         maybe_append_colon_break(&mut md, trimmed);
         md.push('\n');
     }
@@ -2737,6 +2778,39 @@ mod tests {
             desc.contains("Scores > 90 are great"),
             "Unpaired '>' should pass through, got: {desc}"
         );
+    }
+
+    #[test]
+    fn test_escape_html_placeholders() {
+        assert_eq!(
+            escape_html_placeholders(
+                "quantile@<p> as <column>_<func>, to <file> or <empty string>"
+            ),
+            "quantile@&lt;p&gt; as &lt;column&gt;_&lt;func&gt;, to &lt;file&gt; or &lt;empty \
+             string&gt;"
+        );
+        // generator-injected tags, autolinks, code spans and bare comparisons are kept
+        let kept = "a<br><ul><li>x</li></ul> <https://qsv.dathere.com> `--out <file>` a < b";
+        assert_eq!(escape_html_placeholders(kept), kept);
+        // text after an unmatched backtick is not a code span
+        assert_eq!(escape_html_placeholders("`a` b ` <n>"), "`a` b ` &lt;n&gt;");
+    }
+
+    #[test]
+    fn test_prose_placeholders_escaped_code_kept() {
+        let desc = format_description(&lines(&[
+            "Writes <stem>.csv for each <column>.",
+            "  $ qsv split <outdir> data.csv",
+        ]));
+        assert!(
+            desc.contains("Writes &lt;stem&gt;.csv for each &lt;column&gt;."),
+            "{desc}"
+        );
+        assert!(desc.contains("qsv split <outdir> data.csv"), "{desc}");
+
+        let ex = format_examples(&lines(&["# write to <file>", "qsv sort <input> > out.csv"]));
+        assert!(ex.contains("> write to &lt;file&gt;"), "{ex}");
+        assert!(ex.contains("qsv sort <input> > out.csv"), "{ex}");
     }
 
     // --- format_examples tests ---

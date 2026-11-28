@@ -178,7 +178,7 @@ qsv enum --help
 | &nbsp;`‑c,`<br>`‑‑new‑column`&nbsp; | string | Name of the column to create. Will default to "index". |  |
 | &nbsp;`‑‑start`&nbsp; | integer | The value to start the enumeration from. Only applies in Increment mode. (default: 0) |  |
 | &nbsp;`‑‑increment`&nbsp; | integer | The value to increment the enumeration by. Only applies in Increment mode. (default: 1) |  |
-| &nbsp;`‑‑constant`&nbsp; | string | Fill a new column with the given value. Changes the default column name to "constant" unless overridden by --new-column. To specify a null value, pass the literal "<NULL>". |  |
+| &nbsp;`‑‑constant`&nbsp; | string | Fill a new column with the given value. Changes the default column name to "constant" unless overridden by --new-column. To specify a null value, pass the literal "&lt;NULL&gt;". |  |
 | &nbsp;`‑‑copy`&nbsp; | string | Name of a column to copy. Changes the default column name to "{column}_copy" unless overridden by --new-column. |  |
 | &nbsp;`‑‑uuid4`&nbsp; | flag | When set, the column will be populated with uuids (v4) instead of the incremental identifier. Changes the default column name to "uuid4" unless overridden by --new-column. |  |
 | &nbsp;`‑‑uuid7`&nbsp; | flag | When set, the column will be populated with uuids (v7) instead of the incremental identifier. uuid v7 is a time-based uuid and is monotonically increasing. See <https://buildkite.com/blog/goodbye-integers-hello-uuids> Changes the default column name to "uuid7" unless overridden by --new-column. |  |
@@ -191,7 +191,7 @@ qsv enum --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 

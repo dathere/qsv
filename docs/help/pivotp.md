@@ -13,15 +13,15 @@
 
 Pivots or groups CSV data using the Polars engine.
 
-PIVOT MODE (with <on-cols>):  
+PIVOT MODE (with &lt;on-cols&gt;):  
 The pivot operation consists of:  
 - One or more index columns (these will be the new rows)
 - A column that will be pivoted (this will create the new columns)
 - A values column that will be aggregated
 - An aggregation function to apply. Features "smart" aggregation auto-selection.
 
-GROUP-BY MODE (without <on-cols>):  
-When <on-cols> is omitted, performs a group-by aggregation instead of a pivot.
+GROUP-BY MODE (without &lt;on-cols&gt;):  
+When &lt;on-cols&gt; is omitted, performs a group-by aggregation instead of a pivot.
 This is useful for simple aggregations like counting rows per group.
 In group-by mode, --index is required and --agg smart resolves to len (count).
 The none aggregation is not supported in group-by mode.
@@ -58,9 +58,9 @@ qsv pivotp --help
 |--------|------|-------------|--------|
 | &nbsp;`‑i,`<br>`‑‑index`&nbsp; | string | The column(s) to use as the index (row labels). Specify multiple columns by separating them with a comma. The output will have one row for each unique combination of the index's values. In pivot mode, if None, all remaining columns not specified on --on and --values will be used; at least one of --index and --values must be specified. Required in group-by mode. |  |
 | &nbsp;`‑v,`<br>`‑‑values`&nbsp; | string | The column(s) containing values to aggregate. If an aggregation is specified, these are the values on which the aggregation will be computed. In pivot mode, if None, all remaining columns not specified on --on and --index will be used; at least one of --index and --values must be specified. If no columns remain, len (the default then) counts the rows of each cell; any other aggregation needs --values. In group-by mode, if omitted, a single "count" column is produced. |  |
-| &nbsp;`‑a,`<br>`‑‑agg`&nbsp; | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value quantile@<p> - Quantile at probability p in [0, 1] using linear interpolation. Alias: q@<p>. Examples: quantile@0.95, q@0.5 (q@0.5 is equivalent to median for even-length groups). len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Always uses type, cardinality, sparsity, CV, sign distribution (n_negative/n_positive), and sort_order from streaming stats. High variability means a CV above 100% (stddev > mean). When the stats cache includes non-streaming stats (from a prior `stats --everything` or `stats --mode`), also uses mode_count. With a single --values column, smart first runs moarstats --advanced to enrich the input's stats cache (writing <stem>.stats.csv, .stats.csv.json and .stats.csv.data.jsonl beside it) unless the cache already has those stats. This one-time pass reads the whole file; skip it with --no-moarstats. It is also skipped with an explicit --delimiter, stdin and special formats. The moarstats stats used are outlier profile, Pearson skewness, MAD/stddev ratio, median/mean ratio and quartile coefficient of dispersion (the two ratios only for positive data), moment skewness (\|G1\| >= 1 picks median; Pearson skewness is the fallback), kurtosis, bimodality (bimodality coefficient >= 0.60 with negative excess kurtosis), entropy and Gini coefficient. A single-value column uses first. The choice depends on the data, so pass an explicit --agg to pin a result across qsv versions. For Date/DateTime values, checks sparsity and sort order. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
+| &nbsp;`‑a,`<br>`‑‑agg`&nbsp; | string | The aggregation function to use: first - First value encountered last - Last value encountered sum - Sum of values min - Minimum value max - Maximum value mean - Average value median - Median value quantile@&lt;p&gt; - Quantile at probability p in [0, 1] using linear interpolation. Alias: q@&lt;p&gt;. Examples: quantile@0.95, q@0.5 (q@0.5 is equivalent to median for even-length groups). len - Count of values item - Get single value from group. Raises error if there are multiple values. smart - use value column data type & statistics to pick an aggregation. Always uses type, cardinality, sparsity, CV, sign distribution (n_negative/n_positive), and sort_order from streaming stats. High variability means a CV above 100% (stddev > mean). When the stats cache includes non-streaming stats (from a prior `stats --everything` or `stats --mode`), also uses mode_count. With a single --values column, smart first runs moarstats --advanced to enrich the input's stats cache (writing &lt;stem&gt;.stats.csv, .stats.csv.json and .stats.csv.data.jsonl beside it) unless the cache already has those stats. This one-time pass reads the whole file; skip it with --no-moarstats. It is also skipped with an explicit --delimiter, stdin and special formats. The moarstats stats used are outlier profile, Pearson skewness, MAD/stddev ratio, median/mean ratio and quartile coefficient of dispersion (the two ratios only for positive data), moment skewness (\|G1\| >= 1 picks median; Pearson skewness is the fallback), kurtosis, bimodality (bimodality coefficient >= 0.60 with negative excess kurtosis), entropy and Gini coefficient. A single-value column uses first. The choice depends on the data, so pass an explicit --agg to pin a result across qsv versions. For Date/DateTime values, checks sparsity and sort order. Will only work if there is one value column, otherwise it falls back to `first` | `smart` |
 | &nbsp;`‑‑sort‑columns`&nbsp; | flag | Sort the transposed columns by name. (pivot mode only) |  |
-| &nbsp;`‑‑maintain‑order`&nbsp; | flag | Accepted for compatibility. Output is always in first-appearance order: rows follow their index values' first appearance and pivoted columns their <on-cols> values' first appearance. |  |
+| &nbsp;`‑‑maintain‑order`&nbsp; | flag | Accepted for compatibility. Output is always in first-appearance order: rows follow their index values' first appearance and pivoted columns their &lt;on-cols&gt; values' first appearance. |  |
 | &nbsp;`‑‑col‑separator`&nbsp; | string | The separator in generated column names in case of multiple --values columns. A generated name that equals an index column's takes a _2 (_3, ...) suffix, with a warning. (pivot mode only; ignored in group-by mode) | `_` |
 | &nbsp;`‑‑validate`&nbsp; | flag | Report the pivot column(s)' cardinality before pivoting. Informational only - it does not refuse a pivot; --max-columns does that. (pivot mode only) |  |
 | &nbsp;`‑‑max‑columns`&nbsp; | integer | Maximum number of columns the pivot may create before it is refused. Guards against pivoting on a high-cardinality column, which can exhaust memory. Unlike --validate, this ALWAYS runs. Set to 0 for no limit, for a deliberately wide pivot. (pivot mode only; ignored in group-by mode) | `100000` |
@@ -68,7 +68,7 @@ qsv pivotp --help
 | &nbsp;`‑‑infer‑len`&nbsp; | integer | Number of rows to scan when inferring schema. Set to 0 to scan entire file. | `10000` |
 | &nbsp;`‑‑decimal‑comma`&nbsp; | flag | Use comma as decimal separator when READING the input. Note that you will need to specify an alternate --delimiter. |  |
 | &nbsp;`‑‑ignore‑errors`&nbsp; | flag | Read values that can't be parsed as empty (null) instead of failing. Their rows are kept. |  |
-| &nbsp;`‑‑grand‑total`&nbsp; | flag | Append a grand total row summing all numeric non-index columns. The first index column will contain "Grand <total-label>". |  |
+| &nbsp;`‑‑grand‑total`&nbsp; | flag | Append a grand total row summing all numeric non-index columns. The first index column will contain "Grand &lt;total-label&gt;". |  |
 | &nbsp;`‑‑subtotal`&nbsp; | flag | Insert subtotal rows after each group in the first index column. The second index column will contain the total label. Requires 2+ index columns. (pivot mode only) |  |
 | &nbsp;`‑‑total‑label`&nbsp; | string | Custom label for total rows. | `Total` |
 | &nbsp;`‑‑no‑moarstats`&nbsp; | flag | For smart aggregation, do not run moarstats --advanced to enrich the stats cache. Smart aggregation then uses whatever stats are already cached (or basic `stats --cardinality` stats). |  |
@@ -80,7 +80,7 @@ qsv pivotp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading/writing CSV data. Must be a single character. If not set, QSV_DEFAULT_DELIMITER is used, else ','. A .tsv/.tab (tab) or .ssv (semicolon) extension on the input or --output file sets that file's delimiter. (default: ,) |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not return smart aggregation chosen nor pivot result shape to stderr. |  |
 

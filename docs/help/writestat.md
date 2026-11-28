@@ -42,7 +42,7 @@ single thread, which is much slower.
 The dictionary also says how readstat wrote the CSV, and that is undone: the
 values decoded by the option --value-labels go back to their codes, and the
 SPSS sentinels of --sentinels-as become declared missing values again, whether
-in <name>_null columns or embedded. A label that can't be turned back into one
+in &lt;name&gt;_null columns or embedded. A label that can't be turned back into one
 code - shared by two codes, reading as a number that isn't its code, or also
 an ordinary value - is an error: write the CSV again with readstat without
 the label.

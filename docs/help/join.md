@@ -41,7 +41,7 @@ qsv join --help
 |----------|-------------|
 | &nbsp;`<input1>`&nbsp; | is the first CSV data set to join. |
 | &nbsp;`<input2>`&nbsp; | is the second CSV data set to join. |
-| &nbsp;`<columns1>`&nbsp; | & <columns2> are the columns to join on for each input. |
+| &nbsp;`<columns1>`&nbsp; | & &lt;columns2&gt; are the columns to join on for each input. |
 
 <a name="join-options"></a>
 
@@ -58,7 +58,7 @@ qsv join --help
 | &nbsp;`‑‑full`&nbsp; | flag | Do a 'full outer' join. This returns all rows in both data sets with matching records joined. If there is no match, the missing side will be padded out with empty fields. (This is the combination of 'outer left' and 'outer right'.) |  |
 | &nbsp;`‑‑cross`&nbsp; | flag | USE WITH CAUTION. This returns the cartesian product of the CSV data sets given. The number of rows return is equal to N * M, where N and M correspond to the number of rows in the given data sets, respectively. |  |
 | &nbsp;`‑‑nulls`&nbsp; | flag | When set, joins will work on empty fields. Otherwise, empty fields are completely ignored. (In fact, any row that has an empty field in the key specified is ignored.) |  |
-| &nbsp;`‑‑keys‑output`&nbsp; | string | Write successfully joined keys to <file>. This means that the keys are written to the output file when a match is found, with the exception of anti joins, where keys are written when NO match is found. Cross joins do not write keys. |  |
+| &nbsp;`‑‑keys‑output`&nbsp; | string | Write successfully joined keys to &lt;file&gt;. This means that the keys are written to the output file when a match is found, with the exception of anti joins, where keys are written when NO match is found. Cross joins do not write keys. |  |
 
 <a name="join-key-transformation-options"></a>
 
@@ -76,7 +76,7 @@ qsv join --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 

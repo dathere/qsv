@@ -17,9 +17,9 @@ perform typical data-wrangling tasks and/or to harmonize some values, etc.
 
 It has three subcommands:  
 1. operations*   - 18 string, format & regex operators.
-2. emptyreplace* - replace empty cells with <--replacement> string.
+2. emptyreplace* - replace empty cells with &lt;--replacement&gt; string.
 3. dynfmt        - Dynamically constructs a new column from other columns using
-the <--formatstr> template.
+the &lt;--formatstr&gt; template.
 * subcommand is multi-column capable.
 
 OPERATIONS (multi-column capable)
@@ -56,19 +56,19 @@ It has 18 supported operations:
 * replace: Replace all matches of a pattern (using --comparand)
 with a string (using --replacement) (Rust replace)
 * regex_replace: Replace all regex matches in --comparand w/ --replacement.
-Specify <NULL> as --replacement to remove matches.
+Specify &lt;NULL&gt; as --replacement to remove matches.
 * round: Round numeric values to the specified number of decimal places using
 Midpoint Nearest Even Rounding Strategy AKA "Bankers Rounding."
 Specify the number of decimal places with --formatstr (default: 3).
 * copy: Mark a column for copying
 
 EMPTYREPLACE (multi-column capable)
-Replace empty cells with <--replacement> string.
+Replace empty cells with &lt;--replacement&gt; string.
 Non-empty cells are not modified. See the `fill` command for more complex empty field operations.
 
 ### Dynfmt
 
-Dynamically constructs a new column from other columns using the <--formatstr> template.
+Dynamically constructs a new column from other columns using the &lt;--formatstr&gt; template.
 The template can contain arbitrary characters. To insert a column value, enclose the
 column name in curly braces, replacing all non-alphanumeric characters with underscores.
 
@@ -200,7 +200,7 @@ qsv applydp --help
 
 | &nbsp;&nbsp;&nbsp;Argument&nbsp;&nbsp;&nbsp; | Description |
 |----------|-------------|
-| &nbsp;`<column>`&nbsp; | The column/s to apply the transformation to. Note that the <column> argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details. |
+| &nbsp;`<column>`&nbsp; | The column/s to apply the transformation to. Note that the &lt;column&gt; argument supports multiple columns for the operations & emptyreplace subcommands. See 'qsv select --help' for the format details. |
 | &nbsp;`<operations>`&nbsp; | The operation/s to apply. |
 | &nbsp;`<column>`&nbsp; | The column/s to apply the operations to. |
 | &nbsp;`<column>`&nbsp; | The column/s to check for emptiness. |
@@ -234,7 +234,7 @@ qsv applydp --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 

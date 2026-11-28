@@ -149,7 +149,7 @@ qsv denull --help
 | &nbsp;`‑‑add‑vocab`&nbsp; | string | Comma-separated tokens to ADD to the built-in list. Use this for site-specific markers. |  |
 | &nbsp;`‑‑max‑distinct`&nbsp; | integer | Abandon a column once it holds this many distinct non-numeric values. Guards memory on free-text columns and bounds the report. | `16` |
 | &nbsp;`‑‑all‑columns`&nbsp; | flag | Also report columns with nothing to flag. By default only columns with a verdict are listed. |  |
-| &nbsp;`‑‑apply`&nbsp; | flag | Rewrite the data instead of only reporting it. Blanks the sentinels in every CONFIRMED column and writes the CSV to <output> (or stdout), sending the report to stderr. Rejected and unscanned columns pass through untouched. Needs a file input, and <output> must not be the input file. |  |
+| &nbsp;`‑‑apply`&nbsp; | flag | Rewrite the data instead of only reporting it. Blanks the sentinels in every CONFIRMED column and writes the CSV to &lt;output&gt; (or stdout), sending the report to stderr. Rejected and unscanned columns pass through untouched. Needs a file input, and &lt;output&gt; must not be the input file. |  |
 | &nbsp;`‑‑json`&nbsp; | flag | Emit the report as a JSON array instead of CSV. |  |
 
 <a name="common-options"></a>

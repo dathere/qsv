@@ -115,7 +115,7 @@ qsv search --help
 | &nbsp;`‑s,`<br>`‑‑select`&nbsp; | string | Select the columns to search. See 'qsv select -h' for the full syntax. |  |
 | &nbsp;`‑v,`<br>`‑‑invert‑match`&nbsp; | flag | Select only rows that did not match |  |
 | &nbsp;`‑u,`<br>`‑‑unicode`&nbsp; | flag | Enable unicode support. When enabled, character classes will match all unicode word characters instead of only ASCII word characters. Decreases performance. |  |
-| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag every row in a new column named <column>, set to the row number for matched rows and "0" for non-matched rows. SPECIAL: if <column> is exactly "M", only matched rows are returned AND only the M column is written (all other columns are dropped). To use a literal column name "M" without this behavior, rename it afterward (e.g., with `qsv rename`). |  |
+| &nbsp;`‑f,`<br>`‑‑flag`&nbsp; | string | If given, the command will not filter rows but will instead flag every row in a new column named &lt;column&gt;, set to the row number for matched rows and "0" for non-matched rows. SPECIAL: if &lt;column&gt; is exactly "M", only matched rows are returned AND only the M column is written (all other columns are dropped). To use a literal column name "M" without this behavior, rename it afterward (e.g., with `qsv rename`). |  |
 | &nbsp;`‑Q,`<br>`‑‑quick`&nbsp; | flag | Return on first match with an exitcode of 0, returning the row number of the first match to stderr. Return exit code 1 if no match is found. No output is produced. |  |
 | &nbsp;`‑‑preview‑match`&nbsp; | integer | Preview the first N matches OR all matches found within N milliseconds, whichever occurs first. NOTE: the same numeric value is used for BOTH the match count AND the millisecond timeout - choose a value where one bound effectively dominates (e.g., a small count for "first N" preview, or a large count for "all within N ms"). Returns the preview to stderr; output is still written to stdout or --output as usual. Forces a sequential search, even if the CSV is indexed. |  |
 | &nbsp;`‑c,`<br>`‑‑count`&nbsp; | flag | Write the number of matches to stderr. Suppressed by --quiet and --json. |  |
@@ -132,7 +132,7 @@ qsv search --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. (i.e., They are not searched, analyzed, sliced, etc.) |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Disabled when running parallel search (i.e., when the CSV is indexed and --jobs > 1). Sequential search on an indexed CSV (--jobs 1) still shows the progress bar. |  |

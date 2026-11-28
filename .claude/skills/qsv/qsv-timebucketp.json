@@ -79,7 +79,7 @@
       {
         "flag": "--label",
         "type": "string",
-        "description": "The value written to the index column for each window. Window mode only. One of: left      - the window's start (the default) right     - the window's end datapoint - the window's first index value"
+        "description": "The value written to the index column for each window. Window mode only. One of: * left - the window's start (the default) * right - the window's end * datapoint - the window's first index value"
       },
       {
         "flag": "--offset",
@@ -109,7 +109,7 @@
       {
         "flag": "--start-by",
         "type": "string",
-        "description": "Where the first window starts. Window mode only. One of: window    - the --every boundary at or before the first index value (the default) datapoint - the first index value itself monday ... sunday - that weekday (weekly --every)"
+        "description": "Where the first window starts, in window mode only. One of: * window - the --every boundary at or before the first index value (the default) * datapoint - the first index value itself * monday ... sunday - that weekday (weekly --every)"
       }
     ]
   },

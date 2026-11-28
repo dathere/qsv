@@ -158,7 +158,7 @@ $ qsv luau map Type -B init.lua file:debitcredit.script -E end.luau
 ```
 
 
-With "luau map", if the MAIN script is invalid for a row, "<ERROR>" followed by a
+With "luau map", if the MAIN script is invalid for a row, "&lt;ERROR&gt;" followed by a
 detailed error message is returned for that row.
 With "luau filter", if the MAIN script is invalid for a row, that row is not filtered.
 
@@ -268,8 +268,8 @@ qsv luau --help
 | &nbsp;`‑g,`<br>`‑‑no‑globals`&nbsp; | flag | Don't create Luau global variables for each column, only `col`. Useful when some column names mask standard Luau globals and to increase PERFORMANCE. Note: access to Luau globals thru _G remains even with -g. |  |
 | &nbsp;`‑‑colindex`&nbsp; | flag | Create a 1-based column index. Useful when some column names mask standard Luau globals. Automatically enabled with --no-headers. |  |
 | &nbsp;`‑r,`<br>`‑‑remap`&nbsp; | flag | Only the listed new columns are written to the output CSV. Only applies to "map" subcommand. |  |
-| &nbsp;`‑B,`<br>`‑‑begin`&nbsp; | string | Luau script/file to execute in the BEGINning, before processing the CSV with the main-script. Typically used to initialize global variables. Takes precedence over an embedded BEGIN script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
-| &nbsp;`‑E,`<br>`‑‑end`&nbsp; | string | Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If <script> begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
+| &nbsp;`‑B,`<br>`‑‑begin`&nbsp; | string | Luau script/file to execute in the BEGINning, before processing the CSV with the main-script. Typically used to initialize global variables. Takes precedence over an embedded BEGIN script. If &lt;script&gt; begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
+| &nbsp;`‑E,`<br>`‑‑end`&nbsp; | string | Luau script/file to execute at the END, after processing the CSV with the main-script. Typically used for aggregations. The output of the END script is sent to stderr. Takes precedence over an embedded END script. If &lt;script&gt; begins with "file:" or ends with ".luau/.lua", it's interpreted as a filepath from which to load the script. |  |
 | &nbsp;`‑‑max‑errors`&nbsp; | integer | The maximum number of errors to tolerate before aborting. Set to zero to disable error limit. | `10` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading lookup_tables using the qsv_register_lookup() helper function. | `60` |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | The URL of the CKAN API to use for downloading lookup_table resources using the qsv_register_lookup() helper function with the "ckan://" scheme. If the QSV_CKAN_API envvar is set, it will be used instead. | `https://data.dathere.com/api/3/action` |
@@ -283,7 +283,7 @@ qsv luau --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to <file> instead of stdout. |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Write output to &lt;file&gt; instead of stdout. |  |
 | &nbsp;`‑n,`<br>`‑‑no‑headers`&nbsp; | flag | When set, the first row will not be interpreted as headers. Automatically enables --colindex option. |  |
 | &nbsp;`‑d,`<br>`‑‑delimiter`&nbsp; | string | The field delimiter for reading CSV data. Must be a single character. (default: ,) |  |
 | &nbsp;`‑p,`<br>`‑‑progressbar`&nbsp; | flag | Show progress bars. Not valid for stdin. Ignored in qsvdp. In SEQUENTIAL MODE, the progress bar will show the number of rows processed. In RANDOM ACCESS MODE, the progress bar will show the position of the current row being processed. Output from the END script is printed after the progress bar finishes. |  |

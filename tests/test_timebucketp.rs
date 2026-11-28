@@ -773,6 +773,32 @@ fn timebucketp_day_first_date_settles_the_order_of_later_datetimes() {
     );
 }
 
+#[test]
+fn timebucketp_year_first_date_after_day_first_datetime() {
+    let wrk = Workdir::new("timebucketp_year_first_date_after_day_first_datetime");
+    wrk.create(
+        "m.csv",
+        vec![
+            svec!["ts", "v"],
+            svec!["25/12/2024 10:30", "1"],
+            svec!["2025-01-03", "2"],
+        ],
+    );
+    let mut cmd = tb(
+        &wrk,
+        &["-i", "ts", "--every", "1mo", "--agg", "sum:v", "m.csv"],
+    );
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["ts", "v_sum"],
+            svec!["2024-12-01 00:00:00", "1"],
+            svec!["2025-01-01 00:00:00", "2"],
+        ]
+    );
+}
+
 // a third shape fails the date fallback; without --date-format, don't tell the user to drop it
 #[test]
 fn timebucketp_third_index_shape_does_not_blame_date_format() {

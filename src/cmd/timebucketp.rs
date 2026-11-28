@@ -544,7 +544,10 @@ fn mixed_index_expr(
     let other_is_kind = match other_format.as_deref() {
         Some(f) => {
             format_has_time(f) == first_is_date
-                && first_order.is_none_or(|o| day_first(Some(f)) == Some(o))
+                // a year-first value can't conflict with a day/month order
+                && first_order
+                    .zip(day_first(Some(f)))
+                    .is_none_or(|(a, b)| a == b)
         },
         None => first_is_date && looks_like_datetime(&value),
     };
